@@ -1,0 +1,82 @@
+Please find below the complete workflow and required logic for the WhatsApp Channel Management integration.
+________________________________________
+🔄 Overall Workflow
+1.	User Signup
+o	When a new user signs up, they can add a channel but cannot scan the QR or activate it without having a valid days balance.
+2.	Subscription / Balance System
+o	PayPal Payment:
+When the user subscribes via PayPal, the system automatically allocates days:
+	Monthly → +30 days
+	Quarterly → +90 days
+	Yearly → +365 days
+o	Offline Payment:
+User uploads proof of payment. Admin reviews it and upon approval:
+	Activates the user’s subscription
+	Adds the corresponding number of days to the user’s account
+3.	Channel Creation
+o	Once the user has available days, they can create a WhatsApp channel using the following endpoint:
+POST https://manager.whapi.cloud/channels
+Headers:
+Authorization: Bearer {partner_bearer_token}
+Content-Type: application/json
+Body:
+{
+  "phone": "97337780873",
+  "label": "Test 55"
+}
+o	Response Fields to Save:
+o	id → channel_ref
+o	token → channel_token
+o	phone → whatsapp_number
+o	status → status
+o	stopped → stopped
+o	creationTS → created_at
+o	Immediately after creation, confirm with:
+GET https://manager.whapi.cloud/channels/{ChannelID}
+and store the confirmed data in the channels table.
+________________________________________
+⚙️ Activation (Days Allocation / Channel Extension)
+When days are added (either automatically after PayPal subscription or manually by admin after offline payment approval):
+POST https://manager.whapi.cloud/channels/{ChannelID}/extend
+Headers:
+Authorization: Bearer {partner_bearer_token}
+Content-Type: application/json
+Body:
+{
+  "days": 30,
+  "comment": "Auto top-up for {user_email}"
+}
+✅ On Success:
+•	Mark status = active
+•	Deduct 30 days from user_balances
+________________________________________
+📱 QR Authorization (Client Linking)
+Once the channel is active, generate the QR code using the channel token (not the partner token).
+GET https://gate.whapi.cloud/users/login?wakeup=true
+Headers:
+accept: application/json
+authorization: Bearer {channel_token}
+Response Example:
+{
+  "qr": "data:image/png;base64,....",
+  "expires_in": 60
+}
+Frontend Behavior:
+•	Display the QR with a 60-second countdown.
+•	Add a “Refresh QR” button to re-run the API.
+•	Once the QR is scanned successfully → update:
+•	auth_status = authorized
+•	status = active
+•	stopped = false
+•	Then display:
+“Channel connected successfully and now active.”
+________________________________________
+✅ Summary
+The workflow must strictly follow this logic:
+1.	User adds a channel → pending status.
+2.	Days are added via PayPal or admin approval.
+3.	Channel is extended (activated).
+4.	QR is generated and scanned for final linking.
+Please implement these using the above endpoints and field mappings.
+Let me know once the changes are applied or if any endpoint requires further clarification.
+

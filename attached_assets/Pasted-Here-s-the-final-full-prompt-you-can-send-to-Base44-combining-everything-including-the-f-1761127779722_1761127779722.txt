@@ -1,0 +1,229 @@
+Here’s the **final, full prompt** you can send to **Base44**, combining everything — including the firm technical explanation, direct response to their claim, complete API implementation, and all final integration details (including deletion, extending days, and token storage clarification).
+
+---
+
+## 📩 **Final Prompt for Base44**
+
+---
+
+**Subject:** WHAPI Integration — Full Automation Implementation (Partner API & Channels)
+
+Dear [Name],
+
+I’ve reviewed your response, but the statement that *“WHAPI Partner API calls must come from a server”* is **not fully accurate** for our setup. Let me clarify and provide the **exact backend implementation** you can directly integrate.
+
+---
+
+### ⚙️ **1. Base44 Already Supports Secure Server Requests**
+
+Your platform already performs **authenticated HTTP requests** securely — exactly like how you’re currently sending **test messages for the chatbot**.
+The same backend HTTP mechanism should be used for WHAPI integration.
+No additional “Backend Functions” are required or needed externally.
+
+The WHAPI Partner API only requires that requests come from your backend environment — **not the browser** — which Base44 already supports.
+
+---
+
+### 🔐 **2. Token Handling**
+
+* The **Partner API Bearer Token** is stored under
+  **Admin → WHAPI Integration Settings**.
+* The token **already starts with `"Bearer "`**, so do **not** prepend it again when sending requests.
+
+Example:
+
+```bash
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI...
+```
+
+---
+
+### 🧠 **3. Integration Logic Overview**
+
+All WHAPI Partner API calls should be routed through your backend using the same server-side HTTP module you already use for chatbot message testing.
+
+#### The backend should handle:
+
+| Function       | API Endpoint                                                   | Token Used        | Description                                    |
+| -------------- | -------------------------------------------------------------- | ----------------- | ---------------------------------------------- |
+| Create Channel | `PUT https://manager.whapi.cloud/channels`                     | Partner Token     | Creates a new customer WhatsApp channel        |
+| Get Channel    | `GET https://manager.whapi.cloud/channels/{ChannelID}`         | Partner Token     | Retrieves channel details                      |
+| Extend Channel | `POST https://manager.whapi.cloud/channels/{ChannelID}/extend` | Partner Token     | Allocates extra days from partner balance      |
+| Delete Channel | `DELETE https://manager.whapi.cloud/channels/{ChannelID}`      | Partner Token     | Deletes a channel and returns unused days      |
+| Generate QR    | `GET https://gate.whapi.cloud/users/login?wakeup=true`         | **Channel Token** | Generates login QR for client WhatsApp linking |
+
+---
+
+### 🧩 **4. Exact Implementation (Server-Side Code)**
+
+Below are the **ready-to-implement Node.js-style examples** for your backend (can also be done using your existing HTTP request module).
+
+```js
+// whapiService.js
+
+import axios from "axios";
+
+// Partner token from WHAPI Integration Settings
+// Token ALREADY starts with "Bearer "
+const PARTNER_TOKEN = await settings.get("whapi.partner_bearer_token");
+
+const partnerHeaders = {
+  Authorization: PARTNER_TOKEN,
+  Accept: "application/json",
+  "Content-Type": "application/json",
+};
+
+// 1️⃣ CREATE CHANNEL
+export async function createChannel({ name, phone, projectId }) {
+  const { data } = await axios.put(
+    "https://manager.whapi.cloud/channels",
+    { name, phone, projectid: projectId },
+    { headers: partnerHeaders }
+  );
+  return data; // includes id, token, phone, status, etc.
+}
+
+// 2️⃣ GET CHANNEL
+export async function getChannel({ channelId }) {
+  const { data } = await axios.get(
+    `https://manager.whapi.cloud/channels/${channelId}`,
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 3️⃣ EXTEND CHANNEL (Add Days)
+export async function extendChannel({ channelId, days, comment }) {
+  const { data } = await axios.post(
+    `https://manager.whapi.cloud/channels/${channelId}/extend`,
+    { days, comment },
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 4️⃣ DELETE CHANNEL
+export async function deleteChannel({ channelId }) {
+  const { data } = await axios.delete(
+    `https://manager.whapi.cloud/channels/${channelId}`,
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 5️⃣ GENERATE QR (Channel Token)
+export async function generateQr({ channelToken }) {
+  const { data } = await axios.get(
+    "https://gate.whapi.cloud/users/login?wakeup=true",
+    {
+      headers: {
+        Authorization: channelToken, // Token from createChannel() response
+        Accept: "application/json",
+      },
+    }
+  );
+  return data; // includes QR code (base64) and expiration
+}
+```
+
+---
+
+### 🧭 **5. Example cURL Requests**
+
+> Partner token is from WHAPI Integration Settings (already includes “Bearer”).
+
+**Create Channel**
+
+```bash
+curl -X PUT "https://manager.whapi.cloud/channels" \
+  -H "accept: application/json" \
+  -H "content-type: application/json" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}" \
+  -d '{ "name":"My Channel", "phone":"97313300383", "projectid":"HPN0H0hFDL1GFg154PI" }'
+```
+
+**Get Channel**
+
+```bash
+curl -X GET "https://manager.whapi.cloud/channels/{CHANNEL_ID}" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}"
+```
+
+**Extend Channel**
+
+```bash
+curl -X POST "https://manager.whapi.cloud/channels/{CHANNEL_ID}/extend" \
+  -H "accept: application/json" \
+  -H "content-type: application/json" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}" \
+  -d '{ "days": 30, "comment": "Auto top-up" }'
+```
+
+**Delete Channel**
+
+```bash
+curl -X DELETE "https://manager.whapi.cloud/channels/{CHANNEL_ID}" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}"
+```
+
+**Generate QR (Channel Token)**
+
+```bash
+curl -X GET "https://gate.whapi.cloud/users/login?wakeup=true" \
+  -H "authorization: {CHANNEL_TOKEN_FROM_CREATE_RESPONSE}" \
+  -H "accept: application/json"
+```
+
+---
+
+### 💡 **6. Functional Requirements Summary**
+
+* Remove **“Manual WHAPI Setup Required”** banner — users should never interact with WHAPI directly.
+* Use stored Partner Bearer Token (under Admin → WHAPI Integration Settings).
+* Handle channel creation, extension, deletion, and QR authorization automatically via backend.
+* Enforce **plan limits** and **days balance**:
+
+  * Cannot create more channels than plan allows.
+  * Must have ≥30 days to create a new channel.
+* Show “Insufficient Balance” or “Channel Limit Reached” messages only when limits are hit.
+* Allow admins to **update Partner Token** anytime from the WHAPI Settings page.
+
+---
+
+### ✅ **7. Expected Behavior Flow**
+
+1. User subscribes to a plan.
+2. Once plan is active → `POST /api/channels` → creates WHAPI channel via Partner API.
+3. Backend saves channel info (`id`, `token`, `status`).
+4. If days are added → extend channel using Partner API.
+5. If user deletes → system triggers `DELETE /channels/{ChannelID}`.
+6. When QR needed → call `GET /users/login` using **channel token** and render QR.
+
+No user should ever see any WHAPI-related setup or instructions — everything runs in the backend automatically.
+
+---
+
+### 🚀 **8. What to Implement Immediately**
+
+1. Remove any “Manual WHAPI Setup” or “contact support to enable” banners.
+2. Add proper backend routes (create, extend, delete, QR) as shown above.
+3. Use the existing **server-side HTTP request logic** (like chatbot test message requests).
+4. Ensure the Partner Token is used exactly as stored (no “Bearer ” duplication).
+5. Confirm deletion and extension work directly with WHAPI API.
+6. Ensure balance days and plan restrictions are enforced system-wide.
+
+---
+
+This integration is entirely possible using your **existing backend HTTP infrastructure** — it doesn’t require new backend functions, external servers, or manual user setup.
+
+Please proceed accordingly and confirm once the above automation flow has been implemented.
+
+Best regards,
+**Yassine**
+OmniPlus / OmniPro Technical Management
+📧 [omniplus.bh@gmail.com](mailto:omniplus.bh@gmail.com)
+📞 +973
+
+---
+
+Would you like me to add a **short two-line summary** for quick chat use (e.g., “Please use the same HTTP module you used for chatbot test messages…”)?

@@ -1,0 +1,245 @@
+You are creating channel locally in the app,, which you should create using Partner API Call, check and follow the steps as mentioned below, also check the attached screenshot of HTTP request of creating channel and response. 
+________________________________________
+0) Context
+OmniPlus WA Tracker is integrated with the WHAPI Partner API for managing WhatsApp channels and billing.
+Several features are currently UI-only (non-functional) or incomplete.
+This final prompt defines all missing or incomplete features that must be made fully operational and API-connected.
+________________________________________
+1) Channel Management — Full Functionality Required
+a. Create Channel (Partner API Call)
+When the user with an active plan clicks Add Channel, the system must call the WHAPI Partner API, not simulate it.
+Endpoint:
+PUT https://manager.whapi.cloud/channels
+Headers:
+Authorization: Bearer {partner_bearer_token}
+Content-Type: application/json
+Body Example:
+{
+  "name": "{ChannelName}",
+  "phone": "{CustomerPhone}",
+  "projectid": "HPN0H0hFDL1GFg154PI"
+}
+Response Fields to Save:
+•	id → channel_ref
+•	token → channel_token
+•	phone → whatsapp_number
+•	status → status
+•	stopped → stopped
+•	creationTS → created_at
+Immediately after creation, confirm with:
+GET https://manager.whapi.cloud/channels/{ChannelID}
+Store the confirmed channel data in the channels table.
+________________________________________
+b. Delete Channel (Partner API Call)
+When a user deletes a channel:
+Endpoint:
+DELETE https://manager.whapi.cloud/channels/{ChannelID}
+Headers:
+Authorization: Bearer {partner_bearer_token}
+Behavior:
+•	Deletes channel in WHAPI Manager.
+•	Removes channel record from local DB.
+•	WHAPI automatically returns unused days to the partner balance.
+UI Confirmation:
+“Channel deleted successfully. Unused days have been credited back to your balance.”
+________________________________________
+c. Extend Channel (Activate After Days Allocation)
+When days are added (after payment approval or renewal):
+POST https://manager.whapi.cloud/channels/{ChannelID}/extend
+Headers:
+Authorization: Bearer {partner_bearer_token}
+Content-Type: application/json
+Body:
+{
+  "days": 30,
+  "comment": "Auto top-up for {user_email}"
+}
+✅ On success:
+•	Mark status = active
+•	Deduct 30 days from user_balances
+________________________________________
+d. QR Authorization (Client Linking)
+Once the channel is active, generate a QR using the channel’s token, not the partner token.
+Endpoint:
+GET https://gate.whapi.cloud/users/login?wakeup=true
+Headers:
+accept: application/json
+authorization: Bearer {channel_token}
+Response Example:
+{
+  "qr": "data:image/png;base64,....",
+  "expires_in": 60
+}
+Frontend Behavior:
+•	Display the QR with countdown (60s).
+•	Add “Refresh QR” button (re-run API).
+•	Once scanned → update:
+o	auth_status = authorized
+o	status = active
+o	stopped = false
+•	Display:
+“Channel connected successfully and now active.”
+________________________________________
+2) Partner Bearer Token Management
+The Partner Bearer Token must be stored in admin settings and used globally for all WHAPI Partner operations.
+Admin → Settings → WHAPI Integration
+Field	Description
+Partner Bearer Token	Securely stored and used for all Partner API calls
+Webhook Secret (optional)	For verifying incoming webhook requests
+Test Connection Button	Confirms token validity with live API call
+If the token is missing or invalid:
+•	All WHAPI API calls fail gracefully.
+•	Display an admin banner:
+“WHAPI Partner Token missing or invalid — please update integration settings.”
+________________________________________
+3) Plan Enforcement — Apply Limits Globally
+Currently, plans are visual only.
+All plan limits must now be enforced system-wide:
+Plan Attribute	Enforcement Rule
+channels_limit	Prevent user from creating more channels than allowed. Block with: “Channel limit reached for your plan.”
+daily_messages_limit	Restrict total outgoing messages per day.
+bulk_messages_limit	Restrict total bulk sends per plan cycle.
+billing_period	Determines how many days are allocated (30, 180, 365).
+request_type	Controls action button label: “Subscribe”, “Request Quote”, or “Book Demo.”
+✅ Example:
+User with Starter Plan (1 Channel) must not be able to add “Second Channel.”
+________________________________________
+4) Payment & Subscription Flow (Fully Functional)
+a. Subscribe Flow
+When a user clicks “Subscribe”:
+•	Modal appears with two options:
+1.	Pay via PayPal (auto activates plan)
+2.	Offline Payment (manual approval)
+b. Offline Payment Submission
+User uploads payment proof + reference.
+Record created in:
+user_offline_payments
+Field	Description
+user_id	FK
+plan_id	FK
+proof_url	File URL
+reference	Text
+status	pending / approved / rejected
+reviewed_by	Admin ID
+reviewed_at	Timestamp
+c. Admin Review
+Admin → Payments → Pending
+•	Preview proof
+•	Approve or Reject
+•	On Approve:
+o	Mark plan active
+o	Credit plan days (based on billing period)
+o	Allow channel creation
+o	Notify user:
+“Your plan is now active. You can add your first WhatsApp channel.”
+________________________________________
+5) Days Balance Tracking
+Table: user_balances
+Field	Description
+user_id	FK
+days_total	Total credited
+days_consumed	Used
+days_remaining	Computed (total - consumed)
+last_update	Timestamp
+Logic
+•	When plan activated → credit total days.
+•	When channel extended → deduct same.
+•	Display Days Remaining in Channels page (already UI present).
+When balance = 0 → block “Send,” “Bulk,” and “Add Channel.”
+________________________________________
+6) Partner Balance Webhook (Low Days)
+Webhook Table: partner_balance_notices
+Field	Description
+id	Auto
+current_days	Remaining partner days
+days_limit	Threshold
+received_at	Timestamp
+raw	JSON payload
+WHAPI webhook posts updates here when partner balance drops below threshold.
+Display in:
+Admin → Billing & Balances
+“Partner balance: {current_days} days remaining (updated {received_at})”
+________________________________________
+7) Admin Dashboard — Final Structure
+Settings → WHAPI Integration
+•	Partner token management
+•	Test connection
+•	Webhook info display
+Plans
+•	Add/Edit plan
+•	Fields: price, limits, billing period, features (JSON list), request_type (paid/quote/demo)
+Payments
+•	Tabs:
+o	Pending Offline Payments
+o	Approved Payments
+•	Preview proof image
+•	Approve/Reject actions
+Billing & Balances
+•	User plan overview:
+o	Plan name
+o	Channels used / limit
+o	Days remaining
+•	Partner balance widget
+Channels
+•	Show:
+o	Channel name
+o	Phone
+o	Status (pending, qr_generated, active, authorized)
+o	Buttons:
+	Extend Days
+	Show QR
+	Delete Channel
+•	Enforce plan limits and balance.
+________________________________________
+8) Database Schema Summary
+-- plans
+(id, name, price_bhd, billing_period, channels_limit,
+ daily_messages_limit, bulk_messages_limit, features jsonb,
+ paypal_plan_id, request_type enum('paid','request_quote','book_demo'),
+ is_active, created_at, updated_at)
+
+-- user_subscriptions
+(id, user_id, plan_id, status enum('pending','active','expired','canceled'),
+ start_at, end_at, payment_method enum('paypal','offline'),
+ offline_reference, approved_by, approved_at, created_at, updated_at)
+
+-- user_offline_payments
+(id, user_id, plan_id, proof_url, reference, status enum('pending','approved','rejected'),
+ reviewed_by, reviewed_at, created_at, updated_at)
+
+-- user_balances
+(user_id PK, days_total int default 0, days_consumed int default 0,
+ days_remaining generated always as (days_total - days_consumed),
+ last_update timestamp)
+
+-- channels
+(id, user_id, channel_ref, whatsapp_number, token,
+ status, stopped boolean, auth_status enum('pending','authorized'),
+ created_at, updated_at)
+
+-- partner_balance_notices
+(id, current_days int, days_limit int, received_at timestamp, raw jsonb)
+________________________________________
+9) Final Acceptance Criteria
+✅ Real WHAPI API integration (no mock data).
+✅ Channel creation verified in WHAPI dashboard.
+✅ Delete channel uses Partner Bearer Token and works correctly.
+✅ QR generation uses Channel Token.
+✅ QR refresh and expiry handled.
+✅ Channel states: pending → qr_generated → authorized.
+✅ Plan enforcement applied across all pages (channel limits, message limits).
+✅ Offline payments fully functional with approval flow.
+✅ WHAPI Partner Bearer Token editable in admin panel.
+✅ Webhook logs stored and displayed.
+✅ Balance counters accurate.
+✅ “Request Quote” and “Book Demo” plans behave correctly.
+✅ UI reflects all actions in real-time.
+✅ “Remove days” still excluded.
+________________________________________
+Would you like me to now turn this into a final formatted Base44 delivery email/ticket, including:
+•	Greeting
+•	Project context summary
+•	Structured deliverables list
+•	Acceptance checklist
+so you can send it directly to the Base44 team or include it in your project management system?
+

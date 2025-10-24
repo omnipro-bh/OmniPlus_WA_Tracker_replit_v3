@@ -1,0 +1,137 @@
+WHAPI Integration — Full Automation Implementation (Partner API & Channels)
+🔐 2. Token Handling
+•	The Partner API Bearer Token is stored under
+Admin → WHAPI Settings.. but for some reason Im not able to save the token (screenshot attached)
+•	The token already starts with "Bearer ", so do not prepend it again when sending requests.
+
+I will add the token below for your testing also 
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImExZDI2YWYyYmY4MjVmYjI5MzVjNWI3OTY3ZDA3YmYwZTMxZWIxYjcifQ.eyJwYXJ0bmVyIjp0cnVlLCJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vd2hhcGktYTcyMWYiLCJhdWQiOiJ3aGFwaS1hNzIxZiIsImF1dGhfdGltZSI6MTc2MDk0ODg5MCwidXNlcl9pZCI6Ilg0UG1vaXpBMjVWUjRicnlVeGpWd25sOGxSeDIiLCJzdWIiOiJYNFBtb2l6QTI1VlI0YnJ5VXhqVndubDhsUngyIiwiaWF0IjoxNzYwOTQ4ODkwLCJleHAiOjE4MjE0Mjg4OTAsImVtYWlsIjoib21uaXBsdXMuYmhAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsImZpcmViYXNlIjp7ImlkZW50aXRpZXMiOnsiZW1haWwiOlsib21uaXBsdXMuYmhAZ21haWwuY29tIl19LCJzaWduX2luX3Byb3ZpZGVyIjoicGFzc3dvcmQifX0.UB4m7RJDzlRgYxwPC3Qy7JdmU5xerH1ObWHhQHW3BcSEnCtQOQGK3If4O-1E_t4hNW0X65hu_ammADjpXJO2DjNfa7SduRz-0QMO_i9jNEEF0aNDDSKS-NQxLO470mDgKhvxdufqM_xsAcP1pGG4mzZMur-aj3bKifvCvEtkQb2Qj2zRatwu9DmA-C6lxJoFx-KA25EoUv16QFVpy7RPuLnFhq3yValiXW--Ftt6iUO2S41f4ovNzZc45zRZmaYxPcb_Wqxd8x0hKguvnaqsH0b1v-U1SQ6mACb_X7UHh5YjIWTXn8adBo2_joLHzT0E3aztcV4rAif4V8RN1J1NnA
+________________________________________
+🧠 3. Integration Logic Overview
+All WHAPI Partner API calls should be routed through your backend using the same server-side HTTP module you already use for chatbot message testing.
+The backend should handle:
+Function	API Endpoint	Token Used	Description
+Create Channel	PUT https://manager.whapi.cloud/channels	Partner Token	Creates a new customer WhatsApp channel
+Get Channel	GET https://manager.whapi.cloud/channels/{ChannelID}	Partner Token	Retrieves channel details
+Extend Channel	POST https://manager.whapi.cloud/channels/{ChannelID}/extend	Partner Token	Allocates extra days from partner balance
+Delete Channel	DELETE https://manager.whapi.cloud/channels/{ChannelID}	Partner Token	Deletes a channel and returns unused days
+Generate QR	GET https://gate.whapi.cloud/users/login?wakeup=true	Channel Token	Generates login QR for client WhatsApp linking
+________________________________________
+🧩 4. Exact Implementation (Server-Side Code)
+Below are the ready-to-implement Node.js-style examples for your backend (can also be done using your existing HTTP request module).
+// whapiService.js
+
+import axios from "axios";
+
+// Partner token from WHAPI Integration Settings
+// Token ALREADY starts with "Bearer "
+const PARTNER_TOKEN = await settings.get("whapi.partner_bearer_token");
+
+const partnerHeaders = {
+  Authorization: PARTNER_TOKEN,
+  Accept: "application/json",
+  "Content-Type": "application/json",
+};
+
+// 1️⃣ CREATE CHANNEL
+export async function createChannel({ name, phone, projectId }) {
+  const { data } = await axios.put(
+    "https://manager.whapi.cloud/channels",
+    { name, phone, projectid: projectId },
+    { headers: partnerHeaders }
+  );
+  return data; // includes id, token, phone, status, etc.
+}
+
+// 2️⃣ GET CHANNEL
+export async function getChannel({ channelId }) {
+  const { data } = await axios.get(
+    `https://manager.whapi.cloud/channels/${channelId}`,
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 3️⃣ EXTEND CHANNEL (Add Days)
+export async function extendChannel({ channelId, days, comment }) {
+  const { data } = await axios.post(
+    `https://manager.whapi.cloud/channels/${channelId}/extend`,
+    { days, comment },
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 4️⃣ DELETE CHANNEL
+export async function deleteChannel({ channelId }) {
+  const { data } = await axios.delete(
+    `https://manager.whapi.cloud/channels/${channelId}`,
+    { headers: partnerHeaders }
+  );
+  return data;
+}
+
+// 5️⃣ GENERATE QR (Channel Token)
+export async function generateQr({ channelToken }) {
+  const { data } = await axios.get(
+    "https://gate.whapi.cloud/users/login?wakeup=true",
+    {
+      headers: {
+        Authorization: channelToken, // Token from createChannel() response
+        Accept: "application/json",
+      },
+    }
+  );
+  return data; // includes QR code (base64) and expiration
+}
+________________________________________
+🧭 5. Example cURL Requests
+Partner token is from WHAPI Integration Settings (already includes “Bearer”).
+Create Channel
+curl -X PUT "https://manager.whapi.cloud/channels" \
+  -H "accept: application/json" \
+  -H "content-type: application/json" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}" \
+  -d '{ "name":"My Channel", "phone":"97313300383", "projectid":"HPN0H0hFDL1GFg154PI" }'
+
+keep in mind that the projectid is fix “HPN0H0hFDL1GFg154PI” so its not example
+Get Channel
+curl -X GET "https://manager.whapi.cloud/channels/{CHANNEL_ID}" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}"
+Extend Channel
+curl -X POST "https://manager.whapi.cloud/channels/{CHANNEL_ID}/extend" \
+  -H "accept: application/json" \
+  -H "content-type: application/json" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}" \
+  -d '{ "days": 30, "comment": "Auto top-up" }'
+Delete Channel
+curl -X DELETE "https://manager.whapi.cloud/channels/{CHANNEL_ID}" \
+  -H "authorization: {PARTNER_TOKEN_FROM_SETTINGS}"
+Generate QR (Channel Token)
+curl -X GET "https://gate.whapi.cloud/users/login?wakeup=true" \
+  -H "authorization: {CHANNEL_TOKEN_FROM_CREATE_RESPONSE}" \
+  -H "accept: application/json"
+________________________________________
+💡 6. Functional Requirements Summary
+•	Use stored Partner Bearer Token (under Admin → WHAPI Integration Settings).
+•	Handle channel creation, extension, deletion, and QR authorization automatically via backend.
+•	Enforce plan limits and days balance:
+o	Cannot create more channels than plan allows.
+•	After creation, the admin decide for each user >> either activate automated allocate days, or admin allocated manually 
+•	Allow admins to update Partner Token anytime from the WHAPI Settings page.
+________________________________________
+✅ 7. Expected Behavior Flow
+1.	User subscribes to a plan.
+2.	Once plan is active → POST /api/channels → creates WHAPI channel via Partner API.
+3.	Backend saves channel info (id, token, status).
+4.	If days are added → extend channel using Partner API.
+5.	If user deletes → system triggers DELETE /channels/{ChannelID}.
+6.	When QR needed → call GET /users/login using channel token and render QR.
+No user should ever see any WHAPI-related setup or instructions — everything runs in the backend automatically.
+________________________________________
+🚀 8. What to Implement Immediately
+1.	Add proper backend routes (create, extend, delete, QR) as shown above.
+2.	Use the existing server-side HTTP request logic 
+3.	Ensure the Partner Token is used exactly as stored (no “Bearer ” duplication).
+4.	Confirm deletion and extension work directly with WHAPI API.
+5.	Ensure balance days and plan restrictions are enforced system-wide.

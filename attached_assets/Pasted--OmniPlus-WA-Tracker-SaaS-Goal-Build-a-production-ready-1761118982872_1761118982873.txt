@@ -1,0 +1,210 @@
+________________________________________
+✅ OmniPlus WA Tracker (SaaS)
+Goal: Build a production-ready SaaS web app called OmniPlus WA Tracker for WhatsApp automation that follows WHAPI Partner billing logic. The app must include a landing site, an authenticated dashboard, messaging tools (Send, Bulk), a simple Chatbot Builder, Outbox/Jobs, Channels, Pricing & Plans, Admin billing & balances, and WHAPI Settings. The UI should match the look/structure in my screenshots: left sidebar (Home, Dashboard, Channels, Send, Bulk, Templates, Workflows, Chatbot, Outbox, Pricing, Admin, WHAPI Settings).
+________________________________________
+0) Stack & Project Layout
+•	Monorepo with two apps:
+o	apps/backend: Node + Express + Prisma + MySQL (REST API)
+o	apps/frontend: Next.js 14 (App Router) + Tailwind + React Query (SPA)
+•	Auth: JWT (httpOnly cookie) with roles: user, admin
+•	Queueing: In-memory queue for dev; recommend BullMQ + Upstash Redis (stub code + env)
+•	Cron: node-cron worker for daily tasks (decrement days, auto-suspend)
+•	Env/Secrets: Replit Secrets for all env vars
+•	Deployments: Replit Deployments (one for backend API/webhook, one for frontend)
+Commands
+•	Backend: npm run dev, npm run build, npm start
+•	Frontend: npm run dev, npm run build, npm start
+Expose Backend on port 4000, Frontend on 3000.
+NEXT_PUBLIC_API_BASE_URL must point to backend URL.
+________________________________________
+1) Data Model (Prisma)
+Create Prisma models and migrations for:
+•	User { id, name, email (unique), passwordHash, role (user|admin), daysBalance (int, default 0), status (active|suspended|expired), createdAt, updatedAt }
+•	Plan { id, name, price, currency, durationDays (30/180/365), channelsLimit, dailyMessagesLimit, bulkMessagesLimit, features (Json), paypalPlanId?, createdAt, updatedAt }
+•	Subscription { id, userId, planId, status (PENDING|ACTIVE|EXPIRED|CANCELLED), startDate, endDate, durationType (MONTHLY|SEMI_ANNUAL|ANNUAL), durationDays, discountPercent (0|5|10), createdAt, updatedAt }
+•	OfflinePayment { id, userId, planId, amount, currency, reference?, proofUrl?, status (PENDING|APPROVED|REJECTED), createdAt, updatedAt }
+•	Channel { id, userId, label, phone, status (ACTIVE|PAUSED|PENDING_AUTH), whapiChannelId?, createdAt, updatedAt }
+•	Template { id, userId, title, header?, body, footer?, buttons (string[]), createdAt, updatedAt }
+•	Job { id, userId, type (SINGLE|BULK), status (QUEUED|PENDING|SENT|DELIVERED|READ|FAILED|PARTIAL), total, queued, pending, sent, delivered, read, failed, replied, createdAt, updatedAt }
+•	Message { id, jobId, to, name?, email?, body, header?, footer?, buttons (string[]), status (QUEUED|PENDING|SENT|DELIVERED|READ|FAILED|REPLIED), lastReplyAt?, error?, createdAt, updatedAt }
+•	Workflow (basic) { id, userId, name, definitionJson, createdAt, updatedAt } // for Chatbot blocks/routing storage
+•	AuditLog { id, userId?, action, meta Json, createdAt }
+Seed one admin user and one Starter plan.
+________________________________________
+2) Environment Variables
+Backend .env:
+PORT=4000
+DATABASE_URL=  # MySQL (PlanetScale or local)
+JWT_SECRET=change_me
+WHAPI_PARTNER_TOKEN=
+WHAPI_BASE=https://manager.whapi.cloud
+REDIS_URL=   # optional for BullMQ
+STORAGE_BUCKET=  # optional (Cloudflare R2/S3) for receipts
+STORAGE_ACCESS_KEY=
+STORAGE_SECRET_KEY=
+CORS_ORIGIN=http://localhost:3000
+Frontend .env:
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+________________________________________
+3) API Overview (Express)
+Auth
+•	POST /api/auth/register {name,email,password} → create user, set cookie
+•	POST /api/auth/login {email,password} → verify, set cookie
+•	POST /api/auth/logout → clear cookie
+•	GET /api/me → returns current user + plan status + channels used/limit + daysBalance
+Plans & Subscriptions
+•	GET /api/plans
+•	POST /api/subscribe {planId, durationType} → create Subscription with PENDING (for PayPal) or directly ACTIVE for testing
+•	POST /api/subscribe/offline {planId, amount, currency, reference?, file?} → OfflinePayment:PENDING
+•	Admin
+o	GET /api/admin/offline-payments?status=PENDING
+o	POST /api/admin/offline-payments/:id/approve (+credit days)
+o	POST /api/admin/offline-payments/:id/reject
+o	POST /api/admin/users/:id/add-days {days}
+o	POST /api/admin/users/:id/remove-days {days}
+Channels
+•	GET /api/channels (user scoped)
+•	POST /api/channels {label, phone} // enforce plan active + slot available
+•	DELETE /api/channels/:id
+•	POST /api/channels/:id/pause / …/resume
+•	GET /api/channels/:id/qrcode (stub for WHAPI pending auth)
+•	Admin/WHAPI
+o	POST /api/channels/:id/extend {days} → calls WHAPI POST /channels/{CHANNEL_ID}/extend
+Messaging
+•	POST /api/messages/send {channelId, to, name?, email?, header?, body, footer?, buttons[]}
+→ create Job(type=SINGLE) + Message; enqueue to send via WHAPI
+•	POST /api/messages/bulk {channelId, rows:[{name,phone,message}], templateId?}
+→ create Job(type=BULK); enqueue all; return jobId
+Outbox/Jobs
+•	GET /api/jobs → list user jobs
+•	GET /api/jobs/:id → job stats + messages list (status, buttons, errors)
+Templates
+•	CRUD endpoints for templates
+Workflows / Chatbot
+•	GET /api/workflows | POST /api/workflows | PUT /api/workflows/:id | DELETE …
+•	POST /webhooks/whapi // incoming WA messages: look up user/channel; route into Workflow; create replies by calling WHAPI
+Admin Dashboards
+•	GET /api/admin/users (with plan, channels used/limit, days remaining)
+•	GET /api/admin/metrics (counts, messages sent today, etc.)
+Make sure all writes log to AuditLog.
+________________________________________
+4) Business Rules
+Subscription & Days Balance
+•	On plan activation:
+o	Monthly → +30 days
+o	Semi-Annual → +180 days (apply 5% discount in Subscription.discountPercent)
+o	Annual → +365 days (10% discount)
+•	Each active channel consumes 1 day per real day.
+•	When daysBalance <= 0: set User.status = 'expired', pause all channels, block Send/Bulk and show banner.
+•	Admin can Add/Remove Days. Deleting a channel refunds remaining proportional days for that channel (simple rule: refund 1 day if deleted the same day; otherwise skip for MVP).
+Messaging Limits
+•	Enforce dailyMessagesLimit and bulkMessagesLimit per plan; surface a Daily Sending Limit progress bar in Bulk page.
+Rate Limiting & Queue
+•	Enqueue WHAPI sends; send sequentially per channel with a small delay (e.g., 1 msg/sec) to avoid throttling.
+•	Update Message.status through queued lifecycle; update Job counters.
+________________________________________
+5) Pages (Frontend, Next.js)
+5.1 Landing (public)
+•	Hero with headline/CTAs (“Start Free Trial”, “Book a Demo”)
+•	Stats band: 50K+ Active Users, 1M+ Messages Delivered, 99.9% Uptime SLA, 24/7 Support
+•	Features, Use Cases, Pricing table (Starter, Growth, Advanced, Enterprise)
+•	Top-right buttons: Log In, Sign Up
+•	Clicking Start Free Trial → Sign Up
+5.2 Auth Pages
+•	/signup: name, email, password → POST register → redirect to /channels
+•	/login: email, password → POST login → redirect to /channels
+5.3 Dashboard (authenticated)
+•	Cards: Channels Used/Limit, Days Remaining, Current Plan, Messages sent today
+•	Banner if no active plan:
+“Please subscribe to a plan to activate your account and start adding channels.”
+Button → Pricing
+5.4 Channels
+•	Top info bar: Available Days (green if >0, red if 0 or negative), Channel Limit Used / Total
+•	Card list of Channels (status chips: Pending Auth, Active, Paused); each card has “Show QR Code”, Pause/Resume, Delete
+•	Add Channel button disabled if:
+o	no active plan OR
+o	channels used >= limit
+5.5 Send (single message)
+•	Form like screenshot:
+o	Sender Channel (dropdown)
+o	Template (optional)
+o	Phone, Name, Email
+o	Header, Body, Footer, Buttons (up to 3)
+•	Right side: Live Preview Card
+•	“Send Message” → POST /api/messages/send → show toast + link “View in Outbox”
+5.6 Bulk
+•	“Daily Sending Limit” progress bar (e.g., 1 / 100)
+•	Controls: Select Channel
+•	Table of rows parsed from uploaded CSV (Name, Phone, Message)
+•	Buttons: Upload CSV, Send X Messages, Clear
+•	Posting creates a Job; link to job details
+5.7 Templates
+•	CRUD list with create/edit modal (title, header/body/footer, buttons[])
+•	“Use in Send” shortcut fills Send form
+5.8 Workflows (Chatbot Builder)
+•	Webhook & Credentials section:
+o	Show the Incoming Webhook URL: ${BACKEND_URL}/webhooks/whapi
+o	Input: WHAPI Authorization Token stored per user (or in Admin settings)
+•	Tabs: Blocks, Greeting, Routing, Debug
+•	Blocks list with create/edit (type: Text, Quick Reply, List), content editor, test button to send sample to a number
+•	Simple routed flow stored in Workflow.definitionJson
+•	Export/Import as JSON
+5.9 Outbox
+•	List of jobs (type, createdAt, counts: pending/sent/delivered/read/failed/replied)
+•	Job Details (like screenshot): top stats + messages table with status & buttons
+5.10 Pricing
+•	Plans (Starter/Growth/Advanced/Enterprise), duration toggles: Monthly, Semi-Annual (-5%), Annual (-10%)
+•	Buttons: Subscribe with PayPal and Offline Payment
+•	Offline Payment opens upload modal (proof image/pdf + reference + amount/currency) → creates PENDING record and shows “Awaiting admin approval”
+5.11 Admin
+•	Billing & Balances table:
+o	Columns: User, Email, Current Plan, Channels Used/Limit, Days Remaining, Subscription Status
+o	Actions per row: Add Days, Remove Days, Extend Plan (calls /channels/{id}/extend), Approve Offline Payment (on separate Pending list)
+•	Offline Payments (Pending) list with Approve/Reject
+5.12 WHAPI Settings
+•	For admin: set global WHAPI_PARTNER_TOKEN, test button to ping WHAPI
+•	For user (optional): per-user auth token field if needed
+________________________________________
+6) Webhooks & Integrations
+•	Incoming webhook: POST /webhooks/whapi
+Accepts incoming WA messages, associates to User/Channel by phone/whapiChannelId, appends to Message with REPLIED when applicable.
+If Workflow exists, auto-reply using WHAPI send endpoint.
+•	Extend Channel (WHAPI)
+When admin extends a user or reactivates, call:
+POST {WHAPI_BASE}/channels/{CHANNEL_ID}/extend with Bearer {WHAPI_PARTNER_TOKEN} and body { "days": N, "comment": "Auto top-up for {user_email}" }.
+________________________________________
+7) Background Jobs
+•	Daily Task (node-cron):
+o	For each active user, subtract 1 day per active channel
+o	When daysBalance <= 0: set status=expired, pause all channels
+o	Email/notification placeholder (log only)
+•	Queue Worker:
+o	Processes Message queue (sequential per channel, small delay)
+o	Updates Message.status and Job counters accordingly
+Provide npm run worker script. In Replit, this can be a separate Deployment.
+________________________________________
+8) UX/Styling
+•	Clean, minimal UI similar to screenshots: left sidebar navigation; content area with cards/tables; chips for status (Active, Pending, Paused)
+•	Tailwind + shadcn/ui components recommended (buttons, modal, table, tabs, toast)
+•	Mobile-responsive
+________________________________________
+9) Definition of Done
+•	All pages listed above function end-to-end against the backend
+•	Auth works; protected routes redirect to /login
+•	Subscription gating: Add Channel, Send, Bulk disabled if no active plan or days ≤ 0
+•	Outbox/job flows show live state (poll every 5s)
+•	Admin can view/approve offline payments and adjust balances
+•	.replit or Deployment config set so:
+o	Backend Deployment exposes PORT=4000
+o	Frontend Deployment builds and serves Next.js, pointing to backend URL
+•	README with:
+o	local run commands,
+o	env var list,
+o	how to import seed admin,
+o	how to set WHAPI token,
+o	how to test Send/Bulk with a dry-run flag
+Seed admin:
+email: admin@omniplus.local
+password: admin123
+role: admin
+________________________________________

@@ -1,0 +1,105 @@
+________________________________________
+Feature: Admin Main Balance (Days)
+Goal
+•	Keep a single Admin Main Balance (in days).
+•	When days are allocated/extended to a channel, deduct from this balance.
+•	When a channel is deleted, return the unused days back to Admin automatically.
+________________________________________
+Data Model
+1) settings (or admin_balances)
+•	main_days_balance: number (default 0)
+2) balance_transactions
+•	id
+•	type ∈ {topup, allocate, refund, sync}
+•	days: number (positive integer)
+•	channel_id (nullable)
+•	user_id (nullable)
+•	note: string
+•	created_at: datetime
+3) channels (add/confirm fields)
+•	channel_ref (WHAPI id)
+•	channel_token
+•	status ∈ {PENDING, ACTIVE, PAUSED}
+•	auth_status ∈ {PENDING, AUTHORIZED}
+•	active_from: datetime (set on extend success)
+•	expires_at: datetime (active_from + days*24h)
+________________________________________
+UI
+Admin → Balances
+•	Card: Main Balance: X days
+•	Buttons:
+o	Top Up Balance (manual add days; logs topup)
+o	View Transactions (table of balance_transactions)
+•	Toggle exists already for auto-allocation (keep as-is).
+Admin → Users → Channels
+•	When clicking Activate (30 days):
+o	Check main_days_balance >= 30
+o	If not, show: “Insufficient main balance. Top up in Admin → Balances.”
+o	If yes, proceed with WHAPI extend, then deduct and log.
+________________________________________
+Allocation Flow (Activation / Extend)
+Pre-check
+•	Ensure main_days_balance >= requested_days.
+Call WHAPI
+POST https://manager.whapi.cloud/channels/{CHANNEL_ID}/extend
+Headers:
+  Authorization: Bearer {partner_bearer_token}
+  Content-Type: application/json
+Body:
+{
+  "days": <requested_days>,
+  "comment": "Top-up for {user_email}"
+}
+On success
+•	active_from = now()
+•	expires_at = now() + (days * 24h)
+•	status = ACTIVE (even if auth_status = PENDING)
+•	Decrement main_days_balance by days.
+•	Insert balance_transactions row:
+o	type = 'allocate'
+o	days = requested_days
+o	channel_id
+o	user_id
+o	note = "WHAPI extend successful"
+On failure
+•	Do not change balances.
+•	Show WHAPI error text.
+________________________________________
+Delete Channel → Refund Unused Days
+1) Compute remaining days locally (best-effort):
+remaining_days = max(0, floor((expires_at - now()) / 86400))
+2) Call WHAPI delete
+DELETE https://manager.whapi.cloud/channels/{CHANNEL_ID}
+Headers:
+  Authorization: Bearer {partner_bearer_token}
+  Accept: application/json
+3) On success
+•	Remove channel record.
+•	Add remaining_days back to main_days_balance.
+•	Insert balance_transactions row:
+o	type = 'refund'
+o	days = remaining_days
+o	channel_id (the deleted one)
+o	note = "WHAPI delete successful — unused days returned"
+Note: WHAPI also auto-credits unused days on delete. Our local add-back keeps UI in sync immediately. If later we add a webhook for refunds, we can reconcile via a type='sync' transaction.
+4) On failure
+•	Do not alter balances; show WHAPI error.
+________________________________________
+Business Rules
+•	Countdown starts immediately when days are extended (24-hour blocks from the extend moment), even if QR not scanned.
+•	QR linking does not pause or change expiry.
+•	When now >= expires_at → set status = PAUSED/EXPIRED; block messaging & QR until extended again.
+•	All balance changes must create a transaction row.
+________________________________________
+Edge Cases
+•	Partial-day remainder: use floor() for refund calculation to avoid over-crediting.
+•	Re-extend before expiry: set expires_at = max(now(), expires_at) + (days * 24h) to preserve remaining time.
+•	Insufficient main balance: block extend with a clear CTA to Admin → Balances.
+________________________________________
+Acceptance Checklist
+•	Admin can top up main balance; transaction logged.
+•	Activation deducts from main balance only on successful WHAPI extend; timestamps set; transaction logged.
+•	Deleting a channel calls WHAPI and credits back remaining whole days; transaction logged.
+•	Channel cards show Expires on and Days left; note that days run from allocation time.
+•	No extend proceeds if main balance is insufficient.
+

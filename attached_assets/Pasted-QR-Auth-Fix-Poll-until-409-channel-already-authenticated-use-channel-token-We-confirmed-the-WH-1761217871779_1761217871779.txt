@@ -1,0 +1,67 @@
+QR Auth Fix — Poll until 409 “channel already authenticated” (use channel token)
+We confirmed the WHAPI behavior for QR auth:
+•	GET https://gate.whapi.cloud/users/login?wakeup=true with Authorization: Bearer {channel_token}
+o	200 + base64 → QR generated (show it + start countdown using expire)
+o	409 → channel already authenticated (this is the success signal after the user scans)
+o	406/422 or status: TIMEOUT/ERROR → QR expired/failed (offer Refresh QR)
+Please update the modal logic to poll the same endpoint after initially showing the QR and stop when you receive 409, then mark the channel as authorized.
+Required behavior
+1.	On “Show QR Code”
+o	Call /users/login?wakeup=true with the channel token.
+o	Render base64 image and start a 60s countdown from expire.
+2.	Poll every 2s (or use setInterval) while the countdown is running:
+o	Call the same endpoint again with the channel token.
+o	If response is:
+	409 → close modal, set auth_status = "AUTHORIZED", stopped = false, show toast “Channel connected and active.”
+	200 with base64 → keep showing current QR (don’t overwrite unless you pressed “Refresh QR”).
+	TIMEOUT / 406 / 422 → show “QR expired”, enable Refresh QR (re-call endpoint, reset timer).
+	Other errors → show WHAPI message.
+3.	Do not flip to Authorized until 409 is returned.
+Minimal code sketch (browser)
+const headers = {
+  accept: 'application/json',
+  authorization: `Bearer ${channelToken}`, // channel token, not partner
+};
+
+async function getQr() {
+  const r = await fetch('https://gate.whapi.cloud/users/login?wakeup=true', { headers });
+  if (r.status === 409) return onAuthorized(); // already authenticated
+  if (!r.ok) return onError(await r.json());
+
+  const data = await r.json(); // { status, base64, expire }
+  showQr(data.base64); // render QR image
+  const deadline = Date.now() + (data.expire * 1000);
+
+  const tick = async () => {
+    if (Date.now() >= deadline) return onExpired();
+
+    const rr = await fetch('https://gate.whapi.cloud/users/login?wakeup=true', { headers });
+    if (rr.status === 409) return onAuthorized();
+
+    const body = await rr.json().catch(() => null);
+    if (rr.status === 406 || body?.status === 'TIMEOUT') return onExpired();
+    setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 2000);
+}
+
+function onAuthorized() {
+  updateChannel({ auth_status: 'AUTHORIZED', stopped: false });
+  closeModal();
+  toast.success('Channel connected and active.');
+}
+
+function onExpired() {
+  showExpiredUI(); // enable “Refresh QR” which calls getQr() again
+}
+
+function onError(e) {
+  toast.error(e?.error?.message || 'QR error');
+}
+Acceptance
+•	QR image loads immediately (base64).
+•	Modal polls until 409, then auto-closes and sets AUTHORIZED.
+•	Expired QR gracefully prompts Refresh QR.
+•	Uses channel token only for QR; partner token is never used here.
+Thanks!
+

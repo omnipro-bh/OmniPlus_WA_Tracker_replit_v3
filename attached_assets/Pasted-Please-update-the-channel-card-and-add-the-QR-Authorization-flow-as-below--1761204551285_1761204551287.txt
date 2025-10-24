@@ -1,0 +1,57 @@
+Please update the channel card and add the QR Authorization flow as below.
+________________________________________
+1) Channel card adjustments
+•	Show Channel Token in full (no truncation).
+o	Field: channel_token (value returned by WHAPI on create/confirm).
+o	Add a small Copy icon next to it.
+Layout example (all visible):
+•	Channel Ref: channel_ref
+•	Channel Token: xxxxxxxx… → show the entire string
+•	WhatsApp Number: whatsapp_number
+•	Status badges: status, auth_status
+•	Created At, Stopped
+________________________________________
+2) Add “QR Authorization” action (channel linking)
+•	Button label: “Show QR Code”
+•	Enable only when:
+o	status === 'ACTIVE'
+o	channel not expired (time now < expires_at)
+•	Disable (with tooltip) when:
+o	no days available / expired (user must extend first)
+API call (use CHANNEL token, not partner token)
+GET https://gate.whapi.cloud/users/login?wakeup=true
+Headers:
+  accept: application/json
+  authorization: Bearer {channel_token}   // <-- IMPORTANT
+Expected response
+{
+  "status": "OK",
+  "expire": 60,
+  "base64": "data:image/png;base64,...."
+}
+UI behavior
+•	Open a modal with:
+o	the QR image (base64)
+o	a 60-second countdown using the expire value
+o	Refresh QR button that re-calls the same endpoint (using the same channel token)
+o	helper text: “Open WhatsApp → Settings → Linked Devices → Link a device, then scan this QR”
+•	On successful scan (poll channel state or let user confirm):
+o	set auth_status = 'AUTHORIZED'
+o	set stopped = false
+o	keep status = 'ACTIVE' (unchanged)
+o	show toast: “Channel connected successfully and now active.”
+(If you already have a polling endpoint for channel state, reuse it; otherwise, leave the ‘Close’ button and user can re-open to refresh.)
+Error handling
+•	If the API returns an error, show the actual WHAPI error text in the toast.
+•	If token is invalid/expired, instruct the admin to re-confirm the channel from WHAPI or re-create.
+________________________________________
+3) Security note
+•	This QR endpoint must use the per-channel token (the string we save in channel_token).
+•	Do not send the partner token here. The partner token is only for admin operations (create, extend, delete).
+________________________________________
+4) Acceptance criteria
+•	Channel token is fully visible and copyable on the card.
+•	“Show QR Code” opens a modal with the QR and a working 60s countdown.
+•	“Refresh QR” re-fetches and updates the image + timer.
+•	After scanning, auth_status updates to AUTHORIZED, and the success toast appears.
+•	Button is disabled when there are 0 days or expired, with a tooltip to extend days.

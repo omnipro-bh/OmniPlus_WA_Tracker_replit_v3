@@ -1,0 +1,78 @@
+________________________________________
+1) Send page – use WHAPI Interactive message API
+When the user hits Send Message, call WHAPI with the Channel Token (NOT the partner token).
+Endpoint
+POST https://gate.whapi.cloud/messages/interactive
+Authorization: Bearer {channel_token}
+Accept: application/json
+Content-Type: application/json
+Request body (map from the form)
+{
+  "header": { "text": "<Header from form (optional)>" },
+  "body":   { "text": "<Body from form (required)>" },
+  "footer": { "text": "<Footer from form (optional)>" },
+  "action": {
+    "buttons": [
+      { "type": "quick_reply", "title": "<Button 1 text>", "id": "btn1" },
+      { "type": "quick_reply", "title": "<Button 2 text>", "id": "btn2" },
+      { "type": "quick_reply", "title": "<Button 3 text>", "id": "btn3" }
+    ]
+  },
+  "type": "button",
+  "to": "<E.164 recipient, e.g. 97339116526>"
+}
+What to save on success make sure Multi-tenant schema (no data mixing): 
+Persist one job and one message row:
+•	jobs
+o	id (uuid)
+o	channel_id (fk to channels)
+o	status = pending (initial)
+o	created_at
+•	messages
+o	id (uuid)
+o	job_id (fk)
+o	to (msisdn)
+o	body
+o	header footer
+o	buttons (json)
+o	provider_message_id (string from WHAPI response if returned)
+o	status = pending (enum: pending|sent|delivered|read|failed|replied)
+o	last_reply_at (timestamp, nullable)
+o	error (nullable text)
+o	created_at, updated_at
+After sending, show a toast: “Message queued. Track status in Outbox.”
+________________________________________
+2) Outbox page
+•	Show a Job Details screen with:
+o	Job totals: queued, pending, sent, delivered, read, failed, replied
+o	Table of messages (status, last reply/button, updated_at)
+•	Clicking a message opens a minimal drawer with the WHAPI payload we stored for debugging.
+________________________________________
+________________________________________
+4) Minimal code shapes (TypeScript/Node inside our app)
+Send interactive
+async function sendInteractiveMessage(channelToken: string, payload: any) {
+  const res = await fetch('https://gate.whapi.cloud/messages/interactive', {
+    method: 'POST',
+    headers: {
+      'authorization': `Bearer ${channelToken}`,
+      'accept': 'application/json',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'WHAPI send failed');
+  return data; // save provider_message_id if present
+}
+________________________________________
+5) UX copy
+•	After sending: “Message queued. Track delivery in Outbox → Job Details.”
+•	In Outbox: show live counters and per-message statuses.
+•	Show a small pill when a button is clicked: Confirmed, Reschedule, etc., with timestamp.
+•	Messages when it reach the limit as per the plan, then sending button should be disabled with note “ you have reached daily/ or monthly sending>> upgrade to send more”
+________________________________________
+Notes / Constraints
+•	Always use the Channel Token for sending messages/bulksending/chatbot . Never use the partner token here.
+
