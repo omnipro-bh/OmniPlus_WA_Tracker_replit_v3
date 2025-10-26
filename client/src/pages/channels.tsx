@@ -544,22 +544,20 @@ export default function Channels() {
                 )}
               </CardContent>
               <CardFooter className="flex gap-2">
-                {channel.status === "ACTIVE" && channel.authStatus === "AUTHORIZED" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm("Are you sure you want to logout this channel from WhatsApp? You will need to scan the QR code again to reconnect.")) {
-                        logoutChannelMutation.mutate(channel.id);
-                      }
-                    }}
-                    disabled={logoutChannelMutation.isPending}
-                    data-testid={`button-logout-${channel.id}`}
-                  >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("Are you sure you want to logout this channel from WhatsApp? You will need to scan the QR code again to reconnect.")) {
+                      logoutChannelMutation.mutate(channel.id);
+                    }
+                  }}
+                  disabled={logoutChannelMutation.isPending || !channel.whapiChannelToken}
+                  data-testid={`button-logout-${channel.id}`}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
