@@ -1,0 +1,49 @@
+Does IPv4 vs IPv6 affect our Supabase CERT_HAS_EXPIRED / DB connectivity?
+
+Context (condensed):
+
+App on Ubuntu 22.04 VPS (Node 20, PM2).
+
+We originally saw CERT_HAS_EXPIRED when connecting to Supabase Realtime / DB. We refreshed CA bundle (ca-certificates 20240203), confirmed ISRG Root X1 present, and restarted Node.
+
+We then moved to a new Supabase project. Now the logs primarily show DNS/connectivity errors to the DB host.
+
+What I’m seeing now:
+
+Supabase → Connection String → Direct connection shows a banner: “Not IPv4 compatible”.
+
+My VPS is IPv4-only (no IPv6).
+
+Logs:
+
+Realtime (wss): Error: getaddrinfo ENOTFOUND db.<old-project>.supabase.co (legacy host still appears in some logs).
+
+DB TCP test (IPv4 only): nc -vz db.<new-project>.supabase.co 443 → Cannot assign requested address to an IPv6 address (2a05:…).
+
+DNS status (resolvectl): name resolves to AAAA (IPv6) and not an IPv4 A record for the direct DB endpoint.
+
+My questions:
+
+Can an IPv4-only VPS cause or appear like CERT_HAS_EXPIRED errors when a Supabase endpoint is IPv6-only (i.e., failure to connect over IPv6 first, then TLS errors in app logs)?
+
+For an IPv4-only VPS, is the recommended path to use Session Pooler (port 6543) instead of Direct connection (port 5432), since the pooler is IPv4 compatible?
+
+If we enable IPv6 on the VPS (or buy Supabase’s IPv4 add-on), would that make the Direct connection work and eliminate the errors?
+
+Any Replit-specific guidance to ensure Node uses the system CA store and avoids stale chain issues (e.g., NODE_OPTIONS="--use-openssl-ca"), or is the IPv6/IPv4 mismatch the real root cause here?
+
+Extra details to help reproduce/verify:
+
+OS CA bundle: dpkg -l | grep ca-certificates → 20240203
+
+Chain check (HTTPS 443): openssl s_client -connect db.<new-project>.supabase.co:443 -showcerts | openssl x509 -noout -subject -issuer -dates → leaf is *.supabase.co, valid; issue seems to be connectivity, not cert.
+
+Supabase UI explicitly says Not IPv4 compatible for Direct connection on our project.
+
+What I want to do next (need confirmation):
+
+Switch .env DATABASE_URL to the Session Pooler URI from the Supabase UI (port 6543, sslmode=require) and keep everything else the same.
+
+Alternatively, enable IPv6 on the VPS or purchase the Supabase IPv4 add-on to keep Direct connection.
+
+Does this plan make sense, and is there any reason the IPv4/IPv6 situation would still manifest as CERT_HAS_EXPIRED in logs?
