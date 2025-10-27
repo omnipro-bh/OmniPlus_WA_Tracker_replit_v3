@@ -86,7 +86,8 @@ export default function Send() {
   });
 
   const activeChannels = channels.filter((c) => c.status === "ACTIVE");
-  const canSend = user?.status === "active" && activeChannels.length > 0;
+  const authorizedChannels = activeChannels.filter((c) => c.authStatus === "AUTHORIZED");
+  const canSend = user?.status === "active" && authorizedChannels.length > 0;
 
   const handleTemplateSelect = (templateId: string) => {
     const template = templates.find((t) => t.id === parseInt(templateId));
@@ -253,17 +254,22 @@ export default function Send() {
               <p className="text-sm text-muted-foreground text-center">
                 {user?.status !== "active" ? (
                   <>
-                    Your account is {user?.status}. Please{" "}
-                    <Link href="/pricing">
-                      <a className="text-primary hover:underline">renew your subscription</a>
-                    </Link>
+                    Your account is {user?.status}. Please contact support.
                   </>
                 ) : activeChannels.length === 0 ? (
                   <>
                     No active channels. Please{" "}
                     <Link href="/channels">
-                      <a className="text-primary hover:underline">add a channel</a>
+                      <a className="text-primary hover:underline">add and activate a channel</a>
                     </Link>
+                  </>
+                ) : authorizedChannels.length === 0 ? (
+                  <>
+                    No authorized channels. Please{" "}
+                    <Link href="/channels">
+                      <a className="text-primary hover:underline">authorize your channels</a>
+                    </Link>
+                    {" "}by scanning the QR code.
                   </>
                 ) : null}
               </p>
