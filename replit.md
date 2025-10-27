@@ -17,7 +17,14 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Channel Management:** Admin-controlled activation workflow involving user creation, admin activation (consuming days and calling WHAPI), and user QR code authorization. Displays WHAPI metadata. QR polling uses 2-second intervals checking for HTTP 409 status code.
 - **Messaging (Send Page):** Interactive message sending using WHAPI Gate API. Form includes channel selection, recipient phone (E.164), header, body (required), footer, and up to 3 buttons. Buttons are converted to WHAPI format `{type: "quick_reply", title, id}`. Plan limit checking enforces daily message quotas. Toast notification: "Message queued. Track delivery in Outbox → Job Details."
 - **Templates:** CRUD operations for message templates with preview.
-- **Workflows & Chatbot:** Configurable webhooks and tabbed interface for chatbot flows.
+- **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react). Features include:
+  - Interactive canvas for designing conversation flows
+  - Node palette with MESSAGE types (text, media, location, interactive, contact, catalog) and TRIGGER types (message trigger, schedule trigger, webhook trigger, manual trigger)
+  - Node-specific configuration panels for editing message content and settings
+  - Real-time workflow visualization with connections/edges
+  - Save/load workflow definitions stored as JSON in database
+  - Webhook configuration section for WHAPI integration
+  - Full CRUD operations for workflows (create, edit, delete)
 - **Outbox:** Displays all jobs with totals (queued, pending, sent, delivered, read, failed, replied). Clicking a job opens dialog with message table. Each message has a "View" button opening a drawer with full WHAPI payload (header, body, footer, buttons), provider message ID, status, error details, and timestamps for debugging.
 - **Pricing:** Displays plans with duration toggles, integrates PayPal for subscriptions, and supports offline payments.
 - **Admin Dashboard:** User management, billing adjustments, offline payment approval, and channel activation. Includes an expandable user table showing channels and activation controls.

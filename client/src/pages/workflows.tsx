@@ -26,7 +26,7 @@ export default function Workflows() {
 
   const createWorkflow = useMutation({
     mutationFn: async (name: string) => {
-      return apiRequest("/api/workflows", "POST", {
+      return apiRequest("POST", "/api/workflows", {
         name,
         definitionJson: { nodes: [], edges: [] },
       });
@@ -44,7 +44,7 @@ export default function Workflows() {
 
   const updateWorkflow = useMutation({
     mutationFn: async ({ id, nodes, edges }: { id: number; nodes: Node[]; edges: Edge[] }) => {
-      return apiRequest(`/api/workflows/${id}`, "PUT", {
+      return apiRequest("PUT", `/api/workflows/${id}`, {
         definitionJson: { nodes, edges },
       });
     },
@@ -59,7 +59,7 @@ export default function Workflows() {
 
   const deleteWorkflow = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest(`/api/workflows/${id}`, "DELETE");
+      return apiRequest("DELETE", `/api/workflows/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
