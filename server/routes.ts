@@ -143,12 +143,18 @@ export function registerRoutes(app: Express) {
       const channelsUsed = channels.length;
       const channelsLimit = currentPlan?.channelsLimit || 0;
 
+      // Calculate total days remaining from all channels
+      const totalDaysRemaining = channels.reduce((sum, channel) => {
+        return sum + (channel.daysRemaining || 0);
+      }, 0);
+
       // Calculate messages sent today (simplified)
       const messagesSentToday = 0; // This would be computed from jobs/messages table in reality
 
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json({
         ...userWithoutPassword,
+        daysBalance: totalDaysRemaining, // Override deprecated field with channel aggregate
         currentSubscription: subscription,
         currentPlan,
         channelsUsed,
@@ -603,10 +609,23 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Update channel auth status to AUTHORIZED
+      // Fetch real channel status from WHAPI Gate API
+      let whapiStatusData: any = null;
+      if (channel.whapiChannelId && channel.whapiChannelToken) {
+        try {
+          whapiStatusData = await whapi.getChannelStatus(channel.whapiChannelId, channel.whapiChannelToken);
+          console.log("WHAPI channel status:", whapiStatusData);
+        } catch (statusError: any) {
+          console.error("Failed to fetch WHAPI status:", statusError.message);
+          // Continue even if status fetch fails
+        }
+      }
+
+      // Update channel auth status to AUTHORIZED and save WHAPI status
       const updatedChannel = await storage.updateChannel(channelId, {
         authStatus: "AUTHORIZED",
         stopped: false,
+        whapiStatus: whapiStatusData?.status || channel.whapiStatus || "unknown",
       });
 
       await storage.createAuditLog({
@@ -617,6 +636,7 @@ export function registerRoutes(app: Express) {
           entityId: channelId,
           field: "authStatus",
           newValue: "AUTHORIZED",
+          whapiStatus: whapiStatusData?.status || "unknown",
         },
       });
 
