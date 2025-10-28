@@ -1,5 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
+import { workflows, conversationStates, workflowExecutions } from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment } from "@shared/schema";
@@ -2092,16 +2095,232 @@ export function registerRoutes(app: Express) {
   // WEBHOOKS
   // ============================================================================
 
-  // WHAPI incoming message webhook
-  app.post("/webhooks/whapi", async (req: Request, res: Response) => {
+  // WHAPI incoming message webhook (user-specific)
+  app.post("/webhooks/whapi/:userId/:webhookToken", async (req: Request, res: Response) => {
     try {
-      console.log("Incoming WHAPI webhook:", req.body);
-      // Process incoming messages and trigger chatbot responses
-      // This would integrate with the workflow engine
-      res.json({ success: true });
+      const { userId, webhookToken } = req.params;
+      const webhookPayload = req.body;
+
+      console.log(`Webhook received for user ${userId}:`, webhookPayload);
+
+      // Validate user and get active workflow
+      const workflow = await db
+        .select()
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.userId, parseInt(userId)),
+            eq(workflows.webhookToken, webhookToken),
+            eq(workflows.isActive, true)
+          )
+        )
+        .limit(1);
+
+      if (!workflow || workflow.length === 0) {
+        console.error("Invalid webhook token or inactive workflow");
+        return res.status(401).json({ error: "Invalid webhook token or inactive workflow" });
+      }
+
+      const activeWorkflow = workflow[0];
+
+      // Extract message data from WHAPI webhook payload
+      // WHAPI sends: { messages: [{ from, type, text: {body}, button: {id} }] }
+      const incomingMessage = webhookPayload.messages?.[0];
+      
+      if (!incomingMessage) {
+        return res.json({ success: true, message: "No message to process" });
+      }
+
+      const phone = incomingMessage.from; // Sender's phone number
+      const messageType = incomingMessage.button ? "button_reply" : 
+                         incomingMessage.text ? "text" : "other";
+      
+      const textBody = incomingMessage.text?.body || "";
+      const buttonId = incomingMessage.button?.id || "";
+
+      // Log execution start
+      const executionLog = {
+        workflowId: activeWorkflow.id,
+        phone,
+        messageType: messageType as "text" | "button_reply" | "other",
+        triggerData: webhookPayload,
+        responsesSent: [] as any[],
+        status: "SUCCESS" as "SUCCESS" | "ERROR",
+        errorMessage: null as string | null,
+      };
+
+      try {
+        // Process based on message type
+        if (messageType === "text") {
+          // Check if this is the first message of the day from this phone
+          const conversationState = await db
+            .select()
+            .from(conversationStates)
+            .where(
+              and(
+                eq(conversationStates.workflowId, activeWorkflow.id),
+                eq(conversationStates.phone, phone)
+              )
+            )
+            .limit(1);
+
+          const now = new Date();
+          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const isFirstMessageToday = 
+            !conversationState.length ||
+            new Date(conversationState[0].lastMessageDate) < todayStart;
+
+          if (isFirstMessageToday) {
+            // Send welcome message
+            const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
+            const entryNodeId = activeWorkflow.entryNodeId;
+            
+            if (entryNodeId) {
+              const entryNode = definition.nodes?.find((n: any) => n.id === entryNodeId);
+              
+              if (entryNode) {
+                // Send the entry node's message
+                const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
+                executionLog.responsesSent.push(response);
+              }
+            }
+
+            // Update or create conversation state
+            if (conversationState.length) {
+              await db
+                .update(conversationStates)
+                .set({
+                  lastMessageAt: now,
+                  lastMessageDate: now,
+                  currentNodeId: entryNodeId,
+                  updatedAt: now,
+                })
+                .where(eq(conversationStates.id, conversationState[0].id));
+            } else {
+              await db.insert(conversationStates).values({
+                workflowId: activeWorkflow.id,
+                phone,
+                lastMessageAt: now,
+                lastMessageDate: now,
+                currentNodeId: entryNodeId,
+              });
+            }
+          } else {
+            // Not first message of day - do nothing (as per spec)
+            console.log("Not first message of day, no action taken");
+          }
+        } else if (messageType === "button_reply") {
+          // Find the node linked to this button_id using workflow edges
+          const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
+          
+          // Find edge where source node has a button with this ID
+          const targetEdge = definition.edges?.find((edge: any) => {
+            const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
+            if (!sourceNode) return false;
+            
+            // Check if this node has a button with matching ID
+            const buttons = sourceNode.data?.config?.buttons || [];
+            return buttons.some((btn: any) => btn.id === buttonId);
+          });
+
+          if (targetEdge) {
+            const targetNodeId = targetEdge.target;
+            const targetNode = definition.nodes?.find((n: any) => n.id === targetNodeId);
+            
+            if (targetNode) {
+              // Send the target node's message
+              const response = await sendNodeMessage(phone, targetNode, activeWorkflow.userId);
+              executionLog.responsesSent.push(response);
+
+              // Update conversation state
+              await db
+                .update(conversationStates)
+                .set({
+                  lastMessageAt: new Date(),
+                  currentNodeId: targetNodeId,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(conversationStates.workflowId, activeWorkflow.id),
+                    eq(conversationStates.phone, phone)
+                  )
+                );
+            }
+          } else {
+            console.log(`No target node found for button_id: ${buttonId}`);
+          }
+        }
+
+        // Log successful execution
+        await db.insert(workflowExecutions).values(executionLog);
+
+        res.json({ success: true });
+      } catch (processingError: any) {
+        // Log failed execution
+        executionLog.status = "ERROR";
+        executionLog.errorMessage = processingError.message;
+        await db.insert(workflowExecutions).values(executionLog);
+        throw processingError;
+      }
     } catch (error: any) {
       console.error("Webhook error:", error);
-      res.status(500).json({ error: "Webhook processing failed" });
+      res.status(500).json({ error: "Webhook processing failed", message: error.message });
     }
   });
+
+  // Helper function to send node message via WHAPI
+  async function sendNodeMessage(phone: string, node: any, workflowUserId: number): Promise<any> {
+    const nodeType = node.data?.nodeType;
+    const config = node.data?.config || {};
+
+    // Get user's first active and authorized channel
+    const userChannels = await storage.getChannelsForUser(workflowUserId);
+    const activeChannel = userChannels.find(
+      (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED" && ch.whapiChannelToken
+    );
+
+    if (!activeChannel || !activeChannel.whapiChannelToken) {
+      throw new Error("No active authorized channel found for user");
+    }
+
+    const channelToken = activeChannel.whapiChannelToken;
+
+    // Build and send message based on node type
+    if (nodeType === "text") {
+      const { sendWhapiMessage } = await import("./whapi");
+      const payload = {
+        to: phone,
+        body: config.body || "",
+      };
+      return await sendWhapiMessage(channelToken, payload);
+    } else if (nodeType === "interactive") {
+      const { sendInteractiveMessage } = await import("./whapi");
+      const payload = {
+        to: phone,
+        type: "button",
+        header: config.header ? { text: config.header } : undefined,
+        body: { text: config.body || "" },
+        footer: config.footer ? { text: config.footer } : undefined,
+        action: {
+          buttons: (config.buttons || []).map((btn: any) => ({
+            type: "reply",
+            title: btn.title || btn.text || "Button",
+            id: btn.id || `btn_${Math.random().toString(36).substring(7)}`,
+          })),
+        },
+      };
+      return await sendInteractiveMessage(channelToken, payload);
+    } else if (nodeType === "media") {
+      // TODO: Implement media message sending
+      const { sendWhapiMessage } = await import("./whapi");
+      const payload = {
+        to: phone,
+        body: config.body || "",
+      };
+      return await sendWhapiMessage(channelToken, payload);
+    }
+
+    return { success: false, message: "Unsupported node type" };
+  }
 }
