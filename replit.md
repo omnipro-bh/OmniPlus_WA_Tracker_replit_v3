@@ -94,7 +94,7 @@ Critical improvements to ensure real-time UI updates and correct status synchron
 ### Real-Time Cache Invalidation
 All mutations that affect user or channel state now properly invalidate React Query caches:
 - **Admin Activation** (`/api/admin/users/:userId/channels/:channelId/activate`): Invalidates `/api/me`, `/api/channels`, `/api/admin/users`, and `/api/admin/balance`
-- **Channel Authorization** (`/api/channels/:id/authorize`): Invalidates `/api/me` and `/api/channels`
+- **Channel Authorization** (`/api/channels/:id/authorize`): Invalidates `/api/me` and `/api/channels`. Also updates user status from "expired" to "active" if they have any ACTIVE channels.
 - This ensures dashboards, channel pages, and send pages update immediately without manual refresh
 
 ### WHAPI Status Integration
