@@ -631,6 +631,15 @@ export function registerRoutes(app: Express) {
         whapiStatus: whapiStatusData?.status || channel.whapiStatus || "unknown",
       });
 
+      // Update user status to "active" if they have any active channels
+      const user = await storage.getUser(req.userId!);
+      const userChannels = await storage.getChannelsForUser(req.userId!);
+      const hasActiveChannels = userChannels.some(c => c.status === "ACTIVE");
+      if (hasActiveChannels && user && user.status === "expired") {
+        await storage.updateUser(req.userId!, { status: "active" });
+        console.log(`Updated user ${user.email} status from expired to active after channel authorization`);
+      }
+
       await storage.createAuditLog({
         userId: req.userId!,
         action: "UPDATE",
@@ -640,6 +649,7 @@ export function registerRoutes(app: Express) {
           field: "authStatus",
           newValue: "AUTHORIZED",
           whapiStatus: whapiStatusData?.status || "unknown",
+          userStatusUpdated: hasActiveChannels && user && user.status === "expired",
         },
       });
 
