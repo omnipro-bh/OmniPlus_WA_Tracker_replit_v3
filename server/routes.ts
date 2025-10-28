@@ -1363,22 +1363,25 @@ export function registerRoutes(app: Express) {
   // Test send workflow node message
   app.post("/api/workflows/test-message", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { nodeType, config, phone } = req.body;
+      const { nodeType, config, phone, channelId } = req.body;
 
-      if (!phone || !nodeType || !config) {
+      if (!phone || !nodeType || !config || !channelId) {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
-      // Get user's active channel
-      const channels = await storage.getChannelsForUser(req.userId!);
-      const activeChannel = channels.find(c => c.status === 'ACTIVE');
+      // Get the specified channel
+      const channel = await storage.getChannel(channelId);
 
-      if (!activeChannel) {
-        return res.status(400).json({ error: "No active channel found. Please activate a channel first." });
+      if (!channel || channel.userId !== req.userId!) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      if (channel.status !== 'ACTIVE' || channel.authStatus !== 'AUTHORIZED') {
+        return res.status(400).json({ error: "Channel must be active and authorized to send messages" });
       }
 
       // Build and send WHAPI interactive message based on node type
-      const result = await whapi.buildAndSendNodeMessage(activeChannel, phone, nodeType, config);
+      const result = await whapi.buildAndSendNodeMessage(channel, phone, nodeType, config);
 
       res.json({ success: true, messageId: result.messageId });
     } catch (error: any) {

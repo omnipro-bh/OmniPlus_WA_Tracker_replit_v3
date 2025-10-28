@@ -46,35 +46,11 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     onUpdate(node.id, { ...config, [key]: value });
   };
 
-  // Validate and format phone number input (E.164 format)
-  const handlePhoneChange = (value: string) => {
-    // Only allow digits, +, -, (, ), and spaces
-    const cleaned = value.replace(/[^\d+\-() ]/g, '');
-    setTestPhone(cleaned);
-  };
-
-  const validatePhone = (phone: string): boolean => {
-    // E.164 format: starts with +, followed by 1-15 digits
-    const e164Pattern = /^\+\d{1,15}$/;
-    const cleanedPhone = phone.replace(/[\s\-()]/g, '');
-    return e164Pattern.test(cleanedPhone);
-  };
-
   const handleTestSend = async () => {
     if (!testPhone.trim()) {
       toast({
         title: 'Phone number required',
         description: 'Please enter a phone number to send the test message',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const cleanedPhone = testPhone.replace(/[\s\-()]/g, '');
-    if (!validatePhone(cleanedPhone)) {
-      toast({
-        title: 'Invalid phone number',
-        description: 'Phone must be in E.164 format (e.g., +1234567890)',
         variant: 'destructive',
       });
       return;
@@ -94,13 +70,13 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       await apiRequest('POST', '/api/workflows/test-message', {
         nodeType,
         config,
-        phone: cleanedPhone,
+        phone: testPhone,
         channelId: testChannelId,
       });
 
       toast({
         title: 'Test message sent',
-        description: `Message sent to ${cleanedPhone}`,
+        description: `Message sent to ${testPhone}`,
       });
       setTestDialogOpen(false);
       setTestPhone('');
@@ -133,17 +109,17 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div>
-            <Label htmlFor="test-phone">Phone Number (E.164 format)</Label>
+            <Label htmlFor="test-phone">Phone Number</Label>
             <Input
               id="test-phone"
-              type="tel"
-              placeholder="+1234567890"
+              type="text"
+              placeholder="1234567890"
               value={testPhone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
+              onChange={(e) => setTestPhone(e.target.value)}
               data-testid="input-test-phone"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Include country code (e.g., +1 for US)
+              Enter country code + phone number (e.g., 61371989950)
             </p>
           </div>
           <div>
