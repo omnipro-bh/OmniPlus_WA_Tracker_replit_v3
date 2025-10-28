@@ -126,8 +126,11 @@ export default function WorkflowBuilder({
 }: WorkflowBuilderProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [entryNodeId, setEntryNodeId] = useState<string | undefined>(initialEntryNodeId);
+  
+  // Derive selectedNode from nodes array to always have latest data
+  const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
 
@@ -227,7 +230,7 @@ export default function WorkflowBuilder({
   };
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
+    setSelectedNodeId(node.id);
   }, []);
 
   return (
