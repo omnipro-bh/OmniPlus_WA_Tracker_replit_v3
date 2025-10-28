@@ -87,7 +87,12 @@ export default function Send() {
 
   const activeChannels = channels.filter((c) => c.status === "ACTIVE");
   const authorizedChannels = activeChannels.filter((c) => c.authStatus === "AUTHORIZED");
-  const canSend = user?.status === "active" && authorizedChannels.length > 0;
+  // Check if user has any active, non-expired channels
+  const hasNonExpiredChannels = authorizedChannels.some(c => {
+    if (!c.expiresAt) return true;
+    return new Date(c.expiresAt) > new Date();
+  });
+  const canSend = hasNonExpiredChannels && authorizedChannels.length > 0;
 
   const handleTemplateSelect = (templateId: string) => {
     const template = templates.find((t) => t.id === parseInt(templateId));
@@ -252,11 +257,7 @@ export default function Send() {
 
             {!canSend && (
               <p className="text-sm text-muted-foreground text-center">
-                {user?.status !== "active" ? (
-                  <>
-                    Your account is {user?.status}. Please contact support.
-                  </>
-                ) : activeChannels.length === 0 ? (
+                {activeChannels.length === 0 ? (
                   <>
                     No active channels. Please{" "}
                     <Link href="/channels">
@@ -270,6 +271,14 @@ export default function Send() {
                       <a className="text-primary hover:underline">authorize your channels</a>
                     </Link>
                     {" "}by scanning the QR code.
+                  </>
+                ) : !hasNonExpiredChannels ? (
+                  <>
+                    All channels have expired. Please{" "}
+                    <Link href="/channels">
+                      <a className="text-primary hover:underline">add days to your channels</a>
+                    </Link>
+                    {" "}to continue sending messages.
                   </>
                 ) : null}
               </p>

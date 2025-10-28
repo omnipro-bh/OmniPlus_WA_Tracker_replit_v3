@@ -104,6 +104,8 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users", expandedUserId, "channels"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/balance"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] }); // Refresh user data across all pages
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] }); // Refresh channels in user view
       setIsActivationDialogOpen(false);
       setActivationDays("30");
       setActivationChannelId(null);

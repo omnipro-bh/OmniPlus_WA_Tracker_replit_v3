@@ -26,6 +26,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refetchOnWindowFocus: false,
   });
 
+  // Auto-logout when user status becomes expired
+  useEffect(() => {
+    if (!isLoading && user && user.status === "expired" && user.role !== "admin") {
+      console.log("User account expired, logging out...");
+      // Post to logout endpoint to clear session
+      fetch("/api/auth/logout", { method: "POST" })
+        .then(() => {
+          // Redirect to login with message
+          window.location.href = "/login?expired=true";
+        })
+        .catch((error) => {
+          console.error("Logout failed:", error);
+          // Still redirect to login even if logout API fails
+          window.location.href = "/login?expired=true";
+        });
+    }
+  }, [user?.status, isLoading, user?.role]);
+
   return (
     <AuthContext.Provider
       value={{

@@ -73,6 +73,7 @@ export default function Channels() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] }); // Refresh user data
       setQrDialogChannel(null);
       toast({
         title: "Success",

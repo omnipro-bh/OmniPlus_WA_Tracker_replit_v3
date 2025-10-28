@@ -1899,6 +1899,14 @@ export function registerRoutes(app: Express) {
         });
       }
 
+      // Update user status to "active" if they have any active channels
+      const userChannels = await storage.getChannelsForUser(userId);
+      const hasActiveChannels = userChannels.some(c => c.status === "ACTIVE");
+      if (hasActiveChannels && user.status === "expired") {
+        await storage.updateUser(userId, { status: "active" });
+        console.log(`Updated user ${user.email} status from expired to active`);
+      }
+
       // Create audit log
       await storage.createAuditLog({
         userId: req.userId!,
@@ -1912,6 +1920,7 @@ export function registerRoutes(app: Express) {
           mainBalanceBefore: mainBalance,
           mainBalanceAfter: newMainBalance,
           channelStatus: updatedChannel.status,
+          userStatusUpdated: hasActiveChannels && user.status === "expired",
         },
       });
 
