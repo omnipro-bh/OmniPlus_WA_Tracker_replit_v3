@@ -24,39 +24,88 @@ import { NodeConfigPanel } from '@/components/WorkflowNodeConfig';
 import {
   MessageCircle,
   Image as ImageIcon,
-  MapPin,
   List,
-  Contact,
-  Send,
+  Phone,
+  Link,
+  Copy,
+  Grid3x3,
+  Video,
   Zap,
   Calendar,
   Webhook,
   User,
   Save,
-  Download,
-  Upload,
   Undo2,
   Redo2,
   Settings,
+  TestTube,
 } from 'lucide-react';
 
-// Node type definitions for WHAPI messages and triggers
+// Node type definitions for WHAPI Interactive Messages
 export const nodeTypes = {
   MESSAGE: [
-    { id: 'text', label: 'Text Message', icon: MessageCircle, cost: 2, description: 'Send a text...' },
-    { id: 'media', label: 'Media Message', icon: ImageIcon, cost: 2, description: 'Send a media...' },
-    { id: 'location', label: 'Location Message', icon: MapPin, cost: 1, description: 'Send a location...' },
-    { id: 'requestLocation', label: 'Request Location Message', icon: MapPin, cost: 1, description: 'Request user...' },
-    { id: 'interactive', label: 'Interactive Message', icon: List, cost: 2, description: 'Send an interactiv...' },
-    { id: 'interactiveDynamic', label: 'Interactive Message', icon: List, cost: 2, description: 'Send a dynamic...' },
-    { id: 'contact', label: 'Contact Message', icon: Contact, cost: 2, description: 'Send a contact...' },
-    { id: 'catalog', label: 'Catalog', icon: List, cost: 2, description: 'Send your catalog' },
+    { 
+      id: 'quickReply', 
+      label: 'Quick Reply Buttons', 
+      icon: MessageCircle, 
+      cost: 1, 
+      description: 'Text with up to 3 reply buttons' 
+    },
+    { 
+      id: 'quickReplyImage', 
+      label: 'Buttons with Image', 
+      icon: ImageIcon, 
+      cost: 2, 
+      description: 'Image with up to 3 reply buttons' 
+    },
+    { 
+      id: 'quickReplyVideo', 
+      label: 'Buttons with Video', 
+      icon: Video, 
+      cost: 2, 
+      description: 'Video with up to 3 reply buttons' 
+    },
+    { 
+      id: 'listMessage', 
+      label: 'List Message', 
+      icon: List, 
+      cost: 1, 
+      description: 'Expandable list of options' 
+    },
+    { 
+      id: 'callButton', 
+      label: 'Call Button', 
+      icon: Phone, 
+      cost: 1, 
+      description: 'Button to initiate phone call' 
+    },
+    { 
+      id: 'urlButton', 
+      label: 'URL Button', 
+      icon: Link, 
+      cost: 1, 
+      description: 'Button to open a website' 
+    },
+    { 
+      id: 'copyButton', 
+      label: 'Copy/OTP Button', 
+      icon: Copy, 
+      cost: 1, 
+      description: 'Button to copy text (OTP codes)' 
+    },
+    { 
+      id: 'carousel', 
+      label: 'Carousel', 
+      icon: Grid3x3, 
+      cost: 3, 
+      description: 'Swipeable cards with buttons' 
+    },
   ],
   TRIGGER: [
-    { id: 'messageTrigger', label: 'Message Trigger', icon: Zap, cost: 1, description: 'Message trigger' },
-    { id: 'scheduleTrigger', label: 'Schedule Trigger', icon: Calendar, cost: 3, description: 'Schedule trigger' },
-    { id: 'webhookTrigger', label: 'Webhook Trigger', icon: Webhook, cost: 3, description: 'Webhook trigger' },
-    { id: 'manualTrigger', label: 'Manual Trigger', icon: User, cost: 1, description: 'Manual trigger' },
+    { id: 'messageTrigger', label: 'Message Trigger', icon: Zap, cost: 1, description: 'Trigger on message received' },
+    { id: 'scheduleTrigger', label: 'Schedule Trigger', icon: Calendar, cost: 3, description: 'Trigger at scheduled time' },
+    { id: 'webhookTrigger', label: 'Webhook Trigger', icon: Webhook, cost: 3, description: 'Trigger via external webhook' },
+    { id: 'manualTrigger', label: 'Manual Trigger', icon: User, cost: 1, description: 'Manually triggered action' },
   ],
 };
 

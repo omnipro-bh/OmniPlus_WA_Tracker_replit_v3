@@ -2,9 +2,13 @@ import { Node } from '@xyflow/react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { TestTube, Plus, X } from 'lucide-react';
+import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 
 interface NodeConfigProps {
   node: Node;
@@ -14,51 +18,172 @@ interface NodeConfigProps {
 export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const nodeType = (node.data.type as string) || '';
   const config = (node.data.config as any) || {};
+  const { toast } = useToast();
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   const updateConfig = (key: string, value: any) => {
     onUpdate(node.id, { ...config, [key]: value });
   };
 
-  // Text Message Configuration
-  if (nodeType === 'text') {
+  const updateButton = (index: number, field: string, value: string) => {
+    const buttons = [...(config.buttons || [{}, {}, {}])];
+    buttons[index] = { ...buttons[index], [field]: value };
+    updateConfig('buttons', buttons);
+  };
+
+  const handleTestSend = async () => {
+    if (!testPhone.trim()) {
+      toast({
+        title: 'Phone number required',
+        description: 'Please enter a phone number to send the test message',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSendingTest(true);
+    try {
+      await apiRequest('/api/workflows/test-message', {
+        method: 'POST',
+        body: JSON.stringify({
+          nodeType,
+          config,
+          phone: testPhone,
+        }),
+      });
+
+      toast({
+        title: 'Test message sent',
+        description: `Message sent to ${testPhone}`,
+      });
+      setTestDialogOpen(false);
+      setTestPhone('');
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send test',
+        description: error.message || 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
+  const TestButton = () => (
+    <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="w-full" data-testid="button-test-message">
+          <TestTube className="h-4 w-4 mr-2" />
+          Test Message
+        </Button>
+      </DialogTrigger>
+      <DialogContent data-testid="dialog-test-message">
+        <DialogHeader>
+          <DialogTitle>Test Send Message</DialogTitle>
+          <DialogDescription>
+            Send this message to a phone number for testing
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div>
+            <Label htmlFor="test-phone">Phone Number (E.164 format)</Label>
+            <Input
+              id="test-phone"
+              placeholder="+1234567890"
+              value={testPhone}
+              onChange={(e) => setTestPhone(e.target.value)}
+              data-testid="input-test-phone"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Include country code (e.g., +1 for US)
+            </p>
+          </div>
+          <Button 
+            onClick={handleTestSend} 
+            disabled={isSendingTest}
+            className="w-full"
+            data-testid="button-send-test"
+          >
+            {isSendingTest ? 'Sending...' : 'Send Test Message'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Quick Reply Buttons Configuration
+  if (nodeType === 'quickReply') {
+    const buttons = config.buttons || [{}, {}, {}];
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="text-body">Message Body *</Label>
-          <Textarea
-            id="text-body"
-            placeholder="Enter your message..."
-            value={config.body || ''}
-            onChange={(e) => updateConfig('body', e.target.value)}
-            rows={4}
-            data-testid="input-text-body"
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
+          <Input
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            The text content to send
-          </p>
         </div>
         <div>
-          <Label htmlFor="text-preview">Link Preview</Label>
-          <Select value={config.previewUrl ? 'yes' : 'no'} onValueChange={(v) => updateConfig('previewUrl', v === 'yes')}>
-            <SelectTrigger data-testid="select-preview">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="yes">Yes</SelectItem>
-              <SelectItem value="no">No</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={3}
+            data-testid="input-body-text"
+          />
         </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label>Buttons (Up to 3)</Label>
+          <p className="text-xs text-muted-foreground mb-2">Each button max 25 characters</p>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2 mb-3">
+              <Input
+                placeholder={`Button ${i + 1} Title`}
+                value={buttons[i]?.title || ''}
+                onChange={(e) => updateButton(i, 'title', e.target.value)}
+                maxLength={25}
+                data-testid={`input-button-${i}-title`}
+              />
+              <Input
+                placeholder={`Button ${i + 1} ID`}
+                value={buttons[i]?.id || ''}
+                onChange={(e) => updateButton(i, 'id', e.target.value)}
+                data-testid={`input-button-${i}-id`}
+              />
+            </div>
+          ))}
+        </div>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Media Message Configuration
-  if (nodeType === 'media') {
+  // Quick Reply with Image Configuration
+  if (nodeType === 'quickReplyImage') {
+    const buttons = config.buttons || [{}, {}, {}];
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="media-url">Media URL *</Label>
+          <Label htmlFor="media-url">Image URL *</Label>
           <Input
             id="media-url"
             placeholder="https://example.com/image.jpg"
@@ -68,235 +193,437 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           />
         </div>
         <div>
-          <Label htmlFor="media-caption">Caption</Label>
+          <Label htmlFor="body-text">Body Text *</Label>
           <Textarea
-            id="media-caption"
-            placeholder="Optional caption..."
-            value={config.caption || ''}
-            onChange={(e) => updateConfig('caption', e.target.value)}
-            rows={3}
-            data-testid="input-media-caption"
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={2}
+            data-testid="input-body-text"
           />
         </div>
-      </div>
-    );
-  }
-
-  // Location Message Configuration
-  if (nodeType === 'location') {
-    return (
-      <div className="space-y-4">
         <div>
-          <Label htmlFor="location-lat">Latitude *</Label>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
           <Input
-            id="location-lat"
-            type="number"
-            step="any"
-            placeholder="37.7749"
-            value={config.latitude || ''}
-            onChange={(e) => updateConfig('latitude', e.target.value)}
-            data-testid="input-latitude"
-          />
-        </div>
-        <div>
-          <Label htmlFor="location-lng">Longitude *</Label>
-          <Input
-            id="location-lng"
-            type="number"
-            step="any"
-            placeholder="-122.4194"
-            value={config.longitude || ''}
-            onChange={(e) => updateConfig('longitude', e.target.value)}
-            data-testid="input-longitude"
-          />
-        </div>
-        <div>
-          <Label htmlFor="location-name">Location Name</Label>
-          <Input
-            id="location-name"
-            placeholder="E.g., Golden Gate Bridge"
-            value={config.name || ''}
-            onChange={(e) => updateConfig('name', e.target.value)}
-            data-testid="input-location-name"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Interactive Message Configuration
-  if (nodeType === 'interactive' || nodeType === 'interactiveDynamic') {
-    return (
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="interactive-header">Header</Label>
-          <Input
-            id="interactive-header"
-            placeholder="Message header"
-            value={config.header || ''}
-            onChange={(e) => updateConfig('header', e.target.value)}
-            data-testid="input-interactive-header"
-          />
-        </div>
-        <div>
-          <Label htmlFor="interactive-body">Body *</Label>
-          <Textarea
-            id="interactive-body"
-            placeholder="Message body..."
-            value={config.body || ''}
-            onChange={(e) => updateConfig('body', e.target.value)}
-            rows={3}
-            data-testid="input-interactive-body"
-          />
-        </div>
-        <div>
-          <Label htmlFor="interactive-footer">Footer</Label>
-          <Input
-            id="interactive-footer"
-            placeholder="Message footer"
-            value={config.footer || ''}
-            onChange={(e) => updateConfig('footer', e.target.value)}
-            data-testid="input-interactive-footer"
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
           />
         </div>
         <Separator />
         <div>
-          <Label>Buttons (comma separated)</Label>
-          <Input
-            placeholder="Button 1, Button 2, Button 3"
-            value={config.buttons || ''}
-            onChange={(e) => updateConfig('buttons', e.target.value)}
-            data-testid="input-interactive-buttons"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Up to 3 buttons, separated by commas
-          </p>
+          <Label>Buttons (Up to 3)</Label>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2 mb-3">
+              <Input
+                placeholder={`Button ${i + 1} Title`}
+                value={buttons[i]?.title || ''}
+                onChange={(e) => updateButton(i, 'title', e.target.value)}
+                maxLength={25}
+                data-testid={`input-button-${i}-title`}
+              />
+              <Input
+                placeholder={`Button ${i + 1} ID`}
+                value={buttons[i]?.id || ''}
+                onChange={(e) => updateButton(i, 'id', e.target.value)}
+                data-testid={`input-button-${i}-id`}
+              />
+            </div>
+          ))}
         </div>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Contact Message Configuration
-  if (nodeType === 'contact') {
+  // Quick Reply with Video Configuration
+  if (nodeType === 'quickReplyVideo') {
+    const buttons = config.buttons || [{}, {}, {}];
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="contact-name">Contact Name *</Label>
+          <Label htmlFor="media-url">Video URL *</Label>
           <Input
-            id="contact-name"
-            placeholder="John Doe"
-            value={config.name || ''}
-            onChange={(e) => updateConfig('name', e.target.value)}
-            data-testid="input-contact-name"
+            id="media-url"
+            placeholder="https://example.com/video.mp4"
+            value={config.mediaUrl || ''}
+            onChange={(e) => updateConfig('mediaUrl', e.target.value)}
+            data-testid="input-media-url"
           />
         </div>
         <div>
-          <Label htmlFor="contact-phone">Phone Number *</Label>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={2}
+            data-testid="input-body-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
           <Input
-            id="contact-phone"
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label>Buttons (Up to 3)</Label>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2 mb-3">
+              <Input
+                placeholder={`Button ${i + 1} Title`}
+                value={buttons[i]?.title || ''}
+                onChange={(e) => updateButton(i, 'title', e.target.value)}
+                maxLength={25}
+                data-testid={`input-button-${i}-title`}
+              />
+              <Input
+                placeholder={`Button ${i + 1} ID`}
+                value={buttons[i]?.id || ''}
+                onChange={(e) => updateButton(i, 'id', e.target.value)}
+                data-testid={`input-button-${i}-id`}
+              />
+            </div>
+          ))}
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
+  // List Message Configuration
+  if (nodeType === 'listMessage') {
+    const sections = config.sections || [{ title: '', rows: [{}, {}] }];
+    
+    const updateSection = (sIndex: number, field: string, value: any) => {
+      const newSections = [...sections];
+      newSections[sIndex] = { ...newSections[sIndex], [field]: value };
+      updateConfig('sections', newSections);
+    };
+
+    const updateRow = (sIndex: number, rIndex: number, field: string, value: string) => {
+      const newSections = [...sections];
+      const rows = [...(newSections[sIndex].rows || [])];
+      rows[rIndex] = { ...rows[rIndex], [field]: value };
+      newSections[sIndex] = { ...newSections[sIndex], rows };
+      updateConfig('sections', newSections);
+    };
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
+          <Input
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={2}
+            data-testid="input-body-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="button-label">Button Label *</Label>
+          <Input
+            id="button-label"
+            placeholder="Pick a hamburger!"
+            value={config.buttonLabel || ''}
+            onChange={(e) => updateConfig('buttonLabel', e.target.value)}
+            data-testid="input-button-label"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label>List Section</Label>
+          <Input
+            placeholder="Section Title"
+            value={sections[0]?.title || ''}
+            onChange={(e) => updateSection(0, 'title', e.target.value)}
+            className="mb-2"
+            data-testid="input-section-title"
+          />
+          {[0, 1].map((i) => (
+            <div key={i} className="space-y-2 mb-3 p-2 border rounded-md">
+              <Input
+                placeholder={`Row ${i + 1} Title`}
+                value={sections[0]?.rows?.[i]?.title || ''}
+                onChange={(e) => updateRow(0, i, 'title', e.target.value)}
+                data-testid={`input-row-${i}-title`}
+              />
+              <Input
+                placeholder={`Row ${i + 1} ID`}
+                value={sections[0]?.rows?.[i]?.id || ''}
+                onChange={(e) => updateRow(0, i, 'id', e.target.value)}
+                data-testid={`input-row-${i}-id`}
+              />
+              <Textarea
+                placeholder={`Row ${i + 1} Description (Optional)`}
+                value={sections[0]?.rows?.[i]?.description || ''}
+                onChange={(e) => updateRow(0, i, 'description', e.target.value)}
+                rows={2}
+                data-testid={`input-row-${i}-description`}
+              />
+            </div>
+          ))}
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
+  // Call Button Configuration
+  if (nodeType === 'callButton') {
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
+          <Input
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={3}
+            data-testid="input-body-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label htmlFor="button-title">Button Title *</Label>
+          <Input
+            id="button-title"
+            placeholder="Call us"
+            value={config.buttonTitle || ''}
+            onChange={(e) => updateConfig('buttonTitle', e.target.value)}
+            maxLength={25}
+            data-testid="input-button-title"
+          />
+        </div>
+        <div>
+          <Label htmlFor="phone-number">Phone Number *</Label>
+          <Input
+            id="phone-number"
             placeholder="+1234567890"
-            value={config.phone || ''}
-            onChange={(e) => updateConfig('phone', e.target.value)}
-            data-testid="input-contact-phone"
+            value={config.phoneNumber || ''}
+            onChange={(e) => updateConfig('phoneNumber', e.target.value)}
+            data-testid="input-phone-number"
           />
         </div>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Message Trigger Configuration
-  if (nodeType === 'messageTrigger') {
+  // URL Button Configuration
+  if (nodeType === 'urlButton') {
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="trigger-keyword">Keyword Pattern</Label>
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
-            id="trigger-keyword"
-            placeholder="E.g., hello, hi, help"
-            value={config.keyword || ''}
-            onChange={(e) => updateConfig('keyword', e.target.value)}
-            data-testid="input-trigger-keyword"
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            Trigger when message contains these keywords (comma separated)
-          </p>
         </div>
         <div>
-          <Label htmlFor="trigger-condition">Condition Type</Label>
-          <Select value={config.condition || 'contains'} onValueChange={(v) => updateConfig('condition', v)}>
-            <SelectTrigger data-testid="select-trigger-condition">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="contains">Contains</SelectItem>
-              <SelectItem value="equals">Equals</SelectItem>
-              <SelectItem value="startsWith">Starts With</SelectItem>
-              <SelectItem value="regex">Regex Pattern</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={3}
+            data-testid="input-body-text"
+          />
         </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label htmlFor="button-title">Button Title *</Label>
+          <Input
+            id="button-title"
+            placeholder="Visit Website"
+            value={config.buttonTitle || ''}
+            onChange={(e) => updateConfig('buttonTitle', e.target.value)}
+            maxLength={25}
+            data-testid="input-button-title"
+          />
+        </div>
+        <div>
+          <Label htmlFor="url">URL *</Label>
+          <Input
+            id="url"
+            placeholder="https://whapi.cloud"
+            value={config.url || ''}
+            onChange={(e) => updateConfig('url', e.target.value)}
+            data-testid="input-url"
+          />
+        </div>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Schedule Trigger Configuration
-  if (nodeType === 'scheduleTrigger') {
+  // Copy/OTP Button Configuration
+  if (nodeType === 'copyButton') {
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="schedule-cron">Cron Expression *</Label>
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
-            id="schedule-cron"
-            placeholder="0 9 * * *"
-            value={config.cron || ''}
-            onChange={(e) => updateConfig('cron', e.target.value)}
-            data-testid="input-schedule-cron"
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            E.g., "0 9 * * *" for daily at 9 AM
-          </p>
         </div>
         <div>
-          <Label htmlFor="schedule-timezone">Timezone</Label>
-          <Input
-            id="schedule-timezone"
-            placeholder="UTC"
-            value={config.timezone || 'UTC'}
-            onChange={(e) => updateConfig('timezone', e.target.value)}
-            data-testid="input-schedule-timezone"
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={3}
+            data-testid="input-body-text"
           />
         </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <Label htmlFor="button-title">Button Title *</Label>
+          <Input
+            id="button-title"
+            placeholder="Copy OTP"
+            value={config.buttonTitle || ''}
+            onChange={(e) => updateConfig('buttonTitle', e.target.value)}
+            maxLength={25}
+            data-testid="input-button-title"
+          />
+        </div>
+        <div>
+          <Label htmlFor="copy-code">Code to Copy *</Label>
+          <Input
+            id="copy-code"
+            placeholder="65545"
+            value={config.copyCode || ''}
+            onChange={(e) => updateConfig('copyCode', e.target.value)}
+            data-testid="input-copy-code"
+          />
+        </div>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Webhook Trigger Configuration
-  if (nodeType === 'webhookTrigger') {
+  // Carousel Configuration
+  if (nodeType === 'carousel') {
     return (
       <div className="space-y-4">
         <div>
-          <Label htmlFor="webhook-event">Event Type</Label>
-          <Select value={config.event || 'message'} onValueChange={(v) => updateConfig('event', v)}>
-            <SelectTrigger data-testid="select-webhook-event">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="message">New Message</SelectItem>
-              <SelectItem value="status">Status Update</SelectItem>
-              <SelectItem value="presence">Presence Change</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label htmlFor="body-text">Introduction Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Hey, we're having a big sale today!"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={2}
+            data-testid="input-body-text"
+          />
         </div>
+        <Separator />
+        <p className="text-sm text-muted-foreground">
+          Carousel cards are managed through workflow definition. Up to 10 cards supported.
+        </p>
+        <Separator />
+        <TestButton />
       </div>
     );
   }
 
-  // Default configuration for unknown types
+  // Default fallback
   return (
     <div className="space-y-4">
-      <div className="text-sm text-muted-foreground">
-        No specific configuration available for this node type.
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Select a node type to configure its message settings.
+      </p>
     </div>
   );
 }
