@@ -63,19 +63,22 @@ export const nodeTypes = {
 interface WorkflowBuilderProps {
   initialNodes?: Node[];
   initialEdges?: Edge[];
-  onSave?: (nodes: Node[], edges: Edge[]) => void;
+  initialEntryNodeId?: string;
+  onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string) => void;
   workflowName?: string;
 }
 
 export default function WorkflowBuilder({
   initialNodes = [],
   initialEdges = [],
+  initialEntryNodeId,
   onSave,
   workflowName = 'Untitled Workflow',
 }: WorkflowBuilderProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [entryNodeId, setEntryNodeId] = useState<string | undefined>(initialEntryNodeId);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
 
@@ -141,7 +144,7 @@ export default function WorkflowBuilder({
 
   const handleSave = () => {
     if (onSave) {
-      onSave(nodes, edges);
+      onSave(nodes, edges, entryNodeId);
     }
   };
 

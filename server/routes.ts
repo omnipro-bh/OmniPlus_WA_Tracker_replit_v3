@@ -1303,10 +1303,11 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
-      const { name, definitionJson } = req.body;
+      const { name, definitionJson, entryNodeId } = req.body;
       const updated = await storage.updateWorkflow(workflowId, {
         name,
         definitionJson,
+        entryNodeId,
       });
 
       res.json(updated);

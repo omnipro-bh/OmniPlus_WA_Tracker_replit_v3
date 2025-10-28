@@ -6,15 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { GitBranch, Plus, Pencil, Trash2, Copy, ArrowLeft } from "lucide-react";
+import { GitBranch, Plus, Pencil, Trash2, Copy, ArrowLeft, Link as LinkIcon } from "lucide-react";
 import type { Workflow } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { Node, Edge } from "@xyflow/react";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Workflows() {
   const { toast } = useToast();
-  const [webhookToken, setWebhookToken] = useState("");
+  const { user } = useAuth();
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -43,9 +44,10 @@ export default function Workflows() {
   });
 
   const updateWorkflow = useMutation({
-    mutationFn: async ({ id, nodes, edges }: { id: number; nodes: Node[]; edges: Edge[] }) => {
+    mutationFn: async ({ id, nodes, edges, entryNodeId }: { id: number; nodes: Node[]; edges: Edge[]; entryNodeId?: string }) => {
       return apiRequest("PUT", `/api/workflows/${id}`, {
         definitionJson: { nodes, edges },
+        entryNodeId,
       });
     },
     onSuccess: () => {
@@ -70,7 +72,10 @@ export default function Workflows() {
     },
   });
 
-  const webhookUrl = `${window.location.origin}/webhooks/whapi`;
+  const getWebhookUrl = (workflow: Workflow) => {
+    if (!user) return "";
+    return `${window.location.origin}/webhooks/whapi/${user.id}/${workflow.webhookToken}`;
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -82,9 +87,9 @@ export default function Workflows() {
     setShowBuilder(true);
   };
 
-  const handleSaveWorkflow = (nodes: Node[], edges: Edge[]) => {
+  const handleSaveWorkflow = (nodes: Node[], edges: Edge[], entryNodeId?: string) => {
     if (selectedWorkflow) {
-      updateWorkflow.mutate({ id: selectedWorkflow.id, nodes, edges });
+      updateWorkflow.mutate({ id: selectedWorkflow.id, nodes, edges, entryNodeId });
     }
   };
 
@@ -97,6 +102,8 @@ export default function Workflows() {
   // If builder is open, show the builder view
   if (showBuilder && selectedWorkflow) {
     const definition = selectedWorkflow.definitionJson as { nodes?: Node[]; edges?: Edge[] } || {};
+    const webhookUrl = getWebhookUrl(selectedWorkflow);
+    
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -109,17 +116,32 @@ export default function Workflows() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div>
+            <div className="flex-1">
               <h1 className="text-3xl font-semibold">{selectedWorkflow.name}</h1>
               <p className="text-muted-foreground mt-1">
                 Visual chatbot builder
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <code className="text-sm">{webhookUrl}</code>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => copyToClipboard(webhookUrl)}
+              data-testid="button-copy-webhook"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <WorkflowBuilder
           initialNodes={definition.nodes || []}
           initialEdges={definition.edges || []}
+          initialEntryNodeId={selectedWorkflow.entryNodeId || undefined}
           onSave={handleSaveWorkflow}
           workflowName={selectedWorkflow.name}
         />
@@ -176,32 +198,11 @@ export default function Workflows() {
         </Dialog>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Webhook Configuration</CardTitle>
-          <CardDescription>
-            Configure your WHAPI integration to receive incoming messages
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Incoming Webhook URL</Label>
-            <div className="flex gap-2">
-              <Input value={webhookUrl} readOnly className="font-mono text-sm" />
-              <Button
-                variant="outline"
-                onClick={() => copyToClipboard(webhookUrl)}
-                data-testid="button-copy-webhook"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Add this URL to your WHAPI channel webhook settings to receive messages
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="bg-muted/50 rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">
+          <strong>Note:</strong> Each workflow has a unique webhook URL. Copy the webhook URL from each workflow card below and add it to your WHAPI channel settings.
+        </p>
+      </div>
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Your Workflows</h2>
@@ -228,6 +229,8 @@ export default function Workflows() {
               const nodeCount = definition.nodes?.length || 0;
               const edgeCount = definition.edges?.length || 0;
 
+              const webhookUrl = getWebhookUrl(workflow);
+              
               return (
                 <Card key={workflow.id} className="hover-elevate" data-testid={`workflow-card-${workflow.id}`}>
                   <CardHeader>
@@ -239,9 +242,28 @@ export default function Workflows() {
                       {nodeCount} nodes, {edgeCount} connections
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-3">
                     <div className="text-xs text-muted-foreground">
                       Last updated: {new Date(workflow.updatedAt).toLocaleDateString()}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Webhook URL</Label>
+                      <div className="flex gap-1">
+                        <Input
+                          value={webhookUrl}
+                          readOnly
+                          className="font-mono text-xs h-8"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => copyToClipboard(webhookUrl)}
+                          data-testid={`button-copy-webhook-${workflow.id}`}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                   <CardFooter className="flex gap-2">
