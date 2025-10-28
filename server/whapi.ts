@@ -297,6 +297,39 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
   return await response.json();
 }
 
+// Send carousel message (uses Gate API with channel token)
+export async function sendCarouselMessage(channelToken: string, payload: {
+  to: string;
+  body: { text: string };
+  cards: Array<{
+    id: string;
+    media: { media: string };
+    text: string;
+    buttons: Array<{ type: string; title: string; id: string; url?: string }>;
+  }>;
+}) {
+  // Ensure token has Bearer prefix (add if missing)
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  const response = await fetch("https://gate.whapi.cloud/messages/carousel", {
+    method: "POST",
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error || `WHAPI carousel send failed (status ${response.status})`);
+  }
+
+  // Response should include message ID and other details
+  return await response.json();
+}
+
 // Build and send interactive message based on workflow node type
 export async function buildAndSendNodeMessage(channel: any, phone: string, nodeType: string, config: any) {
   const channelToken = channel.token;
@@ -397,7 +430,7 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
       buttons: [{
         type: 'call',
         title: config.buttonTitle || 'Call us',
-        id: 'call_btn',
+        id: config.buttonId || 'call_btn',
         phone_number: config.phoneNumber,
       }],
     };
@@ -414,7 +447,7 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
       buttons: [{
         type: 'url',
         title: config.buttonTitle || 'Visit Website',
-        id: 'url_btn',
+        id: config.buttonId || 'url_btn',
         url: config.url,
       }],
     };
@@ -431,11 +464,40 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
       buttons: [{
         type: 'copy',
         title: config.buttonTitle || 'Copy OTP',
-        id: 'copy_btn',
+        id: config.buttonId || 'copy_btn',
         copy_code: config.copyCode,
       }],
     };
     payload.type = 'button';
+  }
+
+  // Carousel
+  else if (nodeType === 'carousel') {
+    return await sendCarouselMessage(channelToken, {
+      to: phone,
+      body: { text: config.bodyText || 'Check out our offerings!' },
+      cards: (config.cards || []).map((card: any) => ({
+        id: card.id,
+        media: { media: card.media },
+        text: card.text,
+        buttons: (card.buttons || []).map((btn: any) => {
+          if (btn.type === 'url') {
+            return {
+              type: 'url',
+              title: btn.title,
+              id: btn.id,
+              url: btn.url,
+            };
+          } else {
+            return {
+              type: 'quick_reply',
+              title: btn.title,
+              id: btn.id,
+            };
+          }
+        }),
+      })),
+    });
   }
 
   else {
