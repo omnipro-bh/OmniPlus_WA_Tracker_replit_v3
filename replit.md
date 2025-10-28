@@ -18,13 +18,19 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Messaging (Send Page):** Interactive message sending using WHAPI Gate API. Form includes channel selection, recipient phone (E.164), header, body (required), footer, and up to 3 buttons. Buttons are converted to WHAPI format `{type: "quick_reply", title, id}`. Plan limit checking enforces daily message quotas. Toast notification: "Message queued. Track delivery in Outbox → Job Details."
 - **Templates:** CRUD operations for message templates with preview.
 - **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react). Features include:
-  - Interactive canvas for designing conversation flows
+  - Interactive canvas for designing conversation flows with proper dimensions (h-full w-full) for React Flow rendering
   - Node palette with MESSAGE types (text, media, location, interactive, contact, catalog) and TRIGGER types (message trigger, schedule trigger, webhook trigger, manual trigger)
   - Node-specific configuration panels for editing message content and settings
   - Real-time workflow visualization with connections/edges
   - Save/load workflow definitions stored as JSON in database
-  - Webhook configuration section for WHAPI integration
-  - Full CRUD operations for workflows (create, edit, delete)
+  - **User-Specific Webhook Endpoints:** Each workflow has a unique webhook URL (`/webhooks/whapi/:userId/:webhookToken`) displayed with copy-to-clipboard functionality
+  - **Entry Node Configuration:** Support for setting an entry node that serves as the welcome message for first-time contacts
+  - **Automated Message Routing:** Incoming WHAPI webhook messages are routed based on:
+    - **First Message of Day Detection:** Uses conversation_states table to track last message timestamp per phone/channel
+    - **Text Messages:** Route to entry node for first messages, or handle as general text input
+    - **Button Replies:** Match button_id from WHAPI payload to workflow edges to find next node
+  - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration
+  - Full CRUD operations for workflows (create, edit, delete) with validation
 - **Outbox:** Displays all jobs with totals (queued, pending, sent, delivered, read, failed, replied). Clicking a job opens dialog with message table. Each message has a "View" button opening a drawer with full WHAPI payload (header, body, footer, buttons), provider message ID, status, error details, and timestamps for debugging.
 - **Pricing:** Displays plans with duration toggles, integrates PayPal for subscriptions, and supports offline payments.
 - **Admin Dashboard:** User management, billing adjustments, offline payment approval, and channel activation. Includes an expandable user table showing channels and activation controls.
@@ -44,7 +50,9 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Templates**: Reusable message formats.
 - **Jobs**: Message sending jobs with delivery tracking.
 - **Messages**: Individual message status and error handling. Includes delivery tracking timestamps (`sentAt`, `deliveredAt`, `readAt`, `repliedAt`) and `lastReply` content. Unique index on `providerMessageId` ensures no duplicate WHAPI message IDs.
-- **Workflows**: Chatbot conversation flows.
+- **Workflows**: Chatbot conversation flows with `webhookToken` (unique per workflow), `isActive` flag, `entryNodeId` (identifies welcome message node), and `definitionJson` (stores nodes/edges).
+- **ConversationStates**: Tracks last message timestamp per phone/channel combination for "first message of day" detection. Fields: `phoneNumber`, `channelId`, `lastMessageAt`.
+- **WorkflowExecutions**: Logs workflow execution history including incoming message payloads, routing decisions, and outbound responses. Fields: `workflowId`, `phoneNumber`, `channelId`, `incomingMessage`, `routingDecision`, `responsePayload`, `success`, `errorMessage`.
 - **OfflinePayments**: Manual payment submissions.
 - **AuditLogs**: System activity tracking.
 - **Settings**: System-wide configuration including `main_days_balance`.
