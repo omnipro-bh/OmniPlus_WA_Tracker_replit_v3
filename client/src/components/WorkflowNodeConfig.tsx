@@ -37,7 +37,10 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     enabled: testDialogOpen,
   });
 
-  const activeChannels = channels.filter((ch) => ch.status === 'active');
+  // Filter for ACTIVE and AUTHORIZED channels only
+  const activeChannels = channels.filter(
+    (ch) => ch.status === 'ACTIVE' && ch.authStatus === 'AUTHORIZED'
+  );
 
   const updateConfig = (key: string, value: any) => {
     onUpdate(node.id, { ...config, [key]: value });
@@ -133,7 +136,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                 ) : (
                   activeChannels.map((channel) => (
                     <SelectItem key={channel.id} value={channel.id.toString()}>
-                      {channel.phoneNumber}
+                      {channel.label} ({channel.phone})
                     </SelectItem>
                   ))
                 )}
