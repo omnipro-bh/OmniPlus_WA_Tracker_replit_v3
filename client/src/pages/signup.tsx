@@ -42,7 +42,7 @@ export default function Signup() {
         title: "Account created!",
         description: "Welcome to OmniPlus. Let's get started.",
       });
-      setLocation("/dashboard");
+      setLocation("/");
     },
     onError: (error: any) => {
       toast({

@@ -191,6 +191,35 @@ export default function WorkflowBuilder({
     event.dataTransfer.effectAllowed = 'move';
   };
 
+  const addNodeToCanvas = useCallback((nodeType: string, label: string) => {
+    // Add node at center of canvas with some randomization to avoid overlap
+    const offsetX = Math.random() * 100 - 50;
+    const offsetY = Math.random() * 100 - 50;
+    const position = { x: 250 + offsetX, y: 100 + offsetY };
+
+    const newNode: Node = {
+      id: `${nodeType}_${Date.now()}`,
+      type: 'default',
+      position,
+      data: { 
+        label,
+        type: nodeType,
+        config: {},
+      },
+      style: {
+        background: nodeType.includes('Trigger') ? 'hsl(var(--primary))' : 'hsl(var(--card))',
+        color: nodeType.includes('Trigger') ? 'hsl(var(--primary-foreground))' : 'hsl(var(--card-foreground))',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: '8px',
+        padding: '10px',
+        fontSize: '12px',
+        width: 200,
+      },
+    };
+
+    setNodes((nds) => nds.concat(newNode));
+  }, [setNodes]);
+
   const handleSave = () => {
     if (onSave) {
       onSave(nodes, edges, entryNodeId);
@@ -221,10 +250,12 @@ export default function WorkflowBuilder({
                 {nodeTypes.MESSAGE.map((node) => (
                   <div
                     key={node.id}
-                    className="p-3 border rounded-md cursor-move hover-elevate active-elevate-2"
+                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
                     draggable
                     onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                    onClick={() => addNodeToCanvas(node.id, node.label)}
                     data-testid={`node-type-${node.id}`}
+                    title={`Click to add or drag to canvas`}
                   >
                     <div className="flex items-start gap-2">
                       <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
@@ -250,10 +281,12 @@ export default function WorkflowBuilder({
                 {nodeTypes.TRIGGER.map((node) => (
                   <div
                     key={node.id}
-                    className="p-3 border rounded-md cursor-move hover-elevate active-elevate-2"
+                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
                     draggable
                     onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                    onClick={() => addNodeToCanvas(node.id, node.label)}
                     data-testid={`node-type-${node.id}`}
+                    title={`Click to add or drag to canvas`}
                   >
                     <div className="flex items-start gap-2">
                       <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
