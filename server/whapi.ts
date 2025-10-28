@@ -261,10 +261,19 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
   header?: { text: string };
   body: { text: string };
   footer?: { text: string };
-  action: {
-    buttons: Array<{ type: string; title: string; id: string }>;
+  action?: {
+    buttons?: Array<{ type: string; title: string; id: string; phone_number?: string; url?: string; copy_code?: string }>;
+    list?: {
+      sections: Array<{
+        title: string;
+        rows: Array<{ id: string; title: string; description?: string }>;
+      }>;
+      label: string;
+    };
   };
   type: string;
+  media?: string;
+  no_encode?: boolean;
 }) {
   // Ensure token has Bearer prefix (add if missing)
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
@@ -286,4 +295,153 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
 
   // Response should include message ID and other details
   return await response.json();
+}
+
+// Build and send interactive message based on workflow node type
+export async function buildAndSendNodeMessage(channel: any, phone: string, nodeType: string, config: any) {
+  const channelToken = channel.token;
+
+  // Build payload based on node type
+  let payload: any = {
+    to: phone,
+  };
+
+  // Quick Reply Buttons
+  if (nodeType === 'quickReply') {
+    if (config.headerText) payload.header = { text: config.headerText };
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    const buttons = (config.buttons || [])
+      .filter((btn: any) => btn.title && btn.id)
+      .map((btn: any) => ({
+        type: 'quick_reply',
+        title: btn.title,
+        id: btn.id,
+      }));
+    
+    payload.action = { buttons };
+    payload.type = 'button';
+  }
+
+  // Quick Reply with Image
+  else if (nodeType === 'quickReplyImage') {
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    const buttons = (config.buttons || [])
+      .filter((btn: any) => btn.title && btn.id)
+      .map((btn: any) => ({
+        type: 'quick_reply',
+        title: btn.title,
+        id: btn.id,
+      }));
+    
+    payload.action = { buttons };
+    payload.type = 'button';
+    payload.media = config.mediaUrl;
+  }
+
+  // Quick Reply with Video
+  else if (nodeType === 'quickReplyVideo') {
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    const buttons = (config.buttons || [])
+      .filter((btn: any) => btn.title && btn.id)
+      .map((btn: any) => ({
+        type: 'quick_reply',
+        title: btn.title,
+        id: btn.id,
+      }));
+    
+    payload.action = { buttons };
+    payload.type = 'button';
+    payload.media = config.mediaUrl;
+    payload.no_encode = true;
+  }
+
+  // List Message
+  else if (nodeType === 'listMessage') {
+    if (config.headerText) payload.header = { text: config.headerText };
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    const sections = (config.sections || []).map((section: any) => ({
+      title: section.title || 'Options',
+      rows: (section.rows || [])
+        .filter((row: any) => row.title && row.id)
+        .map((row: any) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description || '',
+        })),
+    }));
+    
+    payload.action = {
+      list: {
+        sections,
+        label: config.buttonLabel || 'Choose option',
+      },
+    };
+    payload.type = 'list';
+  }
+
+  // Call Button
+  else if (nodeType === 'callButton') {
+    if (config.headerText) payload.header = { text: config.headerText };
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    payload.action = {
+      buttons: [{
+        type: 'call',
+        title: config.buttonTitle || 'Call us',
+        id: 'call_btn',
+        phone_number: config.phoneNumber,
+      }],
+    };
+    payload.type = 'button';
+  }
+
+  // URL Button
+  else if (nodeType === 'urlButton') {
+    if (config.headerText) payload.header = { text: config.headerText };
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    payload.action = {
+      buttons: [{
+        type: 'url',
+        title: config.buttonTitle || 'Visit Website',
+        id: 'url_btn',
+        url: config.url,
+      }],
+    };
+    payload.type = 'button';
+  }
+
+  // Copy/OTP Button
+  else if (nodeType === 'copyButton') {
+    if (config.headerText) payload.header = { text: config.headerText };
+    payload.body = { text: config.bodyText || 'No message' };
+    if (config.footerText) payload.footer = { text: config.footerText };
+    
+    payload.action = {
+      buttons: [{
+        type: 'copy',
+        title: config.buttonTitle || 'Copy OTP',
+        id: 'copy_btn',
+        copy_code: config.copyCode,
+      }],
+    };
+    payload.type = 'button';
+  }
+
+  else {
+    throw new Error(`Unsupported node type: ${nodeType}`);
+  }
+
+  // Send the message using WHAPI
+  return await sendInteractiveMessage(channelToken, payload);
 }

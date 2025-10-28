@@ -45,13 +45,10 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     setIsSendingTest(true);
     try {
-      await apiRequest('/api/workflows/test-message', {
-        method: 'POST',
-        body: JSON.stringify({
-          nodeType,
-          config,
-          phone: testPhone,
-        }),
+      await apiRequest('POST', '/api/workflows/test-message', {
+        nodeType,
+        config,
+        phone: testPhone,
       });
 
       toast({

@@ -1350,6 +1350,33 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Test send workflow node message
+  app.post("/api/workflows/test-message", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { nodeType, config, phone } = req.body;
+
+      if (!phone || !nodeType || !config) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Get user's active channel
+      const channels = await storage.getChannelsForUser(req.userId!);
+      const activeChannel = channels.find(c => c.status === 'ACTIVE');
+
+      if (!activeChannel) {
+        return res.status(400).json({ error: "No active channel found. Please activate a channel first." });
+      }
+
+      // Build and send WHAPI interactive message based on node type
+      const result = await whapi.buildAndSendNodeMessage(activeChannel, phone, nodeType, config);
+
+      res.json({ success: true, messageId: result.messageId });
+    } catch (error: any) {
+      console.error("Test message error:", error);
+      res.status(500).json({ error: error.message || "Failed to send test message" });
+    }
+  });
+
   // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
