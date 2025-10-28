@@ -83,3 +83,32 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database managed by Drizzle ORM.
 - **node-cron:** For scheduling daily tasks like days decrement.
+
+## Days Balance & Authorization Flow (October 2025)
+Critical improvements to ensure real-time UI updates and correct status synchronization:
+
+### User Status Management
+- **Auto-Recovery from Expired Status**: When admin adds days to any channel, the system checks if the user has at least one ACTIVE channel. If yes, the user's status is automatically updated from "expired" to "active", immediately removing the "Account Expired" banner from the dashboard.
+- **Auto-Logout for Expired Users**: Non-admin users with "expired" status are automatically logged out and redirected to login page with an explanatory message. This prevents expired users from attempting operations that would fail.
+
+### Real-Time Cache Invalidation
+All mutations that affect user or channel state now properly invalidate React Query caches:
+- **Admin Activation** (`/api/admin/users/:userId/channels/:channelId/activate`): Invalidates `/api/me`, `/api/channels`, `/api/admin/users`, and `/api/admin/balance`
+- **Channel Authorization** (`/api/channels/:id/authorize`): Invalidates `/api/me` and `/api/channels`
+- This ensures dashboards, channel pages, and send pages update immediately without manual refresh
+
+### WHAPI Status Integration
+- **QR Scan Authorization**: When user scans QR code, the authorization endpoint calls `getChannelStatus()` to fetch real-time WHAPI connection status from WHAPI Gate API
+- **Status Persistence**: Retrieved WHAPI status (`active`, `stopped`, etc.) is stored in the database for monitoring and troubleshooting
+- **Authorization Workflow**: QR polling (2-second intervals) detects HTTP 409 status, automatically calls authorization endpoint, and updates channel to AUTHORIZED state
+
+### Send Button Logic
+- **Channel-Level Expiration Check**: Send page now validates each channel's `expiresAt` date instead of relying solely on user status
+- **Multi-Condition Enablement**: Send button enabled only when there exists at least one channel that is:
+  1. Status = "ACTIVE"
+  2. AuthStatus = "AUTHORIZED"  
+  3. ExpiresAt > current time (or null)
+- **Granular Error Messages**: Displays specific guidance based on the blocking condition:
+  - "No active channels. Please add and activate a channel"
+  - "No authorized channels. Please authorize your channels by scanning the QR code"
+  - "All channels have expired. Please add days to your channels to continue sending messages"
