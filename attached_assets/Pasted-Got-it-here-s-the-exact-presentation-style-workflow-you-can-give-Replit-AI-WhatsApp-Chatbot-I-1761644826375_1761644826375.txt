@@ -1,0 +1,64 @@
+Got it—here’s the exact, presentation-style workflow you can give Replit AI.
+
+# WhatsApp Chatbot — Incoming Message Workflow
+
+## What the webhook receives
+
+* **phone** (sender)
+* **message_type**: `text` **or** `button_reply`
+* **text** (if message_type = text)
+* **button_id** (if message_type = button_reply)
+
+---
+
+## Decision flow (simple)
+
+1. **Receive incoming message (webhook)**
+
+2. **If `message_type = text`:**
+
+   * Check: “Is this the **first message today** from this phone?”
+
+     * **Yes →** Send the **Welcome/Greeting** message (this message is configured inside the chatbot builder).
+     * **No →** Do nothing further (or optionally show main menu—based on builder setting).
+
+3. **If `message_type = button_reply`:**
+
+   * Read `button_id`.
+   * Find which **block** in the chatbot builder this `button_id` is linked to.
+   * Send the **message(s) of that block** to the same phone.
+
+---
+
+## One-screen visual
+
+```
+Incoming Message (webhook)
+        │
+        ├── Is message_type = text?
+        │        │
+        │        └── Yes → Is this the first message today for this phone?
+        │                     │
+        │                     ├── Yes → Send Welcome/Greeting (from builder)
+        │                     └── No  → (optional) do nothing / show menu
+        │
+        └── Is message_type = button_reply?
+                 │
+                 └── Yes → Get button_id → Lookup linked block in builder
+                               → Send that block’s message(s)
+```
+
+---
+
+## Minimal data the system keeps
+
+* **Last message date per phone** (to know “first message of the day”)
+* **Button map**: `button_id → next_block_id` (exported from the builder)
+
+---
+
+## Notes for Replit AI
+
+* The **Welcome/Greeting** content is managed in the **builder** (not hardcoded).
+* The **button routing** strictly follows the builder: each button has an ID that points to a block.
+* Keep it **lightweight**: just a webhook + a tiny store for “last message date per phone” + a lookup for buttons → blocks.

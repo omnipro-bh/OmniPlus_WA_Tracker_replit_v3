@@ -1,0 +1,52 @@
+We need to setup the backend of the chatbot builder so it become functional, 
+
+first we need a webhook that receives all incoming messages, to receive all Incoming Messages for the channel created/active
+What the webhook receives
+•	phone (sender)
+•	message_type: text or button_reply
+•	text (if message_type = text)
+•	button_id (if message_type = button_reply)
+________________________________________
+Decision flow (simple)
+1.	Receive incoming message (webhook)
+2.	If message_type = text:
+o	Check: “Is this the first message today from this phone?”
+	Yes → Send the Welcome/Greeting message (this message is configured inside the chatbot builder).
+	No → Do nothing further.
+3.	If message_type = button_reply:
+o	Read button_id.
+o	Find which block in the chatbot builder this button_id is linked to.
+o	Send the message(s) of that block to the same phone.
+________________________________________
+One-screen visual
+Incoming Message (webhook)
+        │
+        ├── Is message_type = text?
+        │        │
+        │        └── Yes → Is this the first message today for this phone?
+        │                     │
+        │                     ├── Yes → Send Welcome/Greeting (from builder)
+        │                     └── No  → (optional) do nothing 
+        │
+        └── Is message_type = button_reply?
+                 │
+                 └── Yes → Get button_id → Lookup linked block in builder
+                               → Send that block’s message(s)
+________________________________________
+Minimal data the system keeps
+•	Last message date per phone (to know “first message of the day”)
+•	Button map: button_id → next_block_id (exported from the builder)
+________________________________________
+Notes for Replit AI
+•	The Welcome/Greeting content is managed in the builder (not hardcoded).
+•	The button routing strictly follows the builder: each button has an ID that points to a block.
+•	Keep it lightweight: just a webhook + a tiny store for “last message date per phone” + a lookup for buttons → blocks.
+
+----------------------------------------------------------------
+Since everything is based on incoming messages coming from webhook, we can keep one master webhook to received all incoming messages for all users in the app ( no recommended with high volume ) 
+
+or the system generate separate webhook url for each user. 
+-----------------------------------------------------------------------------------
+give me a plan of what you will do before you start coding, and any suggestion
+
+
