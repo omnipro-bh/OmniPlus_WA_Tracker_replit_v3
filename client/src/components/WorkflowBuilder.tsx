@@ -227,7 +227,7 @@ export default function WorkflowBuilder({
       </Card>
 
       {/* ReactFlow Canvas */}
-      <div className="flex-1 border rounded-lg" ref={reactFlowWrapper}>
+      <div className="flex-1 h-full w-full border rounded-lg" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges}

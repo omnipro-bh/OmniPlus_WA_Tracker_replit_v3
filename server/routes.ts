@@ -1303,7 +1303,22 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
-      const { name, definitionJson, entryNodeId } = req.body;
+      // Validate request body
+      const updateSchema = z.object({
+        name: z.string().min(1).optional(),
+        definitionJson: z.record(z.any()).optional(),
+        entryNodeId: z.string().optional().nullable(),
+      });
+
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationResult.error.flatten() 
+        });
+      }
+
+      const { name, definitionJson, entryNodeId } = validationResult.data;
       const updated = await storage.updateWorkflow(workflowId, {
         name,
         definitionJson,
