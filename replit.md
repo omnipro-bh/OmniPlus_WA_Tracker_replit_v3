@@ -22,16 +22,23 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
   - Node palette with MESSAGE types and TRIGGER types, supporting dual interaction modes:
     - **Click-to-add:** Click any node in palette to add it to canvas at default position
     - **Drag-and-drop:** Drag nodes from palette to specific canvas positions
-  - **WHAPI Interactive Message Types:** Full support for 7 WHAPI interactive message types:
-    1. **Quick Reply Buttons** (quickReply): Text with up to 3 reply buttons
-    2. **Buttons with Image** (quickReplyImage): Image with up to 3 reply buttons
-    3. **Buttons with Video** (quickReplyVideo): Video with up to 3 reply buttons
-    4. **List Message** (listMessage): Expandable list with up to 10 sections containing rows
+  - **WHAPI Interactive Message Types:** Full support for 7 WHAPI interactive message types with dynamic button/section/card management:
+    1. **Quick Reply Buttons** (quickReply): Text with up to 3 reply buttons with dynamic add/remove
+    2. **Buttons with Image** (quickReplyImage): Image with up to 3 reply buttons with dynamic add/remove
+    3. **Buttons with Video** (quickReplyVideo): Video with up to 3 reply buttons with dynamic add/remove
+    4. **List Message** (listMessage): Expandable list with up to 10 sections, each containing multiple rows, with dynamic add/remove for both sections and rows
     5. **Call Button** (callButton): Single button to initiate phone call
     6. **URL Button** (urlButton): Single button to open website
     7. **Copy/OTP Button** (copyButton): Single button to copy text/OTP codes
-    8. **Carousel** (carousel): Swipeable cards with buttons (planned)
+    8. **Carousel** (carousel): Swipeable cards (up to 10) with buttons, supporting dynamic add/remove for cards and buttons
   - **Node Configuration:** WHAPI-compliant message structure editors with header (optional), body (required), footer (optional), and action (buttons/list) fields
+  - **Dynamic Element Management:**
+    - **Add/Remove Controls:** Plus and X buttons to dynamically add/remove buttons, sections, rows, and cards
+    - **Auto-Generated IDs:** All interactive elements (buttons, rows, sections, cards) receive unique auto-generated IDs using `crypto.randomUUID()`
+    - **Manual ID Override:** Users can edit any auto-generated ID directly in the configuration panel
+    - **ID Regeneration:** RefreshCw icon button on each ID field to generate a new random unique ID
+    - **Limit Enforcement:** Add buttons automatically disable when WHAPI limits reached (e.g., 3 buttons for Quick Reply, 10 cards for Carousel)
+  - **State Management Fix:** WorkflowBuilder derives `selectedNode` from the `nodes` array to ensure config panel always displays latest node data after updates
   - **Test Functionality:** Each node features a test button (Flask icon) that opens a dialog for sending test messages to specified phone numbers via active channels
   - Real-time workflow visualization with connections/edges
   - Save/load workflow definitions stored as JSON in database
