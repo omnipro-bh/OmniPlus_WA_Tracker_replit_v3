@@ -46,11 +46,17 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     onUpdate(node.id, { ...config, [key]: value });
   };
 
+  // Handle phone input - only allow digits
+  const handlePhoneChange = (value: string) => {
+    const digitsOnly = value.replace(/\D/g, '');
+    setTestPhone(digitsOnly);
+  };
+
   const handleTestSend = async () => {
-    if (!testPhone.trim()) {
+    if (!testPhone.trim() || testPhone.length < 8) {
       toast({
-        title: 'Phone number required',
-        description: 'Please enter a phone number to send the test message',
+        title: 'Invalid phone number',
+        description: 'Please enter a valid phone number with country code (minimum 8 digits)',
         variant: 'destructive',
       });
       return;
@@ -115,7 +121,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               type="text"
               placeholder="1234567890"
               value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
+              onChange={(e) => handlePhoneChange(e.target.value)}
               data-testid="input-test-phone"
             />
             <p className="text-xs text-muted-foreground mt-1">
