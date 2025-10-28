@@ -46,11 +46,35 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     onUpdate(node.id, { ...config, [key]: value });
   };
 
+  // Validate and format phone number input (E.164 format)
+  const handlePhoneChange = (value: string) => {
+    // Only allow digits, +, -, (, ), and spaces
+    const cleaned = value.replace(/[^\d+\-() ]/g, '');
+    setTestPhone(cleaned);
+  };
+
+  const validatePhone = (phone: string): boolean => {
+    // E.164 format: starts with +, followed by 1-15 digits
+    const e164Pattern = /^\+\d{1,15}$/;
+    const cleanedPhone = phone.replace(/[\s\-()]/g, '');
+    return e164Pattern.test(cleanedPhone);
+  };
+
   const handleTestSend = async () => {
     if (!testPhone.trim()) {
       toast({
         title: 'Phone number required',
         description: 'Please enter a phone number to send the test message',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const cleanedPhone = testPhone.replace(/[\s\-()]/g, '');
+    if (!validatePhone(cleanedPhone)) {
+      toast({
+        title: 'Invalid phone number',
+        description: 'Phone must be in E.164 format (e.g., +1234567890)',
         variant: 'destructive',
       });
       return;
@@ -70,13 +94,13 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       await apiRequest('POST', '/api/workflows/test-message', {
         nodeType,
         config,
-        phone: testPhone,
+        phone: cleanedPhone,
         channelId: testChannelId,
       });
 
       toast({
         title: 'Test message sent',
-        description: `Message sent to ${testPhone}`,
+        description: `Message sent to ${cleanedPhone}`,
       });
       setTestDialogOpen(false);
       setTestPhone('');
@@ -112,9 +136,10 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             <Label htmlFor="test-phone">Phone Number (E.164 format)</Label>
             <Input
               id="test-phone"
+              type="tel"
               placeholder="+1234567890"
               value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
+              onChange={(e) => handlePhoneChange(e.target.value)}
               data-testid="input-test-phone"
             />
             <p className="text-xs text-muted-foreground mt-1">
