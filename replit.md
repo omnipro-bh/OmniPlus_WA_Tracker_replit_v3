@@ -19,8 +19,20 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Templates:** CRUD operations for message templates with preview.
 - **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react). Features include:
   - Interactive canvas for designing conversation flows with proper dimensions (h-full w-full) for React Flow rendering
-  - Node palette with MESSAGE types (text, media, location, interactive, contact, catalog) and TRIGGER types (message trigger, schedule trigger, webhook trigger, manual trigger)
-  - Node-specific configuration panels for editing message content and settings
+  - Node palette with MESSAGE types and TRIGGER types, supporting dual interaction modes:
+    - **Click-to-add:** Click any node in palette to add it to canvas at default position
+    - **Drag-and-drop:** Drag nodes from palette to specific canvas positions
+  - **WHAPI Interactive Message Types:** Full support for 7 WHAPI interactive message types:
+    1. **Quick Reply Buttons** (quickReply): Text with up to 3 reply buttons
+    2. **Buttons with Image** (quickReplyImage): Image with up to 3 reply buttons
+    3. **Buttons with Video** (quickReplyVideo): Video with up to 3 reply buttons
+    4. **List Message** (listMessage): Expandable list with up to 10 sections containing rows
+    5. **Call Button** (callButton): Single button to initiate phone call
+    6. **URL Button** (urlButton): Single button to open website
+    7. **Copy/OTP Button** (copyButton): Single button to copy text/OTP codes
+    8. **Carousel** (carousel): Swipeable cards with buttons (planned)
+  - **Node Configuration:** WHAPI-compliant message structure editors with header (optional), body (required), footer (optional), and action (buttons/list) fields
+  - **Test Functionality:** Each node features a test button (Flask icon) that opens a dialog for sending test messages to specified phone numbers via active channels
   - Real-time workflow visualization with connections/edges
   - Save/load workflow definitions stored as JSON in database
   - **User-Specific Webhook Endpoints:** Each workflow has a unique webhook URL (`/webhooks/whapi/:userId/:webhookToken`) displayed with copy-to-clipboard functionality
@@ -29,7 +41,7 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
     - **First Message of Day Detection:** Uses conversation_states table to track last message timestamp per phone/channel
     - **Text Messages:** Route to entry node for first messages, or handle as general text input
     - **Button Replies:** Match button_id from WHAPI payload to workflow edges to find next node
-  - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration
+  - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration using `buildAndSendNodeMessage` helper
   - Full CRUD operations for workflows (create, edit, delete) with validation
 - **Outbox:** Displays all jobs with totals (queued, pending, sent, delivered, read, failed, replied). Clicking a job opens dialog with message table. Each message has a "View" button opening a drawer with full WHAPI payload (header, body, footer, buttons), provider message ID, status, error details, and timestamps for debugging.
 - **Pricing:** Displays plans with duration toggles, integrates PayPal for subscriptions, and supports offline payments.
