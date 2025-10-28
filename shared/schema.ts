@@ -17,6 +17,8 @@ export const jobStatusEnum = pgEnum("job_status", ["QUEUED", "PENDING", "SENT", 
 export const messageStatusEnum = pgEnum("message_status", ["QUEUED", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "REPLIED"]);
 export const balanceTransactionTypeEnum = pgEnum("balance_transaction_type", ["topup", "allocate", "refund", "sync", "adjustment"]);
 export const channelDaysSourceEnum = pgEnum("channel_days_source", ["ADMIN_MANUAL", "PAYPAL", "OFFLINE", "MIGRATION"]);
+export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["SUCCESS", "ERROR"]);
+export const incomingMessageTypeEnum = pgEnum("incoming_message_type", ["text", "button_reply", "other"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -235,14 +237,59 @@ export const workflows = pgTable("workflows", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   definitionJson: jsonb("definition_json").notNull().default({}),
+  webhookToken: text("webhook_token").notNull().default(sql`gen_random_uuid()::text`),
+  isActive: boolean("is_active").notNull().default(true),
+  entryNodeId: text("entry_node_id"), // The "welcome" message node ID
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const workflowsRelations = relations(workflows, ({ one }) => ({
+export const workflowsRelations = relations(workflows, ({ one, many }) => ({
   user: one(users, {
     fields: [workflows.userId],
     references: [users.id],
+  }),
+  executions: many(workflowExecutions),
+}));
+
+// Conversation States table - tracks last message per phone number
+export const conversationStates = pgTable("conversation_states", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  phone: text("phone").notNull(), // Sender's phone number
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  lastMessageDate: timestamp("last_message_date").notNull().defaultNow(), // For "first message of day" check
+  currentNodeId: text("current_node_id"), // Track where in the flow
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  workflowPhoneIdx: uniqueIndex("conversation_states_workflow_phone_idx").on(table.workflowId, table.phone),
+}));
+
+export const conversationStatesRelations = relations(conversationStates, ({ one }) => ({
+  workflow: one(workflows, {
+    fields: [conversationStates.workflowId],
+    references: [workflows.id],
+  }),
+}));
+
+// Workflow Executions table - logs workflow runs for debugging
+export const workflowExecutions = pgTable("workflow_executions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  phone: text("phone").notNull(), // Sender's phone number
+  messageType: incomingMessageTypeEnum("message_type").notNull(),
+  triggerData: jsonb("trigger_data").notNull().default({}), // Incoming webhook payload
+  responsesSent: jsonb("responses_sent").notNull().default([]), // What we sent back
+  status: workflowExecutionStatusEnum("status").notNull().default("SUCCESS"),
+  errorMessage: text("error_message"),
+  executedAt: timestamp("executed_at").notNull().defaultNow(),
+});
+
+export const workflowExecutionsRelations = relations(workflowExecutions, ({ one }) => ({
+  workflow: one(workflows, {
+    fields: [workflowExecutions.workflowId],
+    references: [workflows.id],
   }),
 }));
 
@@ -374,6 +421,14 @@ export const insertChannelDaysLedgerSchema = createInsertSchema(channelDaysLedge
   days: z.number().int().positive(),
 });
 
+export const insertConversationStateSchema = createInsertSchema(conversationStates, {
+  phone: z.string().min(1),
+});
+
+export const insertWorkflowExecutionSchema = createInsertSchema(workflowExecutions, {
+  phone: z.string().min(1),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -393,6 +448,10 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Workflow = typeof workflows.$inferSelect;
 export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>;
+export type ConversationState = typeof conversationStates.$inferSelect;
+export type InsertConversationState = z.infer<typeof insertConversationStateSchema>;
+export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
+export type InsertWorkflowExecution = z.infer<typeof insertWorkflowExecutionSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type Setting = typeof settings.$inferSelect;
