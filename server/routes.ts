@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions } from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
@@ -1413,6 +1413,44 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get workflow execution logs
+  app.get("/api/workflow-logs", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      // Get user's workflows
+      const userWorkflows = await storage.getWorkflowsForUser(req.userId!);
+      const workflowIds = userWorkflows.map(w => w.id);
+
+      if (workflowIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Fetch execution logs for user's workflows, ordered by most recent first
+      const logs = await db
+        .select({
+          id: workflowExecutions.id,
+          workflowId: workflowExecutions.workflowId,
+          workflowName: workflows.name,
+          phone: workflowExecutions.phone,
+          messageType: workflowExecutions.messageType,
+          triggerData: workflowExecutions.triggerData,
+          responsesSent: workflowExecutions.responsesSent,
+          status: workflowExecutions.status,
+          errorMessage: workflowExecutions.errorMessage,
+          executedAt: workflowExecutions.executedAt,
+        })
+        .from(workflowExecutions)
+        .leftJoin(workflows, eq(workflowExecutions.workflowId, workflows.id))
+        .where(inArray(workflowExecutions.workflowId, workflowIds))
+        .orderBy(desc(workflowExecutions.executedAt))
+        .limit(500); // Limit to last 500 logs
+
+      res.json(logs);
+    } catch (error: any) {
+      console.error("Get workflow logs error:", error);
+      res.status(500).json({ error: "Failed to fetch workflow logs" });
+    }
+  });
+
   // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -2465,6 +2503,35 @@ export function registerRoutes(app: Express) {
         },
       };
       return await sendInteractiveMessage(channelToken, payload);
+    } else if (nodeType === "listMessage") {
+      const { sendInteractiveMessage } = await import("./whapi");
+      
+      // Normalize sections (filter and structure rows)
+      const sections = (config.sections || []).map((section: any) => ({
+        title: section.title || 'Options',
+        rows: (section.rows || [])
+          .filter((row: any) => row.title && row.id)
+          .map((row: any) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description || '',
+          })),
+      }));
+      
+      const payload = {
+        to: phone,
+        type: "list",
+        header: config.headerText ? { text: config.headerText } : undefined,
+        body: { text: config.bodyText || "" },
+        footer: config.footerText ? { text: config.footerText } : undefined,
+        action: {
+          list: {
+            label: config.buttonLabel || config.buttonText || "Select Option",
+            sections,
+          },
+        },
+      };
+      return await sendInteractiveMessage(channelToken, payload);
     } else if (nodeType === "media") {
       // TODO: Implement media message sending
       const { sendWhapiMessage } = await import("./whapi");
@@ -2475,6 +2542,7 @@ export function registerRoutes(app: Express) {
       return await sendWhapiMessage(channelToken, payload);
     }
 
+    console.log(`Unsupported node type: ${nodeType}`);
     return { success: false, message: "Unsupported node type" };
   }
 }

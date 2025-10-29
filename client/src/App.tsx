@@ -18,6 +18,7 @@ import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import Chatbot from "@/pages/chatbot";
 import Outbox from "@/pages/outbox";
+import Logs from "@/pages/logs";
 import Pricing from "@/pages/pricing";
 import Admin from "@/pages/admin";
 import AdminBalances from "@/pages/admin-balances";
@@ -70,6 +71,11 @@ function Router() {
       <Route path="/outbox">
         <DashboardLayout>
           <Outbox />
+        </DashboardLayout>
+      </Route>
+      <Route path="/logs">
+        <DashboardLayout>
+          <Logs />
         </DashboardLayout>
       </Route>
       <Route path="/pricing">

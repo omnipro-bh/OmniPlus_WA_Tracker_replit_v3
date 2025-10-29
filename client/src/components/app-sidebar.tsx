@@ -8,6 +8,7 @@ import {
   GitBranch,
   Bot,
   Inbox,
+  ScrollText,
   CreditCard,
   Settings,
   Shield,
@@ -73,6 +74,11 @@ export function AppSidebar() {
       title: "Outbox",
       url: "/outbox",
       icon: Inbox,
+    },
+    {
+      title: "Logs",
+      url: "/logs",
+      icon: ScrollText,
     },
     {
       title: "Pricing",
