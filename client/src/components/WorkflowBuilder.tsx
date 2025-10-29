@@ -226,6 +226,29 @@ export default function WorkflowBuilder({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nodes, setNodes, setEdges]);
 
+  // Handle delete button clicks from CustomWorkflowNode
+  useEffect(() => {
+    const handleDeleteNode = (event: CustomEvent) => {
+      const { nodeId } = event.detail;
+      
+      // Delete the node
+      setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+      
+      // Delete edges connected to this node
+      setEdges((eds) => eds.filter((edge) => 
+        edge.source !== nodeId && edge.target !== nodeId
+      ));
+      
+      // Clear selection if this was the selected node
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null);
+      }
+    };
+
+    window.addEventListener('deleteNode', handleDeleteNode as EventListener);
+    return () => window.removeEventListener('deleteNode', handleDeleteNode as EventListener);
+  }, [selectedNodeId, setNodes, setEdges]);
+
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges]
