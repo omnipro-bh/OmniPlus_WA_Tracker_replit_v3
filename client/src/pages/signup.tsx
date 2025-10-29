@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { MessageSquare, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -37,11 +37,16 @@ export default function Signup() {
     mutationFn: async (data: SignupForm) => {
       return await apiRequest("POST", "/api/auth/register", data);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Account created!",
         description: "Welcome to OmniPlus. Let's get started.",
       });
+      
+      // Refetch auth state and wait for completion before redirecting
+      await queryClient.refetchQueries({ queryKey: ["/api/me"] });
+      
+      // Navigate to dashboard after auth state is updated
       setLocation("/dashboard");
     },
     onError: (error: any) => {

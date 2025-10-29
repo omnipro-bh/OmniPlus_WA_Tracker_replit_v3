@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { MessageSquare, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -36,11 +36,16 @@ export default function Login() {
     mutationFn: async (data: LoginForm) => {
       return await apiRequest("POST", "/api/auth/login", data);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Welcome back!",
         description: "You've successfully logged in.",
       });
+      
+      // Refetch auth state and wait for completion before redirecting
+      await queryClient.refetchQueries({ queryKey: ["/api/me"] });
+      
+      // Navigate to dashboard after auth state is updated
       setLocation("/dashboard");
     },
     onError: (error: any) => {
