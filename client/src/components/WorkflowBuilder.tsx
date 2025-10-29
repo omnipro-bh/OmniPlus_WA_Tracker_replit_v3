@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, useEffect } from 'react';
+import { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -15,6 +15,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import dagre from 'dagre';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NodeConfigPanel } from '@/components/WorkflowNodeConfig';
+import { CustomWorkflowNode } from '@/components/CustomWorkflowNode';
 import {
   MessageCircle,
   Image as ImageIcon,
@@ -42,6 +44,7 @@ import {
   TestTube,
   Play,
   Pause,
+  Network,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -112,6 +115,41 @@ export const nodeTypes = {
   ],
 };
 
+// Auto-layout function using dagre for horizontal left-to-right arrangement
+const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  
+  const nodeWidth = 250;
+  const nodeHeight = 150;
+  
+  // LR = left to right, TB = top to bottom
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 200 });
+  
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+  });
+  
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+  
+  dagre.layout(dagreGraph);
+  
+  const layoutedNodes = nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    return {
+      ...node,
+      position: {
+        x: nodeWithPosition.x - nodeWidth / 2,
+        y: nodeWithPosition.y - nodeHeight / 2,
+      },
+    };
+  });
+  
+  return { nodes: layoutedNodes, edges };
+};
+
 interface WorkflowBuilderProps {
   initialNodes?: Node[];
   initialEdges?: Edge[];
@@ -131,7 +169,13 @@ export default function WorkflowBuilder({
   onToggleActive,
   workflowName = 'Untitled Workflow',
 }: WorkflowBuilderProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  // Convert all nodes to use custom type for multi-handle support
+  const convertedInitialNodes = initialNodes.map(node => ({
+    ...node,
+    type: 'custom',
+  }));
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState(convertedInitialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [entryNodeId, setEntryNodeId] = useState<string | undefined>(initialEntryNodeId);
@@ -140,6 +184,9 @@ export default function WorkflowBuilder({
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+  
+  // Register custom node types for ReactFlow
+  const customNodeTypes = useMemo(() => ({ custom: CustomWorkflowNode }), []);
 
   // Handle keyboard shortcuts for node deletion
   useEffect(() => {
@@ -210,21 +257,12 @@ export default function WorkflowBuilder({
 
       const newNode: Node = {
         id: `${type}_${Date.now()}`,
-        type: 'default',
+        type: 'custom',
         position,
         data: { 
           label,
           type,
           config: {},
-        },
-        style: {
-          background: type.includes('Trigger') ? 'hsl(var(--primary))' : 'hsl(var(--card))',
-          color: type.includes('Trigger') ? 'hsl(var(--primary-foreground))' : 'hsl(var(--card-foreground))',
-          border: '1px solid hsl(var(--border))',
-          borderRadius: '8px',
-          padding: '10px',
-          fontSize: '12px',
-          width: 200,
         },
       };
 
@@ -253,21 +291,12 @@ export default function WorkflowBuilder({
 
     const newNode: Node = {
       id: `${nodeType}_${Date.now()}`,
-      type: 'default',
+      type: 'custom',
       position,
       data: { 
         label,
         type: nodeType,
         config: {},
-      },
-      style: {
-        background: nodeType.includes('Trigger') ? 'hsl(var(--primary))' : 'hsl(var(--card))',
-        color: nodeType.includes('Trigger') ? 'hsl(var(--primary-foreground))' : 'hsl(var(--card-foreground))',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '8px',
-        padding: '10px',
-        fontSize: '12px',
-        width: 200,
       },
     };
 
@@ -279,6 +308,12 @@ export default function WorkflowBuilder({
       onSave(nodes, edges, entryNodeId);
     }
   };
+  
+  const handleAutoLayout = useCallback(() => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges, 'LR');
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+  }, [nodes, edges, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
@@ -374,6 +409,7 @@ export default function WorkflowBuilder({
           onDrop={onDrop}
           onDragOver={onDragOver}
           onNodeClick={onNodeClick}
+          nodeTypes={customNodeTypes}
           fitView
           minZoom={0.1}
           maxZoom={2}
@@ -390,6 +426,17 @@ export default function WorkflowBuilder({
               </Button>
               <Button size="icon" variant="ghost" title="Redo" data-testid="button-redo">
                 <Redo2 className="h-4 w-4" />
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleAutoLayout}
+                title="Auto-arrange nodes horizontally"
+                data-testid="button-auto-layout"
+              >
+                <Network className="h-4 w-4 mr-2" />
+                Auto Layout
               </Button>
               <div className="w-px h-6 bg-border mx-1" />
               {onToggleActive && (

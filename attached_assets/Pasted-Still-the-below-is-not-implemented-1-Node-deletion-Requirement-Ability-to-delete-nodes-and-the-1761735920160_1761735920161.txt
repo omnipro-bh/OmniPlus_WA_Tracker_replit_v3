@@ -1,0 +1,49 @@
+Still the below is not implemented 
+
+1) Node deletion
+•	Requirement: Ability to delete nodes and their connections (currently only adding is possible).
+•	Acceptance criteria:
+o	Delete via keyboard (Del/Backspace) or right-click context menu.
+o	Connected edges are removed cleanly.
+o	Undo/redo handles deletion properly.
+________________________________________
+2) Horizontal linking layout
+•	Requirement: Node connections should flow horizontally (left → right) rather than vertically.
+•	Reason: Horizontal flow is more intuitive for chatbot sequences and easier to visualize message progression.
+•	Acceptance criteria:
+o	Default node placement and link rendering use a left-to-right structure.
+o	Auto-arrange maintains horizontal spacing when adding or linking nodes.
+________________________________________
+3) Multi-output linking for buttons
+•	Requirement: Each button message node should expose separate, labeled output ports for each button.
+o	Example: If a node has 3 buttons, there should be 3 output connectors labeled with each button’s text or ID.
+•	Acceptance criteria:
+o	Each output port can be linked to a different node.
+o	Labels are visible on the port itself for easy linking.
+o	Renaming buttons updates their labels dynamically.
+________________________________________
+4) Webhook routing based on reply IDs
+•	Context: The webhook receives incoming message payloads like:
+•	"reply": {
+•	  "type": "list_reply",
+•	  "list_reply": { "id": "ListV3:r1" }
+•	}
+•	Go through the attached API documentation to understand better. 
+•	Requirement:
+o	Extract only the part after “:” (e.g., r1).
+o	Match it with the node or port that has the same Button/Option ID.
+o	Route execution to the linked node.
+o	Respect userId, channelId, and token to isolate sessions.
+•	Acceptance criteria:
+o	Correct routing for button_reply and list_reply.
+o	Unknown IDs trigger a fallback node.
+o	Clean mapping between IDs and node links.
+Routing logic (for reference):
+const rawId = incoming.reply.list_reply?.id || incoming.reply.button_reply?.id;
+const shortId = rawId?.split(':').pop();
+const target = flow.findByOptionId(shortId, { userId, channelId });
+if (target) execute(target.nextNodeId);
+else execute(flow.fallbackNodeId);
+
+for testing use Use admin@omniplus.com , pass, admin123, 
+

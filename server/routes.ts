@@ -2341,15 +2341,30 @@ export function registerRoutes(app: Express) {
           // Find the node linked to this button_id using workflow edges
           const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
           
-          // Find edge where source node has a button with this ID
-          const targetEdge = definition.edges?.find((edge: any) => {
-            const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
-            if (!sourceNode) return false;
-            
-            // Check if this node has a button with matching ID
-            const buttons = sourceNode.data?.config?.buttons || [];
-            return buttons.some((btn: any) => btn.id === buttonId);
-          });
+          // Try to find edge by sourceHandle first (new multi-handle workflows)
+          // The sourceHandle is automatically set by ReactFlow when connecting from a specific handle
+          let targetEdge = definition.edges?.find((edge: any) => edge.sourceHandle === buttonId);
+          
+          // FALLBACK: For legacy workflows without sourceHandle, check node button configs
+          // This maintains backward compatibility with existing workflows
+          if (!targetEdge) {
+            targetEdge = definition.edges?.find((edge: any) => {
+              const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
+              if (!sourceNode) return false;
+              
+              // Check if this node has a button with matching ID
+              const buttons = sourceNode.data?.config?.buttons || [];
+              const hasMatchingButton = buttons.some((btn: any) => btn.id === buttonId);
+              
+              // Also check list message rows
+              const sections = sourceNode.data?.config?.sections || [];
+              const hasMatchingRow = sections.some((section: any) => 
+                section.rows?.some((row: any) => row.id === buttonId)
+              );
+              
+              return hasMatchingButton || hasMatchingRow;
+            });
+          }
 
           if (targetEdge) {
             const targetNodeId = targetEdge.target;
