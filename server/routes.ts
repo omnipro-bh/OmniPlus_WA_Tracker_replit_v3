@@ -2238,7 +2238,17 @@ export function registerRoutes(app: Express) {
         return res.json({ success: true, message: "No message to process" });
       }
 
-      const phone = incomingMessage.from; // Sender's phone number
+      // CRITICAL: Ignore outbound messages (from_me === true)
+      // Only process inbound user messages
+      if (incomingMessage.from_me === true) {
+        console.log("Ignoring outbound message (from_me === true)");
+        return res.json({ success: true, message: "Outbound message ignored" });
+      }
+
+      // Extract phone from chat_id (format: "PHONE@s.whatsapp.net")
+      // Example: "97339116526@s.whatsapp.net" -> "97339116526"
+      const chatId = incomingMessage.chat_id || "";
+      const phone = chatId.split('@')[0]; // Extract phone number before @
       
       // Determine message type and extract button/list ID
       let messageType: "text" | "button_reply" | "other" = "other";
@@ -2247,7 +2257,8 @@ export function registerRoutes(app: Express) {
       // Handle button replies (both new and legacy formats)
       if (incomingMessage.reply?.type === "buttons_reply") {
         messageType = "button_reply";
-        rawButtonId = incomingMessage.reply.button_reply?.id || "";
+        // WHAPI format: reply.buttons_reply.id (note the 's' in buttons_reply)
+        rawButtonId = incomingMessage.reply.buttons_reply?.id || "";
       } else if (incomingMessage.button?.id) {
         // Legacy format fallback
         messageType = "button_reply";

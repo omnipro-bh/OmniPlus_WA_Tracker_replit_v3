@@ -1,0 +1,79 @@
+implement the webhook behavior.
+chatbot Webhook → Chatbot Node Router (Button Reply)
+Goal
+When the webhook receives an incoming WhatsApp message of type buttons_reply, extract the button ID, map it to the target node, and send that node’s message back to the user.
+________________________________________
+Input (example payload)
+{
+  "body": {
+    "messages": [
+      {
+        "id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+        "from_me": false,
+        "type": "reply",
+        "chat_id": "97339116526@s.whatsapp.net",
+        "timestamp": 1761745833,
+        "source": "mobile",
+        "device_id": 54,
+        "chat_name": "Hassan Alrosani",
+        "reply": {
+          "type": "buttons_reply",
+          "buttons_reply": {
+            "id": "ButtonsV3:btn_gp54ylg4r",
+            "title": "open 3"
+          }
+        }
+      }
+    ]
+  }
+}
+________________________________________
+What to check (in order)
+1.	Ensure incoming message
+o	from_me === false → only process inbound user messages.
+2.	Get recipient phone number
+o	chat_id is in the form PHONE@s.whatsapp.net.
+o	Extract PHONE (e.g., 97339116526) → this is the number to send the reply to.
+3.	Ensure it’s a reply with button
+o	type === "reply"
+o	reply.type === "buttons_reply"
+4.	Extract the button id we match on
+o	Raw: reply.buttons_reply.id e.g. "ButtonsV3:btn_gp54ylg4r".
+o	We only use the suffix after : → "btn_gp54ylg4r".
+5.	Find the target node by button id
+o	Look up in your chatbot routing (or node graph) where button_id == "btn_gp54ylg4r".
+o	Retrieve the node’s to_node_id (the node that this button points to).
+6.	Load the target node content
+o	Fetch node by to_node_id.
+o	Get the node’s message payload (text/template/media/components) that must be sent. → send exactly that node (list/button/carousel/etc.) to the extracted phone. Using documentation https://support.whapi.cloud/help-desk/sending/send-message-with-buttons
+7.	Send the message
+o	Use WhatsApp send API to send the node’s message to the extracted PHONE. 
+8.	Acknowledge fast
+o	Respond 200 OK immediately to the webhook after queuing/scheduling the send, to avoid retries/timeouts.
+________________________________________
+Minimal data expectations
+•	Routing table (or structure):
+o	button_id (e.g., btn_gp54ylg4r)
+o	to_node_id (e.g., node_42)
+•	Nodes table (or structure):
+o	node_id (e.g., node_42)
+o	message_type (text/template/buttons/list/etc.)
+o	message_payload (JSON to send back)
+If you also support list replies, apply the same logic using reply.type === "list_reply" and reply.list_reply.id. Again, take only the part after : if the provider prefixes it.
+________________________________________________________________________________
+Acceptance criteria
+•	Ignores outbound/self messages (from_me === true).
+•	Extracts phone from chat_id correctly.
+•	Processes only reply.type === "buttons_reply" (extendable to list_reply).
+•	Uses suffix of reply.buttons_reply.id after : as the match key.
+•	Correctly resolves to_node_id and sends the resolved node’s message to the phone.
+•	Returns 200 within <1s even if downstream send is queued.
+•	Logs unmatched button IDs for debugging.
+________________________________________
+Nice-to-have safeguards
+•	webhook is listening to incoming data, only when the chatbot is "LIVE",
+•	Validate webhook signature (HMAC) if provided by the vendor.
+•	Debounce duplicate deliveries using messages[0].id.
+•	Add a fallback message if no route is found for a button id.
+This is exactly the behavior we need: listen → detect buttons_reply → extract id suffix → resolve node → send that node’s message back to the user’s phone.
+
