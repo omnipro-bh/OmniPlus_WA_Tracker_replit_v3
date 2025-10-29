@@ -18,7 +18,9 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Messaging (Send Page):** Interactive message sending using WHAPI Gate API. Form includes channel selection, recipient phone (E.164), header, body (required), footer, and up to 3 buttons. Buttons are converted to WHAPI format `{type: "quick_reply", title, id}`. Plan limit checking enforces daily message quotas. Toast notification: "Message queued. Track delivery in Outbox → Job Details."
 - **Templates:** CRUD operations for message templates with preview.
 - **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react). Features include:
-  - Interactive canvas for designing conversation flows with proper dimensions (h-full w-full) for React Flow rendering
+  - **Full-Screen Canvas:** Immersive editing experience with zoom (0.1x-2x) and pan controls for designing complex workflows
+  - **Horizontal Layout:** Nodes arranged left-to-right for intuitive conversation flow visualization
+  - **Node Deletion:** Keyboard shortcuts (Delete/Backspace) with ReactFlow native selection support including multi-select via marquee selection; skips deletion when text inputs are focused
   - Node palette with MESSAGE types and TRIGGER types, supporting dual interaction modes:
     - **Click-to-add:** Click any node in palette to add it to canvas at default position
     - **Drag-and-drop:** Drag nodes from palette to specific canvas positions
@@ -40,6 +42,7 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
     - **Limit Enforcement:** Add buttons automatically disable when WHAPI limits reached (e.g., 3 buttons for Quick Reply, 10 cards for Carousel)
   - **State Management Fix:** WorkflowBuilder derives `selectedNode` from the `nodes` array to ensure config panel always displays latest node data after updates
   - **Test Functionality:** Each node features a test button (Flask icon) that opens a dialog for sending test messages to specified phone numbers via active channels
+  - **Live/Stop Toggle:** Control workflow execution with toggle button - Live workflows process incoming webhooks and send automated responses, Stopped workflows only log messages without sending replies. Uses optimistic UI updates with automatic rollback on API failure to maintain UI/backend consistency.
   - Real-time workflow visualization with connections/edges
   - Save/load workflow definitions stored as JSON in database
   - **User-Specific Webhook Endpoints:** Each workflow has a unique webhook URL (`/webhooks/whapi/:userId/:webhookToken`) displayed with copy-to-clipboard functionality
@@ -47,7 +50,8 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
   - **Automated Message Routing:** Incoming WHAPI webhook messages are routed based on:
     - **First Message of Day Detection:** Uses conversation_states table to track last message timestamp per phone/channel
     - **Text Messages:** Route to entry node for first messages, or handle as general text input
-    - **Button Replies:** Match button_id from WHAPI payload to workflow edges to find next node
+    - **Button/List Replies:** Extracts ID after colon from WHAPI format ("ButtonsV3:r1" → "r1", "ListV3:r2" → "r2") and matches to workflow edges. Supports both `reply.button_reply` and legacy `button.id` formats.
+  - **Inactive Workflow Handling:** Webhook handler respects `isActive` flag - logs all incoming messages for debugging but only sends automated responses when workflow is Live
   - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration using `buildAndSendNodeMessage` helper
   - Full CRUD operations for workflows (create, edit, delete) with validation
 - **Outbox:** Displays all jobs with totals (queued, pending, sent, delivered, read, failed, replied). Clicking a job opens dialog with message table. Each message has a "View" button opening a drawer with full WHAPI payload (header, body, footer, buttons), provider message ID, status, error details, and timestamps for debugging.

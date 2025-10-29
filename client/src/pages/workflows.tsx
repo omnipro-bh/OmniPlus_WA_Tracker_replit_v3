@@ -142,8 +142,8 @@ export default function Workflows() {
     
     return (
       <div className="flex flex-col h-full gap-4">
-        <div className="flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between flex-shrink-0 gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <Button
               variant="ghost"
               size="icon"
@@ -152,17 +152,17 @@ export default function Workflows() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div className="flex-1">
-              <h1 className="text-3xl font-semibold">{selectedWorkflow.name}</h1>
-              <p className="text-muted-foreground mt-1">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold truncate">{selectedWorkflow.name}</h1>
+              <p className="text-muted-foreground mt-1 truncate">
                 Visual chatbot builder
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-              <code className="text-sm">{webhookUrl}</code>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg max-w-xs">
+              <LinkIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <code className="text-sm truncate">{webhookUrl}</code>
             </div>
             <Button
               variant="outline"
