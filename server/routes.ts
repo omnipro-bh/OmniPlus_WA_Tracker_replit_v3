@@ -2463,7 +2463,7 @@ export function registerRoutes(app: Express) {
 
   // Helper function to send node message via WHAPI
   async function sendNodeMessage(phone: string, node: any, workflowUserId: number): Promise<any> {
-    const nodeType = node.data?.nodeType;
+    const nodeType = node.data?.type || node.data?.nodeType;
     const config = node.data?.config || {};
 
     // Get user's first active and authorized channel
