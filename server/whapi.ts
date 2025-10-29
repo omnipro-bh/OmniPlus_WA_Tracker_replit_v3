@@ -275,6 +275,10 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
   media?: string;
   no_encode?: boolean;
 }) {
+  if (!channelToken) {
+    throw new Error("Channel token is required but was not found. Please ensure the channel has a valid token.");
+  }
+
   // Ensure token has Bearer prefix (add if missing)
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
@@ -332,7 +336,7 @@ export async function sendCarouselMessage(channelToken: string, payload: {
 
 // Build and send interactive message based on workflow node type
 export async function buildAndSendNodeMessage(channel: any, phone: string, nodeType: string, config: any) {
-  const channelToken = channel.token;
+  const channelToken = channel.whapiChannelToken;
 
   // Build payload based on node type
   let payload: any = {
