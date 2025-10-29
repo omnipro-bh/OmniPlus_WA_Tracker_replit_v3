@@ -59,6 +59,21 @@ export default function Workflows() {
     },
   });
 
+  const toggleWorkflowActive = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      return apiRequest("PATCH", `/api/workflows/${id}/toggle-active`, { isActive });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({ title: "Workflow status updated" });
+    },
+    onError: () => {
+      // Refetch workflows to ensure UI shows correct status
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({ title: "Failed to update workflow status", variant: "destructive" });
+    },
+  });
+
   const deleteWorkflow = useMutation({
     mutationFn: async (id: number) => {
       return apiRequest("DELETE", `/api/workflows/${id}`);
@@ -93,6 +108,27 @@ export default function Workflows() {
     }
   };
 
+  const handleToggleActive = (isActive: boolean) => {
+    if (selectedWorkflow) {
+      // Store previous state for rollback on error
+      const previousState = selectedWorkflow.isActive;
+      
+      // Optimistically update local state
+      setSelectedWorkflow({ ...selectedWorkflow, isActive });
+      
+      // Make API call with error handling
+      toggleWorkflowActive.mutate(
+        { id: selectedWorkflow.id, isActive },
+        {
+          onError: () => {
+            // Rollback on error
+            setSelectedWorkflow({ ...selectedWorkflow, isActive: previousState });
+          }
+        }
+      );
+    }
+  };
+
   const handleCreateWorkflow = () => {
     if (newWorkflowName.trim()) {
       createWorkflow.mutate(newWorkflowName);
@@ -105,8 +141,8 @@ export default function Workflows() {
     const webhookUrl = getWebhookUrl(selectedWorkflow);
     
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="flex flex-col h-full gap-4">
+        <div className="flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -138,13 +174,17 @@ export default function Workflows() {
             </Button>
           </div>
         </div>
-        <WorkflowBuilder
-          initialNodes={definition.nodes || []}
-          initialEdges={definition.edges || []}
-          initialEntryNodeId={selectedWorkflow.entryNodeId || undefined}
-          onSave={handleSaveWorkflow}
-          workflowName={selectedWorkflow.name}
-        />
+        <div className="flex-1 min-h-0">
+          <WorkflowBuilder
+            initialNodes={definition.nodes || []}
+            initialEdges={definition.edges || []}
+            initialEntryNodeId={selectedWorkflow.entryNodeId || undefined}
+            isActive={selectedWorkflow.isActive}
+            onSave={handleSaveWorkflow}
+            onToggleActive={handleToggleActive}
+            workflowName={selectedWorkflow.name}
+          />
+        </div>
       </div>
     );
   }

@@ -1,0 +1,73 @@
+Request: Functional updates to Visual Chatbot Builder (horizontal linking, canvas, node delete, multi-output links, webhook routing, live toggle)
+Thanks for the current builder version. To move from “showcase” to production, we need the following functional and structural updates (see attached screenshot for reference).
+________________________________________
+1) Canvas size
+•	Requirement: The drag-and-drop canvas should be much larger, ideally auto-scaling to the full screen width/height with smooth zoom and pan.
+•	Acceptance criteria:
+o	Canvas expands dynamically with viewport.
+o	Zoom and pan work without clipping or layout jumps.
+________________________________________
+2) Node deletion
+•	Requirement: Ability to delete nodes and their connections (currently only adding is possible).
+•	Acceptance criteria:
+o	Delete via keyboard (Del/Backspace) or right-click context menu.
+o	Connected edges are removed cleanly.
+o	Undo/redo handles deletion properly.
+________________________________________
+3) Horizontal linking layout
+•	Requirement: Node connections should flow horizontally (left → right) rather than vertically.
+•	Reason: Horizontal flow is more intuitive for chatbot sequences and easier to visualize message progression.
+•	Acceptance criteria:
+o	Default node placement and link rendering use a left-to-right structure.
+o	Auto-arrange maintains horizontal spacing when adding or linking nodes.
+________________________________________
+4) Multi-output linking for buttons
+•	Requirement: Each button message node should expose separate, labeled output ports for each button.
+o	Example: If a node has 3 buttons, there should be 3 output connectors labeled with each button’s text or ID.
+•	Acceptance criteria:
+o	Each output port can be linked to a different node.
+o	Labels are visible on the port itself for easy linking.
+o	Renaming buttons updates their labels dynamically.
+________________________________________
+5) Webhook routing based on reply IDs
+•	Context: The webhook receives incoming message payloads like:
+•	"reply": {
+•	  "type": "list_reply",
+•	  "list_reply": { "id": "ListV3:r1" }
+•	}
+•	Go through the attached API documentation to understand better. 
+•	Requirement:
+o	Extract only the part after “:” (e.g., r1).
+o	Match it with the node or port that has the same Button/Option ID.
+o	Route execution to the linked node.
+o	Respect userId, channelId, and token to isolate sessions.
+•	Acceptance criteria:
+o	Correct routing for button_reply and list_reply.
+o	Unknown IDs trigger a fallback node.
+o	Clean mapping between IDs and node links.
+Routing logic (for reference):
+const rawId = incoming.reply.list_reply?.id || incoming.reply.button_reply?.id;
+const shortId = rawId?.split(':').pop();
+const target = flow.findByOptionId(shortId, { userId, channelId });
+if (target) execute(target.nextNodeId);
+else execute(flow.fallbackNodeId);
+________________________________________
+6) Live/Stop toggle
+•	Requirement: A global toggle to activate or deactivate the chatbot.
+•	Acceptance criteria:
+o	When “Live”: webhook routes messages normally.
+o	When “Stopped”: webhook still receives messages but no replies are sent (log-only).
+o	Status is visible and persistent in UI.
+________________________________________
+7) Testing
+Please ensure full testing of all above features — not just UI showcase.
+Example test scenario:
+1.	Create a Buttons node with 3 buttons (r1, r2, r3) linked to separate text nodes.
+2.	Send webhook with list_reply.id = "ListV3:r2" → should route to node linked to r2.
+3.	Confirm correct behavior across multiple users/channels.
+4.	Delete a node and confirm clean disconnection.
+5.	Toggle chatbot off → no message sent. Toggle on → resume routing.
+________________________________________
+These updates will make the builder ready for real WhatsApp automation workflows.
+Let me know if you need JSON examples or a test webhook to validate routing.
+

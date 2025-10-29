@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -12,6 +12,7 @@ import {
   Edge,
   Connection,
   BackgroundVariant,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,8 @@ import {
   Redo2,
   Settings,
   TestTube,
+  Play,
+  Pause,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -113,7 +116,9 @@ interface WorkflowBuilderProps {
   initialNodes?: Node[];
   initialEdges?: Edge[];
   initialEntryNodeId?: string;
+  isActive?: boolean;
   onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string) => void;
+  onToggleActive?: (isActive: boolean) => void;
   workflowName?: string;
 }
 
@@ -121,7 +126,9 @@ export default function WorkflowBuilder({
   initialNodes = [],
   initialEdges = [],
   initialEntryNodeId,
+  isActive = true,
   onSave,
+  onToggleActive,
   workflowName = 'Untitled Workflow',
 }: WorkflowBuilderProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -133,6 +140,44 @@ export default function WorkflowBuilder({
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+
+  // Handle keyboard shortcuts for node deletion
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Delete or Backspace key - delete selected nodes
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        // Check if we're focused on an input field - don't delete nodes
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          return;
+        }
+        
+        // Prevent default behavior (especially for Backspace which navigates back)
+        event.preventDefault();
+        
+        // Get all selected nodes from ReactFlow's selection state
+        const selectedNodes = nodes.filter(node => node.selected);
+        
+        if (selectedNodes.length > 0) {
+          const selectedNodeIds = selectedNodes.map(node => node.id);
+          
+          // Delete the selected nodes
+          setNodes((nds) => nds.filter((node) => !selectedNodeIds.includes(node.id)));
+          
+          // Delete edges connected to these nodes
+          setEdges((eds) => eds.filter((edge) => 
+            !selectedNodeIds.includes(edge.source) && !selectedNodeIds.includes(edge.target)
+          ));
+          
+          // Clear our custom selection
+          setSelectedNodeId(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [nodes, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -195,10 +240,16 @@ export default function WorkflowBuilder({
   };
 
   const addNodeToCanvas = useCallback((nodeType: string, label: string) => {
-    // Add node at center of canvas with some randomization to avoid overlap
-    const offsetX = Math.random() * 100 - 50;
-    const offsetY = Math.random() * 100 - 50;
-    const position = { x: 250 + offsetX, y: 100 + offsetY };
+    // Horizontal layout: position nodes in a left-to-right flow
+    // Calculate position based on existing nodes for horizontal arrangement
+    const existingNodes = nodes.filter(n => n.data.type === nodeType);
+    const column = Math.floor(existingNodes.length / 3); // 3 nodes per column
+    const row = existingNodes.length % 3;
+    
+    const position = { 
+      x: 50 + (column * 300), // Horizontal spacing
+      y: 50 + (row * 150)      // Vertical spacing within column
+    };
 
     const newNode: Node = {
       id: `${nodeType}_${Date.now()}`,
@@ -221,7 +272,7 @@ export default function WorkflowBuilder({
     };
 
     setNodes((nds) => nds.concat(newNode));
-  }, [setNodes]);
+  }, [setNodes, nodes]);
 
   const handleSave = () => {
     if (onSave) {
@@ -234,9 +285,9 @@ export default function WorkflowBuilder({
   }, []);
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-4">
+    <div className="flex h-full w-full gap-4">
       {/* Node Palette Sidebar */}
-      <Card className="w-80 p-4">
+      <Card className="w-80 p-4 flex-shrink-0">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <List className="h-4 w-4" />
           Node Palette
@@ -312,7 +363,7 @@ export default function WorkflowBuilder({
       </Card>
 
       {/* ReactFlow Canvas */}
-      <div className="flex-1 h-full w-full border rounded-lg" ref={reactFlowWrapper}>
+      <div className="flex-1 h-full border rounded-lg" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -324,11 +375,14 @@ export default function WorkflowBuilder({
           onDragOver={onDragOver}
           onNodeClick={onNodeClick}
           fitView
+          minZoom={0.1}
+          maxZoom={2}
+          defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
           data-testid="workflow-canvas"
         >
-          <Background variant={BackgroundVariant.Dots} />
-          <Controls />
-          <MiniMap />
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable nodeStrokeWidth={3} />
           <Panel position="top-left" className="bg-card border rounded-md p-2">
             <div className="flex items-center gap-2">
               <Button size="icon" variant="ghost" title="Undo" data-testid="button-undo">
@@ -338,6 +392,30 @@ export default function WorkflowBuilder({
                 <Redo2 className="h-4 w-4" />
               </Button>
               <div className="w-px h-6 bg-border mx-1" />
+              {onToggleActive && (
+                <>
+                  <Button 
+                    size="sm" 
+                    variant={isActive ? "default" : "outline"}
+                    onClick={() => onToggleActive(!isActive)}
+                    data-testid="button-toggle-active"
+                    title={isActive ? "Stop chatbot" : "Start chatbot"}
+                  >
+                    {isActive ? (
+                      <>
+                        <Pause className="h-4 w-4 mr-2" />
+                        Live
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Stopped
+                      </>
+                    )}
+                  </Button>
+                  <div className="w-px h-6 bg-border mx-1" />
+                </>
+              )}
               <Button size="sm" variant="default" onClick={handleSave} data-testid="button-save-workflow">
                 <Save className="h-4 w-4 mr-2" />
                 Save
@@ -349,7 +427,7 @@ export default function WorkflowBuilder({
 
       {/* Node Configuration Panel */}
       {selectedNode && (
-        <Card className="w-80 flex flex-col max-h-full">
+        <Card className="w-80 flex flex-col max-h-full flex-shrink-0">
           <div className="p-4 border-b flex items-center gap-2">
             <Settings className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">Node Configuration</h3>

@@ -1360,6 +1360,29 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Toggle workflow active status
+  app.patch("/api/workflows/:id/toggle-active", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== req.userId!) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const { isActive } = req.body;
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ error: "isActive must be a boolean" });
+      }
+
+      const updated = await storage.updateWorkflow(workflowId, { isActive });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Toggle workflow active error:", error);
+      res.status(500).json({ error: "Failed to toggle workflow status" });
+    }
+  });
+
   // Test send workflow node message
   app.post("/api/workflows/test-message", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -2168,25 +2191,44 @@ export function registerRoutes(app: Express) {
 
       console.log(`Webhook received for user ${userId}:`, webhookPayload);
 
-      // Validate user and get active workflow
+      // Validate user and get workflow (active or inactive)
       const workflow = await db
         .select()
         .from(workflows)
         .where(
           and(
             eq(workflows.userId, parseInt(userId)),
-            eq(workflows.webhookToken, webhookToken),
-            eq(workflows.isActive, true)
+            eq(workflows.webhookToken, webhookToken)
           )
         )
         .limit(1);
 
       if (!workflow || workflow.length === 0) {
-        console.error("Invalid webhook token or inactive workflow");
-        return res.status(401).json({ error: "Invalid webhook token or inactive workflow" });
+        console.error("Invalid webhook token");
+        return res.status(401).json({ error: "Invalid webhook token" });
       }
 
-      const activeWorkflow = workflow[0];
+      const workflowRecord = workflow[0];
+      
+      // If workflow is not active, log but don't send responses
+      if (!workflowRecord.isActive) {
+        console.log(`Workflow ${workflowRecord.id} is inactive. Logging message but not sending responses.`);
+        
+        // Log the webhook for debugging purposes
+        await db.insert(workflowExecutions).values({
+          workflowId: workflowRecord.id,
+          phone: webhookPayload.messages?.[0]?.from || "unknown",
+          messageType: "other",
+          triggerData: webhookPayload,
+          responsesSent: [],
+          status: "SUCCESS",
+          errorMessage: "Workflow inactive - message logged only",
+        });
+        
+        return res.json({ success: true, message: "Workflow is inactive. Message logged only." });
+      }
+
+      const activeWorkflow = workflowRecord;
 
       // Extract message data from WHAPI webhook payload
       // WHAPI sends: { messages: [{ from, type, text: {body}, button: {id} }] }
@@ -2197,11 +2239,32 @@ export function registerRoutes(app: Express) {
       }
 
       const phone = incomingMessage.from; // Sender's phone number
-      const messageType = incomingMessage.button ? "button_reply" : 
-                         incomingMessage.text ? "text" : "other";
+      
+      // Determine message type and extract button/list ID
+      let messageType: "text" | "button_reply" | "other" = "other";
+      let rawButtonId = "";
+      
+      // Handle button replies (both new and legacy formats)
+      if (incomingMessage.reply?.type === "buttons_reply") {
+        messageType = "button_reply";
+        rawButtonId = incomingMessage.reply.button_reply?.id || "";
+      } else if (incomingMessage.button?.id) {
+        // Legacy format fallback
+        messageType = "button_reply";
+        rawButtonId = incomingMessage.button.id;
+      } else if (incomingMessage.reply?.type === "list_reply") {
+        messageType = "button_reply"; // Treat list replies like button replies for routing
+        rawButtonId = incomingMessage.reply.list_reply?.id || "";
+      } else if (incomingMessage.text) {
+        messageType = "text";
+      }
+      
+      // Extract the ID after the colon (e.g., "ButtonsV3:r1" -> "r1", "ListV3:r2" -> "r2")
+      const buttonId = rawButtonId.includes(':') ? rawButtonId.split(':').pop() || "" : rawButtonId;
       
       const textBody = incomingMessage.text?.body || "";
-      const buttonId = incomingMessage.button?.id || "";
+      
+      console.log(`Message type: ${messageType}, Raw ID: ${rawButtonId}, Extracted ID: ${buttonId}`);
 
       // Log execution start
       const executionLog = {
