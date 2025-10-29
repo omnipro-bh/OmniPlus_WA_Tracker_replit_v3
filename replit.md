@@ -19,7 +19,8 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Templates:** CRUD operations for message templates with preview.
 - **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react). Features include:
   - **Full-Screen Canvas:** Immersive editing experience with zoom (0.1x-2x) and pan controls for designing complex workflows
-  - **Horizontal Layout:** Nodes arranged left-to-right for intuitive conversation flow visualization
+  - **Horizontal Layout:** Nodes arranged left-to-right for intuitive conversation flow visualization with dagre-based auto-layout algorithm. "Auto Layout" button triggers automatic horizontal arrangement with 100px node separation and 200px rank separation.
+  - **Multi-Output Handles:** Custom node component renders individual output handles for each button and list row. Each handle is labeled with button/row title and positioned vertically with 32px spacing. Button handles use blue badges, list row handles use green badges. ReactFlow automatically captures sourceHandle/targetHandle IDs on edge connections for precise routing.
   - **Node Deletion:** Keyboard shortcuts (Delete/Backspace) with ReactFlow native selection support including multi-select via marquee selection; skips deletion when text inputs are focused
   - Node palette with MESSAGE types and TRIGGER types, supporting dual interaction modes:
     - **Click-to-add:** Click any node in palette to add it to canvas at default position
@@ -50,7 +51,7 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
   - **Automated Message Routing:** Incoming WHAPI webhook messages are routed based on:
     - **First Message of Day Detection:** Uses conversation_states table to track last message timestamp per phone/channel
     - **Text Messages:** Route to entry node for first messages, or handle as general text input
-    - **Button/List Replies:** Extracts ID after colon from WHAPI format ("ButtonsV3:r1" → "r1", "ListV3:r2" → "r2") and matches to workflow edges. Supports both `reply.button_reply` and legacy `button.id` formats.
+    - **Button/List Replies:** Extracts ID after colon from WHAPI format ("ButtonsV3:r1" → "r1", "ListV3:r2" → "r2") and matches to workflow edges using sourceHandle (multi-output workflows) with fallback to node button configs (legacy workflows). Supports both `reply.button_reply` and legacy `button.id` formats.
   - **Inactive Workflow Handling:** Webhook handler respects `isActive` flag - logs all incoming messages for debugging but only sends automated responses when workflow is Live
   - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration using `buildAndSendNodeMessage` helper
   - Full CRUD operations for workflows (create, edit, delete) with validation
