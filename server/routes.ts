@@ -2479,34 +2479,77 @@ export function registerRoutes(app: Express) {
     const channelToken = activeChannel.whapiChannelToken;
 
     // Build and send message based on node type
-    if (nodeType === "text") {
-      const { sendWhapiMessage } = await import("./whapi");
-      const payload = {
+    const { sendInteractiveMessage, sendCarouselMessage } = await import("./whapi");
+
+    // Quick Reply Buttons
+    if (nodeType === 'quickReply') {
+      const payload: any = {
         to: phone,
-        body: config.body || "",
+        type: 'button',
       };
-      return await sendWhapiMessage(channelToken, payload);
-    } else if (nodeType === "interactive") {
-      const { sendInteractiveMessage } = await import("./whapi");
-      const payload = {
-        to: phone,
-        type: "button",
-        header: config.header ? { text: config.header } : undefined,
-        body: { text: config.body || "" },
-        footer: config.footer ? { text: config.footer } : undefined,
-        action: {
-          buttons: (config.buttons || []).map((btn: any) => ({
-            type: "reply",
-            title: btn.title || btn.text || "Button",
-            id: btn.id || `btn_${Math.random().toString(36).substring(7)}`,
-          })),
-        },
-      };
-      return await sendInteractiveMessage(channelToken, payload);
-    } else if (nodeType === "listMessage") {
-      const { sendInteractiveMessage } = await import("./whapi");
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
       
-      // Normalize sections (filter and structure rows)
+      const buttons = (config.buttons || [])
+        .filter((btn: any) => btn.title && btn.id)
+        .map((btn: any) => ({
+          type: 'quick_reply',
+          title: btn.title,
+          id: btn.id,
+        }));
+      
+      payload.action = { buttons };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // Quick Reply with Image
+    else if (nodeType === 'quickReplyImage') {
+      const payload: any = {
+        to: phone,
+        type: 'button',
+        media: config.mediaUrl,
+      };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      const buttons = (config.buttons || [])
+        .filter((btn: any) => btn.title && btn.id)
+        .map((btn: any) => ({
+          type: 'quick_reply',
+          title: btn.title,
+          id: btn.id,
+        }));
+      
+      payload.action = { buttons };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // Quick Reply with Video
+    else if (nodeType === 'quickReplyVideo') {
+      const payload: any = {
+        to: phone,
+        type: 'button',
+        media: config.mediaUrl,
+        no_encode: true,
+      };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      const buttons = (config.buttons || [])
+        .filter((btn: any) => btn.title && btn.id)
+        .map((btn: any) => ({
+          type: 'quick_reply',
+          title: btn.title,
+          id: btn.id,
+        }));
+      
+      payload.action = { buttons };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // List Message
+    else if (nodeType === 'listMessage') {
       const sections = (config.sections || []).map((section: any) => ({
         title: section.title || 'Options',
         rows: (section.rows || [])
@@ -2518,28 +2561,112 @@ export function registerRoutes(app: Express) {
           })),
       }));
       
-      const payload = {
+      const payload: any = {
         to: phone,
-        type: "list",
-        header: config.headerText ? { text: config.headerText } : undefined,
-        body: { text: config.bodyText || "" },
-        footer: config.footerText ? { text: config.footerText } : undefined,
-        action: {
-          list: {
-            label: config.buttonLabel || config.buttonText || "Select Option",
-            sections,
-          },
+        type: 'list',
+      };
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      payload.action = {
+        list: {
+          sections,
+          label: config.buttonLabel || 'Choose option',
         },
       };
       return await sendInteractiveMessage(channelToken, payload);
-    } else if (nodeType === "media") {
-      // TODO: Implement media message sending
-      const { sendWhapiMessage } = await import("./whapi");
-      const payload = {
+    }
+
+    // Call Button
+    else if (nodeType === 'callButton') {
+      const payload: any = {
         to: phone,
-        body: config.body || "",
+        type: 'button',
       };
-      return await sendWhapiMessage(channelToken, payload);
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      payload.action = {
+        buttons: [{
+          type: 'call',
+          title: config.buttonTitle || 'Call us',
+          id: config.buttonId || 'call_btn',
+          phone_number: config.phoneNumber,
+        }],
+      };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // URL Button
+    else if (nodeType === 'urlButton') {
+      const payload: any = {
+        to: phone,
+        type: 'button',
+      };
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      payload.action = {
+        buttons: [{
+          type: 'url',
+          title: config.buttonTitle || 'Visit Website',
+          id: config.buttonId || 'url_btn',
+          url: config.url,
+        }],
+      };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // Copy/OTP Button
+    else if (nodeType === 'copyButton') {
+      const payload: any = {
+        to: phone,
+        type: 'button',
+      };
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      payload.action = {
+        buttons: [{
+          type: 'copy',
+          title: config.buttonTitle || 'Copy OTP',
+          id: config.buttonId || 'copy_btn',
+          copy_code: config.copyCode,
+        }],
+      };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
+    // Carousel
+    else if (nodeType === 'carousel') {
+      return await sendCarouselMessage(channelToken, {
+        to: phone,
+        body: { text: config.bodyText || 'Check out our offerings!' },
+        cards: (config.cards || []).map((card: any) => ({
+          id: card.id,
+          media: { media: card.media },
+          text: card.text,
+          buttons: (card.buttons || []).map((btn: any) => {
+            if (btn.type === 'url') {
+              return {
+                type: 'url',
+                title: btn.title,
+                id: btn.id,
+                url: btn.url,
+              };
+            }
+            return {
+              type: 'quick_reply',
+              title: btn.title,
+              id: btn.id,
+            };
+          }),
+        })),
+      });
     }
 
     console.log(`Unsupported node type: ${nodeType}`);
