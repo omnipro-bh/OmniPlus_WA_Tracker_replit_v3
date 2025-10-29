@@ -112,3 +112,17 @@ All mutations that affect user or channel state now properly invalidate React Qu
   - "No active channels. Please add and activate a channel"
   - "No authorized channels. Please authorize your channels by scanning the QR code"
   - "All channels have expired. Please add days to your channels to continue sending messages"
+
+### Authentication Flow Fix (October 29, 2025)
+Fixed recurring login redirect loop issue where users would see "Successfully logged in" but remain on the login page:
+
+**Root Cause:**
+- Login/signup mutations succeeded but didn't refetch auth state before redirecting
+- DashboardLayout's auth guard saw unauthenticated state and redirected back to login
+- Created infinite redirect loop
+
+**Solution:**
+- Both `login.tsx` and `signup.tsx` now use `await queryClient.refetchQueries({ queryKey: ["/api/me"] })` in their `onSuccess` handlers
+- This ensures AuthContext has fresh user data before navigation to dashboard
+- Eliminates race conditions by waiting for actual refetch completion (not arbitrary timeouts)
+- Follows TanStack Query v5 best practices for deterministic state updates
