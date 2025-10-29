@@ -141,7 +141,7 @@ export default function Workflows() {
     const webhookUrl = getWebhookUrl(selectedWorkflow);
     
     return (
-      <div className="flex flex-col h-full gap-4">
+      <div className="flex flex-col gap-4" style={{ height: 'calc(100vh - 12rem)' }}>
         <div className="flex items-center justify-between flex-shrink-0 gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <Button
