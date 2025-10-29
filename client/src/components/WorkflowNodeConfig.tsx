@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TestTube, Plus, X, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +27,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const config = (node.data.config as any) || {};
   const { toast } = useToast();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPhone, setTestPhone] = useState('');
+  const phoneInputRef = useRef<HTMLInputElement>(null);
   const [testChannelId, setTestChannelId] = useState<number | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
 
@@ -47,7 +47,9 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   };
 
   const handleTestSend = async () => {
-    if (!testPhone.trim()) {
+    const phoneValue = phoneInputRef.current?.value.trim() || '';
+    
+    if (!phoneValue) {
       toast({
         title: 'Phone number required',
         description: 'Please enter a phone number',
@@ -70,16 +72,18 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       await apiRequest('POST', '/api/workflows/test-message', {
         nodeType,
         config,
-        phone: testPhone,
+        phone: phoneValue,
         channelId: testChannelId,
       });
 
       toast({
         title: 'Test message sent',
-        description: `Message sent to ${testPhone}`,
+        description: `Message sent to ${phoneValue}`,
       });
       setTestDialogOpen(false);
-      setTestPhone('');
+      if (phoneInputRef.current) {
+        phoneInputRef.current.value = '';
+      }
       setTestChannelId(null);
     } catch (error: any) {
       toast({
@@ -110,13 +114,14 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         <div className="space-y-4 py-4">
           <div>
             <Label htmlFor="test-phone">Phone Number</Label>
-            <Input
+            <input
+              ref={phoneInputRef}
               id="test-phone"
               type="text"
               placeholder="9733916526"
-              value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
+              defaultValue=""
               data-testid="input-test-phone"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Enter phone number with country code
