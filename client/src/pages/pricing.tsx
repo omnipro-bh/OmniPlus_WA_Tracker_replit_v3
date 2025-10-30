@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Check, Upload } from "lucide-react";
+import { Check, Upload, MessageSquare, Calendar } from "lucide-react";
 import type { Plan } from "@shared/schema";
 import PayPalSubscribeButton from "@/components/PayPalSubscribeButton";
 
@@ -15,11 +16,28 @@ export default function Pricing() {
   const { toast } = useToast();
   const [durationType, setDurationType] = useState<"MONTHLY" | "SEMI_ANNUAL" | "ANNUAL">("MONTHLY");
   const [isOfflineDialogOpen, setIsOfflineDialogOpen] = useState(false);
+  const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false);
+  const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [offlinePayment, setOfflinePayment] = useState({
     amount: "",
     currency: "USD",
     reference: "",
+  });
+  const [quoteRequest, setQuoteRequest] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    company: "",
+    message: "",
+  });
+  const [demoRequest, setDemoRequest] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    company: "",
+    preferredDate: "",
+    message: "",
   });
 
   const { data: plans = [] } = useQuery<Plan[]>({
@@ -40,6 +58,34 @@ export default function Pricing() {
     },
   });
 
+  const quoteRequestMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/subscribe/offline", data);
+    },
+    onSuccess: () => {
+      setIsQuoteDialogOpen(false);
+      setQuoteRequest({ name: "", email: "", phone: "", company: "", message: "" });
+      toast({
+        title: "Quote request submitted",
+        description: "We'll get back to you with a custom quote shortly.",
+      });
+    },
+  });
+
+  const demoRequestMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/subscribe/offline", data);
+    },
+    onSuccess: () => {
+      setIsDemoDialogOpen(false);
+      setDemoRequest({ name: "", email: "", phone: "", company: "", preferredDate: "", message: "" });
+      toast({
+        title: "Demo request submitted",
+        description: "We'll contact you to schedule your demo.",
+      });
+    },
+  });
+
   const getDiscountedPrice = (price: number) => {
     if (durationType === "SEMI_ANNUAL") return price * 6 * 0.95;
     if (durationType === "ANNUAL") return price * 12 * 0.9;
@@ -50,7 +96,7 @@ export default function Pricing() {
     setSelectedPlan(plan);
     setOfflinePayment({
       ...offlinePayment,
-      amount: (getDiscountedPrice(plan.price) / 100).toFixed(2),
+      amount: (getDiscountedPrice(plan.price || 0) / 100).toFixed(2),
       currency: plan.currency,
     });
     setIsOfflineDialogOpen(true);
@@ -103,9 +149,9 @@ export default function Pricing() {
 
       {/* Plans Grid */}
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
-        {plans.map((plan, index) => {
+        {plans.filter(plan => plan.published).map((plan, index) => {
           const isPopular = index === 1;
-          const discountedPrice = getDiscountedPrice(plan.price);
+          const discountedPrice = getDiscountedPrice(plan.price || 0);
           const features = Array.isArray(plan.features) ? plan.features : [];
 
           return (
@@ -124,16 +170,25 @@ export default function Pricing() {
               <CardHeader>
                 <CardTitle>{plan.name}</CardTitle>
                 <div className="mt-4">
-                  <span className="text-4xl font-bold">${(discountedPrice / 100).toFixed(0)}</span>
-                  <span className="text-muted-foreground">/
-                    {durationType === "MONTHLY" ? "month" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
-                  </span>
+                  {plan.requestType === "PAID" && plan.price ? (
+                    <>
+                      <span className="text-4xl font-bold">${(discountedPrice / 100).toFixed(0)}</span>
+                      <span className="text-muted-foreground">/
+                        {durationType === "MONTHLY" ? "month" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
+                      </span>
+                      {durationType !== "MONTHLY" && (
+                        <div className="text-sm text-muted-foreground line-through">
+                          ${(plan.price / 100).toFixed(0)}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-2xl font-semibold text-muted-foreground">
+                      {plan.requestType === "REQUEST_QUOTE" && "Custom Pricing"}
+                      {plan.requestType === "BOOK_DEMO" && "Contact Us"}
+                    </div>
+                  )}
                 </div>
-                {durationType !== "MONTHLY" && (
-                  <div className="text-sm text-muted-foreground line-through">
-                    ${(plan.price / 100).toFixed(0)}
-                  </div>
-                )}
               </CardHeader>
               <CardContent className="flex-1">
                 <ul className="space-y-3">
@@ -158,23 +213,55 @@ export default function Pricing() {
                 </ul>
               </CardContent>
               <CardFooter className="flex flex-col gap-2">
-                <PayPalSubscribeButton
-                  planId={plan.id}
-                  planName={plan.name}
-                  amount={(discountedPrice / 100).toFixed(2)}
-                  currency={plan.currency}
-                  durationType={durationType}
-                  isPopular={isPopular}
-                />
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleOfflinePayment(plan)}
-                  data-testid={`button-offline-${plan.name.toLowerCase()}`}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Offline Payment
-                </Button>
+                {plan.requestType === "PAID" && (
+                  <>
+                    <PayPalSubscribeButton
+                      planId={plan.id}
+                      planName={plan.name}
+                      amount={(discountedPrice / 100).toFixed(2)}
+                      currency={plan.currency}
+                      durationType={durationType}
+                      isPopular={isPopular}
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handleOfflinePayment(plan)}
+                      data-testid={`button-offline-${plan.name.toLowerCase()}`}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Offline Payment
+                    </Button>
+                  </>
+                )}
+                {plan.requestType === "REQUEST_QUOTE" && (
+                  <Button
+                    variant={isPopular ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => {
+                      setSelectedPlan(plan);
+                      setIsQuoteDialogOpen(true);
+                    }}
+                    data-testid={`button-quote-${plan.name.toLowerCase()}`}
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Request Quote
+                  </Button>
+                )}
+                {plan.requestType === "BOOK_DEMO" && (
+                  <Button
+                    variant={isPopular ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => {
+                      setSelectedPlan(plan);
+                      setIsDemoDialogOpen(true);
+                    }}
+                    data-testid={`button-demo-${plan.name.toLowerCase()}`}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Book Demo
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           );
@@ -246,6 +333,204 @@ export default function Pricing() {
               data-testid="button-submit-offline-payment"
             >
               Submit Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quote Request Dialog */}
+      <Dialog open={isQuoteDialogOpen} onOpenChange={setIsQuoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request a Custom Quote</DialogTitle>
+            <DialogDescription>
+              Tell us about your needs and we'll provide a tailored quote for {selectedPlan?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quote-name">Full Name</Label>
+                <Input
+                  id="quote-name"
+                  placeholder="John Doe"
+                  value={quoteRequest.name}
+                  onChange={(e) => setQuoteRequest({ ...quoteRequest, name: e.target.value })}
+                  data-testid="input-quote-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quote-email">Email</Label>
+                <Input
+                  id="quote-email"
+                  type="email"
+                  placeholder="john@company.com"
+                  value={quoteRequest.email}
+                  onChange={(e) => setQuoteRequest({ ...quoteRequest, email: e.target.value })}
+                  data-testid="input-quote-email"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quote-phone">Phone</Label>
+                <Input
+                  id="quote-phone"
+                  type="tel"
+                  placeholder="+1 (555) 000-0000"
+                  value={quoteRequest.phone}
+                  onChange={(e) => setQuoteRequest({ ...quoteRequest, phone: e.target.value })}
+                  data-testid="input-quote-phone"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quote-company">Company Name</Label>
+                <Input
+                  id="quote-company"
+                  placeholder="Company Inc."
+                  value={quoteRequest.company}
+                  onChange={(e) => setQuoteRequest({ ...quoteRequest, company: e.target.value })}
+                  data-testid="input-quote-company"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quote-message">Additional Details</Label>
+              <Textarea
+                id="quote-message"
+                placeholder="Tell us about your business needs, expected message volume, number of channels, etc."
+                rows={4}
+                value={quoteRequest.message}
+                onChange={(e) => setQuoteRequest({ ...quoteRequest, message: e.target.value })}
+                data-testid="textarea-quote-message"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQuoteDialogOpen(false)} data-testid="button-cancel-quote">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedPlan) {
+                  quoteRequestMutation.mutate({
+                    planId: selectedPlan.id,
+                    requestType: "REQUEST_QUOTE",
+                    amount: 0,
+                    currency: selectedPlan.currency,
+                    reference: `Quote Request: ${quoteRequest.name} (${quoteRequest.company})`,
+                    metadata: quoteRequest,
+                  });
+                }
+              }}
+              disabled={!quoteRequest.name || !quoteRequest.email || quoteRequestMutation.isPending}
+              data-testid="button-submit-quote"
+            >
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Demo Booking Dialog */}
+      <Dialog open={isDemoDialogOpen} onOpenChange={setIsDemoDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Book a Demo</DialogTitle>
+            <DialogDescription>
+              Schedule a personalized demo of {selectedPlan?.name} with our team
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="demo-name">Full Name</Label>
+                <Input
+                  id="demo-name"
+                  placeholder="John Doe"
+                  value={demoRequest.name}
+                  onChange={(e) => setDemoRequest({ ...demoRequest, name: e.target.value })}
+                  data-testid="input-demo-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="demo-email">Email</Label>
+                <Input
+                  id="demo-email"
+                  type="email"
+                  placeholder="john@company.com"
+                  value={demoRequest.email}
+                  onChange={(e) => setDemoRequest({ ...demoRequest, email: e.target.value })}
+                  data-testid="input-demo-email"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="demo-phone">Phone</Label>
+                <Input
+                  id="demo-phone"
+                  type="tel"
+                  placeholder="+1 (555) 000-0000"
+                  value={demoRequest.phone}
+                  onChange={(e) => setDemoRequest({ ...demoRequest, phone: e.target.value })}
+                  data-testid="input-demo-phone"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="demo-company">Company Name</Label>
+                <Input
+                  id="demo-company"
+                  placeholder="Company Inc."
+                  value={demoRequest.company}
+                  onChange={(e) => setDemoRequest({ ...demoRequest, company: e.target.value })}
+                  data-testid="input-demo-company"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-date">Preferred Date</Label>
+              <Input
+                id="demo-date"
+                type="date"
+                value={demoRequest.preferredDate}
+                onChange={(e) => setDemoRequest({ ...demoRequest, preferredDate: e.target.value })}
+                data-testid="input-demo-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-message">Additional Information</Label>
+              <Textarea
+                id="demo-message"
+                placeholder="Tell us about your goals and what you'd like to see in the demo..."
+                rows={3}
+                value={demoRequest.message}
+                onChange={(e) => setDemoRequest({ ...demoRequest, message: e.target.value })}
+                data-testid="textarea-demo-message"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDemoDialogOpen(false)} data-testid="button-cancel-demo">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedPlan) {
+                  demoRequestMutation.mutate({
+                    planId: selectedPlan.id,
+                    requestType: "BOOK_DEMO",
+                    amount: 0,
+                    currency: selectedPlan.currency,
+                    reference: `Demo Request: ${demoRequest.name} (${demoRequest.company})`,
+                    metadata: demoRequest,
+                  });
+                }
+              }}
+              disabled={!demoRequest.name || !demoRequest.email || demoRequestMutation.isPending}
+              data-testid="button-submit-demo"
+            >
+              Book Demo
             </Button>
           </DialogFooter>
         </DialogContent>

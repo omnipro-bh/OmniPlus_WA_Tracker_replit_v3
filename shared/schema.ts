@@ -132,6 +132,7 @@ export const offlinePayments = pgTable("offline_payments", {
   proofUrl: text("proof_url"),
   status: offlinePaymentStatusEnum("status").notNull().default("PENDING"),
   requestType: requestTypeEnum("request_type"), // Request type (PAID, REQUEST_QUOTE, BOOK_DEMO)
+  metadata: jsonb("metadata"), // Additional data for quote/demo requests (name, email, phone, company, message, etc.)
   approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   rejectedBy: integer("rejected_by").references(() => users.id, { onDelete: "set null" }),

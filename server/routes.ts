@@ -364,7 +364,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Submit offline payment
+  // Submit offline payment (including quote requests and demo bookings)
   app.post("/api/subscribe/offline", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       // Validate request body
@@ -381,7 +381,7 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, amount, currency, reference } = validationResult.data;
+      const { planId, amount, currency, reference, requestType, metadata } = validationResult.data;
 
       const plan = await storage.getPlan(planId);
       if (!plan) {
@@ -394,6 +394,8 @@ export function registerRoutes(app: Express) {
         amount,
         currency: currency || "USD",
         reference,
+        requestType: requestType || "PAID",
+        metadata,
         status: "PENDING",
       });
 
@@ -405,7 +407,9 @@ export function registerRoutes(app: Express) {
           entityId: payment.id,
           planId,
           amount,
-          currency
+          currency,
+          requestType: requestType || "PAID",
+          metadata
         },
       });
 
