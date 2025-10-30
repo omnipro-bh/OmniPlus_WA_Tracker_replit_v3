@@ -62,23 +62,44 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           : 'hsl(var(--card-foreground))',
       }}
     >
-      {/* Delete button - always visible with high z-index */}
+      {/* Entry node badge - positioned below buttons, non-interactive */}
+      {isEntryNode && (
+        <Badge 
+          className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          Entry
+        </Badge>
+      )}
+      
+      {/* End node badge - positioned below buttons, non-interactive */}
+      {isEndNode && (
+        <Badge 
+          className="absolute -top-2 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          END
+        </Badge>
+      )}
+      
+      {/* Delete button - always visible, highest z-index, rendered AFTER badges */}
       <Button
         size="icon"
         variant="ghost"
-        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md z-50"
+        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
         onClick={handleDelete}
         data-testid={`button-delete-node-${id}`}
+        style={{ zIndex: 100 }}
       >
         <X className="h-3 w-3" />
       </Button>
       
-      {/* Set Entry Node button - always visible for non-trigger/end nodes with high z-index */}
+      {/* Set Entry Node button - always visible for non-trigger/end nodes, highest z-index, rendered AFTER badges */}
       {!nodeType.includes('Trigger') && !isEndNode && (
         <Button
           size="icon"
           variant="ghost"
-          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md transition-all z-50 ${
+          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md transition-all ${
             isEntryNode 
               ? 'bg-amber-500 text-white hover:bg-amber-600' 
               : selected 
@@ -88,23 +109,10 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           onClick={handleSetEntryNode}
           data-testid={`button-set-entry-node-${id}`}
           title={isEntryNode ? 'Entry Node (First Message)' : 'Set as Entry Node'}
+          style={{ zIndex: 100 }}
         >
           <Star className={`h-3 w-3 ${isEntryNode ? 'fill-current' : ''}`} />
         </Button>
-      )}
-      
-      {/* Entry node badge - lower z-index than buttons */}
-      {isEntryNode && (
-        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2 z-10">
-          Entry
-        </Badge>
-      )}
-      
-      {/* End node badge - lower z-index than buttons */}
-      {isEndNode && (
-        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2 z-10">
-          END
-        </Badge>
       )}
       
       {/* Input Handle - single target handle at the left */}
