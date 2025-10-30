@@ -16,7 +16,6 @@ import Send from "@/pages/send";
 import Bulk from "@/pages/bulk";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
-import Chatbot from "@/pages/chatbot";
 import Outbox from "@/pages/outbox";
 import Logs from "@/pages/logs";
 import Pricing from "@/pages/pricing";
@@ -61,11 +60,6 @@ function Router() {
       <Route path="/workflows">
         <DashboardLayout>
           <Workflows />
-        </DashboardLayout>
-      </Route>
-      <Route path="/chatbot">
-        <DashboardLayout>
-          <Chatbot />
         </DashboardLayout>
       </Route>
       <Route path="/outbox">

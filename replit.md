@@ -17,7 +17,7 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 - **Channel Management:** Admin-controlled activation workflow including user creation, admin activation (consuming days and calling WHAPI), and user QR code authorization. QR polling checks for HTTP 409 status code every 2 seconds.
 - **Messaging (Send Page):** Interactive message sending via WHAPI Gate API, supporting channel selection, recipient, message content (header, body, footer), and up to 3 buttons. Plan limits enforce daily message quotas.
 - **Templates:** CRUD operations for message templates with preview functionality.
-- **Workflows & Chatbot:** Visual drag-and-drop chatbot builder using ReactFlow (@xyflow/react) with a full-screen canvas, horizontal auto-layout, multi-output handles for interactive messages, and node deletion functionality.
+- **Workflows:** Visual drag-and-drop chatbot/automation builder using ReactFlow (@xyflow/react) with a full-screen canvas, horizontal auto-layout, multi-output handles for interactive messages, and node deletion functionality.
     - **Interactive Message Types:** Supports 7 WHAPI interactive message types (Quick Reply Buttons, Buttons with Image/Video, List Message, Call Button, URL Button, Copy/OTP Button, Carousel) with dynamic element management (add/remove, auto-generated/editable IDs, limit enforcement).
     - **Node Configuration:** WHAPI-compliant message structure editors for header, body, footer, and action fields.
     - **Testing & Live Toggle:** Each node includes a test button for sending messages to specified phone numbers. Workflows can be toggled between Live (process webhooks, send responses) and Stopped (log only) states, with optimistic UI updates.
@@ -47,6 +47,7 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
 - **OfflinePayments Table**: Added `requestType` field to track payment request types.
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
+- **UI Changes**: Removed redundant Chatbot page (now all functionality is consolidated in Workflows page).
 
 ## Backend API Routes
 

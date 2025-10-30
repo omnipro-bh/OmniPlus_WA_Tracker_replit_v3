@@ -6,7 +6,6 @@ import {
   Users,
   FileText,
   GitBranch,
-  Bot,
   Inbox,
   ScrollText,
   CreditCard,
@@ -64,11 +63,6 @@ export function AppSidebar() {
       title: "Workflows",
       url: "/workflows",
       icon: GitBranch,
-    },
-    {
-      title: "Chatbot",
-      url: "/chatbot",
-      icon: Bot,
     },
     {
       title: "Outbox",
