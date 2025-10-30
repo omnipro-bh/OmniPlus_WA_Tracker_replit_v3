@@ -1,0 +1,88 @@
+________________________________________
+Chatbot Workflow Builder — Required Adjustments
+1) Import / Export
+Goal: Let users back up and restore whole chatbots or move them between accounts.
+•	Add “Export”: downloads a single JSON file for the currently open chatbot.
+•	Add “Import”: uploads a JSON and replaces/creates the chatbot.
+•	Versioning: include "schemaVersion": "1.0.x" at the root for future migrations.
+•	IDs: preserve node IDs on import; if an ID collision exists, generate new IDs and remap links consistently.
+•	Validation: on import, validate required fields; show a readable error list with line/field pointers.
+Export file shape (example):
+{
+  "schemaVersion": "1.0.0",
+  "bot": {
+    "id": "bot_123",
+    "name": "My Bot",
+    "createdAt": 1730200000
+  },
+  "nodes": [
+    {
+      "id": "n_welcome",
+      "type": "message.text",
+      "name": "Welcome",
+      "config": { "text": "Welcome 👋 Choose an option." },
+      "outputs": [{ "label": "default", "to": "n_buttons" }],
+      "position": { "x": 160, "y": 120 }
+    }
+  ]
+}
+________________________________________
+2) Merge “Call Button” + “Link Button” into a single node
+
+Goal: -adjust – the “Message with Call button and Link button” is one button not two separate buttons, Merage them into one node as per the decontamination
+•	Reference: https://support.whapi.cloud/help-desk/sending/send-message-with-buttons
+Runtime mapping (to WHAPI):
+•	Map config.text → message body
+•	Map buttons[*].kind to WHAPI button type
+•	Map buttons[*].value to phone_number or url as required by WHAPI
+•	Keep buttons[*].id for reply matching (we parse the reply payload’s ID to route flow)
+________________________________________
+3) Remove “Copy/OTP” button type
+•	Delete the Copy/OTP node and any references in UI/menus.
+________________________________________
+4) Add new End-Node message types
+These nodes send a message and STOP. They do not expose outputs or links to next nodes. They can still be targets from previous nodes.
+4.1 message.text (End Node)
+•	Reference: https://whapi.readme.io/reference/sendmessagetext
+•	Runtime: Call WHAPI Send Text endpoint. No subsequent routing.
+4.2 message.media (End Node)
+•	Reference: https://whapi.readme.io/reference/sendmediamessage
+•	Config (minimal):
+•	Runtime: Call WHAPI Send Media endpoint with correct mediaType (image, video, audio, document, sticker, etc.) and caption where supported.
+4.3 message.location (End Node)
+•	Reference: https://whapi.readme.io/reference/sendmessagelocation
+•	Runtime: Call WHAPI Send Location endpoint.
+UI Rule: End-nodes show a small “END” badge and do not allow drawing connectors out of them.
+________________________________________
+5) Reply Routing (unchanged, but confirm)
+•	Webhook only listens when chatbot is LIVE.
+•	For button replies, parse the reply payload (e.g., id or suffix after : per WHAPI convention).
+o	Match to the button ID in message.buttons.config.buttons[*].id
+o	Follow the matching button’s to link.
+•	For plain text messages, your separate “first message of the day” logic is out of scope here (we already handle it and its done no changes).
+________________________________________
+6) Builder UX details
+•	Keep horizontal linking between nodes (left-to-right) to reduce edge overlaps.
+•	Show per-button labels on each output handle so users know which path they’re wiring.
+•	Disable “Add Output” on End-Nodes.
+•	Drag-drop canvas should allow zoom and pan; large area is preferred (we mentioned this previously).
+________________________________________
+7) Acceptance Criteria (QA Checklist)
+1.	Import/Export
+o	Export produces a single JSON with schemaVersion.
+o	Import restores nodes/links/positions; collisions are resolved and reported.
+2.	Buttons Node
+o	One node handles both phone and URL buttons, up to 3 total.
+o	Each button can route to a different node.
+o	Replies route correctly by button id.
+3.	Copy/OTP Removal
+o	No Copy/OTP node in the palette.
+4.	End-Nodes
+o	message.text, message.media, message.location send their payload then stop.
+o	End-nodes cannot have outputs in the UI.
+5.	Runtime
+o	WHAPI requests match the three linked references above.
+o	Errors bubble up with clear logs and user-visible error toasts (endpoint, status, short message).
+________________________________________
+If you need any additional field names to match WHAPI exactly, let me know and I’ll provide concrete payload examples from our side.
+

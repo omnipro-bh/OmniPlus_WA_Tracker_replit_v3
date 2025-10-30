@@ -191,6 +191,15 @@ export default function WorkflowBuilder({
   // Register custom node types for ReactFlow
   const customNodeTypes = useMemo(() => ({ custom: CustomWorkflowNode }), []);
 
+  // Add entryNodeId to each node's data for visual indication
+  const nodesWithEntryData = useMemo(() => 
+    nodes.map(node => ({
+      ...node,
+      data: { ...node.data, entryNodeId }
+    })),
+    [nodes, entryNodeId]
+  );
+
   // Handle keyboard shortcuts for node deletion
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -211,6 +220,11 @@ export default function WorkflowBuilder({
         if (selectedNodes.length > 0) {
           const selectedNodeIds = selectedNodes.map(node => node.id);
           
+          // Clear entry node if it's being deleted
+          if (entryNodeId && selectedNodeIds.includes(entryNodeId)) {
+            setEntryNodeId(undefined);
+          }
+          
           // Delete the selected nodes
           setNodes((nds) => nds.filter((node) => !selectedNodeIds.includes(node.id)));
           
@@ -227,7 +241,7 @@ export default function WorkflowBuilder({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, setNodes, setEdges]);
+  }, [nodes, entryNodeId, setNodes, setEdges]);
 
   // Handle delete button clicks from CustomWorkflowNode
   useEffect(() => {
@@ -246,11 +260,28 @@ export default function WorkflowBuilder({
       if (selectedNodeId === nodeId) {
         setSelectedNodeId(null);
       }
+      
+      // Clear entry node if this was the entry node
+      if (entryNodeId === nodeId) {
+        setEntryNodeId(undefined);
+      }
     };
 
     window.addEventListener('deleteNode', handleDeleteNode as EventListener);
     return () => window.removeEventListener('deleteNode', handleDeleteNode as EventListener);
-  }, [selectedNodeId, setNodes, setEdges]);
+  }, [selectedNodeId, entryNodeId, setNodes, setEdges]);
+
+  // Handle set entry node event
+  useEffect(() => {
+    const handleSetEntryNode = (event: CustomEvent) => {
+      const { nodeId } = event.detail;
+      // Toggle: if clicking the same node, unset it; otherwise set new entry node
+      setEntryNodeId(prevId => prevId === nodeId ? undefined : nodeId);
+    };
+
+    window.addEventListener('setEntryNode', handleSetEntryNode as EventListener);
+    return () => window.removeEventListener('setEntryNode', handleSetEntryNode as EventListener);
+  }, []);
 
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -426,7 +457,7 @@ export default function WorkflowBuilder({
       {/* ReactFlow Canvas */}
       <div className="flex-1 h-full border rounded-lg" ref={reactFlowWrapper}>
         <ReactFlow
-          nodes={nodes}
+          nodes={nodesWithEntryData}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}

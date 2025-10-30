@@ -1,13 +1,14 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   const config = (data.config || {}) as any;
   const buttons = (config.buttons || []) as any[];
   const sections = (config.sections || []) as any[];
+  const isEntryNode = (data as any).entryNodeId === id;
   
   // Determine if this node has multiple outputs
   const hasMultipleOutputs = buttons.length > 0 || sections.length > 0;
@@ -37,10 +38,16 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
     window.dispatchEvent(new CustomEvent('deleteNode', { detail: { nodeId: id } }));
   };
   
+  // Handle setting entry node
+  const handleSetEntryNode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent('setEntryNode', { detail: { nodeId: id } }));
+  };
+  
   return (
     <div
       className={`relative px-4 py-3 shadow-md rounded-lg border-2 min-w-[200px] ${
-        selected ? 'border-primary' : 'border-border'
+        selected ? 'border-primary' : isEntryNode ? 'border-amber-500' : 'border-border'
       }`}
       style={{
         backgroundColor: (data.type as string)?.includes('Trigger') 
@@ -62,6 +69,31 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         >
           <X className="h-3 w-3" />
         </Button>
+      )}
+      
+      {/* Set Entry Node button - only show when selected and not a trigger */}
+      {selected && !((data as any).type as string)?.includes('Trigger') && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md ${
+            isEntryNode 
+              ? 'bg-amber-500 text-white hover:bg-amber-600' 
+              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}
+          onClick={handleSetEntryNode}
+          data-testid={`button-set-entry-node-${id}`}
+          title={isEntryNode ? 'Entry Node (First Message)' : 'Set as Entry Node'}
+        >
+          <Star className={`h-3 w-3 ${isEntryNode ? 'fill-current' : ''}`} />
+        </Button>
+      )}
+      
+      {/* Entry node badge */}
+      {isEntryNode && (
+        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2">
+          Entry
+        </Badge>
       )}
       
       {/* Input Handle - single target handle at the left */}
