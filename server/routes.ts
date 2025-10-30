@@ -2367,15 +2367,22 @@ export function registerRoutes(app: Express) {
             const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
             const entryNodeId = activeWorkflow.entryNodeId;
             
+            console.log(`Entry node ID: ${entryNodeId}, Total nodes: ${definition.nodes?.length || 0}`);
+            
             if (entryNodeId) {
               const entryNode = definition.nodes?.find((n: any) => n.id === entryNodeId);
               
               if (entryNode) {
+                console.log(`Found entry node, sending message...`);
                 // Send the entry node's message
                 const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
                 executionLog.responsesSent.push(response);
                 console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+              } else {
+                console.log(`Entry node ${entryNodeId} not found in workflow definition`);
               }
+            } else {
+              console.log(`No entry node configured for workflow ${activeWorkflow.id}`);
             }
 
             // Update conversation state for tracking
