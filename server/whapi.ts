@@ -476,9 +476,9 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
   // End Node: message.media
   else if (nodeType === 'message.media') {
     // Send media message via WHAPI Gate API
-    // API expects: POST /messages/media/{MediaMessageType}
+    // API expects: POST /messages/{mediaType} (e.g., /messages/document, /messages/image)
     const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
-    const mediaType = config.mediaType || 'image'; // image, video, audio, document, etc.
+    const mediaType = config.mediaType || 'image'; // image, video, gif, audio, voice, document, sticker
     
     const mediaPayload: any = {
       to: phone,
@@ -489,7 +489,7 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
       mediaPayload.caption = config.caption;
     }
     
-    return await fetch(`https://gate.whapi.cloud/messages/media/${mediaType}`, {
+    return await fetch(`https://gate.whapi.cloud/messages/${mediaType}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
