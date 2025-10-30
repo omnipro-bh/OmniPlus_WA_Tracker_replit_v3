@@ -130,6 +130,7 @@ export const offlinePayments = pgTable("offline_payments", {
   reference: text("reference"),
   proofUrl: text("proof_url"),
   status: offlinePaymentStatusEnum("status").notNull().default("PENDING"),
+  requestType: requestTypeEnum("request_type"), // Request type (PAID, REQUEST_QUOTE, BOOK_DEMO)
   approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   rejectedBy: integer("rejected_by").references(() => users.id, { onDelete: "set null" }),
@@ -339,7 +340,7 @@ export const workflowExecutionsRelations = relations(workflowExecutions, ({ one 
 // Audit Logs table
 export const auditLogs = pgTable("audit_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }), // Admin who performed action
+  actorUserId: integer("user_id").references(() => users.id, { onDelete: "set null" }), // Admin who performed action (mapped to user_id column)
   targetType: text("target_type"), // user, channel, plan, payment, etc.
   targetId: integer("target_id"), // ID of the target
   action: text("action").notNull(), // ban_user, approve_payment, delete_channel, etc.

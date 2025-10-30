@@ -24,6 +24,18 @@ import timezone from "dayjs/plugin/timezone";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+// Helper function to calculate days from billing period
+function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL"): number {
+  switch (billingPeriod) {
+    case "MONTHLY":
+      return 30;
+    case "SEMI_ANNUAL":
+      return 180;
+    case "ANNUAL":
+      return 365;
+  }
+}
+
 export function registerRoutes(app: Express) {
   // ============================================================================
   // PAYPAL INTEGRATION
@@ -203,11 +215,11 @@ export function registerRoutes(app: Express) {
       }
 
       // Calculate days based on duration type
-      let days = plan.durationDays;
+      let days = getDaysFromBillingPeriod(plan.billingPeriod);
       if (durationType === "SEMI_ANNUAL") {
-        days = plan.durationDays * 6;
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 6;
       } else if (durationType === "ANNUAL") {
-        days = plan.durationDays * 12;
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 12;
       }
 
       // Create subscription
@@ -229,7 +241,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "SUBSCRIBE",
         meta: { 
           entity: "subscription",
@@ -287,20 +299,20 @@ export function registerRoutes(app: Express) {
       // Calculate price and days based on duration type
       let durationMultiplier = 1;
       let discountMultiplier = 1;
-      let days = plan.durationDays;
+      let days = getDaysFromBillingPeriod(plan.billingPeriod);
       
       if (durationType === "SEMI_ANNUAL") {
         durationMultiplier = 6;
         discountMultiplier = 0.95; // 5% discount
-        days = plan.durationDays * 6;
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 6;
       } else if (durationType === "ANNUAL") {
         durationMultiplier = 12;
         discountMultiplier = 0.9; // 10% discount
-        days = plan.durationDays * 12;
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 12;
       }
 
       // Verify payment amount matches expected price for duration (with discount)
-      const expectedAmount = ((plan.price * durationMultiplier * discountMultiplier) / 100).toFixed(2); // Convert cents to dollars
+      const expectedAmount = plan.price ? ((plan.price * durationMultiplier * discountMultiplier) / 100).toFixed(2) : "0"; // Convert cents to dollars
       if (verification.amount !== expectedAmount || verification.currency !== plan.currency) {
         return res.status(400).json({ 
           error: "Payment amount mismatch", 
@@ -328,7 +340,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "SUBSCRIBE",
         meta: { 
           entity: "subscription",
@@ -386,7 +398,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "OFFLINE_PAYMENT_SUBMIT",
         meta: {
           entity: "offline_payment",
@@ -446,7 +458,7 @@ export function registerRoutes(app: Express) {
           
           // Log expiration
           await storage.createAuditLog({
-            userId: req.userId!,
+            actorUserId: req.userId!,
             action: "CHANNEL_EXPIRED",
             meta: {
               channelId: channel.id,
@@ -533,7 +545,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "CREATE",
         meta: { 
           entity: "channel",
@@ -648,7 +660,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "UPDATE",
         meta: {
           entity: "channel",
@@ -695,7 +707,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "UPDATE",
         meta: {
           entity: "channel",
@@ -762,7 +774,7 @@ export function registerRoutes(app: Express) {
       const updated = await storage.updateChannel(channelId, { status: "ACTIVE" });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "EXTEND",
         meta: {
           entity: "channel",
@@ -831,7 +843,7 @@ export function registerRoutes(app: Express) {
       await storage.deleteChannel(channelId);
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "DELETE",
         meta: {
           entity: "channel",
@@ -986,7 +998,7 @@ export function registerRoutes(app: Express) {
         });
 
         await storage.createAuditLog({
-          userId: req.userId!,
+          actorUserId: req.userId!,
           action: "SEND_MESSAGE",
           meta: {
             entity: "job",
@@ -1107,7 +1119,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "SEND_BULK",
         meta: {
           entity: "job",
@@ -1183,7 +1195,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "CREATE",
         meta: {
           entity: "template",
@@ -1219,7 +1231,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "UPDATE",
         meta: {
           entity: "template",
@@ -1248,7 +1260,7 @@ export function registerRoutes(app: Express) {
       await storage.deleteTemplate(templateId);
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "DELETE",
         meta: {
           entity: "template",
@@ -1590,7 +1602,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "TOPUP_BALANCE",
         meta: {
           days,
@@ -1686,7 +1698,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "DELETE_TRANSACTION",
         meta: {
           transactionId,
@@ -1735,7 +1747,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: days > 0 ? "ADD_BALANCE" : "REMOVE_BALANCE",
         meta: {
           days,
@@ -1804,7 +1816,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "ADD_DAYS",
         meta: {
           entity: "user",
@@ -1843,7 +1855,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "REMOVE_DAYS",
         meta: {
           entity: "user",
@@ -1990,7 +2002,7 @@ export function registerRoutes(app: Express) {
 
       // Create audit log
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "ADD_DAYS_TO_CHANNEL",
         meta: {
           entity: "channel",
@@ -2060,7 +2072,7 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      const days = plan.durationDays;
+      const days = getDaysFromBillingPeriod(plan.billingPeriod);
 
       // Add days to main balance pool
       await storage.updateMainDaysBalance(days);
@@ -2088,7 +2100,7 @@ export function registerRoutes(app: Express) {
       });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "APPROVE_PAYMENT",
         meta: {
           entity: "offline_payment",
@@ -2118,7 +2130,7 @@ export function registerRoutes(app: Express) {
       await storage.updateOfflinePayment(paymentId, { status: "REJECTED" });
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "REJECT_PAYMENT",
         meta: {
           entity: "offline_payment",
@@ -2194,7 +2206,7 @@ export function registerRoutes(app: Express) {
       }
 
       await storage.createAuditLog({
-        userId: req.userId!,
+        actorUserId: req.userId!,
         action: "UPDATE_WHAPI_SETTINGS",
         meta: {
           entity: "settings",
@@ -2315,8 +2327,8 @@ export function registerRoutes(app: Express) {
         bulkMessagesLimit: original.bulkMessagesLimit,
         channelsLimit: original.channelsLimit,
         chatbotsLimit: original.chatbotsLimit,
-        pageAccess: original.pageAccess,
-        features: original.features,
+        pageAccess: original.pageAccess as any,
+        features: original.features as any,
       });
 
       await storage.createAuditLog({
