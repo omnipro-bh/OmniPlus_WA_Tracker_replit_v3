@@ -1020,6 +1020,317 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     );
   }
 
+  // Merged Buttons Configuration (Call + URL mixed)
+  if (nodeType === 'buttons') {
+    const buttons = config.buttons || [];
+
+    const addButton = () => {
+      if (buttons.length >= 3) {
+        toast({
+          title: 'Maximum buttons reached',
+          description: 'Buttons node supports up to 3 buttons',
+          variant: 'destructive',
+        });
+        return;
+      }
+      updateConfig('buttons', [...buttons, { 
+        kind: 'phone_number', 
+        title: '', 
+        value: '',
+        id: generateId('btn') 
+      }]);
+    };
+
+    const removeButton = (index: number) => {
+      const newButtons = buttons.filter((_: any, i: number) => i !== index);
+      updateConfig('buttons', newButtons);
+    };
+
+    const updateButton = (index: number, field: string, value: string) => {
+      const newButtons = [...buttons];
+      newButtons[index] = { ...newButtons[index], [field]: value };
+      updateConfig('buttons', newButtons);
+    };
+
+    const regenerateId = (index: number) => {
+      updateButton(index, 'id', generateId('btn'));
+    };
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="header-text">Header Text (Optional)</Label>
+          <Input
+            id="header-text"
+            placeholder="Header with text"
+            value={config.headerText || ''}
+            onChange={(e) => updateConfig('headerText', e.target.value)}
+            data-testid="input-header-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="body-text">Body Text *</Label>
+          <Textarea
+            id="body-text"
+            placeholder="Body message"
+            value={config.bodyText || ''}
+            onChange={(e) => updateConfig('bodyText', e.target.value)}
+            rows={3}
+            data-testid="input-body-text"
+          />
+        </div>
+        <div>
+          <Label htmlFor="footer-text">Footer Text (Optional)</Label>
+          <Input
+            id="footer-text"
+            placeholder="Footer message"
+            value={config.footerText || ''}
+            onChange={(e) => updateConfig('footerText', e.target.value)}
+            data-testid="input-footer-text"
+          />
+        </div>
+        <Separator />
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <Label>Buttons (up to 3)</Label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addButton}
+              disabled={buttons.length >= 3}
+              data-testid="button-add-button"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Button
+            </Button>
+          </div>
+          {buttons.map((button: any, index: number) => (
+            <div key={index} className="border rounded-md p-3 mb-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Button {index + 1}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeButton(index)}
+                  data-testid={`button-remove-${index}`}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div>
+                <Label htmlFor={`button-${index}-kind`}>Button Type *</Label>
+                <Select
+                  value={button.kind || 'phone_number'}
+                  onValueChange={(val) => updateButton(index, 'kind', val)}
+                >
+                  <SelectTrigger id={`button-${index}-kind`} data-testid={`select-button-${index}-kind`}>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="phone_number">Phone Call</SelectItem>
+                    <SelectItem value="url">URL Link</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor={`button-${index}-title`}>Button Title *</Label>
+                <Input
+                  id={`button-${index}-title`}
+                  placeholder={button.kind === 'url' ? 'Visit Website' : 'Call Us'}
+                  value={button.title || ''}
+                  onChange={(e) => updateButton(index, 'title', e.target.value)}
+                  maxLength={25}
+                  data-testid={`input-button-${index}-title`}
+                />
+              </div>
+              <div>
+                <Label htmlFor={`button-${index}-value`}>
+                  {button.kind === 'url' ? 'URL *' : 'Phone Number *'}
+                </Label>
+                <Input
+                  id={`button-${index}-value`}
+                  placeholder={button.kind === 'url' ? 'https://example.com' : '+1234567890'}
+                  value={button.value || ''}
+                  onChange={(e) => updateButton(index, 'value', e.target.value)}
+                  data-testid={`input-button-${index}-value`}
+                />
+              </div>
+              <div>
+                <Label htmlFor={`button-${index}-id`}>Button ID</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id={`button-${index}-id`}
+                    placeholder="Button ID"
+                    value={button.id || ''}
+                    onChange={(e) => updateButton(index, 'id', e.target.value)}
+                    data-testid={`input-button-${index}-id`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => regenerateId(index)}
+                    title="Generate new ID"
+                    data-testid={`button-regenerate-${index}-id`}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {buttons.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Click "Add Button" to create buttons
+            </p>
+          )}
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
+  // End Node: message.text
+  if (nodeType === 'message.text') {
+    return (
+      <div className="space-y-4">
+        <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 mb-4">
+          <p className="text-sm text-destructive font-medium">Terminal Node</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This message will be sent and the conversation will end. No further routing.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="text">Message Text *</Label>
+          <Textarea
+            id="text"
+            placeholder="Thank you for contacting us!"
+            value={config.text || ''}
+            onChange={(e) => updateConfig('text', e.target.value)}
+            rows={4}
+            data-testid="input-text"
+          />
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
+  // End Node: message.media
+  if (nodeType === 'message.media') {
+    return (
+      <div className="space-y-4">
+        <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 mb-4">
+          <p className="text-sm text-destructive font-medium">Terminal Node</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This media message will be sent and the conversation will end.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="media-type">Media Type *</Label>
+          <Select
+            value={config.mediaType || 'image'}
+            onValueChange={(val) => updateConfig('mediaType', val)}
+          >
+            <SelectTrigger id="media-type" data-testid="select-media-type">
+              <SelectValue placeholder="Select media type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="image">Image</SelectItem>
+              <SelectItem value="video">Video</SelectItem>
+              <SelectItem value="audio">Audio</SelectItem>
+              <SelectItem value="document">Document</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="media-url">Media URL *</Label>
+          <Input
+            id="media-url"
+            placeholder="https://example.com/image.jpg"
+            value={config.mediaUrl || ''}
+            onChange={(e) => updateConfig('mediaUrl', e.target.value)}
+            data-testid="input-media-url"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Direct URL to the media file
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="caption">Caption (Optional)</Label>
+          <Textarea
+            id="caption"
+            placeholder="Check out this image!"
+            value={config.caption || ''}
+            onChange={(e) => updateConfig('caption', e.target.value)}
+            rows={2}
+            data-testid="input-caption"
+          />
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
+  // End Node: message.location
+  if (nodeType === 'message.location') {
+    return (
+      <div className="space-y-4">
+        <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 mb-4">
+          <p className="text-sm text-destructive font-medium">Terminal Node</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This location will be sent and the conversation will end.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="latitude">Latitude *</Label>
+          <Input
+            id="latitude"
+            placeholder="26.0667"
+            value={config.latitude || ''}
+            onChange={(e) => updateConfig('latitude', e.target.value)}
+            data-testid="input-latitude"
+          />
+        </div>
+        <div>
+          <Label htmlFor="longitude">Longitude *</Label>
+          <Input
+            id="longitude"
+            placeholder="50.5577"
+            value={config.longitude || ''}
+            onChange={(e) => updateConfig('longitude', e.target.value)}
+            data-testid="input-longitude"
+          />
+        </div>
+        <div>
+          <Label htmlFor="name">Location Name (Optional)</Label>
+          <Input
+            id="name"
+            placeholder="Bahrain Office"
+            value={config.name || ''}
+            onChange={(e) => updateConfig('name', e.target.value)}
+            data-testid="input-location-name"
+          />
+        </div>
+        <div>
+          <Label htmlFor="address">Address (Optional)</Label>
+          <Textarea
+            id="address"
+            placeholder="123 Main Street, Manama, Bahrain"
+            value={config.address || ''}
+            onChange={(e) => updateConfig('address', e.target.value)}
+            rows={2}
+            data-testid="input-address"
+          />
+        </div>
+        <Separator />
+        <TestButton />
+      </div>
+    );
+  }
+
   // Carousel Configuration
   if (nodeType === 'carousel') {
     const cards = config.cards || [];

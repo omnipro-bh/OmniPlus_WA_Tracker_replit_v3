@@ -45,6 +45,9 @@ import {
   Play,
   Pause,
   Network,
+  MapPin,
+  Download,
+  Upload,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -79,25 +82,11 @@ export const nodeTypes = {
       description: 'Expandable list of options' 
     },
     { 
-      id: 'callButton', 
-      label: 'Call Button', 
+      id: 'buttons', 
+      label: 'Buttons', 
       icon: Phone, 
       cost: 1, 
-      description: 'Button to initiate phone call' 
-    },
-    { 
-      id: 'urlButton', 
-      label: 'URL Button', 
-      icon: Link, 
-      cost: 1, 
-      description: 'Button to open a website' 
-    },
-    { 
-      id: 'copyButton', 
-      label: 'Copy/OTP Button', 
-      icon: Copy, 
-      cost: 1, 
-      description: 'Button to copy text (OTP codes)' 
+      description: 'Call or URL buttons (up to 3 mixed)' 
     },
     { 
       id: 'carousel', 
@@ -105,6 +94,29 @@ export const nodeTypes = {
       icon: Grid3x3, 
       cost: 3, 
       description: 'Swipeable cards with buttons' 
+    },
+  ],
+  END_MESSAGE: [
+    { 
+      id: 'message.text', 
+      label: 'Text Message', 
+      icon: MessageCircle, 
+      cost: 1, 
+      description: 'Simple text message (terminal)' 
+    },
+    { 
+      id: 'message.media', 
+      label: 'Media Message', 
+      icon: ImageIcon, 
+      cost: 2, 
+      description: 'Image/Video/Audio/Document (terminal)' 
+    },
+    { 
+      id: 'message.location', 
+      label: 'Location', 
+      icon: MapPin, 
+      cost: 1, 
+      description: 'Send location coordinates (terminal)' 
     },
   ],
   TRIGGER: [
@@ -366,6 +378,110 @@ export default function WorkflowBuilder({
     }
   };
   
+  const handleExport = () => {
+    const exportData = {
+      schemaVersion: "1.0.0",
+      workflow: {
+        id: initialWorkflowId,
+        name: initialWorkflowName,
+        exportedAt: new Date().toISOString(),
+      },
+      nodes: nodes.map(node => ({
+        id: node.id,
+        type: node.data.type,
+        label: node.data.label,
+        config: node.data.config,
+        position: node.position,
+      })),
+      edges: edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+      })),
+      entryNodeId: entryNodeId || null,
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `workflow_${initialWorkflowName || 'export'}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target?.result as string);
+          
+          // Validate schema
+          if (!data.schemaVersion || !data.nodes || !data.edges) {
+            alert('Invalid workflow file: Missing required fields');
+            return;
+          }
+          
+          // Check for ID collisions - add timestamp suffix if IDs already exist
+          const existingIds = new Set(nodes.map(n => n.id));
+          const idMapping = new Map<string, string>();
+          
+          const importedNodes = data.nodes.map((nodeData: any) => {
+            let newId = nodeData.id;
+            if (existingIds.has(newId)) {
+              newId = `${newId}_${Date.now()}`;
+              idMapping.set(nodeData.id, newId);
+            }
+            
+            return {
+              id: newId,
+              type: 'custom',
+              position: nodeData.position || { x: 0, y: 0 },
+              data: {
+                label: nodeData.label,
+                type: nodeData.type,
+                config: nodeData.config || {},
+              },
+            };
+          });
+          
+          const importedEdges = data.edges.map((edgeData: any) => ({
+            id: edgeData.id,
+            source: idMapping.get(edgeData.source) || edgeData.source,
+            target: idMapping.get(edgeData.target) || edgeData.target,
+            sourceHandle: edgeData.sourceHandle,
+            targetHandle: edgeData.targetHandle,
+          }));
+          
+          // Replace workflow with imported data
+          setNodes(importedNodes);
+          setEdges(importedEdges);
+          if (data.entryNodeId) {
+            const mappedEntryId = idMapping.get(data.entryNodeId) || data.entryNodeId;
+            setEntryNodeId(mappedEntryId);
+          }
+          
+          alert('Workflow imported successfully!');
+        } catch (error) {
+          alert(`Failed to import workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+  
   const handleAutoLayout = useCallback(() => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges, 'LR');
     setNodes(layoutedNodes);
@@ -385,8 +501,9 @@ export default function WorkflowBuilder({
           Node Palette
         </h3>
         <Tabs defaultValue="message">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="message" data-testid="tab-message">MESSAGE</TabsTrigger>
+            <TabsTrigger value="end" data-testid="tab-end">END</TabsTrigger>
             <TabsTrigger value="trigger" data-testid="tab-trigger">TRIGGER</TabsTrigger>
           </TabsList>
           
@@ -405,6 +522,37 @@ export default function WorkflowBuilder({
                   >
                     <div className="flex items-start gap-2">
                       <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm">{node.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {node.description}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {node.cost} tokens
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="end" className="mt-4">
+            <ScrollArea className="h-[calc(100vh-20rem)]">
+              <div className="space-y-2">
+                {nodeTypes.END_MESSAGE.map((node) => (
+                  <div
+                    key={node.id}
+                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                    draggable
+                    onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                    onClick={() => addNodeToCanvas(node.id, node.label)}
+                    data-testid={`node-type-${node.id}`}
+                    title={`Click to add or drag to canvas`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <node.icon className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm">{node.label}</div>
                         <div className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -483,6 +631,27 @@ export default function WorkflowBuilder({
               </Button>
               <Button size="icon" variant="ghost" title="Redo" data-testid="button-redo">
                 <Redo2 className="h-4 w-4" />
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleExport}
+                title="Export workflow to JSON file"
+                data-testid="button-export-workflow"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={handleImport}
+                title="Import workflow from JSON file"
+                data-testid="button-import-workflow"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Import
               </Button>
               <div className="w-px h-6 bg-border mx-1" />
               <Button 

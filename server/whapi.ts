@@ -424,55 +424,97 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
     payload.type = 'list';
   }
 
-  // Call Button
-  else if (nodeType === 'callButton') {
+  // Merged Buttons (Call + URL + Copy mixed)
+  else if (nodeType === 'buttons') {
     if (config.headerText) payload.header = { text: config.headerText };
     payload.body = { text: config.bodyText || 'No message' };
     if (config.footerText) payload.footer = { text: config.footerText };
     
-    payload.action = {
-      buttons: [{
-        type: 'call',
-        title: config.buttonTitle || 'Call us',
-        id: config.buttonId || 'call_btn',
-        phone_number: config.phoneNumber,
-      }],
-    };
+    const buttons = (config.buttons || [])
+      .filter((btn: any) => btn.title && btn.id)
+      .map((btn: any) => {
+        if (btn.kind === 'phone_number') {
+          return {
+            type: 'call',
+            title: btn.title,
+            id: btn.id,
+            phone_number: btn.value,
+          };
+        } else if (btn.kind === 'url') {
+          return {
+            type: 'url',
+            title: btn.title,
+            id: btn.id,
+            url: btn.value,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+    
+    payload.action = { buttons };
     payload.type = 'button';
   }
 
-  // URL Button
-  else if (nodeType === 'urlButton') {
-    if (config.headerText) payload.header = { text: config.headerText };
-    payload.body = { text: config.bodyText || 'No message' };
-    if (config.footerText) payload.footer = { text: config.footerText };
-    
-    payload.action = {
-      buttons: [{
-        type: 'url',
-        title: config.buttonTitle || 'Visit Website',
-        id: config.buttonId || 'url_btn',
-        url: config.url,
-      }],
-    };
-    payload.type = 'button';
+  // End Node: message.text
+  else if (nodeType === 'message.text') {
+    // Send simple text message via WHAPI
+    return await fetch(`${WHAPI_BASE_URL}/messages/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${channelToken}`,
+      },
+      body: JSON.stringify({
+        to: phone,
+        body: config.text || 'Thank you!',
+      }),
+    }).then(res => res.json());
   }
 
-  // Copy/OTP Button
-  else if (nodeType === 'copyButton') {
-    if (config.headerText) payload.header = { text: config.headerText };
-    payload.body = { text: config.bodyText || 'No message' };
-    if (config.footerText) payload.footer = { text: config.footerText };
-    
-    payload.action = {
-      buttons: [{
-        type: 'copy',
-        title: config.buttonTitle || 'Copy OTP',
-        id: config.buttonId || 'copy_btn',
-        copy_code: config.copyCode,
-      }],
+  // End Node: message.media
+  else if (nodeType === 'message.media') {
+    // Send media message via WHAPI
+    const mediaPayload: any = {
+      to: phone,
+      media: {
+        [config.mediaType || 'image']: config.mediaUrl,
+      },
     };
-    payload.type = 'button';
+    
+    if (config.caption) {
+      mediaPayload.caption = config.caption;
+    }
+    
+    return await fetch(`${WHAPI_BASE_URL}/messages/media`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${channelToken}`,
+      },
+      body: JSON.stringify(mediaPayload),
+    }).then(res => res.json());
+  }
+
+  // End Node: message.location
+  else if (nodeType === 'message.location') {
+    // Send location message via WHAPI
+    return await fetch(`${WHAPI_BASE_URL}/messages/location`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${channelToken}`,
+      },
+      body: JSON.stringify({
+        to: phone,
+        location: {
+          latitude: parseFloat(config.latitude || '0'),
+          longitude: parseFloat(config.longitude || '0'),
+          name: config.name || undefined,
+          address: config.address || undefined,
+        },
+      }),
+    }).then(res => res.json());
   }
 
   // Carousel
