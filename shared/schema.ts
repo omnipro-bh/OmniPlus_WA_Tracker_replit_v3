@@ -6,11 +6,13 @@ import { z } from "zod";
 
 // Enums
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
-export const userStatusEnum = pgEnum("user_status", ["active", "suspended", "expired"]);
+export const userStatusEnum = pgEnum("user_status", ["active", "suspended", "expired", "banned"]);
 export const channelStatusEnum = pgEnum("channel_status", ["PENDING", "ACTIVE", "PAUSED"]);
 export const authStatusEnum = pgEnum("auth_status", ["PENDING", "AUTHORIZED"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["PENDING", "ACTIVE", "EXPIRED", "CANCELLED"]);
 export const durationTypeEnum = pgEnum("duration_type", ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]);
+export const billingPeriodEnum = pgEnum("billing_period", ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]);
+export const requestTypeEnum = pgEnum("request_type", ["PAID", "REQUEST_QUOTE", "BOOK_DEMO"]);
 export const offlinePaymentStatusEnum = pgEnum("offline_payment_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const jobTypeEnum = pgEnum("job_type", ["SINGLE", "BULK"]);
 export const jobStatusEnum = pgEnum("job_status", ["QUEUED", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "PARTIAL"]);
@@ -48,14 +50,34 @@ export const usersRelations = relations(users, ({ many, one }) => ({
 export const plans = pgTable("plans", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: text("name").notNull(),
-  price: integer("price").notNull(), // Price in cents
   currency: text("currency").notNull().default("USD"),
-  durationDays: integer("duration_days").notNull(), // 30, 180, or 365
-  channelsLimit: integer("channels_limit").notNull(),
-  dailyMessagesLimit: integer("daily_messages_limit").notNull(),
-  bulkMessagesLimit: integer("bulk_messages_limit").notNull(),
-  features: jsonb("features").notNull().default([]), // Array of feature strings
+  price: integer("price"), // Price in cents, nullable for Quote/Demo
+  billingPeriod: billingPeriodEnum("billing_period").notNull().default("MONTHLY"),
+  requestType: requestTypeEnum("request_type").notNull().default("PAID"),
   paypalPlanId: text("paypal_plan_id"), // Optional PayPal plan ID
+  published: boolean("published").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // Limits (-1 = unlimited)
+  dailyMessagesLimit: integer("daily_messages_limit").notNull().default(-1),
+  bulkMessagesLimit: integer("bulk_messages_limit").notNull().default(-1),
+  channelsLimit: integer("channels_limit").notNull().default(1),
+  chatbotsLimit: integer("chatbots_limit").notNull().default(-1),
+  // Page Access (checkbox matrix)
+  pageAccess: jsonb("page_access").notNull().default({
+    dashboard: true,
+    channels: false,
+    send: false,
+    bulk: false,
+    templates: false,
+    workflows: false,
+    chatbot: false,
+    outbox: false,
+    logs: false,
+    pricing: true,
+    balances: false,
+    whapiSettings: false,
+  }),
+  features: jsonb("features").notNull().default([]), // Array of feature strings
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -71,11 +93,18 @@ export const subscriptions = pgTable("subscriptions", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planId: integer("plan_id").notNull().references(() => plans.id, { onDelete: "restrict" }),
   status: subscriptionStatusEnum("status").notNull().default("PENDING"),
+  requestType: requestTypeEnum("request_type"), // Per-user override
+  daysBalance: integer("days_balance").notNull().default(0), // Days balance for this subscription
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   durationType: durationTypeEnum("duration_type").notNull(),
   provider: text("provider").notNull().default("DIRECT"), // DIRECT, PAYPAL, OFFLINE
   transactionId: text("transaction_id"),
+  // Per-user overrides (DO NOT mutate the plan)
+  overrides: jsonb("overrides").default({
+    limits: null, // { daily?, bulk?, channels?, chatbots? }
+    pageAccess: null, // { dashboard?, channels?, send?, ... }
+  }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -101,6 +130,10 @@ export const offlinePayments = pgTable("offline_payments", {
   reference: text("reference"),
   proofUrl: text("proof_url"),
   status: offlinePaymentStatusEnum("status").notNull().default("PENDING"),
+  approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectedBy: integer("rejected_by").references(() => users.id, { onDelete: "set null" }),
+  rejectedAt: timestamp("rejected_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -306,15 +339,19 @@ export const workflowExecutionsRelations = relations(workflowExecutions, ({ one 
 // Audit Logs table
 export const auditLogs = pgTable("audit_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-  action: text("action").notNull(),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }), // Admin who performed action
+  targetType: text("target_type"), // user, channel, plan, payment, etc.
+  targetId: integer("target_id"), // ID of the target
+  action: text("action").notNull(), // ban_user, approve_payment, delete_channel, etc.
+  reason: text("reason"), // Optional reason for action
   meta: jsonb("meta").notNull().default({}),
+  ip: text("ip"), // IP address
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [auditLogs.userId],
+  actor: one(users, {
+    fields: [auditLogs.actorUserId],
     references: [users.id],
   }),
 }));
