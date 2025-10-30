@@ -8,10 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap, Copy, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import type { User, OfflinePayment, Channel } from "@shared/schema";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import type { User, OfflinePayment, Channel, Plan } from "@shared/schema";
 
 export default function Admin() {
   const { toast } = useToast();
@@ -27,12 +31,44 @@ export default function Admin() {
   const [activationUserId, setActivationUserId] = useState<number | null>(null);
   const [activationDays, setActivationDays] = useState("30");
 
+  // Plan editor dialog state
+  const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [planForm, setPlanForm] = useState({
+    name: "",
+    currency: "USD",
+    price: "",
+    billingPeriod: "MONTHLY" as "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL",
+    requestType: "PAID" as "PAID" | "REQUEST_QUOTE" | "BOOK_DEMO",
+    published: false,
+    sortOrder: "",
+    dailyMessagesLimit: "",
+    bulkMessagesLimit: "",
+    channelsLimit: "",
+    chatbotsLimit: "",
+    pageAccess: {
+      dashboard: true,
+      pricing: true,
+      channels: false,
+      send: false,
+      templates: false,
+      workflows: false,
+      outbox: false,
+    },
+    features: [] as string[],
+  });
+  const [newFeature, setNewFeature] = useState("");
+
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/users"],
   });
 
   const { data: pendingPayments = [] } = useQuery<OfflinePayment[]>({
     queryKey: ["/api/admin/offline-payments"],
+  });
+
+  const { data: plans = [] } = useQuery<Plan[]>({
+    queryKey: ["/api/admin/plans"],
   });
 
   // Fetch admin main balance
@@ -150,6 +186,181 @@ export default function Admin() {
     }
   };
 
+  // Plan mutations
+  const createPlanMutation = useMutation({
+    mutationFn: async (planData: any) => {
+      return await apiRequest("POST", "/api/admin/plans", planData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      resetPlanForm();
+      setIsPlanDialogOpen(false);
+      toast({ title: "Plan created successfully" });
+    },
+  });
+
+  const updatePlanMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest("PUT", `/api/admin/plans/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      resetPlanForm();
+      setIsPlanDialogOpen(false);
+      toast({ title: "Plan updated successfully" });
+    },
+  });
+
+  const deletePlanMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/admin/plans/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      toast({ title: "Plan deleted successfully" });
+    },
+  });
+
+  const duplicatePlanMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("POST", `/api/admin/plans/${id}/duplicate`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      toast({ title: "Plan duplicated successfully" });
+    },
+  });
+
+  const togglePublishMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("POST", `/api/admin/plans/${id}/toggle-publish`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+    },
+  });
+
+  // Plan form helpers
+  const resetPlanForm = () => {
+    setEditingPlan(null);
+    setPlanForm({
+      name: "",
+      currency: "USD",
+      price: "",
+      billingPeriod: "MONTHLY",
+      requestType: "PAID",
+      published: false,
+      sortOrder: "",
+      dailyMessagesLimit: "",
+      bulkMessagesLimit: "",
+      channelsLimit: "",
+      chatbotsLimit: "",
+      pageAccess: {
+        dashboard: true,
+        pricing: true,
+        channels: false,
+        send: false,
+        templates: false,
+        workflows: false,
+        outbox: false,
+      },
+      features: [],
+    });
+    setNewFeature("");
+  };
+
+  const openCreatePlanDialog = () => {
+    resetPlanForm();
+    setIsPlanDialogOpen(true);
+  };
+
+  const openEditPlanDialog = (plan: Plan) => {
+    setEditingPlan(plan);
+    setPlanForm({
+      name: plan.name,
+      currency: plan.currency,
+      price: String(plan.price / 100),
+      billingPeriod: plan.billingPeriod,
+      requestType: plan.requestType,
+      published: plan.published,
+      sortOrder: String(plan.sortOrder),
+      dailyMessagesLimit: String(plan.dailyMessagesLimit),
+      bulkMessagesLimit: String(plan.bulkMessagesLimit),
+      channelsLimit: String(plan.channelsLimit),
+      chatbotsLimit: String(plan.chatbotsLimit || ""),
+      pageAccess: (plan.pageAccess || {
+        dashboard: true,
+        pricing: true,
+        channels: false,
+        send: false,
+        templates: false,
+        workflows: false,
+        outbox: false,
+      }) as any,
+      features: plan.features || [],
+    });
+    setNewFeature("");
+    setIsPlanDialogOpen(true);
+  };
+
+  const handleSavePlan = () => {
+    // Validate required numeric fields
+    const price = parseFloat(planForm.price);
+    const sortOrder = parseInt(planForm.sortOrder) || 0;
+    const dailyMessagesLimit = parseInt(planForm.dailyMessagesLimit);
+    const bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
+    const channelsLimit = parseInt(planForm.channelsLimit);
+    const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : null;
+
+    // Check for invalid numeric values
+    if (!planForm.name.trim()) {
+      toast({ title: "Validation error", description: "Plan name is required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(price) || price <= 0) {
+      toast({ title: "Validation error", description: "Valid price is required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(dailyMessagesLimit) || dailyMessagesLimit <= 0) {
+      toast({ title: "Validation error", description: "Valid daily messages limit is required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(bulkMessagesLimit) || bulkMessagesLimit <= 0) {
+      toast({ title: "Validation error", description: "Valid bulk messages limit is required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(channelsLimit) || channelsLimit <= 0) {
+      toast({ title: "Validation error", description: "Valid channels limit is required", variant: "destructive" });
+      return;
+    }
+    if (planForm.chatbotsLimit && (isNaN(chatbotsLimit!) || chatbotsLimit! <= 0)) {
+      toast({ title: "Validation error", description: "Valid chatbots limit is required", variant: "destructive" });
+      return;
+    }
+
+    const planData = {
+      name: planForm.name.trim(),
+      currency: planForm.currency,
+      price: Math.round(price * 100),
+      billingPeriod: planForm.billingPeriod,
+      requestType: planForm.requestType,
+      published: planForm.published,
+      sortOrder,
+      dailyMessagesLimit,
+      bulkMessagesLimit,
+      channelsLimit,
+      chatbotsLimit,
+      pageAccess: planForm.pageAccess,
+      features: planForm.features.filter(f => f.trim()).map(f => f.trim()),
+    };
+
+    if (editingPlan) {
+      updatePlanMutation.mutate({ id: editingPlan.id, data: planData });
+    } else {
+      createPlanMutation.mutate(planData);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -161,9 +372,10 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="users">Users & Billing</TabsTrigger>
           <TabsTrigger value="payments">Offline Payments</TabsTrigger>
+          <TabsTrigger value="plans">Plans</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -392,6 +604,133 @@ export default function Admin() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="plans" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Plans Management</CardTitle>
+                  <CardDescription>Create and manage subscription plans</CardDescription>
+                </div>
+                <Button onClick={openCreatePlanDialog} data-testid="button-create-plan">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Plan
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <div className="max-h-[600px] overflow-y-auto">
+                  <table className="w-full">
+                    <thead className="sticky top-0 bg-card border-b">
+                      <tr className="text-left">
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Plan Name</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Price</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Billing</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Type</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Limits</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase">Status</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plans.sort((a, b) => a.sortOrder - b.sortOrder).map((plan) => (
+                        <tr key={plan.id} className="border-b hover-elevate" data-testid={`plan-${plan.id}`}>
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{plan.name}</div>
+                            {plan.features && plan.features.length > 0 && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {plan.features.length} features
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-sm">
+                            {plan.currency} {(plan.price / 100).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {plan.billingPeriod === "MONTHLY" && "Monthly"}
+                            {plan.billingPeriod === "SEMI_ANNUAL" && "6 Months"}
+                            {plan.billingPeriod === "ANNUAL" && "Annual"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="text-xs">
+                              {plan.requestType === "PAID" && "Paid"}
+                              {plan.requestType === "REQUEST_QUOTE" && "Quote"}
+                              {plan.requestType === "BOOK_DEMO" && "Demo"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <div className="space-y-1">
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Daily:</span> {plan.dailyMessagesLimit}
+                              </div>
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Channels:</span> {plan.channelsLimit}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => togglePublishMutation.mutate(plan.id)}
+                              data-testid={`button-toggle-publish-${plan.id}`}
+                            >
+                              {plan.published ? (
+                                <>
+                                  <Eye className="h-3 w-3 mr-1 text-success" />
+                                  <span className="text-success text-xs">Published</span>
+                                </>
+                              ) : (
+                                <>
+                                  <EyeOff className="h-3 w-3 mr-1 text-muted-foreground" />
+                                  <span className="text-muted-foreground text-xs">Draft</span>
+                                </>
+                              )}
+                            </Button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditPlanDialog(plan)}
+                                data-testid={`button-edit-plan-${plan.id}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => duplicatePlanMutation.mutate(plan.id)}
+                                data-testid={`button-duplicate-plan-${plan.id}`}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  if (confirm(`Delete plan "${plan.name}"?`)) {
+                                    deletePlanMutation.mutate(plan.id);
+                                  }
+                                }}
+                                data-testid={`button-delete-plan-${plan.id}`}
+                              >
+                                <Trash2 className="h-3 w-3 text-error" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Adjust Days Dialog */}
@@ -520,6 +859,378 @@ export default function Admin() {
             >
               <Zap className="h-3 w-3 mr-1" />
               Add Days
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Plan Editor Dialog */}
+      <Dialog open={isPlanDialogOpen} onOpenChange={setIsPlanDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingPlan ? "Edit Plan" : "Create New Plan"}</DialogTitle>
+            <DialogDescription>
+              {editingPlan ? "Update plan details and settings" : "Configure a new subscription plan"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Basic Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan-name">Plan Name</Label>
+                  <Input
+                    id="plan-name"
+                    placeholder="e.g., Professional Plan"
+                    value={planForm.name}
+                    onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                    data-testid="input-plan-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-sort-order">Sort Order</Label>
+                  <Input
+                    id="plan-sort-order"
+                    type="number"
+                    placeholder="0"
+                    value={planForm.sortOrder}
+                    onChange={(e) => setPlanForm({ ...planForm, sortOrder: e.target.value })}
+                    data-testid="input-plan-sort-order"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan-currency">Currency</Label>
+                  <Select
+                    value={planForm.currency}
+                    onValueChange={(value) => setPlanForm({ ...planForm, currency: value })}
+                  >
+                    <SelectTrigger id="plan-currency" data-testid="select-plan-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="GBP">GBP</SelectItem>
+                      <SelectItem value="BHD">BHD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-price">Price</Label>
+                  <Input
+                    id="plan-price"
+                    type="number"
+                    step="0.01"
+                    placeholder="99.00"
+                    value={planForm.price}
+                    onChange={(e) => setPlanForm({ ...planForm, price: e.target.value })}
+                    data-testid="input-plan-price"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-billing-period">Billing Period</Label>
+                  <Select
+                    value={planForm.billingPeriod}
+                    onValueChange={(value: any) => setPlanForm({ ...planForm, billingPeriod: value })}
+                  >
+                    <SelectTrigger id="plan-billing-period" data-testid="select-plan-billing-period">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MONTHLY">Monthly</SelectItem>
+                      <SelectItem value="SEMI_ANNUAL">Semi-Annual (6 months)</SelectItem>
+                      <SelectItem value="ANNUAL">Annual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan-request-type">Request Type</Label>
+                  <Select
+                    value={planForm.requestType}
+                    onValueChange={(value: any) => setPlanForm({ ...planForm, requestType: value })}
+                  >
+                    <SelectTrigger id="plan-request-type" data-testid="select-plan-request-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PAID">Paid (PayPal + Offline)</SelectItem>
+                      <SelectItem value="REQUEST_QUOTE">Request Quote</SelectItem>
+                      <SelectItem value="BOOK_DEMO">Book Demo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 flex items-center gap-3 pt-8">
+                  <Switch
+                    id="plan-published"
+                    checked={planForm.published}
+                    onCheckedChange={(checked) => setPlanForm({ ...planForm, published: checked })}
+                    data-testid="switch-plan-published"
+                  />
+                  <Label htmlFor="plan-published">Published (visible to users)</Label>
+                </div>
+              </div>
+            </div>
+
+            {/* Limits */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Usage Limits</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan-daily-messages">Daily Messages Limit</Label>
+                  <Input
+                    id="plan-daily-messages"
+                    type="number"
+                    placeholder="1000"
+                    value={planForm.dailyMessagesLimit}
+                    onChange={(e) => setPlanForm({ ...planForm, dailyMessagesLimit: e.target.value })}
+                    data-testid="input-plan-daily-messages"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-bulk-messages">Bulk Messages Limit</Label>
+                  <Input
+                    id="plan-bulk-messages"
+                    type="number"
+                    placeholder="5000"
+                    value={planForm.bulkMessagesLimit}
+                    onChange={(e) => setPlanForm({ ...planForm, bulkMessagesLimit: e.target.value })}
+                    data-testid="input-plan-bulk-messages"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-channels">Channels Limit</Label>
+                  <Input
+                    id="plan-channels"
+                    type="number"
+                    placeholder="5"
+                    value={planForm.channelsLimit}
+                    onChange={(e) => setPlanForm({ ...planForm, channelsLimit: e.target.value })}
+                    data-testid="input-plan-channels"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-chatbots">Chatbots Limit (optional)</Label>
+                  <Input
+                    id="plan-chatbots"
+                    type="number"
+                    placeholder="10"
+                    value={planForm.chatbotsLimit}
+                    onChange={(e) => setPlanForm({ ...planForm, chatbotsLimit: e.target.value })}
+                    data-testid="input-plan-chatbots"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Page Access */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Page Access</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-dashboard"
+                    checked={planForm.pageAccess.dashboard}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, dashboard: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-dashboard"
+                  />
+                  <Label htmlFor="page-dashboard" className="text-sm font-normal cursor-pointer">
+                    Dashboard
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-pricing"
+                    checked={planForm.pageAccess.pricing}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, pricing: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-pricing"
+                  />
+                  <Label htmlFor="page-pricing" className="text-sm font-normal cursor-pointer">
+                    Pricing
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-channels"
+                    checked={planForm.pageAccess.channels}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, channels: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-channels"
+                  />
+                  <Label htmlFor="page-channels" className="text-sm font-normal cursor-pointer">
+                    Channels
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-send"
+                    checked={planForm.pageAccess.send}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, send: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-send"
+                  />
+                  <Label htmlFor="page-send" className="text-sm font-normal cursor-pointer">
+                    Send Messages
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-templates"
+                    checked={planForm.pageAccess.templates}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, templates: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-templates"
+                  />
+                  <Label htmlFor="page-templates" className="text-sm font-normal cursor-pointer">
+                    Templates
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-workflows"
+                    checked={planForm.pageAccess.workflows}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, workflows: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-workflows"
+                  />
+                  <Label htmlFor="page-workflows" className="text-sm font-normal cursor-pointer">
+                    Workflows
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-outbox"
+                    checked={planForm.pageAccess.outbox}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, outbox: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-outbox"
+                  />
+                  <Label htmlFor="page-outbox" className="text-sm font-normal cursor-pointer">
+                    Outbox
+                  </Label>
+                </div>
+              </div>
+            </div>
+
+            {/* Features */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Features List</h3>
+              <div className="space-y-2">
+                {planForm.features.map((feature, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={feature}
+                      onChange={(e) => {
+                        const newFeatures = [...planForm.features];
+                        newFeatures[index] = e.target.value;
+                        setPlanForm({ ...planForm, features: newFeatures });
+                      }}
+                      placeholder="Enter feature description"
+                      data-testid={`input-feature-${index}`}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newFeatures = planForm.features.filter((_, i) => i !== index);
+                        setPlanForm({ ...planForm, features: newFeatures });
+                      }}
+                      data-testid={`button-remove-feature-${index}`}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add new feature"
+                    value={newFeature}
+                    onChange={(e) => setNewFeature(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newFeature.trim()) {
+                        setPlanForm({ ...planForm, features: [...planForm.features, newFeature.trim()] });
+                        setNewFeature("");
+                      }
+                    }}
+                    data-testid="input-new-feature"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (newFeature.trim()) {
+                        setPlanForm({ ...planForm, features: [...planForm.features, newFeature.trim()] });
+                        setNewFeature("");
+                      }
+                    }}
+                    data-testid="button-add-feature"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsPlanDialogOpen(false);
+                resetPlanForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSavePlan}
+              disabled={
+                !planForm.name ||
+                !planForm.price ||
+                !planForm.dailyMessagesLimit ||
+                !planForm.bulkMessagesLimit ||
+                !planForm.channelsLimit ||
+                createPlanMutation.isPending ||
+                updatePlanMutation.isPending
+              }
+              data-testid="button-save-plan"
+            >
+              {editingPlan ? "Update Plan" : "Create Plan"}
             </Button>
           </DialogFooter>
         </DialogContent>
