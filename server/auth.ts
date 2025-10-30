@@ -47,6 +47,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     return res.status(401).json({ error: "User not found" });
   }
 
+  // Check if user is banned
+  if (user.status === "banned") {
+    res.clearCookie("token"); // Clear the authentication cookie
+    return res.status(403).json({ 
+      error: "Account suspended", 
+      message: "Your account has been suspended. Please contact support for assistance." 
+    });
+  }
+
   req.userId = user.id;
   req.user = user;
   next();

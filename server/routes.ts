@@ -123,6 +123,14 @@ export function registerRoutes(app: Express) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
+      // Check if user is banned
+      if (user.status === "banned") {
+        return res.status(403).json({ 
+          error: "Account suspended", 
+          message: "Your account has been suspended. Please contact support for assistance." 
+        });
+      }
+
       const token = generateToken(user.id);
       res.cookie("token", token, {
         httpOnly: true,

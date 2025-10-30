@@ -49,11 +49,23 @@ export default function Login() {
       setLocation("/dashboard");
     },
     onError: (error: any) => {
-      toast({
-        title: "Login failed",
-        description: error.message || "Invalid email or password",
-        variant: "destructive",
-      });
+      // Check if account is suspended (apiRequest surfaces server errors via error.error)
+      const errorText = error.error || error.message || "";
+      const errorMessage = error.message || errorText || "An error occurred";
+      
+      if (errorText.includes("Account suspended") || errorText.includes("suspended")) {
+        toast({
+          title: "Account Suspended",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Login failed",
+          description: errorMessage || "Invalid email or password",
+          variant: "destructive",
+        });
+      }
     },
   });
 
