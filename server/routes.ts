@@ -2028,6 +2028,238 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Ban user (admin only)
+  app.post("/api/admin/users/:id/ban", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { reason } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role === "admin") {
+        return res.status(403).json({ error: "Cannot ban admin users" });
+      }
+
+      const updated = await storage.updateUser(userId, { status: "banned" });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "user",
+        targetId: userId,
+        action: "BAN_USER",
+        reason: reason || null,
+        meta: { email: user.email, adminId: req.userId },
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Ban user error:", error);
+      res.status(500).json({ error: "Failed to ban user" });
+    }
+  });
+
+  // Unban user (admin only)
+  app.post("/api/admin/users/:id/unban", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Determine new status based on active subscription
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      const newStatus = subscription ? "active" : "expired";
+      const updated = await storage.updateUser(userId, { status: newStatus });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "user",
+        targetId: userId,
+        action: "UNBAN_USER",
+        meta: { email: user.email, newStatus, hasActiveSubscription: !!subscription, adminId: req.userId },
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Unban user error:", error);
+      res.status(500).json({ error: "Failed to unban user" });
+    }
+  });
+
+  // Update user subscription overrides (admin only)
+  app.patch("/api/admin/users/:id/overrides", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, pageAccess } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Get active subscription
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      if (!subscription) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
+
+      // Build overrides object
+      const overrides: any = {};
+      if (dailyMessagesLimit !== undefined) overrides.dailyMessagesLimit = dailyMessagesLimit;
+      if (bulkMessagesLimit !== undefined) overrides.bulkMessagesLimit = bulkMessagesLimit;
+      if (channelsLimit !== undefined) overrides.channelsLimit = channelsLimit;
+      if (chatbotsLimit !== undefined) overrides.chatbotsLimit = chatbotsLimit;
+      if (pageAccess !== undefined) overrides.pageAccess = pageAccess;
+
+      // Update subscription with overrides
+      await storage.updateSubscription(subscription.id, overrides);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "subscription",
+        targetId: subscription.id,
+        action: "UPDATE_OVERRIDES",
+        meta: { userId, email: user.email, overrides, adminId: req.userId },
+      });
+
+      res.json({ success: true, subscription: await storage.getActiveSubscriptionForUser(userId) });
+    } catch (error: any) {
+      console.error("Update overrides error:", error);
+      res.status(500).json({ error: "Failed to update overrides" });
+    }
+  });
+
+  // Delete channel via WHAPI (admin only)
+  app.delete("/api/admin/channels/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const channelId = parseInt(req.params.id);
+
+      const channel = await storage.getChannel(channelId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const user = await storage.getUser(channel.userId);
+
+      // Step 1: Try to delete from WHAPI
+      let whapiDeleteSuccess = false;
+      let whapiError = null;
+      
+      if (channel.whapiChannelId) {
+        try {
+          await whapi.deleteWhapiChannel(channel.whapiChannelId);
+          whapiDeleteSuccess = true;
+        } catch (error: any) {
+          whapiError = error.message;
+          // 404 means already deleted, treat as success
+          if (error.message?.includes("404") || error.message?.includes("not found")) {
+            whapiDeleteSuccess = true;
+          } else {
+            // Network/auth errors - do not proceed with local deletion
+            return res.status(500).json({ 
+              error: "Failed to delete channel from WHAPI provider",
+              details: whapiError
+            });
+          }
+        }
+      } else {
+        // No WHAPI channel ID, just delete locally
+        whapiDeleteSuccess = true;
+      }
+
+      // Step 2: Calculate days to return
+      const daysToReturn = channel.daysRemaining || 0;
+
+      // Step 3: Return days to admin balance
+      if (daysToReturn > 0) {
+        await storage.updateMainDaysBalance(daysToReturn);
+        
+        await storage.createBalanceTransaction({
+          type: "refund",
+          days: daysToReturn,
+          channelId: channel.id,
+          userId: channel.userId,
+          note: `Channel deleted by admin - ${daysToReturn} days returned to main balance`,
+        });
+      }
+
+      // Step 4: Delete channel locally
+      await storage.deleteChannel(channelId);
+
+      // Step 5: Audit log
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "channel",
+        targetId: channelId,
+        action: "DELETE_CHANNEL",
+        meta: {
+          channelLabel: channel.label,
+          userId: channel.userId,
+          userEmail: user?.email,
+          daysReturned: daysToReturn,
+          whapiChannelId: channel.whapiChannelId,
+          whapiDeleteSuccess,
+          whapiError,
+          adminId: req.userId,
+        },
+      });
+
+      res.json({ 
+        success: true, 
+        daysReturned: daysToReturn,
+        mainBalance: await storage.getMainDaysBalance()
+      });
+    } catch (error: any) {
+      console.error("Delete channel error:", error);
+      res.status(500).json({ error: "Failed to delete channel" });
+    }
+  });
+
+  // Get effective limits for a user (admin only)
+  app.get("/api/admin/users/:id/effective-limits", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      if (!subscription) {
+        return res.json({ 
+          dailyMessagesLimit: 0,
+          bulkMessagesLimit: 0,
+          channelsLimit: 0,
+          chatbotsLimit: 0,
+          pageAccess: {}
+        });
+      }
+
+      const plan = await storage.getPlan(subscription.planId);
+      if (!plan) {
+        return res.status(404).json({ error: "Plan not found" });
+      }
+
+      // Merge plan limits with subscription overrides
+      const effectiveLimits = {
+        dailyMessagesLimit: subscription.dailyMessagesLimit ?? plan.dailyMessagesLimit,
+        bulkMessagesLimit: subscription.bulkMessagesLimit ?? plan.bulkMessagesLimit,
+        channelsLimit: subscription.channelsLimit ?? plan.channelsLimit,
+        chatbotsLimit: subscription.chatbotsLimit ?? plan.chatbotsLimit,
+        pageAccess: {
+          ...(typeof plan.pageAccess === 'object' && plan.pageAccess !== null ? plan.pageAccess : {}),
+          ...(typeof subscription.pageAccess === 'object' && subscription.pageAccess !== null ? subscription.pageAccess : {})
+        }
+      };
+
+      res.json(effectiveLimits);
+    } catch (error: any) {
+      console.error("Get effective limits error:", error);
+      res.status(500).json({ error: "Failed to get effective limits" });
+    }
+  });
+
   // Get offline payments (admin only)
   app.get("/api/admin/offline-payments", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {

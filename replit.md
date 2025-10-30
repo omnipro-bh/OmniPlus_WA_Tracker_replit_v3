@@ -48,6 +48,25 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
 
+## Backend API Routes
+
+**Admin Routes (require admin role):**
+- **Plans Management**: GET/POST/PUT/DELETE `/api/admin/plans`, duplicate, toggle publish
+- **User Management**: 
+  - GET `/api/admin/users` - List all users with enriched data
+  - POST `/api/admin/users/:id/add-days` - Add days to user balance
+  - POST `/api/admin/users/:id/remove-days` - Remove days from user balance
+  - POST `/api/admin/users/:id/ban` - Ban user (blocks login and API access)
+  - POST `/api/admin/users/:id/unban` - Unban user
+  - PATCH `/api/admin/users/:id/overrides` - Update per-user subscription overrides (limits, page access)
+  - GET `/api/admin/users/:id/effective-limits` - Get computed effective limits (plan + overrides)
+- **Channels Management**:
+  - GET `/api/admin/users/:userId/channels` - List user channels
+  - POST `/api/admin/users/:userId/channels/:channelId/activate` - Activate/extend channel
+  - DELETE `/api/admin/channels/:id` - Delete channel via WHAPI, return days to admin balance
+- **Offline Payments**: GET `/api/admin/offline-payments`, approve/reject
+- **Balance Management**: GET/POST balance, transactions, adjust
+
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** For channel management (creation, extension, deletion).
 - **WHAPI Gate API (https://gate.whapi.cloud):** For QR code generation and sending all message types:

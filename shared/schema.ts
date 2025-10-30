@@ -100,11 +100,12 @@ export const subscriptions = pgTable("subscriptions", {
   durationType: durationTypeEnum("duration_type").notNull(),
   provider: text("provider").notNull().default("DIRECT"), // DIRECT, PAYPAL, OFFLINE
   transactionId: text("transaction_id"),
-  // Per-user overrides (DO NOT mutate the plan)
-  overrides: jsonb("overrides").default({
-    limits: null, // { daily?, bulk?, channels?, chatbots? }
-    pageAccess: null, // { dashboard?, channels?, send?, ... }
-  }),
+  // Per-user overrides (DO NOT mutate the plan) - Individual columns for type safety
+  dailyMessagesLimit: integer("daily_messages_limit_override"), // null = use plan default
+  bulkMessagesLimit: integer("bulk_messages_limit_override"), // null = use plan default
+  channelsLimit: integer("channels_limit_override"), // null = use plan default
+  chatbotsLimit: integer("chatbots_limit_override"), // null = use plan default
+  pageAccess: jsonb("page_access_override"), // null = use plan default, object = override specific pages
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

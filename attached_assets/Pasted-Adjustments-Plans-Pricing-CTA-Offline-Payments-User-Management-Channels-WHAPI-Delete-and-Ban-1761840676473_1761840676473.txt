@@ -1,0 +1,171 @@
+Adjustments: Plans, Pricing CTA, Offline Payments, User Management, Channels (WHAPI Delete), and Ban/Block (Two Roles Only)
+Roles (only two)
+•	Admin: full platform access (plans, users, payments, channels, overrides, publish controls, audit).
+•	User: access strictly defined by Plan Page Access ⊕ Per-User Overrides.
+No other roles.
+________________________________________
+1) Plans (Admin → Plans)
+Purpose: Full plan builder + publish control for Pricing page.
+Plan Fields
+•	Basic
+o	Plan Name
+o	Currency (USD, BHD, etc.)
+o	Monthly Price (nullable for Quote/Demo)
+o	Billing Period (Monthly / Semi-Annual / Annual)
+o	Request Type (Paid / Request Quote / Book Demo)
+o	PayPal Plan ID (optional)
+o	Published (toggle) — controls visibility on public pricing page ( Landing Page only or dashboard only or both )
+o	Sort Order (card order on pricing page)
+•	Included Limits (integers; -1 = unlimited)
+o	Daily Messages
+o	Bulk Messages
+o	Channels Allowed
+o	Chatbots Allowed
+•	Page Access (checkbox matrix)
+o	Dashboard, Channels, Send, Bulk, Templates, Workflows, Chatbot, Outbox, Logs, Pricing, Admin (hidden from Users), Balances, WHAPI Settings, etc.
+•	Features list – Free text (strings shown as bullets on plan card)
+Admin Actions
+•	Create / Edit / Duplicate / Archive plan
+•	Publish / Unpublish (affects pricing page only)
+•	Validation: must fill required fields before publish
+Public Pricing Page (CTAs by Request Type)
+•	Shows Published plans only.
+•	Paid → show both “Subscribe with PayPal” AND “Offline Payment”
+o	PayPal: use PayPal Plan ID flow.
+o	Offline Payment: open upload/reference form (stored for Admin review).
+•	Request Quote → open quote form (lead record + notify Admin)
+•	Book Demo → open demo form/scheduler
+________________________________________
+2) Offline Payments (Admin → Payments)
+Goal: Accept bank transfer/manual payments and credit Days Balance upon approval.
+•	Tabs: Pending, Approved, Rejected
+•	Each record: User, Plan, Submitted date, Reference, Proof (view), Actions: Approve / Reject
+•	Approve → add configured plan days to user’s days_balance (or admin-entered days), set status Active, log audit
+•	Reject → keep balances unchanged, log audit
+•	Link each approval to the related User Subscription entry
+________________________________________
+3) User Management (Admin → Users)
+List Columns
+•	Name, Email
+•	Current Plan (name + request type)
+•	Channels used / allowed
+•	Days Balance
+•	Status (Active / Expired / Banned)
+•	Actions: View, Edit, +Days / –Days, Adjust Limits, Page Access Override, Ban/Unban
+User Details (drawer/page)
+•	Read-only: base Plan info (limits & pages)
+•	Per-User Overrides (stored on user subscription; DO NOT mutate the plan):
+o	Custom Limits: Daily, Bulk, Channels, Chatbots
+o	Custom Page Access: checkbox overrides
+o	Days Balance: add/subtract (with history)
+o	Request Type: Paid / Quote / Demo (per-user)
+o	Notes (internal)
+•	Effective View: show computed limits + final allowed pages (Plan ⊕ Overrides)
+Rules
+•	days_balance <= 0 → auto Expired; restrict User to Pricing/Payments only.
+•	Overrides show “Overridden” badge.
+•	Offline payment Approve updates Days Balance & Status.
+________________________________________
+4) Channels (Admin → Channels)
+Goal: See all channels, view details, and delete channel via WHAPI API using credentials in WHAPI Settings page , then remove locally.
+Channels List (table)
+•	Columns: Name, User (email), Phone (E.164), Channel Token (copy icon), Status (Active/Unauthorized/Disconnected/Suspended), Created at, Actions (View • Delete)
+•	Controls: Search (name/phone/user/channel token), Filters (Status, User), Pagination
+Channel Details (drawer/page)
+•	Show: Name, Phone, Channel ID, User, Status, Auth state, Last heartbeat/message time, Webhook URL, message counters (if available), Audit history (last 5 actions)
+•	Buttons: Delete Channel (danger), Re-authorize (if Unauthorized)
+Delete Channel Flow (use WHAPI Settings page)
+1.	Admin clicks Delete 
+2.	Call WHAPI Delete Channel with provider Channel Token+ use WHAPI Settings page stored credentials.
+o	Success → proceed.
+o	404 from provider → treat as success but log it.
+o	Network/401/500 → show error, do not delete locally.
+3.	After success → Channel should be deleted from user account, and whatever days balance should be return/added back to Admin Balance.  
+4.	Recompute user’s Channels Used vs Effective limit.
+5.	Log Audit: actor, time, WHAPI response code/body hash.
+Permissions
+•	Only Admin can delete.
+•	Users see only their channels if Channels is enabled in Effective Page Access.
+________________________________________
+5) Ban / Block User (Account Suspension)
+Admin UI
+•	Badge on list: Banned
+•	Actions: Ban User / Unban User (with optional reason textarea)
+Behavior
+•	If user.status === "banned":
+o	Block login (UI + API). Show: “Your account is currently suspended. Please contact support.”
+o	Invalidate existing sessions on next request (403 + force sign-out).
+o	Block background jobs/webhooks initiated by this user/tenant; log “user_banned”.
+•	Unban: restore normal auth; log audit.
+Audit
+•	Every Ban/Unban writes to AuditLog (admin_id, user_id, action, reason, timestamp, IP).
+________________________________________
+6) Enforcement & Guards (Global)
+•	Page guards: every route checks Effective Page Access.
+•	Action guards: sending/bulk/chatbot/channel-create check Effective Limits.
+•	Expiry: days_balance <= 0 → restrict to Pricing/Payments only.
+•	Banned: supersedes all; deny auth, APIs, and routes until unbanned.
+________________________________________
+7) Admin Dashboards
+•	Users & Billing summary (quick +Days/–Days, status badges, channels used/allowed)
+•	Plans grid (publish toggle, edit, duplicate, archive)
+•	Payments (offline approvals workflow)
+________________________________________
+8) Minimal Data Objects
+Plan {
+  id, name, currency, price, billing_period, request_type, paypal_plan_id?,
+  published, sort_order,
+  limits { daily, bulk, channels, chatbots },
+  page_access { dashboard, channels, send, bulk, templates, workflows, chatbot, outbox, logs, pricing, admin, balances, whapi },
+  features[]
+}
+
+User { id, name, email, role: 'admin'|'user', status: 'active'|'banned' }
+
+Subscription {
+  id, user_id, plan_id,
+  request_type,           // Paid | request_quote | book_demo at user-level
+  days_balance, status,   // Active | Expired
+  overrides {
+    limits? { daily?, bulk?, channels?, chatbots? },
+    page_access? { … }    // booleans per page
+  },
+  audit[]                 // change history
+}
+
+Payment {
+  id, user_id, plan_id, type: 'paypal'|'offline',
+  reference, proof_url, status: 'pending'|'approved'|'rejected',
+  created_at, approved_by?, approved_at?
+}
+
+Channel {
+  id, user_id, name, phone, provider: 'whapi',
+  provider_channel_id, status, webhook_url,
+  created_at, updated_at, deleted_at?
+}
+
+AuditLog {
+  id, actor_user_id, target_type, target_id,
+  action, reason?, meta, created_at, ip?
+}
+________________________________________
+9) Helper Functions
+•	getEffectiveLimits(userId) → merge(plan.limits, subscription.overrides.limits)
+•	getEffectivePages(userId) → union(plan.page_access, subscription.overrides.page_access)
+•	canCreateChannel(userId) → channels_used < getEffectiveLimits(userId).channels
+•	deleteChannelViaWhapi(channel) → provider call + mapped errors
+•	isBanned(userId) → gate auth and privileged actions
+________________________________________
+10) Acceptance Criteria
+1.	Admin can create/edit/duplicate/archive plans; publish/unpublish controls pricing page visibility.
+2.	Pricing page shows Published plans only; Paid plans display both “Subscribe with PayPal” and “Offline Payment” CTAs.
+3.	Offline payments can be Approved/Rejected; approval updates Days Balance and sets Status Active; all recorded in audit.
+4.	Admin can adjust a specific user (limits, pages, days, request type) without changing the plan template.
+5.	Route access uses Effective Page Access; actions enforce Effective Limits.
+6.	days_balance <= 0 → user becomes Expired and is restricted to Pricing/Payments pages only.
+7.	Channels tab lists channels; Delete performs WHAPI deletion first, then local soft-delete; audit is written.
+8.	Channel quota enforced from Effective Limits.
+9.	Admin can Ban/Unban users; banned users cannot log in or call APIs, and current sessions are invalidated.
+10.	All critical actions (plan publish, offline approvals, channel delete, ban/unban, overrides) are logged in AuditLog.
+
