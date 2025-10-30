@@ -5,14 +5,15 @@ import { eq, and, inArray, desc } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags } from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
-import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment } from "@shared/schema";
+import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
 import { 
   insertChannelSchema, 
   insertTemplateSchema, 
   insertJobSchema, 
   insertMessageSchema, 
   insertWorkflowSchema,
-  insertOfflinePaymentSchema 
+  insertOfflinePaymentSchema,
+  insertPlanSchema
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import * as whapi from "./whapi";
@@ -2220,6 +2221,169 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Test WHAPI connection error:", error);
       res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // ============================================================================
+  // ADMIN PLAN MANAGEMENT
+  // ============================================================================
+
+  // Get all plans (admin view - includes unpublished)
+  app.get("/api/admin/plans", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const allPlans = await storage.getPlans();
+      res.json(allPlans);
+    } catch (error: any) {
+      console.error("Get admin plans error:", error);
+      res.status(500).json({ error: "Failed to fetch plans" });
+    }
+  });
+
+  // Create new plan
+  app.post("/api/admin/plans", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const validationResult = insertPlanSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: validationResult.error.flatten(),
+        });
+      }
+
+      const plan = await storage.createPlan(validationResult.data);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "plan",
+        targetId: plan.id,
+        action: "CREATE_PLAN",
+        meta: { planName: plan.name },
+      });
+
+      res.json(plan);
+    } catch (error: any) {
+      console.error("Create plan error:", error);
+      res.status(500).json({ error: "Failed to create plan" });
+    }
+  });
+
+  // Update plan
+  app.put("/api/admin/plans/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const planId = parseInt(req.params.id);
+      
+      const plan = await storage.updatePlan(planId, req.body);
+      if (!plan) {
+        return res.status(404).json({ error: "Plan not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "plan",
+        targetId: plan.id,
+        action: "UPDATE_PLAN",
+        meta: { planName: plan.name, changes: req.body },
+      });
+
+      res.json(plan);
+    } catch (error: any) {
+      console.error("Update plan error:", error);
+      res.status(500).json({ error: "Failed to update plan" });
+    }
+  });
+
+  // Duplicate plan
+  app.post("/api/admin/plans/:id/duplicate", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const planId = parseInt(req.params.id);
+      
+      const original = await storage.getPlan(planId);
+      if (!original) {
+        return res.status(404).json({ error: "Plan not found" });
+      }
+
+      const duplicated = await storage.createPlan({
+        name: `${original.name} (Copy)`,
+        currency: original.currency,
+        price: original.price,
+        billingPeriod: original.billingPeriod,
+        requestType: original.requestType,
+        paypalPlanId: null,
+        published: false,
+        sortOrder: original.sortOrder + 1,
+        dailyMessagesLimit: original.dailyMessagesLimit,
+        bulkMessagesLimit: original.bulkMessagesLimit,
+        channelsLimit: original.channelsLimit,
+        chatbotsLimit: original.chatbotsLimit,
+        pageAccess: original.pageAccess,
+        features: original.features,
+      });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "plan",
+        targetId: duplicated.id,
+        action: "DUPLICATE_PLAN",
+        meta: { originalPlanId: planId, newPlanName: duplicated.name },
+      });
+
+      res.json(duplicated);
+    } catch (error: any) {
+      console.error("Duplicate plan error:", error);
+      res.status(500).json({ error: "Failed to duplicate plan" });
+    }
+  });
+
+  // Toggle publish status
+  app.patch("/api/admin/plans/:id/publish", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const planId = parseInt(req.params.id);
+      const { published } = req.body;
+      
+      const plan = await storage.updatePlan(planId, { published });
+      if (!plan) {
+        return res.status(404).json({ error: "Plan not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "plan",
+        targetId: plan.id,
+        action: published ? "PUBLISH_PLAN" : "UNPUBLISH_PLAN",
+        meta: { planName: plan.name },
+      });
+
+      res.json(plan);
+    } catch (error: any) {
+      console.error("Toggle plan publish error:", error);
+      res.status(500).json({ error: "Failed to toggle plan publish status" });
+    }
+  });
+
+  // Archive/delete plan (soft delete by unpublishing)
+  app.delete("/api/admin/plans/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const planId = parseInt(req.params.id);
+      
+      const plan = await storage.getPlan(planId);
+      if (!plan) {
+        return res.status(404).json({ error: "Plan not found" });
+      }
+
+      await storage.updatePlan(planId, { published: false });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "plan",
+        targetId: planId,
+        action: "ARCHIVE_PLAN",
+        meta: { planName: plan.name },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Archive plan error:", error);
+      res.status(500).json({ error: "Failed to archive plan" });
     }
   });
 
