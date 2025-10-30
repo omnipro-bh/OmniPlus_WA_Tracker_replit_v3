@@ -458,12 +458,13 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
 
   // End Node: message.text
   else if (nodeType === 'message.text') {
-    // Send simple text message via WHAPI
-    return await fetch(`${WHAPI_BASE_URL}/messages/text`, {
+    // Send simple text message via WHAPI Gate API
+    const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+    return await fetch("https://gate.whapi.cloud/messages/text", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${channelToken}`,
+        'Authorization': authToken,
       },
       body: JSON.stringify({
         to: phone,
@@ -474,7 +475,8 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
 
   // End Node: message.media
   else if (nodeType === 'message.media') {
-    // Send media message via WHAPI
+    // Send media message via WHAPI Gate API
+    const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
     const mediaPayload: any = {
       to: phone,
       media: {
@@ -486,11 +488,11 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
       mediaPayload.caption = config.caption;
     }
     
-    return await fetch(`${WHAPI_BASE_URL}/messages/media`, {
+    return await fetch("https://gate.whapi.cloud/messages/media", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${channelToken}`,
+        'Authorization': authToken,
       },
       body: JSON.stringify(mediaPayload),
     }).then(res => res.json());
@@ -498,12 +500,13 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
 
   // End Node: message.location
   else if (nodeType === 'message.location') {
-    // Send location message via WHAPI
-    return await fetch(`${WHAPI_BASE_URL}/messages/location`, {
+    // Send location message via WHAPI Gate API
+    const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+    return await fetch("https://gate.whapi.cloud/messages/location", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${channelToken}`,
+        'Authorization': authToken,
       },
       body: JSON.stringify({
         to: phone,

@@ -42,8 +42,13 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 Includes entities for Users, Plans, Subscriptions, Channels, Templates, Jobs, Messages (with delivery tracking and unique `providerMessageId`), Workflows (with `webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags (for idempotent first-message detection), WorkflowExecutions, OfflinePayments, AuditLogs, Settings, and BalanceTransactions.
 
 ## External Dependencies
-- **WHAPI Partner API:** For channel management (creation, extension, deletion).
-- **WHAPI Gate API:** For QR code generation and sending messages.
+- **WHAPI Partner API (https://manager.whapi.cloud):** For channel management (creation, extension, deletion).
+- **WHAPI Gate API (https://gate.whapi.cloud):** For QR code generation and sending all message types:
+  - Text messages: `/messages/text`
+  - Media messages: `/messages/media` (image/video/audio/document)
+  - Location messages: `/messages/location`
+  - Interactive messages: `/messages/interactive`
+  - Carousel messages: `/messages/carousel`
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database, managed by Drizzle ORM.
 - **node-cron:** For scheduling daily tasks.
