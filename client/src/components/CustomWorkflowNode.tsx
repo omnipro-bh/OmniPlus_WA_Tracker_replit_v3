@@ -62,7 +62,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           : 'hsl(var(--card-foreground))',
       }}
     >
-      {/* Entry node badge - positioned below buttons, non-interactive */}
+      {/* Entry node badge - top center */}
       {isEntryNode && (
         <Badge 
           className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2 pointer-events-none"
@@ -72,7 +72,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         </Badge>
       )}
       
-      {/* End node badge - positioned below buttons, non-interactive */}
+      {/* End node badge - top center */}
       {isEndNode && (
         <Badge 
           className="absolute -top-2 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2 pointer-events-none"
@@ -82,19 +82,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         </Badge>
       )}
       
-      {/* Delete button - always visible, highest z-index, rendered AFTER badges */}
-      <Button
-        size="icon"
-        variant="ghost"
-        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
-        onClick={handleDelete}
-        data-testid={`button-delete-node-${id}`}
-        style={{ zIndex: 100 }}
-      >
-        <X className="h-3 w-3" />
-      </Button>
-      
-      {/* Set Entry Node button - always visible for non-trigger/end nodes, highest z-index, rendered AFTER badges */}
+      {/* Set Entry Node button - top left corner, always visible for non-trigger/end nodes */}
       {!nodeType.includes('Trigger') && !isEndNode && (
         <Button
           size="icon"
@@ -114,6 +102,18 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           <Star className={`h-3 w-3 ${isEntryNode ? 'fill-current' : ''}`} />
         </Button>
       )}
+      
+      {/* Delete button - BOTTOM RIGHT CORNER - always visible, no overlap possible */}
+      <Button
+        size="icon"
+        variant="ghost"
+        className="absolute -bottom-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
+        onClick={handleDelete}
+        data-testid={`button-delete-node-${id}`}
+        style={{ zIndex: 100 }}
+      >
+        <X className="h-3 w-3" />
+      </Button>
       
       {/* Input Handle - single target handle at the left */}
       <Handle
