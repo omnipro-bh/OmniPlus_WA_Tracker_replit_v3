@@ -266,6 +266,16 @@ export const conversationStates = pgTable("conversation_states", {
   workflowPhoneIdx: uniqueIndex("conversation_states_workflow_phone_idx").on(table.workflowId, table.phone),
 }));
 
+// First Message Flags - minimal state for "first message of day" trigger
+export const firstMessageFlags = pgTable("first_message_flags", {
+  phone: varchar("phone", { length: 32 }).notNull(),
+  dateLocal: text("date_local").notNull(), // YYYY-MM-DD in Asia/Bahrain timezone
+  firstMsgTs: timestamp("first_msg_ts", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  pk: uniqueIndex("first_message_flags_phone_date_idx").on(table.phone, table.dateLocal),
+}));
+
 export const conversationStatesRelations = relations(conversationStates, ({ one }) => ({
   workflow: one(workflows, {
     fields: [conversationStates.workflowId],
@@ -425,6 +435,11 @@ export const insertConversationStateSchema = createInsertSchema(conversationStat
   phone: z.string().min(1),
 });
 
+export const insertFirstMessageFlagSchema = createInsertSchema(firstMessageFlags, {
+  phone: z.string().min(1),
+  dateLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 export const insertWorkflowExecutionSchema = createInsertSchema(workflowExecutions, {
   phone: z.string().min(1),
 });
@@ -450,6 +465,8 @@ export type Workflow = typeof workflows.$inferSelect;
 export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>;
 export type ConversationState = typeof conversationStates.$inferSelect;
 export type InsertConversationState = z.infer<typeof insertConversationStateSchema>;
+export type FirstMessageFlag = typeof firstMessageFlags.$inferSelect;
+export type InsertFirstMessageFlag = z.infer<typeof insertFirstMessageFlagSchema>;
 export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 export type InsertWorkflowExecution = z.infer<typeof insertWorkflowExecutionSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;

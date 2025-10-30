@@ -1,0 +1,90 @@
+Chatbot Workflow Builder — “First Message of the Day” Trigger
+Goal:
+In the workflow builder, the first node is a Trigger node. It should fire once per day per phone number—specifically on the first incoming message of that day.
+Example: If 97339116526 sends a message at 08:00, send the Trigger node. If the same number sends again at 11:00, do not send the Trigger node again that day.
+Constraints:
+•	We don’t want to store all messages for all numbers.
+•	We’re okay keeping minimal state: either the last message timestamp per phone or a per-day flag per phone.
+•	Timezone for “day” boundaries is Asia/Bahrain (UTC+3) (no DST).
+________________________________________
+Minimal-State Design (two easy options)
+Option A — Redis (preferred: super light, no table growth)
+•	On webhook receive:
+1.	Convert message timestamp to Asia/Bahrain (UTC+3).
+2.	Compute today = YYYY-MM-DD in Asia/Bahrain.
+3.	Build a daily key: firstmsg:{phone}:{today}.
+4.	SETNX that key to 1 and set an expiry to the end of the day (or 24h).
+	If SETNX returns 1 (key created) → send Trigger node.
+	If returns 0 (key exists) → skip Trigger node.
+•	Benefits: O(1), no historical data, auto-expires nightly.
+Pseudo (Node.js/TypeScript):
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import tz from "dayjs/plugin/timezone";
+import { createClient } from "redis";
+dayjs.extend(utc); dayjs.extend(tz);
+
+const r = createClient();
+
+async function onIncomingMessage({ phone, msgTs, messageId }) {
+  // 1) Dedup by messageId (optional but recommended)
+  const seenKey = `seen:${messageId}`;
+  const seen = await r.set(seenKey, "1", { NX: true, EX: 24 * 60 * 60 });
+  if (seen === null) return; // duplicate webhook retry
+
+  // 2) Compute “today” in Asia/Bahrain
+  const ts = dayjs.unix(msgTs).tz("Asia/Bahrain");
+  const today = ts.format("YYYY-MM-DD");
+
+  // 3) First-message-of-day gate
+  const gateKey = `firstmsg:${phone}:${today}`;
+  const first = await r.set(gateKey, "1", { NX: true, EX: secondsUntilEndOfDay(ts) });
+
+  if (first === "OK") {
+    // Fire Trigger node
+    await sendTriggerNode(phone);
+  }
+
+  // Process the rest of the workflow normally...
+}
+
+function secondsUntilEndOfDay(localTs) {
+  const end = localTs.endOf("day");
+  return Math.max(1, end.diff(localTs, "second"));
+}
+________________________________________
+Option B — Single SQL table (tiny, stable size)
+•	Create a table with a unique constraint on (phone, date_local):
+CREATE TABLE IF NOT EXISTS first_message_flags (
+  phone VARCHAR(32) NOT NULL,
+  date_local DATE NOT NULL,
+  first_msg_ts TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (phone, date_local)
+);
+•	On webhook receive:
+1.	Convert timestamp to Asia/Bahrain and derive date_local.
+2.	Try to insert (phone, date_local, first_msg_ts).
+	If insert succeeds → send Trigger node.
+	If conflict (row exists) → skip Trigger node.
+Upsert example (Postgres):
+INSERT INTO first_message_flags (phone, date_local, first_msg_ts)
+VALUES ($1, $2::date, $3)
+ON CONFLICT (phone, date_local) DO NOTHING
+RETURNING phone;
+If the RETURNING returns a row → fire Trigger; otherwise skip.
+________________________________________
+Important Implementation Notes
+1.	Timezone: Use Asia/Bahrain when deriving the YYYY-MM-DD day key. (UTC+3 all year, no DST.)
+2.	Idempotency: Deduplicate webhook retries using the provider’s unique messageId (e.g., SETNX seen:{messageId} with 24h TTL).
+3.	Scalability: Both approaches are O(1) per message. Redis will self-clean; SQL table will scale with one row per (phone, day).
+4.	Clock Source: Derive the day from the message’s server timestamp, not the server’s local clock.
+5.	Builder UX: The Trigger node in the UI should be labeled “First incoming message of the day” with a tooltip that says it resets at 00:00 Asia/Bahrain.
+6.	Testing Hooks: Provide a “simulate new day” dev toggle that bypasses the gate for QA.
+________________________________________
+Why this is the “easiest way”
+•	No full message logs required.
+•	Trivial state: one Redis key (expires) or one SQL row per phone per day.
+•	Deterministic: The unique key (phone + local date) gives a crystal-clear definition of “first”.
+________________________________________
+If you’re okay, which option you think is the best?  Option A (Redis). If Redis isn’t available in the environment, fall back to Option B (SQL) with the unique key strategy.
+
