@@ -75,15 +75,17 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         </Button>
       )}
       
-      {/* Set Entry Node button - only show when selected and not a trigger or end node */}
-      {selected && !nodeType.includes('Trigger') && !isEndNode && (
+      {/* Set Entry Node button - always visible for non-trigger/end nodes */}
+      {!nodeType.includes('Trigger') && !isEndNode && (
         <Button
           size="icon"
           variant="ghost"
-          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md ${
+          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md transition-all ${
             isEntryNode 
               ? 'bg-amber-500 text-white hover:bg-amber-600' 
-              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+              : selected 
+                ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                : 'bg-secondary/50 text-secondary-foreground/60 hover:bg-secondary hover:text-secondary-foreground'
           }`}
           onClick={handleSetEntryNode}
           data-testid={`button-set-entry-node-${id}`}
