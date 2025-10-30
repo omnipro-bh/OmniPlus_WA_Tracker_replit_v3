@@ -104,16 +104,20 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
       )}
       
       {/* Delete button - BOTTOM RIGHT CORNER - always visible, no overlap possible */}
-      <Button
-        size="icon"
-        variant="ghost"
-        className="absolute -bottom-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
+      <button
         onClick={handleDelete}
         data-testid={`button-delete-node-${id}`}
-        style={{ zIndex: 100 }}
+        className="flex items-center justify-center h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md cursor-pointer border-0"
+        style={{ 
+          position: 'absolute',
+          zIndex: 100,
+          bottom: '-12px',
+          right: '-12px'
+        }}
+        title="Delete node"
       >
         <X className="h-3 w-3" />
-      </Button>
+      </button>
       
       {/* Input Handle - single target handle at the left */}
       <Handle
