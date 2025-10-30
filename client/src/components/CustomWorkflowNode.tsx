@@ -62,23 +62,23 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           : 'hsl(var(--card-foreground))',
       }}
     >
-      {/* Delete button - always visible */}
+      {/* Delete button - always visible with high z-index */}
       <Button
         size="icon"
         variant="ghost"
-        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
+        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md z-50"
         onClick={handleDelete}
         data-testid={`button-delete-node-${id}`}
       >
         <X className="h-3 w-3" />
       </Button>
       
-      {/* Set Entry Node button - always visible for non-trigger/end nodes */}
+      {/* Set Entry Node button - always visible for non-trigger/end nodes with high z-index */}
       {!nodeType.includes('Trigger') && !isEndNode && (
         <Button
           size="icon"
           variant="ghost"
-          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md transition-all ${
+          className={`absolute -top-3 -left-3 h-6 w-6 rounded-full shadow-md transition-all z-50 ${
             isEntryNode 
               ? 'bg-amber-500 text-white hover:bg-amber-600' 
               : selected 
@@ -93,16 +93,16 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         </Button>
       )}
       
-      {/* Entry node badge */}
+      {/* Entry node badge - lower z-index than buttons */}
       {isEntryNode && (
-        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2">
+        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2 z-10">
           Entry
         </Badge>
       )}
       
-      {/* End node badge */}
+      {/* End node badge - lower z-index than buttons */}
       {isEndNode && (
-        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2">
+        <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2 z-10">
           END
         </Badge>
       )}
