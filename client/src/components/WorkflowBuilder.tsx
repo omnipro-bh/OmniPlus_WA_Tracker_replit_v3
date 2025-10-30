@@ -169,6 +169,7 @@ interface WorkflowBuilderProps {
   initialNodes?: Node[];
   initialEdges?: Edge[];
   initialEntryNodeId?: string;
+  initialWorkflowId?: number;
   isActive?: boolean;
   onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string) => void;
   onToggleActive?: (isActive: boolean) => void;
@@ -179,6 +180,7 @@ export default function WorkflowBuilder({
   initialNodes = [],
   initialEdges = [],
   initialEntryNodeId,
+  initialWorkflowId,
   isActive = true,
   onSave,
   onToggleActive,
@@ -383,7 +385,7 @@ export default function WorkflowBuilder({
       schemaVersion: "1.0.0",
       workflow: {
         id: initialWorkflowId,
-        name: initialWorkflowName,
+        name: workflowName,
         exportedAt: new Date().toISOString(),
       },
       nodes: nodes.map(node => ({
@@ -407,7 +409,7 @@ export default function WorkflowBuilder({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `workflow_${initialWorkflowName || 'export'}_${Date.now()}.json`;
+    a.download = `workflow_${workflowName || 'export'}_${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -624,8 +626,8 @@ export default function WorkflowBuilder({
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
           <Controls showInteractive={false} />
           <MiniMap pannable zoomable nodeStrokeWidth={3} />
-          <Panel position="top-left" className="bg-card border rounded-md p-2">
-            <div className="flex items-center gap-2">
+          <Panel position="top-left" className="bg-card border rounded-md p-2 max-w-[calc(100%-340px)]">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button size="icon" variant="ghost" title="Undo" data-testid="button-undo">
                 <Undo2 className="h-4 w-4" />
               </Button>

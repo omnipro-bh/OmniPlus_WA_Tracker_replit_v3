@@ -179,6 +179,7 @@ export default function Workflows() {
             initialNodes={definition.nodes || []}
             initialEdges={definition.edges || []}
             initialEntryNodeId={selectedWorkflow.entryNodeId || undefined}
+            initialWorkflowId={selectedWorkflow.id}
             isActive={selectedWorkflow.isActive}
             onSave={handleSaveWorkflow}
             onToggleActive={handleToggleActive}

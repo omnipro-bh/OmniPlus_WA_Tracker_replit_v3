@@ -62,18 +62,16 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           : 'hsl(var(--card-foreground))',
       }}
     >
-      {/* Delete button - only show when selected */}
-      {selected && (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
-          onClick={handleDelete}
-          data-testid={`button-delete-node-${id}`}
-        >
-          <X className="h-3 w-3" />
-        </Button>
-      )}
+      {/* Delete button - always visible */}
+      <Button
+        size="icon"
+        variant="ghost"
+        className="absolute -top-3 -right-3 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md"
+        onClick={handleDelete}
+        data-testid={`button-delete-node-${id}`}
+      >
+        <X className="h-3 w-3" />
+      </Button>
       
       {/* Set Entry Node button - always visible for non-trigger/end nodes */}
       {!nodeType.includes('Trigger') && !isEndNode && (
