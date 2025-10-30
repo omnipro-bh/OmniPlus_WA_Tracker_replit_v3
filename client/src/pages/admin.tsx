@@ -31,6 +31,9 @@ export default function Admin() {
   const [activationUserId, setActivationUserId] = useState<number | null>(null);
   const [activationDays, setActivationDays] = useState("30");
 
+  // Offline payments tab state
+  const [paymentStatusTab, setPaymentStatusTab] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
+
   // Plan editor dialog state
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
@@ -63,9 +66,12 @@ export default function Admin() {
     queryKey: ["/api/admin/users"],
   });
 
-  const { data: pendingPayments = [] } = useQuery<OfflinePayment[]>({
+  const { data: allPayments = [] } = useQuery<OfflinePayment[]>({
     queryKey: ["/api/admin/offline-payments"],
   });
+
+  // Filter payments by status
+  const filteredPayments = allPayments.filter(payment => payment.status === paymentStatusTab);
 
   const { data: plans = [] } = useQuery<Plan[]>({
     queryKey: ["/api/admin/plans"],
@@ -530,77 +536,138 @@ export default function Admin() {
         <TabsContent value="payments" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Pending Offline Payments</CardTitle>
+              <CardTitle>Offline Payments</CardTitle>
               <CardDescription>
-                Review and approve payment submissions
+                Review payment submissions, quote requests, and demo bookings
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {pendingPayments.length === 0 ? (
-                <div className="text-center py-12">
-                  <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium">No pending payments</h3>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    All payments have been processed
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <table className="w-full">
-                    <thead className="bg-card border-b">
-                      <tr className="text-left">
-                        <th className="px-4 py-3 text-xs font-semibold uppercase">User</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase">Plan</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase">Amount</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase">Reference</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase">Status</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingPayments.map((payment: any) => (
-                        <tr key={payment.id} className="border-b hover-elevate">
-                          <td className="px-4 py-3 text-sm">{payment.user?.email}</td>
-                          <td className="px-4 py-3 text-sm">{payment.plan?.name}</td>
-                          <td className="px-4 py-3 text-sm font-mono">
-                            {payment.currency} {(payment.amount / 100).toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3 text-sm">{payment.reference || "-"}</td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={payment.status} />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex gap-1 justify-end">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => approvePaymentMutation.mutate(payment.id)}
-                                data-testid={`button-approve-${payment.id}`}
-                              >
-                                <CheckCircle className="h-3 w-3 mr-1 text-success" />
-                                Approve
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  if (confirm("Reject this payment?")) {
-                                    rejectPaymentMutation.mutate(payment.id);
-                                  }
-                                }}
-                                data-testid={`button-reject-${payment.id}`}
-                              >
-                                <XCircle className="h-3 w-3 mr-1 text-error" />
-                                Reject
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <Tabs value={paymentStatusTab} onValueChange={(v) => setPaymentStatusTab(v as typeof paymentStatusTab)}>
+                <TabsList className="grid w-full grid-cols-3 mb-4">
+                  <TabsTrigger value="PENDING" data-testid="tab-pending-payments">
+                    Pending ({allPayments.filter(p => p.status === "PENDING").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="APPROVED" data-testid="tab-approved-payments">
+                    Approved ({allPayments.filter(p => p.status === "APPROVED").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="REJECTED" data-testid="tab-rejected-payments">
+                    Rejected ({allPayments.filter(p => p.status === "REJECTED").length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value={paymentStatusTab}>
+                  {filteredPayments.length === 0 ? (
+                    <div className="text-center py-12">
+                      <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium">No {paymentStatusTab.toLowerCase()} payments</h3>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {paymentStatusTab === "PENDING" && "All payments have been processed"}
+                        {paymentStatusTab === "APPROVED" && "No payments have been approved yet"}
+                        {paymentStatusTab === "REJECTED" && "No payments have been rejected"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <div className="max-h-[600px] overflow-y-auto">
+                        <table className="w-full">
+                          <thead className="sticky top-0 bg-card border-b">
+                            <tr className="text-left">
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">User</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Plan</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Type</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Amount</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Details</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Date</th>
+                              {paymentStatusTab === "PENDING" && (
+                                <th className="px-4 py-3 text-xs font-semibold uppercase text-right">Actions</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredPayments.map((payment: any) => (
+                              <tr key={payment.id} className="border-b hover-elevate" data-testid={`payment-${payment.id}`}>
+                                <td className="px-4 py-3 text-sm">{payment.user?.email}</td>
+                                <td className="px-4 py-3 text-sm">{payment.plan?.name}</td>
+                                <td className="px-4 py-3">
+                                  <Badge variant={payment.requestType === "PAID" ? "default" : "outline"}>
+                                    {payment.requestType || "PAID"}
+                                  </Badge>
+                                </td>
+                                <td className="px-4 py-3 text-sm font-mono">
+                                  {payment.requestType === "PAID" 
+                                    ? `${payment.currency} ${(payment.amount / 100).toFixed(2)}`
+                                    : "-"}
+                                </td>
+                                <td className="px-4 py-3 text-sm max-w-xs">
+                                  {payment.requestType === "PAID" ? (
+                                    <div className="text-xs text-muted-foreground">
+                                      Ref: {payment.reference || "-"}
+                                    </div>
+                                  ) : payment.metadata ? (
+                                    <div className="text-xs space-y-1">
+                                      {payment.metadata.name && (
+                                        <div><span className="font-medium">Name:</span> {payment.metadata.name}</div>
+                                      )}
+                                      {payment.metadata.email && (
+                                        <div><span className="font-medium">Email:</span> {payment.metadata.email}</div>
+                                      )}
+                                      {payment.metadata.phone && (
+                                        <div><span className="font-medium">Phone:</span> {payment.metadata.phone}</div>
+                                      )}
+                                      {payment.metadata.company && (
+                                        <div><span className="font-medium">Company:</span> {payment.metadata.company}</div>
+                                      )}
+                                      {payment.metadata.preferredDate && (
+                                        <div><span className="font-medium">Preferred Date:</span> {payment.metadata.preferredDate}</div>
+                                      )}
+                                      {payment.metadata.message && (
+                                        <div className="text-xs text-muted-foreground mt-1 italic truncate">
+                                          "{payment.metadata.message}"
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : "-"}
+                                </td>
+                                <td className="px-4 py-3 text-xs text-muted-foreground">
+                                  {new Date(payment.createdAt).toLocaleDateString()}
+                                </td>
+                                {paymentStatusTab === "PENDING" && (
+                                  <td className="px-4 py-3 text-right">
+                                    <div className="flex gap-1 justify-end">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => approvePaymentMutation.mutate(payment.id)}
+                                        data-testid={`button-approve-${payment.id}`}
+                                      >
+                                        <CheckCircle className="h-3 w-3 mr-1 text-success" />
+                                        Approve
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (confirm("Reject this payment?")) {
+                                            rejectPaymentMutation.mutate(payment.id);
+                                          }
+                                        }}
+                                        data-testid={`button-reject-${payment.id}`}
+                                      >
+                                        <XCircle className="h-3 w-3 mr-1 text-error" />
+                                        Reject
+                                      </Button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </TabsContent>
