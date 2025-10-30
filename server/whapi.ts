@@ -476,19 +476,20 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
   // End Node: message.media
   else if (nodeType === 'message.media') {
     // Send media message via WHAPI Gate API
+    // API expects: POST /messages/media/{MediaMessageType}
     const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+    const mediaType = config.mediaType || 'image'; // image, video, audio, document, etc.
+    
     const mediaPayload: any = {
       to: phone,
-      media: {
-        [config.mediaType || 'image']: config.mediaUrl,
-      },
+      media: config.mediaUrl, // Direct URL to media file
     };
     
     if (config.caption) {
       mediaPayload.caption = config.caption;
     }
     
-    return await fetch("https://gate.whapi.cloud/messages/media", {
+    return await fetch(`https://gate.whapi.cloud/messages/media/${mediaType}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -501,22 +502,26 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
   // End Node: message.location
   else if (nodeType === 'message.location') {
     // Send location message via WHAPI Gate API
+    // API expects flat payload with latitude/longitude at root level
     const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+    
+    const locationPayload: any = {
+      to: phone,
+      latitude: parseFloat(config.latitude || '0'),
+      longitude: parseFloat(config.longitude || '0'),
+    };
+    
+    // Optional fields - only include if provided
+    if (config.name) locationPayload.name = config.name;
+    if (config.address) locationPayload.address = config.address;
+    
     return await fetch("https://gate.whapi.cloud/messages/location", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': authToken,
       },
-      body: JSON.stringify({
-        to: phone,
-        location: {
-          latitude: parseFloat(config.latitude || '0'),
-          longitude: parseFloat(config.longitude || '0'),
-          name: config.name || undefined,
-          address: config.address || undefined,
-        },
-      }),
+      body: JSON.stringify(locationPayload),
     }).then(res => res.json());
   }
 
