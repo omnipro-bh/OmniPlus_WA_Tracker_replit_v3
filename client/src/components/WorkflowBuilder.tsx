@@ -108,10 +108,13 @@ export const nodeTypes = {
     },
   ],
   TRIGGER: [
-    { id: 'messageTrigger', label: 'Message Trigger', icon: Zap, cost: 1, description: 'Trigger on message received' },
-    { id: 'scheduleTrigger', label: 'Schedule Trigger', icon: Calendar, cost: 3, description: 'Trigger at scheduled time' },
-    { id: 'webhookTrigger', label: 'Webhook Trigger', icon: Webhook, cost: 3, description: 'Trigger via external webhook' },
-    { id: 'manualTrigger', label: 'Manual Trigger', icon: User, cost: 1, description: 'Manually triggered action' },
+    { 
+      id: 'firstMessageTrigger', 
+      label: 'First Message of Day', 
+      icon: Zap, 
+      cost: 0, 
+      description: 'Triggers on first incoming message of the day (resets at 00:00 Asia/Bahrain)' 
+    },
   ],
 };
 

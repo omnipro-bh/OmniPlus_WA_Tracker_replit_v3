@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc } from "drizzle-orm";
-import { workflows, conversationStates, workflowExecutions } from "@shared/schema";
+import { workflows, conversationStates, workflowExecutions, firstMessageFlags } from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment } from "@shared/schema";
@@ -16,6 +16,12 @@ import {
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import * as whapi from "./whapi";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export function registerRoutes(app: Express) {
   // ============================================================================
@@ -2329,26 +2335,35 @@ export function registerRoutes(app: Express) {
       try {
         // Process based on message type
         if (messageType === "text") {
-          // Check if this is the first message of the day from this phone
-          const conversationState = await db
-            .select()
-            .from(conversationStates)
-            .where(
-              and(
-                eq(conversationStates.workflowId, activeWorkflow.id),
-                eq(conversationStates.phone, phone)
-              )
-            )
-            .limit(1);
-
-          const now = new Date();
-          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const isFirstMessageToday = 
-            !conversationState.length ||
-            new Date(conversationState[0].lastMessageDate) < todayStart;
+          // First-message-of-day detection using Asia/Bahrain timezone
+          const msgTimestamp = dayjs.unix(incomingMessage.timestamp || Date.now() / 1000);
+          const msgTimeInBahrain = msgTimestamp.tz("Asia/Bahrain");
+          const dateLocal = msgTimeInBahrain.format("YYYY-MM-DD");
+          
+          // Try to insert into firstMessageFlags
+          // If successful (no conflict), this is the first message of the day
+          let isFirstMessageToday = false;
+          try {
+            await db.insert(firstMessageFlags).values({
+              phone,
+              dateLocal,
+              firstMsgTs: new Date(),
+            });
+            isFirstMessageToday = true;
+            console.log(`First message of day for ${phone} on ${dateLocal}`);
+          } catch (error: any) {
+            // Conflict - not first message of day
+            if (error.code === '23505' || error.constraint?.includes('first_message_flags_phone_date_idx')) {
+              isFirstMessageToday = false;
+              console.log(`Not first message of day for ${phone} on ${dateLocal}`);
+            } else {
+              // Re-throw unexpected errors
+              throw error;
+            }
+          }
 
           if (isFirstMessageToday) {
-            // Send welcome message
+            // Send welcome message from entry node
             const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
             const entryNodeId = activeWorkflow.entryNodeId;
             
@@ -2359,10 +2374,23 @@ export function registerRoutes(app: Express) {
                 // Send the entry node's message
                 const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
                 executionLog.responsesSent.push(response);
+                console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
               }
             }
 
-            // Update or create conversation state
+            // Update conversation state for tracking
+            const conversationState = await db
+              .select()
+              .from(conversationStates)
+              .where(
+                and(
+                  eq(conversationStates.workflowId, activeWorkflow.id),
+                  eq(conversationStates.phone, phone)
+                )
+              )
+              .limit(1);
+
+            const now = new Date();
             if (conversationState.length) {
               await db
                 .update(conversationStates)
