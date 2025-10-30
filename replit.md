@@ -49,8 +49,8 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
   - **User-Specific Webhook Endpoints:** Each workflow has a unique webhook URL (`/webhooks/whapi/:userId/:webhookToken`) displayed with copy-to-clipboard functionality
   - **Entry Node Configuration:** Support for setting an entry node that serves as the welcome message for first-time contacts
   - **Automated Message Routing:** Incoming WHAPI webhook messages are routed based on:
-    - **First Message of Day Detection:** Uses conversation_states table to track last message timestamp per phone/channel
-    - **Text Messages:** Route to entry node for first messages, or handle as general text input
+    - **First Message of Day Trigger (October 2025):** Timezone-aware detection using Asia/Bahrain (UTC+3) timezone. Uses minimal-state `firstMessageFlags` table with (phone, dateLocal) unique constraint. On first text message of each calendar day (resets at 00:00 Bahrain time), sends the workflow's entry node message. Subsequent messages same day are ignored. Idempotent with conflict-based deduplication using database unique constraint.
+    - **Text Messages:** Route to entry node for first messages of day, ignored for subsequent messages same day
     - **Button/List Replies:** Extracts ID after colon from WHAPI format ("ButtonsV3:r1" → "r1", "ListV3:r2" → "r2") and matches to workflow edges using sourceHandle (multi-output workflows) with fallback to node button configs (legacy workflows). Supports both `reply.button_reply` and legacy `button.id` formats.
   - **Inactive Workflow Handling:** Webhook handler respects `isActive` flag - logs all incoming messages for debugging but only sends automated responses when workflow is Live
   - **Automated Response Sending:** Integrates with WHAPI Gate API to send automated responses based on workflow configuration using `buildAndSendNodeMessage` helper
@@ -75,8 +75,9 @@ The platform features a React TypeScript frontend with Vite, Wouter, TanStack Qu
 - **Jobs**: Message sending jobs with delivery tracking.
 - **Messages**: Individual message status and error handling. Includes delivery tracking timestamps (`sentAt`, `deliveredAt`, `readAt`, `repliedAt`) and `lastReply` content. Unique index on `providerMessageId` ensures no duplicate WHAPI message IDs.
 - **Workflows**: Chatbot conversation flows with `webhookToken` (unique per workflow), `isActive` flag, `entryNodeId` (identifies welcome message node), and `definitionJson` (stores nodes/edges).
-- **ConversationStates**: Tracks last message timestamp per phone/channel combination for "first message of day" detection. Fields: `phoneNumber`, `channelId`, `lastMessageAt`.
-- **WorkflowExecutions**: Logs workflow execution history including incoming message payloads, routing decisions, and outbound responses. Fields: `workflowId`, `phoneNumber`, `channelId`, `incomingMessage`, `routingDecision`, `responsePayload`, `success`, `errorMessage`.
+- **ConversationStates**: Tracks last message timestamp per phone/channel combination. Fields: `workflowId`, `phone`, `lastMessageAt`, `lastMessageDate`, `currentNodeId`.
+- **FirstMessageFlags**: Minimal-state table for first-message-of-day trigger detection. Fields: `phone`, `dateLocal` (YYYY-MM-DD in Asia/Bahrain timezone), `firstMsgTs`. Unique constraint on (phone, dateLocal) ensures idempotent first-message detection.
+- **WorkflowExecutions**: Logs workflow execution history including incoming message payloads, routing decisions, and outbound responses. Fields: `workflowId`, `phone`, `messageType`, `triggerData`, `responsesSent`, `status`, `errorMessage`.
 - **OfflinePayments**: Manual payment submissions.
 - **AuditLogs**: System activity tracking.
 - **Settings**: System-wide configuration including `main_days_balance`.
