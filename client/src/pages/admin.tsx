@@ -34,6 +34,17 @@ export default function Admin() {
   // Offline payments tab state
   const [paymentStatusTab, setPaymentStatusTab] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
 
+  // User details drawer state
+  const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
+  const [selectedUserForDrawer, setSelectedUserForDrawer] = useState<any | null>(null);
+  const [userOverrides, setUserOverrides] = useState({
+    dailyMessagesLimit: "",
+    bulkMessagesLimit: "",
+    channelsLimit: "",
+    chatbotsLimit: "",
+    pageAccess: {} as Record<string, boolean>,
+  });
+
   // Plan editor dialog state
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
@@ -191,6 +202,55 @@ export default function Admin() {
       activateChannelMutation.mutate({ userId: activationUserId, channelId: activationChannelId, days });
     }
   };
+
+  // Ban/Unban mutations
+  const banUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("POST", `/api/admin/users/${userId}/ban`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User banned", description: "User has been suspended and cannot access the platform." });
+      setIsUserDrawerOpen(false);
+    },
+  });
+
+  const unbanUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("POST", `/api/admin/users/${userId}/unban`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User unbanned", description: "User can now access the platform." });
+      setIsUserDrawerOpen(false);
+    },
+  });
+
+  // User overrides mutation
+  const updateOverridesMutation = useMutation({
+    mutationFn: async ({ userId, overrides }: { userId: number; overrides: any }) => {
+      return await apiRequest("PATCH", `/api/admin/users/${userId}/overrides`, overrides);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "Overrides updated", description: "User subscription overrides have been saved." });
+      setIsUserDrawerOpen(false);
+    },
+  });
+
+  // Fetch effective limits for user (only when drawer is open)
+  const { data: effectiveLimits } = useQuery({
+    queryKey: ["/api/admin/users", selectedUserForDrawer?.id, "effective-limits"],
+    queryFn: async () => {
+      if (!selectedUserForDrawer?.id) return null;
+      const response = await fetch(`/api/admin/users/${selectedUserForDrawer.id}/effective-limits`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch effective limits");
+      return response.json();
+    },
+    enabled: isUserDrawerOpen && !!selectedUserForDrawer?.id,
+  });
 
   // Plan mutations
   const createPlanMutation = useMutation({
@@ -367,6 +427,36 @@ export default function Admin() {
     }
   };
 
+  // User drawer handlers
+  const openUserDrawer = (user: any) => {
+    setSelectedUserForDrawer(user);
+    // Initialize overrides form with current values from user's subscription
+    const subscription = user.activeSubscription;
+    setUserOverrides({
+      dailyMessagesLimit: subscription?.dailyMessagesLimit ? String(subscription.dailyMessagesLimit) : "",
+      bulkMessagesLimit: subscription?.bulkMessagesLimit ? String(subscription.bulkMessagesLimit) : "",
+      channelsLimit: subscription?.channelsLimit ? String(subscription.channelsLimit) : "",
+      chatbotsLimit: subscription?.chatbotsLimit ? String(subscription.chatbotsLimit) : "",
+      pageAccess: subscription?.pageAccess || {},
+    });
+    setIsUserDrawerOpen(true);
+  };
+
+  const handleSaveOverrides = () => {
+    if (!selectedUserForDrawer) return;
+
+    // Parse values - empty string means null (use plan default)
+    const overrides = {
+      dailyMessagesLimit: userOverrides.dailyMessagesLimit ? parseInt(userOverrides.dailyMessagesLimit) : null,
+      bulkMessagesLimit: userOverrides.bulkMessagesLimit ? parseInt(userOverrides.bulkMessagesLimit) : null,
+      channelsLimit: userOverrides.channelsLimit ? parseInt(userOverrides.channelsLimit) : null,
+      chatbotsLimit: userOverrides.chatbotsLimit ? parseInt(userOverrides.chatbotsLimit) : null,
+      pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
+    };
+
+    updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -444,7 +534,16 @@ export default function Admin() {
                               <StatusBadge status={user.status.toUpperCase() as any} />
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <div className="flex gap-1 justify-end">
+                              <div className="flex gap-1 justify-end flex-wrap">
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => openUserDrawer(user)}
+                                  data-testid={`button-view-details-${user.id}`}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Details
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1298,6 +1397,236 @@ export default function Admin() {
               data-testid="button-save-plan"
             >
               {editingPlan ? "Update Plan" : "Create Plan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Details Drawer */}
+      <Dialog open={isUserDrawerOpen} onOpenChange={setIsUserDrawerOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>User Details & Overrides</DialogTitle>
+            <DialogDescription>
+              Manage user-specific subscription overrides and account settings
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedUserForDrawer && (
+            <div className="space-y-6">
+              {/* User Info Summary */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-md">
+                <div>
+                  <p className="text-xs text-muted-foreground">Name</p>
+                  <p className="font-medium">{selectedUserForDrawer.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  <p className="font-medium">{selectedUserForDrawer.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Current Plan</p>
+                  <p className="font-medium">{selectedUserForDrawer.currentPlan?.name || "None"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <StatusBadge status={selectedUserForDrawer.status.toUpperCase() as any} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Days Balance</p>
+                  <p className="font-mono font-medium">{selectedUserForDrawer.daysBalance}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Channels Used</p>
+                  <p className="font-medium">{selectedUserForDrawer.channelsUsed} / {selectedUserForDrawer.channelsLimit || 0}</p>
+                </div>
+              </div>
+
+              {/* Effective Limits Display */}
+              {effectiveLimits && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Effective Limits (Plan + Overrides)</h3>
+                  <div className="grid grid-cols-2 gap-2 p-3 bg-card border rounded-md">
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Daily Messages:</span>
+                      <span className="ml-2 font-mono">{effectiveLimits.dailyMessagesLimit}</span>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Bulk Messages:</span>
+                      <span className="ml-2 font-mono">{effectiveLimits.bulkMessagesLimit}</span>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Channels:</span>
+                      <span className="ml-2 font-mono">{effectiveLimits.channelsLimit}</span>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Chatbots:</span>
+                      <span className="ml-2 font-mono">{effectiveLimits.chatbotsLimit || "Unlimited"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Subscription Overrides Form */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Per-User Overrides</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Leave empty to use plan defaults. Set values to override plan limits for this user.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="override-daily-messages">Daily Messages Limit</Label>
+                    <Input
+                      id="override-daily-messages"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.dailyMessagesLimit || "Plan default"}
+                      value={userOverrides.dailyMessagesLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, dailyMessagesLimit: e.target.value })}
+                      data-testid="input-override-daily-messages"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="override-bulk-messages">Bulk Messages Limit</Label>
+                    <Input
+                      id="override-bulk-messages"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.bulkMessagesLimit || "Plan default"}
+                      value={userOverrides.bulkMessagesLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, bulkMessagesLimit: e.target.value })}
+                      data-testid="input-override-bulk-messages"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="override-channels">Channels Limit</Label>
+                    <Input
+                      id="override-channels"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.channelsLimit || "Plan default"}
+                      value={userOverrides.channelsLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, channelsLimit: e.target.value })}
+                      data-testid="input-override-channels"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="override-chatbots">Chatbots Limit</Label>
+                    <Input
+                      id="override-chatbots"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.chatbotsLimit || "Plan default"}
+                      value={userOverrides.chatbotsLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, chatbotsLimit: e.target.value })}
+                      data-testid="input-override-chatbots"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Page Access Overrides */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Page Access Overrides</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Check pages to grant this user access, regardless of their plan's page access settings.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {["dashboard", "pricing", "channels", "send", "templates", "workflows", "outbox"].map((page) => (
+                    <div key={page} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`page-${page}`}
+                        checked={userOverrides.pageAccess[page] || false}
+                        onCheckedChange={(checked) => {
+                          setUserOverrides({
+                            ...userOverrides,
+                            pageAccess: { ...userOverrides.pageAccess, [page]: !!checked },
+                          });
+                        }}
+                        data-testid={`checkbox-page-${page}`}
+                      />
+                      <Label htmlFor={`page-${page}`} className="capitalize cursor-pointer">
+                        {page}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Quick Actions</h3>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedUser(selectedUserForDrawer);
+                      setAction("add");
+                      setIsDialogOpen(true);
+                    }}
+                    data-testid="button-drawer-add-days"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add Days
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedUser(selectedUserForDrawer);
+                      setAction("remove");
+                      setIsDialogOpen(true);
+                    }}
+                    data-testid="button-drawer-remove-days"
+                  >
+                    <Minus className="h-3 w-3 mr-1" />
+                    Remove Days
+                  </Button>
+                  {selectedUserForDrawer.status === "active" ? (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Ban user ${selectedUserForDrawer.email}? They will be unable to access the platform.`)) {
+                          banUserMutation.mutate(selectedUserForDrawer.id);
+                        }
+                      }}
+                      data-testid="button-ban-user"
+                    >
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Ban User
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Unban user ${selectedUserForDrawer.email}?`)) {
+                          unbanUserMutation.mutate(selectedUserForDrawer.id);
+                        }
+                      }}
+                      data-testid="button-unban-user"
+                    >
+                      <CheckCircle className="h-3 w-3 mr-1 text-success" />
+                      Unban User
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsUserDrawerOpen(false)}
+              data-testid="button-cancel-drawer"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveOverrides}
+              disabled={updateOverridesMutation.isPending}
+              data-testid="button-save-overrides"
+            >
+              Save Overrides
             </Button>
           </DialogFooter>
         </DialogContent>
