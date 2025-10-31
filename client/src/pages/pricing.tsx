@@ -42,18 +42,16 @@ export default function Pricing() {
   });
   const [quoteRequest, setQuoteRequest] = useState({
     name: "",
-    email: "",
+    businessEmail: "",
     phone: "",
-    company: "",
     message: "",
   });
   const [demoRequest, setDemoRequest] = useState({
     name: "",
-    email: "",
+    businessEmail: "",
     phone: "",
-    company: "",
-    preferredDate: "",
     message: "",
+    requestedDate: "",
   });
 
   const { data: plans = [] } = useQuery<Plan[]>({
@@ -76,28 +74,42 @@ export default function Pricing() {
 
   const quoteRequestMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/subscribe/offline", data);
+      return await apiRequest("POST", "/api/plan-requests", data);
     },
     onSuccess: () => {
       setIsQuoteDialogOpen(false);
-      setQuoteRequest({ name: "", email: "", phone: "", company: "", message: "" });
+      setQuoteRequest({ name: "", businessEmail: "", phone: "", message: "" });
       toast({
         title: "Quote request submitted",
         description: "We'll get back to you with a custom quote shortly.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Submission failed",
+        description: error.error || "Failed to submit request. Please try again.",
+        variant: "destructive",
       });
     },
   });
 
   const demoRequestMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/subscribe/offline", data);
+      return await apiRequest("POST", "/api/plan-requests", data);
     },
     onSuccess: () => {
       setIsDemoDialogOpen(false);
-      setDemoRequest({ name: "", email: "", phone: "", company: "", preferredDate: "", message: "" });
+      setDemoRequest({ name: "", businessEmail: "", phone: "", message: "", requestedDate: "" });
       toast({
         title: "Demo request submitted",
         description: "We'll contact you to schedule your demo.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Submission failed",
+        description: error.error || "Failed to submit request. Please try again.",
+        variant: "destructive",
       });
     },
   });
@@ -364,57 +376,44 @@ export default function Pricing() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quote-name">Full Name</Label>
-                <Input
-                  id="quote-name"
-                  placeholder="John Doe"
-                  value={quoteRequest.name}
-                  onChange={(e) => setQuoteRequest({ ...quoteRequest, name: e.target.value })}
-                  data-testid="input-quote-name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="quote-email">Email</Label>
-                <Input
-                  id="quote-email"
-                  type="email"
-                  placeholder="john@company.com"
-                  value={quoteRequest.email}
-                  onChange={(e) => setQuoteRequest({ ...quoteRequest, email: e.target.value })}
-                  data-testid="input-quote-email"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quote-phone">Phone</Label>
-                <Input
-                  id="quote-phone"
-                  type="tel"
-                  placeholder="+1 (555) 000-0000"
-                  value={quoteRequest.phone}
-                  onChange={(e) => setQuoteRequest({ ...quoteRequest, phone: e.target.value })}
-                  data-testid="input-quote-phone"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="quote-company">Company Name</Label>
-                <Input
-                  id="quote-company"
-                  placeholder="Company Inc."
-                  value={quoteRequest.company}
-                  onChange={(e) => setQuoteRequest({ ...quoteRequest, company: e.target.value })}
-                  data-testid="input-quote-company"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="quote-name">Full Name *</Label>
+              <Input
+                id="quote-name"
+                placeholder="John Doe"
+                value={quoteRequest.name}
+                onChange={(e) => setQuoteRequest({ ...quoteRequest, name: e.target.value })}
+                data-testid="input-quote-name"
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="quote-message">Additional Details</Label>
+              <Label htmlFor="quote-email">Business Email *</Label>
+              <Input
+                id="quote-email"
+                type="email"
+                placeholder="john@company.com"
+                value={quoteRequest.businessEmail}
+                onChange={(e) => setQuoteRequest({ ...quoteRequest, businessEmail: e.target.value })}
+                data-testid="input-quote-email"
+              />
+              <p className="text-xs text-muted-foreground">Please use a business email (not Gmail, Yahoo, Hotmail, etc.)</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quote-phone">Phone Number *</Label>
+              <Input
+                id="quote-phone"
+                type="tel"
+                placeholder="+1 (555) 000-0000"
+                value={quoteRequest.phone}
+                onChange={(e) => setQuoteRequest({ ...quoteRequest, phone: e.target.value })}
+                data-testid="input-quote-phone"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quote-message">Tell us about your requirements *</Label>
               <Textarea
                 id="quote-message"
-                placeholder="Tell us about your business needs, expected message volume, number of channels, etc."
+                placeholder="Describe your business needs, expected message volume, number of channels, etc."
                 rows={4}
                 value={quoteRequest.message}
                 onChange={(e) => setQuoteRequest({ ...quoteRequest, message: e.target.value })}
@@ -431,15 +430,14 @@ export default function Pricing() {
                 if (selectedPlan) {
                   quoteRequestMutation.mutate({
                     planId: selectedPlan.id,
-                    requestType: "REQUEST_QUOTE",
-                    amount: 0,
-                    currency: selectedPlan.currency,
-                    reference: `Quote Request: ${quoteRequest.name} (${quoteRequest.company})`,
-                    metadata: quoteRequest,
+                    name: quoteRequest.name,
+                    phone: quoteRequest.phone,
+                    businessEmail: quoteRequest.businessEmail,
+                    message: quoteRequest.message,
                   });
                 }
               }}
-              disabled={!quoteRequest.name || !quoteRequest.email || quoteRequestMutation.isPending}
+              disabled={!quoteRequest.name || !quoteRequest.businessEmail || !quoteRequest.phone || !quoteRequest.message || quoteRequestMutation.isPending}
               data-testid="button-submit-quote"
             >
               Submit Request
@@ -458,67 +456,54 @@ export default function Pricing() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="demo-name">Full Name</Label>
-                <Input
-                  id="demo-name"
-                  placeholder="John Doe"
-                  value={demoRequest.name}
-                  onChange={(e) => setDemoRequest({ ...demoRequest, name: e.target.value })}
-                  data-testid="input-demo-name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="demo-email">Email</Label>
-                <Input
-                  id="demo-email"
-                  type="email"
-                  placeholder="john@company.com"
-                  value={demoRequest.email}
-                  onChange={(e) => setDemoRequest({ ...demoRequest, email: e.target.value })}
-                  data-testid="input-demo-email"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="demo-phone">Phone</Label>
-                <Input
-                  id="demo-phone"
-                  type="tel"
-                  placeholder="+1 (555) 000-0000"
-                  value={demoRequest.phone}
-                  onChange={(e) => setDemoRequest({ ...demoRequest, phone: e.target.value })}
-                  data-testid="input-demo-phone"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="demo-company">Company Name</Label>
-                <Input
-                  id="demo-company"
-                  placeholder="Company Inc."
-                  value={demoRequest.company}
-                  onChange={(e) => setDemoRequest({ ...demoRequest, company: e.target.value })}
-                  data-testid="input-demo-company"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-name">Full Name *</Label>
+              <Input
+                id="demo-name"
+                placeholder="John Doe"
+                value={demoRequest.name}
+                onChange={(e) => setDemoRequest({ ...demoRequest, name: e.target.value })}
+                data-testid="input-demo-name"
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="demo-date">Preferred Date</Label>
+              <Label htmlFor="demo-email">Business Email *</Label>
+              <Input
+                id="demo-email"
+                type="email"
+                placeholder="john@company.com"
+                value={demoRequest.businessEmail}
+                onChange={(e) => setDemoRequest({ ...demoRequest, businessEmail: e.target.value })}
+                data-testid="input-demo-email"
+              />
+              <p className="text-xs text-muted-foreground">Please use a business email (not Gmail, Yahoo, Hotmail, etc.)</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-phone">Phone Number *</Label>
+              <Input
+                id="demo-phone"
+                type="tel"
+                placeholder="+1 (555) 000-0000"
+                value={demoRequest.phone}
+                onChange={(e) => setDemoRequest({ ...demoRequest, phone: e.target.value })}
+                data-testid="input-demo-phone"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-date">Preferred Date *</Label>
               <Input
                 id="demo-date"
                 type="date"
-                value={demoRequest.preferredDate}
-                onChange={(e) => setDemoRequest({ ...demoRequest, preferredDate: e.target.value })}
+                value={demoRequest.requestedDate}
+                onChange={(e) => setDemoRequest({ ...demoRequest, requestedDate: e.target.value })}
                 data-testid="input-demo-date"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="demo-message">Additional Information</Label>
+              <Label htmlFor="demo-message">Tell us about your goals *</Label>
               <Textarea
                 id="demo-message"
-                placeholder="Tell us about your goals and what you'd like to see in the demo..."
+                placeholder="What would you like to see in the demo? Any specific features or use cases?"
                 rows={3}
                 value={demoRequest.message}
                 onChange={(e) => setDemoRequest({ ...demoRequest, message: e.target.value })}
@@ -535,15 +520,15 @@ export default function Pricing() {
                 if (selectedPlan) {
                   demoRequestMutation.mutate({
                     planId: selectedPlan.id,
-                    requestType: "BOOK_DEMO",
-                    amount: 0,
-                    currency: selectedPlan.currency,
-                    reference: `Demo Request: ${demoRequest.name} (${demoRequest.company})`,
-                    metadata: demoRequest,
+                    name: demoRequest.name,
+                    phone: demoRequest.phone,
+                    businessEmail: demoRequest.businessEmail,
+                    message: demoRequest.message,
+                    requestedDate: demoRequest.requestedDate ? new Date(demoRequest.requestedDate).toISOString() : undefined,
                   });
                 }
               }}
-              disabled={!demoRequest.name || !demoRequest.email || demoRequestMutation.isPending}
+              disabled={!demoRequest.name || !demoRequest.businessEmail || !demoRequest.phone || !demoRequest.message || !demoRequest.requestedDate || demoRequestMutation.isPending}
               data-testid="button-submit-demo"
             >
               Book Demo
