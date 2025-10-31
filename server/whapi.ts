@@ -367,6 +367,8 @@ export async function sendMediaMessage(channelToken: string, payload: {
 }) {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
+  console.log("Sending media message with payload:", JSON.stringify(payload, null, 2));
+  
   const response = await fetch("https://gate.whapi.cloud/messages/media", {
     method: "POST",
     headers: {
@@ -379,7 +381,11 @@ export async function sendMediaMessage(channelToken: string, payload: {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI media send failed (status ${response.status})`);
+    console.error("WHAPI media send error:", JSON.stringify(errorData, null, 2));
+    const errorMessage = typeof errorData?.error === 'string' 
+      ? errorData.error 
+      : JSON.stringify(errorData?.error || errorData);
+    throw new Error(errorMessage || `WHAPI media send failed (status ${response.status})`);
   }
 
   return await response.json();
