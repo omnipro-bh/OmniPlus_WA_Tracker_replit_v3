@@ -1813,9 +1813,17 @@ export function registerRoutes(app: Express) {
           }
           const channels = await storage.getChannelsForUser(user.id);
 
+          // Calculate total days remaining across all channels
+          let totalDaysRemaining = 0;
+          for (const channel of channels) {
+            const daysRemaining = await storage.calculateChannelDaysRemaining(channel.id);
+            totalDaysRemaining += daysRemaining;
+          }
+
           const { passwordHash: _, ...userWithoutPassword } = user;
           return {
             ...userWithoutPassword,
+            daysBalance: totalDaysRemaining, // Override with channel aggregate
             currentPlan,
             channelsUsed: channels.length,
             channelsLimit: currentPlan?.channelsLimit || 0,
