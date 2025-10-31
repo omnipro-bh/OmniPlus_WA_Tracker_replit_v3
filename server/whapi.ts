@@ -334,6 +334,85 @@ export async function sendCarouselMessage(channelToken: string, payload: {
   return await response.json();
 }
 
+// Send simple text message (uses Gate API with channel token)
+export async function sendTextMessage(channelToken: string, payload: {
+  to: string;
+  body: string;
+}) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  const response = await fetch("https://gate.whapi.cloud/messages/text", {
+    method: "POST",
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error || `WHAPI text send failed (status ${response.status})`);
+  }
+
+  return await response.json();
+}
+
+// Send media message (image/video/audio/document) (uses Gate API with channel token)
+export async function sendMediaMessage(channelToken: string, payload: {
+  to: string;
+  media: string;
+  caption?: string;
+}) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  const response = await fetch("https://gate.whapi.cloud/messages/media", {
+    method: "POST",
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error || `WHAPI media send failed (status ${response.status})`);
+  }
+
+  return await response.json();
+}
+
+// Send location message (uses Gate API with channel token)
+export async function sendLocationMessage(channelToken: string, payload: {
+  to: string;
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+}) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  const response = await fetch("https://gate.whapi.cloud/messages/location", {
+    method: "POST",
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData?.error || `WHAPI location send failed (status ${response.status})`);
+  }
+
+  return await response.json();
+}
+
 // Build and send interactive message based on workflow node type
 export async function buildAndSendNodeMessage(channel: any, phone: string, nodeType: string, config: any) {
   const channelToken = channel.whapiChannelToken;

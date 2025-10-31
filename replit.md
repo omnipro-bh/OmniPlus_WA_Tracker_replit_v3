@@ -18,8 +18,10 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 - **Messaging (Send Page):** Interactive message sending via WHAPI Gate API, supporting channel selection, recipient, message content (header, body, footer), and up to 3 buttons. Plan limits enforce daily message quotas.
 - **Templates:** CRUD operations for message templates with preview functionality.
 - **Workflows:** Visual drag-and-drop chatbot/automation builder using ReactFlow (@xyflow/react) with a full-screen canvas, horizontal auto-layout, multi-output handles for interactive messages, and node deletion functionality.
-    - **Interactive Message Types:** Supports 7 WHAPI interactive message types (Quick Reply Buttons, Buttons with Image/Video, List Message, Call Button, URL Button, Copy/OTP Button, Carousel) with dynamic element management (add/remove, auto-generated/editable IDs, limit enforcement).
-    - **Node Configuration:** WHAPI-compliant message structure editors for header, body, footer, and action fields.
+    - **Message Node Types:** Supports 10 WHAPI message types via webhook automation:
+        - **Interactive Messages:** Quick Reply Buttons, Buttons with Image/Video, List Message, Call Button, URL Button, Copy/OTP Button, Carousel
+        - **Terminal Messages:** Text (message.text), Media (message.media), Location (message.location)
+    - **Node Configuration:** WHAPI-compliant message structure editors for header, body, footer, and action fields. Terminal nodes (text/media/location) end conversations with no further routing.
     - **Testing & Live Toggle:** Each node includes a test button for sending messages to specified phone numbers. Workflows can be toggled between Live (process webhooks, send responses) and Stopped (log only) states, with optimistic UI updates.
     - **Automated Message Routing:** Incoming WHAPI webhook messages are routed based on:
         - **First Message of Day Trigger:** Timezone-aware detection (Asia/Bahrain) triggers the workflow's entry node message on the first text message of each calendar day.

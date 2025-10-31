@@ -2957,10 +2957,38 @@ export function registerRoutes(app: Express) {
     const channelToken = activeChannel.whapiChannelToken;
 
     // Build and send message based on node type
-    const { sendInteractiveMessage, sendCarouselMessage } = await import("./whapi");
+    const { sendInteractiveMessage, sendCarouselMessage, sendTextMessage, sendMediaMessage, sendLocationMessage } = await import("./whapi");
+
+    // Simple Text Message
+    if (nodeType === 'message.text') {
+      return await sendTextMessage(channelToken, {
+        to: phone,
+        body: config.text || 'No message',
+      });
+    }
+
+    // Media Message (image/video/audio/document)
+    else if (nodeType === 'message.media') {
+      return await sendMediaMessage(channelToken, {
+        to: phone,
+        media: config.mediaUrl || '',
+        caption: config.caption,
+      });
+    }
+
+    // Location Message
+    else if (nodeType === 'message.location') {
+      return await sendLocationMessage(channelToken, {
+        to: phone,
+        latitude: parseFloat(config.latitude) || 0,
+        longitude: parseFloat(config.longitude) || 0,
+        name: config.name,
+        address: config.address,
+      });
+    }
 
     // Quick Reply Buttons
-    if (nodeType === 'quickReply') {
+    else if (nodeType === 'quickReply') {
       const payload: any = {
         to: phone,
         type: 'button',
