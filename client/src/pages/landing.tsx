@@ -1,10 +1,23 @@
 import { Link } from "wouter";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import type { Plan } from "@shared/schema";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 // Helper function to get currency symbol
 const getCurrencySymbol = (currency: string) => {
@@ -22,7 +35,20 @@ const getCurrencySymbol = (currency: string) => {
   return symbols[currency] || currency;
 };
 
+// Free email providers to reject
+const FREE_EMAIL_PROVIDERS = [
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com',
+  'icloud.com', 'mail.com', 'protonmail.com', 'yandex.com', 'zoho.com'
+];
+
+const isBusinessEmail = (email: string): boolean => {
+  const domain = email.split('@')[1]?.toLowerCase();
+  return !FREE_EMAIL_PROVIDERS.includes(domain);
+};
+
 export default function Landing() {
+  const { toast } = useToast();
+  
   // Fetch plans published on homepage
   const { data: allPlans = [] } = useQuery<Plan[]>({
     queryKey: ["/api/plans"],
@@ -30,6 +56,130 @@ export default function Landing() {
   
   // Filter plans that are published on homepage
   const plans = allPlans.filter((plan: any) => plan.publishedOnHomepage);
+
+  // Dialog state
+  const [showQuoteDialog, setShowQuoteDialog] = useState(false);
+  const [showDemoDialog, setShowDemoDialog] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+
+  // Form state for quote request
+  const [quoteName, setQuoteName] = useState("");
+  const [quotePhone, setQuotePhone] = useState("");
+  const [quoteEmail, setQuoteEmail] = useState("");
+  const [quoteMessage, setQuoteMessage] = useState("");
+
+  // Form state for demo booking
+  const [demoName, setDemoName] = useState("");
+  const [demoPhone, setDemoPhone] = useState("");
+  const [demoEmail, setDemoEmail] = useState("");
+  const [demoMessage, setDemoMessage] = useState("");
+  const [demoDate, setDemoDate] = useState<Date>();
+
+  // Submit mutations
+  const submitQuoteMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/plan-requests", data);
+    },
+    onSuccess: () => {
+      toast({ title: "Request submitted!", description: "We'll contact you soon about your quote." });
+      setShowQuoteDialog(false);
+      setQuoteName("");
+      setQuotePhone("");
+      setQuoteEmail("");
+      setQuoteMessage("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Submission failed", 
+        description: error.error || "Please try again later",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const submitDemoMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/plan-requests", data);
+    },
+    onSuccess: () => {
+      toast({ title: "Demo booked!", description: "We'll contact you to confirm your demo session." });
+      setShowDemoDialog(false);
+      setDemoName("");
+      setDemoPhone("");
+      setDemoEmail("");
+      setDemoMessage("");
+      setDemoDate(undefined);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Booking failed", 
+        description: error.error || "Please try again later",
+        variant: "destructive"
+      });
+    },
+  });
+
+  const handleQuoteSubmit = () => {
+    if (!quoteName || !quotePhone || !quoteEmail || !quoteMessage) {
+      toast({ title: "Missing fields", description: "Please fill all fields", variant: "destructive" });
+      return;
+    }
+
+    if (!isBusinessEmail(quoteEmail)) {
+      toast({ 
+        title: "Business email required", 
+        description: "Please use your company email address (not gmail, yahoo, etc.)",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    submitQuoteMutation.mutate({
+      planId: selectedPlan?.id,
+      name: quoteName,
+      phone: quotePhone,
+      businessEmail: quoteEmail,
+      message: quoteMessage,
+      requestedDate: null,
+    });
+  };
+
+  const handleDemoSubmit = () => {
+    if (!demoName || !demoPhone || !demoEmail || !demoMessage || !demoDate) {
+      toast({ title: "Missing fields", description: "Please fill all fields", variant: "destructive" });
+      return;
+    }
+
+    if (!isBusinessEmail(demoEmail)) {
+      toast({ 
+        title: "Business email required", 
+        description: "Please use your company email address (not gmail, yahoo, etc.)",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    submitDemoMutation.mutate({
+      planId: selectedPlan?.id,
+      name: demoName,
+      phone: demoPhone,
+      businessEmail: demoEmail,
+      message: demoMessage,
+      requestedDate: demoDate.toISOString(),
+    });
+  };
+
+  const handlePlanAction = (plan: Plan) => {
+    setSelectedPlan(plan);
+    if (plan.requestType === "REQUEST_QUOTE") {
+      setShowQuoteDialog(true);
+    } else if (plan.requestType === "BOOK_DEMO") {
+      setShowDemoDialog(true);
+    }
+  };
+
+  // Find the first BOOK_DEMO plan for the hero button
+  const firstDemoPlan = plans.find((p: any) => p.requestType === "BOOK_DEMO");
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,7 +246,19 @@ export default function Landing() {
                     Start Free Trial
                   </Button>
                 </Link>
-                <Button size="lg" variant="outline" className="w-full sm:w-auto" data-testid="button-book-demo">
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="w-full sm:w-auto" 
+                  data-testid="button-book-demo"
+                  onClick={() => {
+                    if (firstDemoPlan) {
+                      setSelectedPlan(firstDemoPlan);
+                      setShowDemoDialog(true);
+                    }
+                  }}
+                  disabled={!firstDemoPlan}
+                >
                   Book a Demo
                 </Button>
               </div>
@@ -321,15 +483,26 @@ export default function Landing() {
                     </ul>
                   </CardContent>
                   <CardFooter>
-                    <Link href={plan.requestType === "PAID" ? "/signup" : "/pricing"} className="w-full">
+                    {plan.requestType === "PAID" ? (
+                      <Link href="/signup" className="w-full">
+                        <Button
+                          className="w-full"
+                          variant={index === 1 ? "default" : "outline"}
+                          data-testid={`button-plan-${plan.name.toLowerCase()}`}
+                        >
+                          Get Started
+                        </Button>
+                      </Link>
+                    ) : (
                       <Button
                         className="w-full"
                         variant={index === 1 ? "default" : "outline"}
                         data-testid={`button-plan-${plan.name.toLowerCase()}`}
+                        onClick={() => handlePlanAction(plan)}
                       >
-                        {plan.requestType === "REQUEST_QUOTE" ? "Request Quote" : plan.requestType === "BOOK_DEMO" ? "Book Demo" : "Get Started"}
+                        {plan.requestType === "REQUEST_QUOTE" ? "Request Quote" : "Book Demo"}
                       </Button>
-                    </Link>
+                    )}
                   </CardFooter>
                 </Card>
               ))}
@@ -414,6 +587,185 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Request Quote Dialog */}
+      <Dialog open={showQuoteDialog} onOpenChange={setShowQuoteDialog}>
+        <DialogContent data-testid="dialog-request-quote">
+          <DialogHeader>
+            <DialogTitle>Request Quote for {selectedPlan?.name}</DialogTitle>
+            <DialogDescription>
+              Fill in your details and we'll get back to you with a customized quote.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="quote-name">Name</Label>
+              <Input
+                id="quote-name"
+                data-testid="input-quote-name"
+                placeholder="Your full name"
+                value={quoteName}
+                onChange={(e) => setQuoteName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="quote-email">Business Email</Label>
+              <Input
+                id="quote-email"
+                data-testid="input-quote-email"
+                type="email"
+                placeholder="you@company.com"
+                value={quoteEmail}
+                onChange={(e) => setQuoteEmail(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Please use your company email (not gmail, yahoo, etc.)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="quote-phone">Phone Number</Label>
+              <Input
+                id="quote-phone"
+                data-testid="input-quote-phone"
+                type="tel"
+                placeholder="+973 XXXX XXXX"
+                value={quotePhone}
+                onChange={(e) => setQuotePhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="quote-message">Message</Label>
+              <Textarea
+                id="quote-message"
+                data-testid="textarea-quote-message"
+                placeholder="Tell us about your requirements..."
+                value={quoteMessage}
+                onChange={(e) => setQuoteMessage(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowQuoteDialog(false)}
+              data-testid="button-cancel-quote"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleQuoteSubmit}
+              disabled={submitQuoteMutation.isPending}
+              data-testid="button-submit-quote"
+            >
+              {submitQuoteMutation.isPending ? "Submitting..." : "Submit Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Book Demo Dialog */}
+      <Dialog open={showDemoDialog} onOpenChange={setShowDemoDialog}>
+        <DialogContent data-testid="dialog-book-demo">
+          <DialogHeader>
+            <DialogTitle>Book a Demo for {selectedPlan?.name}</DialogTitle>
+            <DialogDescription>
+              Schedule a personalized demo with our team.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="demo-name">Name</Label>
+              <Input
+                id="demo-name"
+                data-testid="input-demo-name"
+                placeholder="Your full name"
+                value={demoName}
+                onChange={(e) => setDemoName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="demo-email">Business Email</Label>
+              <Input
+                id="demo-email"
+                data-testid="input-demo-email"
+                type="email"
+                placeholder="you@company.com"
+                value={demoEmail}
+                onChange={(e) => setDemoEmail(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Please use your company email (not gmail, yahoo, etc.)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="demo-phone">Phone Number</Label>
+              <Input
+                id="demo-phone"
+                data-testid="input-demo-phone"
+                type="tel"
+                placeholder="+973 XXXX XXXX"
+                value={demoPhone}
+                onChange={(e) => setDemoPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Preferred Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !demoDate && "text-muted-foreground"
+                    )}
+                    data-testid="button-demo-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {demoDate ? format(demoDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={demoDate}
+                    onSelect={setDemoDate}
+                    disabled={(date) => date < new Date()}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <Label htmlFor="demo-message">Message</Label>
+              <Textarea
+                id="demo-message"
+                data-testid="textarea-demo-message"
+                placeholder="Tell us what you'd like to see in the demo..."
+                value={demoMessage}
+                onChange={(e) => setDemoMessage(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDemoDialog(false)}
+              data-testid="button-cancel-demo"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDemoSubmit}
+              disabled={submitDemoMutation.isPending}
+              data-testid="button-submit-demo"
+            >
+              {submitDemoMutation.isPending ? "Booking..." : "Book Demo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
