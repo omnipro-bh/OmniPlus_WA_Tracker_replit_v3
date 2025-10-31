@@ -13,7 +13,8 @@ import {
   insertMessageSchema, 
   insertWorkflowSchema,
   insertOfflinePaymentSchema,
-  insertPlanSchema
+  insertPlanSchema,
+  insertPlanRequestSchema
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import * as whapi from "./whapi";
@@ -2418,6 +2419,97 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Reject payment error:", error);
       res.status(500).json({ error: "Failed to reject payment" });
+    }
+  });
+
+  // ============================================================================
+  // PLAN REQUESTS (Quote/Demo)
+  // ============================================================================
+
+  // Submit plan request (public route - no auth required)
+  app.post("/api/plan-requests", async (req: Request, res: Response) => {
+    try {
+      const data = insertPlanRequestSchema.parse(req.body);
+      
+      // Validate business email (not free email providers)
+      const freeEmailProviders = [
+        'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+        'aol.com', 'icloud.com', 'mail.com', 'protonmail.com',
+        'yandex.com', 'zoho.com', 'gmx.com'
+      ];
+      
+      const emailDomain = data.businessEmail.split('@')[1]?.toLowerCase();
+      if (freeEmailProviders.includes(emailDomain)) {
+        return res.status(400).json({ 
+          error: "Please use a business email address (not a free email provider)" 
+        });
+      }
+
+      const request = await storage.createPlanRequest(data);
+      res.json(request);
+    } catch (error: any) {
+      console.error("Create plan request error:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to submit request" });
+    }
+  });
+
+  // Get plan requests (admin only)
+  app.get("/api/admin/plan-requests", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const requests = await storage.getPlanRequests(status);
+
+      // Enrich with plan data
+      const enrichedRequests = await Promise.all(
+        requests.map(async (request) => {
+          const plan = await storage.getPlan(request.planId);
+          return {
+            ...request,
+            plan: plan ? { id: plan.id, name: plan.name, requestType: plan.requestType } : null,
+          };
+        })
+      );
+
+      res.json(enrichedRequests);
+    } catch (error: any) {
+      console.error("Get plan requests error:", error);
+      res.status(500).json({ error: "Failed to fetch requests" });
+    }
+  });
+
+  // Update plan request status (admin only)
+  app.patch("/api/admin/plan-requests/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const requestId = parseInt(req.params.id);
+      const { status } = req.body;
+
+      if (!status || !["PENDING", "CONTACTED", "CONVERTED", "REJECTED"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const updated = await storage.updatePlanRequest(requestId, { status });
+
+      if (!updated) {
+        return res.status(404).json({ error: "Request not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_PLAN_REQUEST",
+        meta: {
+          entity: "plan_request",
+          entityId: requestId,
+          newStatus: status,
+        },
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update plan request error:", error);
+      res.status(500).json({ error: "Failed to update request" });
     }
   });
 

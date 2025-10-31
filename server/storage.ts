@@ -85,6 +85,12 @@ export interface IStorage {
   createOfflinePayment(payment: InsertOfflinePayment): Promise<OfflinePayment>;
   updateOfflinePayment(id: number, data: Partial<OfflinePayment>): Promise<OfflinePayment | undefined>;
 
+  // Plan Requests
+  getPlanRequests(status?: string): Promise<schema.PlanRequest[]>;
+  getPlanRequest(id: number): Promise<schema.PlanRequest | undefined>;
+  createPlanRequest(request: schema.InsertPlanRequest): Promise<schema.PlanRequest>;
+  updatePlanRequest(id: number, data: Partial<schema.PlanRequest>): Promise<schema.PlanRequest | undefined>;
+
   // Audit Logs
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
 
@@ -370,6 +376,37 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.offlinePayments.id, id))
       .returning();
     return payment || undefined;
+  }
+
+  // Plan Requests
+  async getPlanRequests(status?: string): Promise<schema.PlanRequest[]> {
+    if (status) {
+      return await db
+        .select()
+        .from(schema.planRequests)
+        .where(eq(schema.planRequests.status, status as any))
+        .orderBy(desc(schema.planRequests.createdAt));
+    }
+    return await db.select().from(schema.planRequests).orderBy(desc(schema.planRequests.createdAt));
+  }
+
+  async getPlanRequest(id: number): Promise<schema.PlanRequest | undefined> {
+    const [request] = await db.select().from(schema.planRequests).where(eq(schema.planRequests.id, id));
+    return request || undefined;
+  }
+
+  async createPlanRequest(insertRequest: schema.InsertPlanRequest): Promise<schema.PlanRequest> {
+    const [request] = await db.insert(schema.planRequests).values(insertRequest).returning();
+    return request;
+  }
+
+  async updatePlanRequest(id: number, data: Partial<schema.PlanRequest>): Promise<schema.PlanRequest | undefined> {
+    const [request] = await db
+      .update(schema.planRequests)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.planRequests.id, id))
+      .returning();
+    return request || undefined;
   }
 
   // Audit Logs
