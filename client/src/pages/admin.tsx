@@ -55,6 +55,7 @@ export default function Admin() {
     billingPeriod: "MONTHLY" as "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL",
     requestType: "PAID" as "PAID" | "REQUEST_QUOTE" | "BOOK_DEMO",
     published: false,
+    publishedOnHomepage: false,
     sortOrder: "",
     dailyMessagesLimit: "",
     bulkMessagesLimit: "",
@@ -316,6 +317,7 @@ export default function Admin() {
       billingPeriod: "MONTHLY",
       requestType: "PAID",
       published: false,
+      publishedOnHomepage: false,
       sortOrder: "",
       dailyMessagesLimit: "",
       bulkMessagesLimit: "",
@@ -345,10 +347,11 @@ export default function Admin() {
     setPlanForm({
       name: plan.name,
       currency: plan.currency,
-      price: String(plan.price / 100),
+      price: plan.price ? String(plan.price / 100) : "",
       billingPeriod: plan.billingPeriod,
       requestType: plan.requestType,
       published: plan.published,
+      publishedOnHomepage: (plan as any).publishedOnHomepage || false,
       sortOrder: String(plan.sortOrder),
       dailyMessagesLimit: String(plan.dailyMessagesLimit),
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
@@ -363,7 +366,7 @@ export default function Admin() {
         workflows: false,
         outbox: false,
       }) as any,
-      features: plan.features || [],
+      features: Array.isArray(plan.features) ? plan.features : [],
     });
     setNewFeature("");
     setIsPlanDialogOpen(true);
@@ -411,6 +414,7 @@ export default function Admin() {
       billingPeriod: planForm.billingPeriod,
       requestType: planForm.requestType,
       published: planForm.published,
+      publishedOnHomepage: planForm.publishedOnHomepage,
       sortOrder,
       dailyMessagesLimit,
       bulkMessagesLimit,
@@ -805,14 +809,14 @@ export default function Admin() {
                         <tr key={plan.id} className="border-b hover-elevate" data-testid={`plan-${plan.id}`}>
                           <td className="px-4 py-3">
                             <div className="font-medium">{plan.name}</div>
-                            {plan.features && plan.features.length > 0 && (
+                            {Array.isArray(plan.features) && plan.features.length > 0 && (
                               <div className="text-xs text-muted-foreground mt-1">
                                 {plan.features.length} features
                               </div>
                             )}
                           </td>
                           <td className="px-4 py-3 font-mono text-sm">
-                            {plan.currency} {(plan.price / 100).toFixed(2)}
+                            {plan.currency} {plan.price ? (plan.price / 100).toFixed(2) : "0.00"}
                           </td>
                           <td className="px-4 py-3 text-sm">
                             {plan.billingPeriod === "MONTHLY" && "Monthly"}
@@ -1115,7 +1119,7 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="plan-request-type">Request Type</Label>
                   <Select
@@ -1132,14 +1136,25 @@ export default function Admin() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2 flex items-center gap-3 pt-8">
-                  <Switch
-                    id="plan-published"
-                    checked={planForm.published}
-                    onCheckedChange={(checked) => setPlanForm({ ...planForm, published: checked })}
-                    data-testid="switch-plan-published"
-                  />
-                  <Label htmlFor="plan-published">Published (visible to users)</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2 flex items-center gap-3">
+                    <Switch
+                      id="plan-published"
+                      checked={planForm.published}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, published: checked })}
+                      data-testid="switch-plan-published"
+                    />
+                    <Label htmlFor="plan-published">Published (visible to users)</Label>
+                  </div>
+                  <div className="space-y-2 flex items-center gap-3">
+                    <Switch
+                      id="plan-published-homepage"
+                      checked={planForm.publishedOnHomepage}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, publishedOnHomepage: checked })}
+                      data-testid="switch-plan-published-homepage"
+                    />
+                    <Label htmlFor="plan-published-homepage">Published on Homepage</Label>
+                  </div>
                 </div>
               </div>
             </div>

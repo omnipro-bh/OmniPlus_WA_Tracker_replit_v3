@@ -3,58 +3,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useQuery } from "@tanstack/react-query";
+import type { Plan } from "@shared/schema";
 
 export default function Landing() {
-  const plans = [
-    {
-      name: "Starter",
-      price: 29,
-      features: [
-        "1 WhatsApp Channel",
-        "100 messages/day",
-        "500 bulk messages/month",
-        "Basic templates",
-        "Email support",
-      ],
-    },
-    {
-      name: "Growth",
-      price: 79,
-      popular: true,
-      features: [
-        "3 WhatsApp Channels",
-        "500 messages/day",
-        "5,000 bulk messages/month",
-        "Advanced templates",
-        "Chatbot builder",
-        "Priority support",
-      ],
-    },
-    {
-      name: "Advanced",
-      price: 199,
-      features: [
-        "10 WhatsApp Channels",
-        "2,000 messages/day",
-        "50,000 bulk messages/month",
-        "Custom workflows",
-        "API access",
-        "Dedicated support",
-      ],
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      features: [
-        "Unlimited channels",
-        "Unlimited messages",
-        "Custom integrations",
-        "SLA guarantee",
-        "Account manager",
-        "White-label option",
-      ],
-    },
-  ];
+  // Fetch plans published on homepage
+  const { data: allPlans = [] } = useQuery<Plan[]>({
+    queryKey: ["/api/plans"],
+  });
+  
+  // Filter plans that are published on homepage
+  const plans = allPlans.filter((plan: any) => plan.publishedOnHomepage);
 
   return (
     <div className="min-h-screen bg-background">
@@ -303,56 +262,64 @@ export default function Landing() {
           </div>
 
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-            {plans.map((plan) => (
-              <Card
-                key={plan.name}
-                className={`relative flex flex-col ${
-                  plan.popular ? "border-primary shadow-lg" : ""
-                }`}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                    <span className="rounded-full bg-primary px-4 py-1 text-xs font-semibold text-primary-foreground">
-                      POPULAR
-                    </span>
-                  </div>
-                )}
-                <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
-                  <div className="mt-4">
-                    {typeof plan.price === "number" ? (
-                      <>
-                        <span className="text-4xl font-bold">${plan.price}</span>
-                        <span className="text-muted-foreground">/month</span>
-                      </>
-                    ) : (
-                      <span className="text-4xl font-bold">{plan.price}</span>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <ul className="space-y-3">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2">
-                        <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
-                        <span className="text-sm">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Link href="/signup" className="w-full">
-                    <Button
-                      className="w-full"
-                      variant={plan.popular ? "default" : "outline"}
-                      data-testid={`button-plan-${plan.name.toLowerCase()}`}
-                    >
-                      Get Started
-                    </Button>
-                  </Link>
-                </CardFooter>
-              </Card>
-            ))}
+            {plans.length === 0 ? (
+              <div className="col-span-full text-center py-12">
+                <p className="text-muted-foreground">No pricing plans available at this time.</p>
+              </div>
+            ) : (
+              plans.map((plan: any, index: number) => (
+                <Card
+                  key={plan.id}
+                  className={`relative flex flex-col ${
+                    index === 1 ? "border-primary shadow-lg" : ""
+                  }`}
+                >
+                  {index === 1 && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                      <span className="rounded-full bg-primary px-4 py-1 text-xs font-semibold text-primary-foreground">
+                        POPULAR
+                      </span>
+                    </div>
+                  )}
+                  <CardHeader>
+                    <CardTitle>{plan.name}</CardTitle>
+                    <div className="mt-4">
+                      {plan.price ? (
+                        <>
+                          <span className="text-4xl font-bold">${(plan.price / 100).toFixed(0)}</span>
+                          <span className="text-muted-foreground">
+                            /{plan.billingPeriod === "MONTHLY" ? "month" : plan.billingPeriod === "SEMI_ANNUAL" ? "6 months" : "year"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-4xl font-bold">Custom</span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-1">
+                    <ul className="space-y-3">
+                      {(plan.features || []).map((feature: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                          <span className="text-sm">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                  <CardFooter>
+                    <Link href={plan.requestType === "PAID" ? "/signup" : "/pricing"} className="w-full">
+                      <Button
+                        className="w-full"
+                        variant={index === 1 ? "default" : "outline"}
+                        data-testid={`button-plan-${plan.name.toLowerCase()}`}
+                      >
+                        {plan.requestType === "REQUEST_QUOTE" ? "Request Quote" : plan.requestType === "BOOK_DEMO" ? "Book Demo" : "Get Started"}
+                      </Button>
+                    </Link>
+                  </CardFooter>
+                </Card>
+              ))
+            )}
           </div>
         </div>
       </section>

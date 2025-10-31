@@ -55,7 +55,8 @@ export const plans = pgTable("plans", {
   billingPeriod: billingPeriodEnum("billing_period").notNull().default("MONTHLY"),
   requestType: requestTypeEnum("request_type").notNull().default("PAID"),
   paypalPlanId: text("paypal_plan_id"), // Optional PayPal plan ID
-  published: boolean("published").notNull().default(false),
+  published: boolean("published").notNull().default(false), // Visible to authenticated users
+  publishedOnHomepage: boolean("published_on_homepage").notNull().default(false), // Visible on landing page
   sortOrder: integer("sort_order").notNull().default(0),
   // Limits (-1 = unlimited)
   dailyMessagesLimit: integer("daily_messages_limit").notNull().default(-1),

@@ -39,15 +39,17 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 - **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `published`, `pageAccess`, `chatbotsLimit`), Subscriptions (with per-user overrides: `dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`), Channels, Templates, Jobs, Messages (with delivery tracking and unique `providerMessageId`), Workflows (with `webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags (for idempotent first-message detection), WorkflowExecutions, OfflinePayments (with `requestType`), AuditLogs (with `actorUserId` for tracking action performers), Settings, and BalanceTransactions.
+Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `published`, `publishedOnHomepage`, `pageAccess`, `chatbotsLimit`), Subscriptions (with per-user overrides: `dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`), Channels, Templates, Jobs, Messages (with delivery tracking and unique `providerMessageId`), Workflows (with `webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags (for idempotent first-message detection), WorkflowExecutions, OfflinePayments (with `requestType`), AuditLogs (with `actorUserId` for tracking action performers), Settings, and BalanceTransactions.
 
 **Recent Schema Changes (Oct 30, 2025):**
-- **Plans Table**: Migrated from `durationDays` to `billingPeriod` enum (MONTHLY/SEMI_ANNUAL/ANNUAL), added `requestType` enum (PAID/REQUEST_QUOTE/BOOK_DEMO), `published` boolean, `pageAccess` JSONB for feature access control, and `chatbotsLimit` for workflow restrictions.
+- **Plans Table**: Migrated from `durationDays` to `billingPeriod` enum (MONTHLY/SEMI_ANNUAL/ANNUAL), added `requestType` enum (PAID/REQUEST_QUOTE/BOOK_DEMO), `published` boolean (visible to authenticated users), `publishedOnHomepage` boolean (visible on landing page), `pageAccess` JSONB for feature access control, and `chatbotsLimit` for workflow restrictions.
 - **Subscriptions Table**: Added per-user override fields (`dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`) to allow custom limits beyond plan defaults.
 - **OfflinePayments Table**: Added `requestType` field to track payment request types.
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
-- **UI Changes**: Removed redundant Chatbot page (now all functionality is consolidated in Workflows page).
+- **UI Changes**: 
+  - Removed redundant Chatbot page (now all functionality is consolidated in Workflows page).
+  - Added dual publishing controls: `published` (for authenticated users' pricing page) and `publishedOnHomepage` (for public landing page).
 
 ## Backend API Routes
 
