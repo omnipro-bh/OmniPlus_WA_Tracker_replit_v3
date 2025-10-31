@@ -463,6 +463,11 @@ export const insertPlanRequestSchema = createInsertSchema(planRequests, {
   phone: z.string().min(1, "Phone is required"),
   businessEmail: z.string().email("Invalid email").min(1, "Business email is required"),
   message: z.string().min(1, "Message is required"),
+  requestedDate: z.union([z.string(), z.date()]).optional().transform((val) => {
+    if (!val) return undefined;
+    if (typeof val === 'string') return new Date(val);
+    return val;
+  }),
 });
 
 export const insertChannelSchema = createInsertSchema(channels, {
