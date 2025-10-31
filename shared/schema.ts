@@ -21,6 +21,7 @@ export const balanceTransactionTypeEnum = pgEnum("balance_transaction_type", ["t
 export const channelDaysSourceEnum = pgEnum("channel_days_source", ["ADMIN_MANUAL", "PAYPAL", "OFFLINE", "MIGRATION"]);
 export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["SUCCESS", "ERROR"]);
 export const incomingMessageTypeEnum = pgEnum("incoming_message_type", ["text", "button_reply", "other"]);
+export const planRequestStatusEnum = pgEnum("plan_request_status", ["PENDING", "CONTACTED", "CONVERTED", "REJECTED"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -149,6 +150,27 @@ export const offlinePaymentsRelations = relations(offlinePayments, ({ one }) => 
   }),
   plan: one(plans, {
     fields: [offlinePayments.planId],
+    references: [plans.id],
+  }),
+}));
+
+// Plan Requests table (for REQUEST_QUOTE and BOOK_DEMO)
+export const planRequests = pgTable("plan_requests", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  planId: integer("plan_id").notNull().references(() => plans.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  businessEmail: text("business_email").notNull(),
+  message: text("message").notNull(),
+  requestedDate: timestamp("requested_date"), // For BOOK_DEMO only
+  status: planRequestStatusEnum("status").notNull().default("PENDING"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const planRequestsRelations = relations(planRequests, ({ one }) => ({
+  plan: one(plans, {
+    fields: [planRequests.planId],
     references: [plans.id],
   }),
 }));
@@ -436,6 +458,13 @@ export const insertSubscriptionSchema = createInsertSchema(subscriptions);
 
 export const insertOfflinePaymentSchema = createInsertSchema(offlinePayments);
 
+export const insertPlanRequestSchema = createInsertSchema(planRequests, {
+  name: z.string().min(1, "Name is required"),
+  phone: z.string().min(1, "Phone is required"),
+  businessEmail: z.string().email("Invalid email").min(1, "Business email is required"),
+  message: z.string().min(1, "Message is required"),
+});
+
 export const insertChannelSchema = createInsertSchema(channels, {
   label: z.string().min(1),
   phone: z.string().min(1),
@@ -494,6 +523,8 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type OfflinePayment = typeof offlinePayments.$inferSelect;
 export type InsertOfflinePayment = z.infer<typeof insertOfflinePaymentSchema>;
+export type PlanRequest = typeof planRequests.$inferSelect;
+export type InsertPlanRequest = z.infer<typeof insertPlanRequestSchema>;
 export type Channel = typeof channels.$inferSelect;
 export type InsertChannel = z.infer<typeof insertChannelSchema>;
 export type Template = typeof templates.$inferSelect;
