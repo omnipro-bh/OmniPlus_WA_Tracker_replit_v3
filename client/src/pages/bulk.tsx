@@ -50,9 +50,13 @@ export default function Bulk() {
       setChannelId("");
     },
     onError: (error: any) => {
+      console.error("Bulk send error caught:", error);
+      const errorMessage = error?.error || error?.message || "Could not create bulk job";
+      console.error("Displaying error:", errorMessage);
+      
       toast({
         title: "Failed to send bulk messages",
-        description: error.error || error.message || "Could not create bulk job",
+        description: errorMessage,
         variant: "destructive",
       });
     },

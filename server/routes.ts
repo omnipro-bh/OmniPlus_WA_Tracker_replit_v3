@@ -933,6 +933,13 @@ export function registerRoutes(app: Express) {
         });
       }
 
+      // Check if channel has a valid token
+      if (!channel.token) {
+        return res.status(400).json({ 
+          error: "Channel is not configured. Please activate the channel with a valid WHAPI token before sending messages." 
+        });
+      }
+
       // Get user's active subscription and plan limits
       const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
       if (!subscription) {
@@ -1093,6 +1100,13 @@ export function registerRoutes(app: Express) {
       const channel = await storage.getChannel(channelId);
       if (!channel || channel.userId !== req.userId! || channel.status !== "ACTIVE") {
         return res.status(403).json({ error: "Channel not available" });
+      }
+
+      // Check if channel has a valid token
+      if (!channel.token) {
+        return res.status(400).json({ 
+          error: "Channel is not configured. Please activate the channel with a valid WHAPI token before sending messages." 
+        });
       }
 
       // Check subscription and bulk message limit
