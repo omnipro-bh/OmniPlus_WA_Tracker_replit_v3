@@ -164,8 +164,30 @@ export function registerRoutes(app: Express) {
       // Get current subscription and plan
       const subscription = await storage.getActiveSubscriptionForUser(user.id);
       let currentPlan = null;
+      let effectivePageAccess = null;
+      
       if (subscription) {
         currentPlan = await storage.getPlan(subscription.planId);
+        
+        // Calculate effective page access (plan + subscription overrides)
+        if (currentPlan) {
+          effectivePageAccess = {
+            ...(typeof currentPlan.pageAccess === 'object' && currentPlan.pageAccess !== null ? currentPlan.pageAccess : {}),
+            ...(typeof subscription.pageAccess === 'object' && subscription.pageAccess !== null ? subscription.pageAccess : {})
+          };
+        }
+      } else {
+        // Default page access for users without a subscription
+        effectivePageAccess = {
+          dashboard: true,
+          channels: true,
+          pricing: true,
+          send: false,
+          templates: false,
+          workflows: false,
+          outbox: false,
+          logs: false,
+        };
       }
 
       // Get channels count
@@ -187,6 +209,7 @@ export function registerRoutes(app: Express) {
         daysBalance: totalDaysRemaining, // Override deprecated field with channel aggregate
         currentSubscription: subscription,
         currentPlan,
+        effectivePageAccess,
         channelsUsed,
         channelsLimit,
         messagesSentToday,

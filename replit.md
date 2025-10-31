@@ -41,16 +41,19 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 **Data Model:**
 Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `published`, `publishedOnHomepage`, `pageAccess`, `chatbotsLimit`), Subscriptions (with per-user overrides: `dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`), Channels, Templates, Jobs, Messages (with delivery tracking and unique `providerMessageId`), Workflows (with `webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags (for idempotent first-message detection), WorkflowExecutions, OfflinePayments (with `requestType`), AuditLogs (with `actorUserId` for tracking action performers), Settings, and BalanceTransactions.
 
-**Recent Schema Changes (Oct 30, 2025):**
-- **Plans Table**: Migrated from `durationDays` to `billingPeriod` enum (MONTHLY/SEMI_ANNUAL/ANNUAL), added `requestType` enum (PAID/REQUEST_QUOTE/BOOK_DEMO), `published` boolean (visible to authenticated users), `publishedOnHomepage` boolean (visible on landing page), `pageAccess` JSONB for feature access control, and `chatbotsLimit` for workflow restrictions.
-- **Subscriptions Table**: Added per-user override fields (`dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`) to allow custom limits beyond plan defaults.
+**Recent Schema Changes (Oct 30-31, 2025):**
+- **Plans Table**: Migrated from `durationDays` to `billingPeriod` enum (MONTHLY/SEMI_ANNUAL/ANNUAL), added `requestType` enum (PAID/REQUEST_QUOTE/BOOK_DEMO), `published` boolean (visible to authenticated users), `publishedOnHomepage` boolean (visible on landing page), `pageAccess` JSONB for feature access control (includes Dashboard, Pricing, Channels, Send, Templates, Workflows, Outbox, Logs), and `chatbotsLimit` for workflow restrictions.
+- **Subscriptions Table**: Added per-user override fields (`dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`, `pageAccess`) to allow custom limits beyond plan defaults.
 - **OfflinePayments Table**: Added `requestType` field to track payment request types.
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
+- **Default Page Access (Oct 31)**: New user signups now receive default access to Dashboard, Channels, and Pricing pages until they subscribe to a plan. The `/api/me` endpoint returns `effectivePageAccess` which merges plan + subscription overrides for subscribed users, or default access for non-subscribed users.
 - **UI Changes**: 
   - Removed redundant Chatbot page (now all functionality is consolidated in Workflows page).
   - Added dual publishing controls: `published` (for authenticated users' pricing page) and `publishedOnHomepage` (for public landing page).
   - Landing page now conditionally hides pricing section and navigation links when no plans are published to homepage.
+  - Added "Logs" checkbox to Page Access Overrides in Admin → User Details & Overrides and Plan creation/editing forms.
+  - Admin Dashboard queries now use `refetchOnMount` and `refetchOnWindowFocus` to ensure fresh data display.
 
 ## Backend API Routes
 

@@ -69,6 +69,7 @@ export default function Admin() {
       templates: false,
       workflows: false,
       outbox: false,
+      logs: false,
     },
     features: [] as string[],
   });
@@ -337,6 +338,7 @@ export default function Admin() {
         templates: false,
         workflows: false,
         outbox: false,
+        logs: false,
       },
       features: [],
     });
@@ -371,6 +373,7 @@ export default function Admin() {
         templates: false,
         workflows: false,
         outbox: false,
+        logs: false,
       }) as any,
       features: Array.isArray(plan.features) ? plan.features : [],
     });
@@ -1332,6 +1335,22 @@ export default function Admin() {
                     Outbox
                   </Label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-logs"
+                    checked={planForm.pageAccess.logs}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, logs: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-logs"
+                  />
+                  <Label htmlFor="page-logs" className="text-sm font-normal cursor-pointer">
+                    Logs
+                  </Label>
+                </div>
               </div>
             </div>
 
@@ -1549,7 +1568,7 @@ export default function Admin() {
                   Check pages to grant this user access, regardless of their plan's page access settings.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  {["dashboard", "pricing", "channels", "send", "templates", "workflows", "outbox"].map((page) => (
+                  {["dashboard", "pricing", "channels", "send", "templates", "workflows", "outbox", "logs"].map((page) => (
                     <div key={page} className="flex items-center gap-2">
                       <Checkbox
                         id={`page-${page}`}
