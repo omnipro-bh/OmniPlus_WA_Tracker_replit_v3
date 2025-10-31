@@ -11,6 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Upload, Send, Trash2, Loader2 } from "lucide-react";
 import type { Channel } from "@shared/schema";
 import { Link } from "wouter";
+import Papa from "papaparse";
 
 type BulkRow = {
   name: string;
@@ -66,44 +67,113 @@ export default function Bulk() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split("\n").filter((line) => line.trim());
-      const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header: string) => {
+        // Normalize headers: lowercase, trim, remove all whitespace/underscores/dashes
+        return header.trim().toLowerCase().replace(/[\s_-]+/g, '');
+      },
+      complete: (results) => {
+        const data = results.data as any[];
+        
+        // Check for parse errors
+        if (results.errors && results.errors.length > 0) {
+          const errorMessages = results.errors.map(e => `Row ${e.row}: ${e.message}`).join('; ');
+          toast({
+            title: "CSV parse errors",
+            description: `${results.errors.length} errors found: ${errorMessages}`,
+            variant: "destructive",
+          });
+          return;
+        }
 
-      const nameIndex = headers.findIndex((h) => h.includes("name"));
-      const phoneIndex = headers.findIndex((h) => h.includes("phone"));
-      const emailIndex = headers.findIndex((h) => h.includes("email"));
-      const headerIndex = headers.findIndex((h) => h.includes("header"));
-      const bodyIndex = headers.findIndex((h) => h.includes("body"));
-      const footerIndex = headers.findIndex((h) => h.includes("footer"));
-      const button1Index = headers.findIndex((h) => h.includes("button1"));
-      const button2Index = headers.findIndex((h) => h.includes("button2"));
-      const button3Index = headers.findIndex((h) => h.includes("button3"));
+        // Validate that we have data
+        if (!data || data.length === 0) {
+          toast({
+            title: "Empty CSV",
+            description: "The CSV file is empty or has no valid rows.",
+            variant: "destructive",
+          });
+          return;
+        }
 
-      const parsedRows: BulkRow[] = lines.slice(1).map((line) => {
-        const values = line.split(",").map(v => v.trim());
-        return {
-          name: values[nameIndex] || "",
-          phone: values[phoneIndex] || "",
-          email: values[emailIndex] || "",
-          headerMsg: values[headerIndex] || "",
-          bodyText: values[bodyIndex] || "",
-          footerText: values[footerIndex] || "",
-          button1: values[button1Index] || "",
-          button2: values[button2Index] || "",
-          button3: values[button3Index] || "",
+        // Get available headers from Papa meta or first row
+        const availableHeaders = results.meta?.fields || Object.keys(data[0] || {});
+        
+        // Helper to find header by substring match
+        const findHeader = (row: any, possibleNames: string[]): string => {
+          for (const name of possibleNames) {
+            const value = row[name];
+            if (value !== undefined && value !== null && value !== "") {
+              return value;
+            }
+          }
+          return "";
         };
-      });
 
-      setRows(parsedRows);
-      toast({
-        title: "CSV loaded",
-        description: `${parsedRows.length} rows imported successfully.`,
-      });
-    };
-    reader.readAsText(file);
+        // Detect which headers map to which fields
+        const phoneHeaders = availableHeaders.filter((h: string) => h.includes('phone'));
+        const bodyHeaders = availableHeaders.filter((h: string) => 
+          h.includes('body') || h.includes('text') || h.includes('message')
+        );
+        const nameHeaders = availableHeaders.filter((h: string) => h.includes('name'));
+        const emailHeaders = availableHeaders.filter((h: string) => h.includes('email'));
+        const headerHeaders = availableHeaders.filter((h: string) => 
+          (h.includes('header') && !h.includes('footer'))
+        );
+        const footerHeaders = availableHeaders.filter((h: string) => h.includes('footer'));
+        const button1Headers = availableHeaders.filter((h: string) => h.match(/button.*1/));
+        const button2Headers = availableHeaders.filter((h: string) => h.match(/button.*2/));
+        const button3Headers = availableHeaders.filter((h: string) => h.match(/button.*3/));
+        
+        if (phoneHeaders.length === 0 || bodyHeaders.length === 0) {
+          toast({
+            title: "Missing required columns",
+            description: `CSV must include headers containing 'phone' and 'body'/'text'/'message'. Found: ${availableHeaders.join(", ")}`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Map CSV columns to BulkRow format using detected headers
+        const parsedRows: BulkRow[] = data.map((row) => ({
+          name: findHeader(row, nameHeaders.length > 0 ? nameHeaders : ['name']),
+          phone: findHeader(row, phoneHeaders),
+          email: findHeader(row, emailHeaders.length > 0 ? emailHeaders : ['email']),
+          headerMsg: findHeader(row, headerHeaders.length > 0 ? headerHeaders : ['header']),
+          bodyText: findHeader(row, bodyHeaders),
+          footerText: findHeader(row, footerHeaders.length > 0 ? footerHeaders : ['footer']),
+          button1: findHeader(row, button1Headers.length > 0 ? button1Headers : ['button1']),
+          button2: findHeader(row, button2Headers.length > 0 ? button2Headers : ['button2']),
+          button3: findHeader(row, button3Headers.length > 0 ? button3Headers : ['button3']),
+        }));
+
+        // Validate required fields
+        const invalidRows = parsedRows.filter(row => !row.phone || !row.bodyText);
+        if (invalidRows.length > 0) {
+          toast({
+            title: "Invalid rows detected",
+            description: `${invalidRows.length} rows are missing required fields (phone or body text). Please check your CSV and re-upload.`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        setRows(parsedRows);
+        toast({
+          title: "CSV loaded",
+          description: `${parsedRows.length} rows imported successfully.`,
+        });
+      },
+      error: (error) => {
+        toast({
+          title: "CSV parse error",
+          description: error.message || "Failed to parse CSV file",
+          variant: "destructive",
+        });
+      },
+    });
   };
 
   const activeChannels = channels.filter((c) => c.status === "ACTIVE");
