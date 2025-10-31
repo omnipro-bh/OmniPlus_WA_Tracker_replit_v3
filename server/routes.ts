@@ -2973,6 +2973,7 @@ export function registerRoutes(app: Express) {
         to: phone,
         media: config.mediaUrl || '',
         caption: config.caption,
+        mediaType: config.mediaType || 'Document',
       });
     }
 

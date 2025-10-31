@@ -364,19 +364,37 @@ export async function sendMediaMessage(channelToken: string, payload: {
   to: string;
   media: string;
   caption?: string;
+  mediaType?: string;
 }) {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
-  console.log("Sending media message with payload:", JSON.stringify(payload, null, 2));
+  // Map media types to WHAPI types
+  const mediaTypeMap: Record<string, string> = {
+    'Image': 'image',
+    'Video': 'video',
+    'Audio': 'audio',
+    'Document': 'document',
+    'Voice': 'voice',
+    'GIF': 'gif',
+    'Sticker': 'sticker',
+  };
   
-  const response = await fetch("https://gate.whapi.cloud/messages/media", {
+  const whapiMediaType = mediaTypeMap[payload.mediaType || 'Document'] || 'document';
+  
+  console.log(`Sending ${whapiMediaType} message with payload:`, JSON.stringify(payload, null, 2));
+  
+  const response = await fetch(`https://gate.whapi.cloud/messages/media/${whapiMediaType}`, {
     method: "POST",
     headers: {
       "Authorization": authToken,
       "Accept": "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      to: payload.to,
+      media: payload.media,
+      caption: payload.caption,
+    }),
   });
 
   if (!response.ok) {
