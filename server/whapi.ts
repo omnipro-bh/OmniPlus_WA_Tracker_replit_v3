@@ -368,7 +368,7 @@ export async function sendMediaMessage(channelToken: string, payload: {
 }) {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
-  // Map media types to WHAPI types
+  // Map media types to WHAPI types (lowercase for API)
   const mediaTypeMap: Record<string, string> = {
     'Image': 'image',
     'Video': 'video',
@@ -383,18 +383,24 @@ export async function sendMediaMessage(channelToken: string, payload: {
   
   console.log(`Sending ${whapiMediaType} message with payload:`, JSON.stringify(payload, null, 2));
   
-  const response = await fetch(`https://gate.whapi.cloud/messages/media/${whapiMediaType}`, {
+  // Use the same endpoint pattern as buildAndSendNodeMessage (which works)
+  const mediaPayload: any = {
+    to: payload.to,
+    media: payload.media,
+  };
+  
+  if (payload.caption) {
+    mediaPayload.caption = payload.caption;
+  }
+  
+  const response = await fetch(`https://gate.whapi.cloud/messages/${whapiMediaType}`, {
     method: "POST",
     headers: {
       "Authorization": authToken,
       "Accept": "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      to: payload.to,
-      media: payload.media,
-      caption: payload.caption,
-    }),
+    body: JSON.stringify(mediaPayload),
   });
 
   if (!response.ok) {
