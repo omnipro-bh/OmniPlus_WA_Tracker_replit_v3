@@ -2481,12 +2481,12 @@ export function registerRoutes(app: Express) {
   });
 
   // Update plan request status (admin only)
-  app.patch("/api/admin/plan-requests/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+  app.patch("/api/admin/plan-requests/:id/status", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
       const requestId = parseInt(req.params.id);
       const { status } = req.body;
 
-      if (!status || !["PENDING", "CONTACTED", "CONVERTED", "REJECTED"].includes(status)) {
+      if (!status || !["PENDING", "REVIEWED", "CONTACTED", "CONVERTED", "REJECTED"].includes(status)) {
         return res.status(400).json({ error: "Invalid status" });
       }
 

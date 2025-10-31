@@ -21,7 +21,7 @@ export const balanceTransactionTypeEnum = pgEnum("balance_transaction_type", ["t
 export const channelDaysSourceEnum = pgEnum("channel_days_source", ["ADMIN_MANUAL", "PAYPAL", "OFFLINE", "MIGRATION"]);
 export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["SUCCESS", "ERROR"]);
 export const incomingMessageTypeEnum = pgEnum("incoming_message_type", ["text", "button_reply", "other"]);
-export const planRequestStatusEnum = pgEnum("plan_request_status", ["PENDING", "CONTACTED", "CONVERTED", "REJECTED"]);
+export const planRequestStatusEnum = pgEnum("plan_request_status", ["PENDING", "REVIEWED", "CONTACTED", "CONVERTED", "REJECTED"]);
 
 // Users table
 export const users = pgTable("users", {

@@ -34,6 +34,9 @@ export default function Admin() {
   // Offline payments tab state
   const [paymentStatusTab, setPaymentStatusTab] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
 
+  // Plan requests tab state
+  const [requestStatusTab, setRequestStatusTab] = useState<"PENDING" | "REVIEWED" | "CONTACTED" | "CONVERTED" | "REJECTED">("PENDING");
+
   // User details drawer state
   const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
   const [selectedUserForDrawer, setSelectedUserForDrawer] = useState<any | null>(null);
@@ -96,6 +99,12 @@ export default function Admin() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: planRequests = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/plan-requests"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
   // Fetch admin main balance
   const { data: mainBalance = 0 } = useQuery<number>({
     queryKey: ["/api/admin/balance"],
@@ -154,6 +163,23 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/offline-payments"] });
       toast({ title: "Payment rejected" });
+    },
+  });
+
+  const updateRequestStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      return await apiRequest("PATCH", `/api/admin/plan-requests/${id}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plan-requests"] });
+      toast({ title: "Request status updated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update status",
+        description: error.error || "An error occurred",
+        variant: "destructive",
+      });
     },
   });
 
@@ -481,9 +507,10 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="users">Users & Billing</TabsTrigger>
           <TabsTrigger value="payments">Offline Payments</TabsTrigger>
+          <TabsTrigger value="requests">Plan Requests</TabsTrigger>
           <TabsTrigger value="plans">Plans</TabsTrigger>
         </TabsList>
 
@@ -773,6 +800,123 @@ export default function Admin() {
                                 )}
                               </tr>
                             ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="requests" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Plan Requests</CardTitle>
+              <CardDescription>
+                Manage quote requests and demo bookings
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={requestStatusTab} onValueChange={(v) => setRequestStatusTab(v as any)}>
+                <TabsList className="mb-4">
+                  <TabsTrigger value="PENDING" data-testid="tab-pending-requests">
+                    Pending ({planRequests.filter(r => r.status === "PENDING").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="REVIEWED" data-testid="tab-reviewed-requests">
+                    Reviewed ({planRequests.filter(r => r.status === "REVIEWED").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="CONTACTED" data-testid="tab-contacted-requests">
+                    Contacted ({planRequests.filter(r => r.status === "CONTACTED").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="CONVERTED" data-testid="tab-converted-requests">
+                    Converted ({planRequests.filter(r => r.status === "CONVERTED").length})
+                  </TabsTrigger>
+                  <TabsTrigger value="REJECTED" data-testid="tab-rejected-requests">
+                    Rejected ({planRequests.filter(r => r.status === "REJECTED").length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value={requestStatusTab}>
+                  {planRequests.filter(r => r.status === requestStatusTab).length === 0 ? (
+                    <div className="text-center py-12">
+                      <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium">No {requestStatusTab.toLowerCase()} requests</h3>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Requests with this status will appear here
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <div className="max-h-[600px] overflow-y-auto">
+                        <table className="w-full">
+                          <thead className="sticky top-0 bg-card border-b">
+                            <tr className="text-left">
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Type</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Plan</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Name</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Contact</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Message</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase">Date</th>
+                              <th className="px-4 py-3 text-xs font-semibold uppercase text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {planRequests
+                              .filter(r => r.status === requestStatusTab)
+                              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                              .map((request) => (
+                                <tr key={request.id} className="border-b hover-elevate" data-testid={`request-${request.id}`}>
+                                  <td className="px-4 py-3">
+                                    <Badge variant={request.plan?.requestType === 'REQUEST_QUOTE' ? 'default' : 'secondary'}>
+                                      {request.plan?.requestType === 'REQUEST_QUOTE' ? 'Quote' : 'Demo'}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3 font-medium">{request.plan?.name || 'N/A'}</td>
+                                  <td className="px-4 py-3">{request.name}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="text-sm">
+                                      <div className="font-medium">{request.businessEmail}</div>
+                                      <div className="text-muted-foreground">{request.phone}</div>
+                                      {request.requestedDate && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          Requested: {new Date(request.requestedDate).toLocaleDateString()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 max-w-md">
+                                    <div className="text-sm text-muted-foreground line-clamp-2" title={request.message}>
+                                      {request.message}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                                    {new Date(request.createdAt).toLocaleDateString()}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <Select
+                                      value={request.status}
+                                      onValueChange={(newStatus) => {
+                                        updateRequestStatusMutation.mutate({ id: request.id, status: newStatus });
+                                      }}
+                                      disabled={updateRequestStatusMutation.isPending}
+                                    >
+                                      <SelectTrigger className="w-32" data-testid={`select-status-${request.id}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="PENDING">Pending</SelectItem>
+                                        <SelectItem value="REVIEWED">Reviewed</SelectItem>
+                                        <SelectItem value="CONTACTED">Contacted</SelectItem>
+                                        <SelectItem value="CONVERTED">Converted</SelectItem>
+                                        <SelectItem value="REJECTED">Rejected</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                </tr>
+                              ))}
                           </tbody>
                         </table>
                       </div>
