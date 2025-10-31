@@ -15,7 +15,13 @@ import { Link } from "wouter";
 type BulkRow = {
   name: string;
   phone: string;
-  message: string;
+  email?: string;
+  headerMsg?: string;
+  bodyText: string;
+  footerText?: string;
+  button1?: string;
+  button2?: string;
+  button3?: string;
 };
 
 export default function Bulk() {
@@ -37,8 +43,8 @@ export default function Bulk() {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/me"] });
       toast({
-        title: "Bulk job created",
-        description: `${rows.length} messages have been queued for delivery.`,
+        title: "Bulk sending started!",
+        description: `${rows.length} messages are being sent one by one. Check the Outbox page to track progress.`,
       });
       setRows([]);
       setChannelId("");
@@ -46,7 +52,7 @@ export default function Bulk() {
     onError: (error: any) => {
       toast({
         title: "Failed to send bulk messages",
-        description: error.message || "Could not create bulk job",
+        description: error.error || error.message || "Could not create bulk job",
         variant: "destructive",
       });
     },
@@ -60,18 +66,30 @@ export default function Bulk() {
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.split("\n").filter((line) => line.trim());
-      const headers = lines[0].toLowerCase().split(",");
+      const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
 
       const nameIndex = headers.findIndex((h) => h.includes("name"));
       const phoneIndex = headers.findIndex((h) => h.includes("phone"));
-      const messageIndex = headers.findIndex((h) => h.includes("message"));
+      const emailIndex = headers.findIndex((h) => h.includes("email"));
+      const headerIndex = headers.findIndex((h) => h.includes("header"));
+      const bodyIndex = headers.findIndex((h) => h.includes("body"));
+      const footerIndex = headers.findIndex((h) => h.includes("footer"));
+      const button1Index = headers.findIndex((h) => h.includes("button1"));
+      const button2Index = headers.findIndex((h) => h.includes("button2"));
+      const button3Index = headers.findIndex((h) => h.includes("button3"));
 
       const parsedRows: BulkRow[] = lines.slice(1).map((line) => {
-        const values = line.split(",");
+        const values = line.split(",").map(v => v.trim());
         return {
-          name: values[nameIndex]?.trim() || "",
-          phone: values[phoneIndex]?.trim() || "",
-          message: values[messageIndex]?.trim() || "",
+          name: values[nameIndex] || "",
+          phone: values[phoneIndex] || "",
+          email: values[emailIndex] || "",
+          headerMsg: values[headerIndex] || "",
+          bodyText: values[bodyIndex] || "",
+          footerText: values[footerIndex] || "",
+          button1: values[button1Index] || "",
+          button2: values[button2Index] || "",
+          button3: values[button3Index] || "",
         };
       });
 
@@ -210,7 +228,10 @@ export default function Bulk() {
                         Phone
                       </th>
                       <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Message
+                        Body
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Buttons
                       </th>
                     </tr>
                   </thead>
@@ -219,7 +240,18 @@ export default function Bulk() {
                       <tr key={index} className="border-b hover-elevate" data-testid={`row-${index}`}>
                         <td className="px-4 py-3 text-sm">{row.name}</td>
                         <td className="px-4 py-3 text-sm font-mono">{row.phone}</td>
-                        <td className="px-4 py-3 text-sm truncate max-w-md">{row.message}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {row.headerMsg && <div className="text-xs text-muted-foreground">{row.headerMsg}</div>}
+                          <div className="truncate max-w-md">{row.bodyText}</div>
+                          {row.footerText && <div className="text-xs text-muted-foreground">{row.footerText}</div>}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex gap-1">
+                            {row.button1 && <span className="text-xs bg-primary/10 px-2 py-1 rounded">{row.button1}</span>}
+                            {row.button2 && <span className="text-xs bg-primary/10 px-2 py-1 rounded">{row.button2}</span>}
+                            {row.button3 && <span className="text-xs bg-primary/10 px-2 py-1 rounded">{row.button3}</span>}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -236,7 +268,7 @@ export default function Bulk() {
             <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium">No messages loaded</h3>
             <p className="text-sm text-muted-foreground mt-2">
-              Upload a CSV file with columns: Name, Phone, Message
+              Upload a CSV file with columns: name, phone, email, header_msg, body_text, footer_text, button1, button2, button3
             </p>
           </CardContent>
         </Card>

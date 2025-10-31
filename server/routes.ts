@@ -1074,7 +1074,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Send bulk messages
+  // Send bulk messages with controlled speed
   app.post("/api/messages/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const { channelId, rows } = req.body;
@@ -1143,13 +1143,22 @@ export function registerRoutes(app: Express) {
         replied: 0,
       });
 
-      // Create messages
+      // Create messages with enhanced data
       for (const row of rows) {
+        const buttons = [];
+        if (row.button1) buttons.push({ type: "quick_reply", title: row.button1, id: `btn1_${Date.now()}` });
+        if (row.button2) buttons.push({ type: "quick_reply", title: row.button2, id: `btn2_${Date.now()}` });
+        if (row.button3) buttons.push({ type: "quick_reply", title: row.button3, id: `btn3_${Date.now()}` });
+
         await storage.createMessage({
           jobId: job.id,
           to: row.phone,
           name: row.name || "",
-          body: row.message,
+          email: row.email || null,
+          body: row.bodyText || row.message || "",
+          header: row.headerMsg || null,
+          footer: row.footerText || null,
+          buttons: buttons,
           status: "QUEUED",
         });
       }
@@ -1165,12 +1174,108 @@ export function registerRoutes(app: Express) {
         },
       });
 
+      // Start background processing with controlled delays
+      processBulkJob(job.id, channel).catch(err => {
+        console.error(`Bulk job ${job.id} processing error:`, err);
+      });
+
       res.json(job);
     } catch (error: any) {
       console.error("Bulk send error:", error);
       res.status(500).json({ error: "Failed to send bulk messages" });
     }
   });
+
+  // Background processing for bulk jobs with controlled delays
+  async function processBulkJob(jobId: number, channel: any) {
+    try {
+      // Get speed settings
+      const minDelaySetting = await storage.getSetting("bulk_send_min_delay");
+      const maxDelaySetting = await storage.getSetting("bulk_send_max_delay");
+      const minDelay = parseInt(minDelaySetting?.value || "10") * 1000; // Convert to ms
+      const maxDelay = parseInt(maxDelaySetting?.value || "20") * 1000; // Convert to ms
+
+      // Get all queued messages for this job
+      const messages = await storage.getMessagesForJob(jobId);
+      const queuedMessages = messages.filter(m => m.status === "QUEUED");
+
+      if (queuedMessages.length === 0) {
+        await storage.updateJob(jobId, { status: "COMPLETED" });
+        return;
+      }
+
+      // Update job status to processing
+      await storage.updateJob(jobId, { status: "PROCESSING" });
+
+      // Process messages one by one with random delays
+      for (const message of queuedMessages) {
+        try {
+          // Update message to pending
+          await storage.updateMessage(message.id, { status: "PENDING" });
+          const queued = messages.filter(m => m.status === "QUEUED").length - 1;
+          const pending = messages.filter(m => m.status === "PENDING").length + 1;
+          await storage.updateJob(jobId, { queued, pending });
+
+          // Get buttons from message
+          const buttons = Array.isArray(message.buttons) ? message.buttons : [];
+
+          // Send message via WHAPI
+          let result;
+          if (buttons.length > 0) {
+            // Send interactive message with buttons
+            result = await whapi.sendInteractiveMessage(channel.channelToken, {
+              to: message.to,
+              type: "button",
+              header: message.header ? { text: message.header } : undefined,
+              body: { text: message.body || "No message" },
+              footer: message.footer ? { text: message.footer } : undefined,
+              action: { buttons },
+            });
+          } else {
+            // Send simple text message
+            result = await whapi.sendTextMessage(channel.channelToken, {
+              to: message.to,
+              body: message.body || "No message",
+            });
+          }
+
+          if (result && result.sent) {
+            await storage.updateMessage(message.id, { 
+              status: "SENT",
+              providerMessageId: result.id,
+              sentAt: new Date(),
+            });
+            const newPending = messages.filter(m => m.status === "PENDING").length;
+            const sent = messages.filter(m => m.status === "SENT").length + 1;
+            await storage.updateJob(jobId, { pending: newPending, sent });
+          } else {
+            throw new Error(result?.message || "Failed to send");
+          }
+
+          // Random delay before next message (unless it's the last one)
+          if (message.id !== queuedMessages[queuedMessages.length - 1].id) {
+            const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        } catch (msgError: any) {
+          console.error(`Failed to send message ${message.id}:`, msgError);
+          await storage.updateMessage(message.id, { 
+            status: "FAILED",
+            error: msgError.message || "Unknown error",
+          });
+          const newPending = messages.filter(m => m.status === "PENDING").length;
+          const failed = messages.filter(m => m.status === "FAILED").length + 1;
+          await storage.updateJob(jobId, { pending: newPending, failed });
+        }
+      }
+
+      // Mark job as completed
+      await storage.updateJob(jobId, { status: "COMPLETED" });
+    } catch (error: any) {
+      console.error(`Bulk job ${jobId} processing error:`, error);
+      await storage.updateJob(jobId, { status: "FAILED" });
+    }
+  }
 
   // ============================================================================
   // JOBS
@@ -3279,4 +3384,49 @@ export function registerRoutes(app: Express) {
     console.log(`Unsupported node type: ${nodeType}`);
     return { success: false, message: "Unsupported node type" };
   }
+
+  // ============================================================================
+  // ADMIN SETTINGS ROUTES
+  // ============================================================================
+
+  // Get bulk send speed settings
+  app.get("/api/admin/settings/bulk-speed", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const minDelay = await storage.getSetting("bulk_send_min_delay");
+      const maxDelay = await storage.getSetting("bulk_send_max_delay");
+      
+      res.json({
+        minDelay: minDelay?.value || "10",
+        maxDelay: maxDelay?.value || "20",
+      });
+    } catch (error: any) {
+      console.error("Get bulk speed settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update bulk send speed settings
+  app.put("/api/admin/settings/bulk-speed", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { minDelay, maxDelay } = req.body;
+      
+      if (minDelay) await storage.setSetting("bulk_send_min_delay", minDelay.toString());
+      if (maxDelay) await storage.setSetting("bulk_send_max_delay", maxDelay.toString());
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "settings",
+          updates: Object.keys(req.body),
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
 }

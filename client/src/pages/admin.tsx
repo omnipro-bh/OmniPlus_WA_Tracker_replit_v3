@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,127 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { User, OfflinePayment, Channel, Plan } from "@shared/schema";
+
+function BulkSpeedSettings() {
+  const { toast } = useToast();
+  const [minDelay, setMinDelay] = useState("");
+  const [maxDelay, setMaxDelay] = useState("");
+
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["/api/admin/settings/bulk-speed"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  // Update form when settings load
+  useEffect(() => {
+    if (settings) {
+      setMinDelay(settings.minDelay || "10");
+      setMaxDelay(settings.maxDelay || "20");
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { minDelay: string; maxDelay: string }) => {
+      return await apiRequest("PUT", "/api/admin/settings/bulk-speed", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/bulk-speed"] });
+      toast({
+        title: "Settings updated",
+        description: "Bulk send speed settings have been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    const min = parseInt(minDelay);
+    const max = parseInt(maxDelay);
+
+    if (min < 1 || max < 1) {
+      toast({
+        title: "Invalid values",
+        description: "Both values must be at least 1 second",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (min > max) {
+      toast({
+        title: "Invalid range",
+        description: "Minimum delay cannot be greater than maximum delay",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateSettingsMutation.mutate({ minDelay, maxDelay });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="min-delay">Minimum Delay (seconds)</Label>
+          <Input
+            id="min-delay"
+            type="number"
+            min="1"
+            placeholder="10"
+            value={minDelay}
+            onChange={(e) => setMinDelay(e.target.value)}
+            data-testid="input-min-delay"
+          />
+          <p className="text-xs text-muted-foreground">
+            Minimum random delay between messages
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="max-delay">Maximum Delay (seconds)</Label>
+          <Input
+            id="max-delay"
+            type="number"
+            min="1"
+            placeholder="20"
+            value={maxDelay}
+            onChange={(e) => setMaxDelay(e.target.value)}
+            data-testid="input-max-delay"
+          />
+          <p className="text-xs text-muted-foreground">
+            Maximum random delay between messages
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-muted/30 p-4 rounded-md">
+        <p className="text-sm text-muted-foreground">
+          When bulk messages are sent, the system will wait a random time between {minDelay || "10"} and {maxDelay || "20"} seconds before sending each message. This helps avoid rate limiting and makes the sending pattern look more natural.
+        </p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-bulk-speed"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
 
 export default function Admin() {
   const { toast } = useToast();
@@ -508,11 +629,12 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="users">Users & Billing</TabsTrigger>
           <TabsTrigger value="payments">Offline Payments</TabsTrigger>
           <TabsTrigger value="requests">Plan Requests</TabsTrigger>
           <TabsTrigger value="plans">Plans</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -1052,6 +1174,21 @@ export default function Admin() {
                   </table>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Settings Tab */}
+        <TabsContent value="settings" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bulk Sending Speed Control</CardTitle>
+              <CardDescription>
+                Configure random delay between bulk messages (in seconds)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BulkSpeedSettings />
             </CardContent>
           </Card>
         </TabsContent>
