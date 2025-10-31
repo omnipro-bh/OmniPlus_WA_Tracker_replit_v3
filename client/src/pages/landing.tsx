@@ -32,9 +32,11 @@ export default function Landing() {
               <a href="#use-cases" className="text-sm font-medium hover-elevate px-3 py-2 rounded-md">
                 Use Cases
               </a>
-              <a href="#pricing" className="text-sm font-medium hover-elevate px-3 py-2 rounded-md">
-                Pricing
-              </a>
+              {plans.length > 0 && (
+                <a href="#pricing" className="text-sm font-medium hover-elevate px-3 py-2 rounded-md">
+                  Pricing
+                </a>
+              )}
               <a href="#contact" className="text-sm font-medium hover-elevate px-3 py-2 rounded-md">
                 Contact
               </a>
@@ -249,25 +251,21 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="py-20 lg:py-32 bg-card/30">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="text-center space-y-4 mb-16">
-            <h2 className="text-3xl font-bold tracking-tight lg:text-4xl">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Choose the plan that fits your business. Scale up or down anytime.
-            </p>
-          </div>
+      {/* Pricing - Only show if there are published plans */}
+      {plans.length > 0 && (
+        <section id="pricing" className="py-20 lg:py-32 bg-card/30">
+          <div className="mx-auto max-w-7xl px-6 lg:px-8">
+            <div className="text-center space-y-4 mb-16">
+              <h2 className="text-3xl font-bold tracking-tight lg:text-4xl">
+                Simple, Transparent Pricing
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Choose the plan that fits your business. Scale up or down anytime.
+              </p>
+            </div>
 
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-            {plans.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <p className="text-muted-foreground">No pricing plans available at this time.</p>
-              </div>
-            ) : (
-              plans.map((plan: any, index: number) => (
+            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+              {plans.map((plan: any, index: number) => (
                 <Card
                   key={plan.id}
                   className={`relative flex flex-col ${
@@ -318,11 +316,11 @@ export default function Landing() {
                     </Link>
                   </CardFooter>
                 </Card>
-              ))
-            )}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-border bg-card/50">
@@ -345,11 +343,13 @@ export default function Landing() {
                     Features
                   </a>
                 </li>
-                <li>
-                  <a href="#pricing" className="hover:text-foreground">
-                    Pricing
-                  </a>
-                </li>
+                {plans.length > 0 && (
+                  <li>
+                    <a href="#pricing" className="hover:text-foreground">
+                      Pricing
+                    </a>
+                  </li>
+                )}
                 <li>
                   <a href="#" className="hover:text-foreground">
                     API Docs

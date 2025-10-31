@@ -50,6 +50,7 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
 - **UI Changes**: 
   - Removed redundant Chatbot page (now all functionality is consolidated in Workflows page).
   - Added dual publishing controls: `published` (for authenticated users' pricing page) and `publishedOnHomepage` (for public landing page).
+  - Landing page now conditionally hides pricing section and navigation links when no plans are published to homepage.
 
 ## Backend API Routes
 
