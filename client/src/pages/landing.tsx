@@ -6,6 +6,22 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import type { Plan } from "@shared/schema";
 
+// Helper function to get currency symbol
+const getCurrencySymbol = (currency: string) => {
+  const symbols: Record<string, string> = {
+    USD: "$",
+    BHD: "BD",
+    EUR: "€",
+    GBP: "£",
+    SAR: "SR",
+    AED: "AED",
+    KWD: "KD",
+    OMR: "OMR",
+    QAR: "QR",
+  };
+  return symbols[currency] || currency;
+};
+
 export default function Landing() {
   // Fetch plans published on homepage
   const { data: allPlans = [] } = useQuery<Plan[]>({
@@ -284,7 +300,7 @@ export default function Landing() {
                     <div className="mt-4">
                       {plan.price ? (
                         <>
-                          <span className="text-4xl font-bold">${(plan.price / 100).toFixed(0)}</span>
+                          <span className="text-4xl font-bold">{getCurrencySymbol(plan.currency)}{(plan.price / 100).toFixed(0)}</span>
                           <span className="text-muted-foreground">
                             /{plan.billingPeriod === "MONTHLY" ? "month" : plan.billingPeriod === "SEMI_ANNUAL" ? "6 months" : "year"}
                           </span>

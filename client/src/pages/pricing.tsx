@@ -12,6 +12,22 @@ import { Check, Upload, MessageSquare, Calendar } from "lucide-react";
 import type { Plan } from "@shared/schema";
 import PayPalSubscribeButton from "@/components/PayPalSubscribeButton";
 
+// Helper function to get currency symbol
+const getCurrencySymbol = (currency: string) => {
+  const symbols: Record<string, string> = {
+    USD: "$",
+    BHD: "BD",
+    EUR: "€",
+    GBP: "£",
+    SAR: "SR",
+    AED: "AED",
+    KWD: "KD",
+    OMR: "OMR",
+    QAR: "QR",
+  };
+  return symbols[currency] || currency;
+};
+
 export default function Pricing() {
   const { toast } = useToast();
   const [durationType, setDurationType] = useState<"MONTHLY" | "SEMI_ANNUAL" | "ANNUAL">("MONTHLY");
@@ -172,13 +188,13 @@ export default function Pricing() {
                 <div className="mt-4">
                   {plan.requestType === "PAID" && plan.price ? (
                     <>
-                      <span className="text-4xl font-bold">${(discountedPrice / 100).toFixed(0)}</span>
+                      <span className="text-4xl font-bold">{getCurrencySymbol(plan.currency)}{(discountedPrice / 100).toFixed(0)}</span>
                       <span className="text-muted-foreground">/
                         {durationType === "MONTHLY" ? "month" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
                         <div className="text-sm text-muted-foreground line-through">
-                          ${(plan.price / 100).toFixed(0)}
+                          {getCurrencySymbol(plan.currency)}{(plan.price / 100).toFixed(0)}
                         </div>
                       )}
                     </>
