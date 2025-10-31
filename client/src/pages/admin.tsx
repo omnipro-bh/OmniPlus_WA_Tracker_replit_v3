@@ -409,7 +409,7 @@ export default function Admin() {
 
   const handleSavePlan = () => {
     // Validate required numeric fields
-    const price = parseFloat(planForm.price);
+    const price = planForm.price ? parseFloat(planForm.price) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
     const dailyMessagesLimit = parseInt(planForm.dailyMessagesLimit);
     const bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
@@ -421,8 +421,9 @@ export default function Admin() {
       toast({ title: "Validation error", description: "Plan name is required", variant: "destructive" });
       return;
     }
-    if (isNaN(price) || price <= 0) {
-      toast({ title: "Validation error", description: "Valid price is required", variant: "destructive" });
+    // Price is required for PAID plans, optional for REQUEST_QUOTE and BOOK_DEMO
+    if (planForm.requestType === "PAID" && (!price || price <= 0)) {
+      toast({ title: "Validation error", description: "Valid price is required for paid plans", variant: "destructive" });
       return;
     }
     if (isNaN(dailyMessagesLimit) || dailyMessagesLimit <= 0) {
@@ -445,7 +446,7 @@ export default function Admin() {
     const planData = {
       name: planForm.name.trim(),
       currency: planForm.currency,
-      price: Math.round(price * 100),
+      price: price ? Math.round(price * 100) : null,
       billingPeriod: planForm.billingPeriod,
       requestType: planForm.requestType,
       published: planForm.published,
@@ -1571,7 +1572,7 @@ export default function Admin() {
               onClick={handleSavePlan}
               disabled={
                 !planForm.name ||
-                !planForm.price ||
+                (planForm.requestType === "PAID" && !planForm.price) ||
                 !planForm.dailyMessagesLimit ||
                 !planForm.bulkMessagesLimit ||
                 !planForm.channelsLimit ||

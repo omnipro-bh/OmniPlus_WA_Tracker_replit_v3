@@ -48,6 +48,7 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
 - **Subscriptions Table**: Added per-user override fields (`dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`, `pageAccess`) to allow custom limits beyond plan defaults.
 - **OfflinePayments Table**: Added `requestType` field to track payment request types.
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
+- **PlanRequests Table (Oct 31)**: New table for REQUEST_QUOTE and BOOK_DEMO submissions with fields: id, planId, name, phone, businessEmail, message, requestedDate (nullable for demos), status enum (PENDING/REVIEWED/CONTACTED/CONVERTED/REJECTED), createdAt. Business email validation rejects free email providers (gmail, yahoo, hotmail, outlook, aol, icloud, etc.).
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
 - **Default Page Access (Oct 31)**: New user signups now receive default access to Dashboard, Channels, and Pricing pages until they subscribe to a plan. The `/api/me` endpoint returns `effectivePageAccess` which merges plan + subscription overrides for subscribed users, or default access for non-subscribed users.
 - **UI Changes**: 
@@ -56,6 +57,7 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
   - Landing page now conditionally hides pricing section and navigation links when no plans are published to homepage.
   - Added "Logs" checkbox to Page Access Overrides in Admin → User Details & Overrides and Plan creation/editing forms.
   - Admin Dashboard queries now use `refetchOnMount` and `refetchOnWindowFocus` to ensure fresh data display.
+  - **REQUEST_QUOTE/BOOK_DEMO Plans (Oct 31)**: Plans can be configured as quote requests or demo bookings instead of paid subscriptions. Pricing page shows "Custom Pricing"/"Contact Us" labels and "Request Quote"/"Book Demo" CTAs instead of prices. Quote/demo forms collect name, business email, phone, and message (+ preferred date for demos). Admin dashboard includes "Plan Requests" tab with status filtering (PENDING/REVIEWED/CONTACTED/CONVERTED/REJECTED) and status update controls.
 
 ## Backend API Routes
 
@@ -74,7 +76,13 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
   - POST `/api/admin/users/:userId/channels/:channelId/activate` - Activate/extend channel
   - DELETE `/api/admin/channels/:id` - Delete channel via WHAPI, return days to admin balance
 - **Offline Payments**: GET `/api/admin/offline-payments`, approve/reject
+- **Plan Requests**:
+  - GET `/api/admin/plan-requests` - List all quote/demo requests with enriched plan data
+  - PATCH `/api/admin/plan-requests/:id/status` - Update request status
 - **Balance Management**: GET/POST balance, transactions, adjust
+
+**Public Routes (no auth required):**
+- POST `/api/plan-requests` - Submit quote request or demo booking with business email validation
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** For channel management (creation, extension, deletion).
