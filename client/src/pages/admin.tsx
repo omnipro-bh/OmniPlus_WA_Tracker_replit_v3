@@ -76,10 +76,14 @@ export default function Admin() {
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/users"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   const { data: allPayments = [] } = useQuery<OfflinePayment[]>({
     queryKey: ["/api/admin/offline-payments"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Filter payments by status
@@ -87,6 +91,8 @@ export default function Admin() {
 
   const { data: plans = [] } = useQuery<Plan[]>({
     queryKey: ["/api/admin/plans"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch admin main balance
