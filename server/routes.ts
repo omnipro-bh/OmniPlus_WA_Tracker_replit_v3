@@ -3254,6 +3254,24 @@ export function registerRoutes(app: Express) {
       const message = existingMessages[0];
       const jobId = message.jobId;
 
+      // Get the job to extract the numeric user ID (safer than parsing URL param)
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+      const numericUserId = job?.userId || parseInt(userId);
+
+      // Log webhook event received (wrapped in try-catch to prevent logging failures from breaking webhook)
+      try {
+        await storage.createBulkLog({
+          userId: numericUserId,
+          jobId,
+          level: 'info',
+          category: 'webhook',
+          message: `Webhook received: ${eventType} event for message ${lookupMessageId}`,
+          meta: { providerMessageId, lookupMessageId, eventType },
+        });
+      } catch (logError) {
+        console.warn("[Bulk Webhook] Failed to create webhook log:", logError);
+      }
+
       // Determine event type and update message accordingly
       let updateData: any = { updatedAt: new Date() };
       let newStatus: string | null = null;
@@ -3269,16 +3287,52 @@ export function registerRoutes(app: Express) {
           updateData.deliveredAt = new Date(timestamp);
           newStatus = 'DELIVERED';
           console.log(`[Bulk Webhook] Message ${providerMessageId} delivered`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'status',
+              message: `Message delivered: ${lookupMessageId}`,
+              meta: { providerMessageId, status: 'DELIVERED' },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log delivery:", logError);
+          }
         } else if (status === 'read') {
           updateData.status = 'READ';
           updateData.readAt = new Date(timestamp);
           newStatus = 'READ';
           console.log(`[Bulk Webhook] Message ${providerMessageId} read`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'status',
+              message: `Message read: ${lookupMessageId}`,
+              meta: { providerMessageId, status: 'READ' },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log read status:", logError);
+          }
         } else if (status === 'failed' || status === 'error') {
           updateData.status = 'FAILED';
           updateData.error = statusEvent.error || 'Delivery failed';
           newStatus = 'FAILED';
           console.log(`[Bulk Webhook] Message ${providerMessageId} failed`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'error',
+              category: 'status',
+              message: `Message failed: ${lookupMessageId}`,
+              meta: { providerMessageId, status: 'FAILED', error: updateData.error },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log failure:", logError);
+          }
         }
       }
       // Handle reply events (text, buttons_reply, list_reply)
@@ -3295,21 +3349,69 @@ export function registerRoutes(app: Express) {
           updateData.lastReply = buttonReply?.title || buttonReply?.id || 'Button clicked';
           updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] Button reply: ${updateData.lastReply}`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'reply',
+              message: `Button reply received: "${updateData.lastReply}" for message ${lookupMessageId}`,
+              meta: { providerMessageId, replyType: 'buttons_reply', replyTitle: updateData.lastReply },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log button reply:", logError);
+          }
         } else if (messageEvent.reply?.type === 'list_reply') {
           const listReply = messageEvent.reply.list_reply;
           updateData.lastReplyType = 'list_reply';
           updateData.lastReply = listReply?.title || listReply?.id || 'List item selected';
           updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] List reply: ${updateData.lastReply}`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'reply',
+              message: `List reply received: "${updateData.lastReply}" for message ${lookupMessageId}`,
+              meta: { providerMessageId, replyType: 'list_reply', replyTitle: updateData.lastReply },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log list reply:", logError);
+          }
         } else if (messageEvent.text?.body) {
           updateData.lastReplyType = 'text';
           updateData.lastReply = messageEvent.text.body;
           updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] Text reply: ${updateData.lastReply}`);
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'reply',
+              message: `Text reply received for message ${lookupMessageId}`,
+              meta: { providerMessageId, replyType: 'text', replyText: updateData.lastReply.substring(0, 100) },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log text reply:", logError);
+          }
         } else {
           updateData.lastReplyType = 'other';
           updateData.lastReply = 'Reply received';
           updateData.lastReplyPayload = messageEvent;
+          try {
+            await storage.createBulkLog({
+              userId: numericUserId,
+              jobId,
+              level: 'info',
+              category: 'reply',
+              message: `Other reply received for message ${lookupMessageId}`,
+              meta: { providerMessageId, replyType: 'other' },
+            });
+          } catch (logError) {
+            console.warn("[Bulk Webhook] Failed to log other reply:", logError);
+          }
         }
       }
 
@@ -3354,6 +3456,24 @@ export function registerRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("[Bulk Webhook] Error:", error);
+      
+      // Log webhook error (best effort - don't fail if logging fails)
+      try {
+        const userIdNum = parseInt(req.params.userId);
+        if (!isNaN(userIdNum)) {
+          await storage.createBulkLog({
+            userId: userIdNum,
+            jobId: null as any,
+            level: 'error',
+            category: 'error',
+            message: `Webhook processing error: ${error.message}`,
+            meta: { error: error.message, stack: error.stack?.substring(0, 500) },
+          });
+        }
+      } catch (logError) {
+        console.warn("[Bulk Webhook] Failed to log error:", logError);
+      }
+      
       res.status(500).json({ error: "Webhook processing failed", message: error.message });
     }
   });
@@ -3361,10 +3481,19 @@ export function registerRoutes(app: Express) {
   // Bulk message logs (for debugging bulk send operations)
   app.get("/api/bulk-logs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      // For now, return empty array - logs are visible in server console
-      // In a production system, you'd store these in a dedicated bulk_logs table
-      const recentLogs: any[] = [];
-      res.json(recentLogs);
+      const userId = req.userId!;
+      const level = req.query.level as string | undefined;
+      const category = req.query.category as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+
+      const logs = await storage.getBulkLogs({
+        userId,
+        level,
+        category,
+        limit,
+      });
+
+      res.json(logs);
     } catch (error: any) {
       console.error("Get bulk logs error:", error);
       res.status(500).json({ error: "Failed to fetch bulk logs" });
