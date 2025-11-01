@@ -119,6 +119,16 @@ export interface IStorage {
   }): Promise<{ ledgerEntry: ChannelDaysLedger; updatedChannel: Channel }>;
   getChannelDaysLedger(channelId: number): Promise<ChannelDaysLedger[]>;
   calculateChannelDaysRemaining(channelId: number): Promise<number>;
+
+  // Bulk Logs
+  createBulkLog(log: schema.InsertBulkLog): Promise<schema.BulkLog>;
+  getBulkLogs(filters?: {
+    userId?: number;
+    jobId?: number;
+    level?: string;
+    category?: string;
+    limit?: number;
+  }): Promise<schema.BulkLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -592,6 +602,48 @@ export class DatabaseStorage implements IStorage {
     }
 
     return Math.ceil((expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+  }
+
+  // Bulk Logs
+  async createBulkLog(log: schema.InsertBulkLog): Promise<schema.BulkLog> {
+    const [newLog] = await db.insert(schema.bulkLogs).values(log).returning();
+    return newLog;
+  }
+
+  async getBulkLogs(filters?: {
+    userId?: number;
+    jobId?: number;
+    level?: string;
+    category?: string;
+    limit?: number;
+  }): Promise<schema.BulkLog[]> {
+    let query = db.select().from(schema.bulkLogs);
+
+    const conditions = [];
+    if (filters?.userId) {
+      conditions.push(eq(schema.bulkLogs.userId, filters.userId));
+    }
+    if (filters?.jobId) {
+      conditions.push(eq(schema.bulkLogs.jobId, filters.jobId));
+    }
+    if (filters?.level) {
+      conditions.push(eq(schema.bulkLogs.level, filters.level as any));
+    }
+    if (filters?.category) {
+      conditions.push(eq(schema.bulkLogs.category, filters.category as any));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    query = query.orderBy(desc(schema.bulkLogs.createdAt)) as any;
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as any;
+    }
+
+    return await query;
   }
 }
 
