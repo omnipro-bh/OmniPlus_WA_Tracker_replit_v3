@@ -29,7 +29,14 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
     - **Webhook Endpoints:** Each workflow has a unique, user-specific webhook URL.
     - **Entry Node Configuration:** Ability to set a welcome message for first-time contacts.
     - **Inactive Workflow Handling:** Webhook handler logs all messages but only sends automated responses for Live workflows.
-- **Outbox:** Displays message sending job statuses (queued, pending, sent, delivered, read, failed, replied) with detailed message information, WHAPI payloads, and error details.
+- **Outbox:** Displays message sending job statuses (queued, pending, sent, delivered, read, failed, replied) with detailed message information, provider message IDs, button/list reply tracking, and error details. Auto-refreshes every 3 seconds for near-real-time updates.
+- **Bulk Message Status Tracking (Nov 1):** Real-time webhook-based status tracking for bulk messages:
+    - **Message ID Capture:** Every sent message captures the WHAPI provider message ID (`providerMessageId`) for tracking.
+    - **Bulk Webhook Endpoint:** Each user has a unique webhook URL (`/webhooks/bulk/:userId/:bulkWebhookToken`) for receiving delivery, read, failed, and reply events from WHAPI.
+    - **Reply Tracking:** Captures button clicks (Confirm/Reschedule/Cancel), list selections, and text replies with full payload storage.
+    - **Job Statistics:** Real-time recalculation of job counters (delivered, read, replied, failed) when webhook events are received.
+    - **Admin Monitoring:** Webhook URLs are visible only to admins in User Details page for configuration and monitoring.
+    - **⚠️ CRITICAL SETUP:** The bulk webhook URL must be configured in WHAPI channel settings to receive status updates. Without this, statuses will remain "SENT" and won't update to delivered/read/replied.
 - **Pricing:** Displays plans with duration toggles, integrating PayPal for subscriptions and supporting offline payments.
 - **Admin Dashboard:** User management, billing adjustments, offline payment approval, and channel activation controls.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
@@ -43,12 +50,17 @@ The platform is built with a React TypeScript frontend utilizing Vite, Wouter, T
 **Data Model:**
 Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `published`, `publishedOnHomepage`, `pageAccess`, `chatbotsLimit`), Subscriptions (with per-user overrides: `dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`), Channels, Templates, Jobs, Messages (with delivery tracking and unique `providerMessageId`), Workflows (with `webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags (for idempotent first-message detection), WorkflowExecutions, OfflinePayments (with `requestType`), AuditLogs (with `actorUserId` for tracking action performers), Settings, and BalanceTransactions.
 
-**Recent Schema Changes (Oct 30-31, 2025):**
+**Recent Schema Changes (Oct 30-31, Nov 1, 2025):**
 - **Plans Table**: Migrated from `durationDays` to `billingPeriod` enum (MONTHLY/SEMI_ANNUAL/ANNUAL), added `requestType` enum (PAID/REQUEST_QUOTE/BOOK_DEMO), `published` boolean (visible to authenticated users), `publishedOnHomepage` boolean (visible on landing page), `pageAccess` JSONB for feature access control (includes Dashboard, Pricing, Channels, Send, Templates, Workflows, Outbox, Logs), and `chatbotsLimit` for workflow restrictions.
 - **Subscriptions Table**: Added per-user override fields (`dailyMessagesLimit`, `bulkMessagesLimit`, `channelsLimit`, `chatbotsLimit`, `pageAccess`) to allow custom limits beyond plan defaults.
 - **OfflinePayments Table**: Added `requestType` field to track payment request types.
 - **AuditLogs Table**: Uses `actorUserId` (mapped to `user_id` column) to track which admin/user performed each action.
 - **PlanRequests Table (Oct 31)**: New table for REQUEST_QUOTE and BOOK_DEMO submissions with fields: id, planId, name, phone, businessEmail, message, requestedDate (nullable for demos), status enum (PENDING/REVIEWED/CONTACTED/CONVERTED/REJECTED), createdAt. Business email validation rejects free email providers (gmail, yahoo, hotmail, outlook, aol, icloud, etc.).
+- **Bulk Message Tracking (Nov 1)**: 
+  - **Users Table**: Added `bulkWebhookToken` (UUID, auto-generated) for secure bulk webhook authentication.
+  - **Messages Table**: Added `lastReplyType` enum (text, buttons_reply, list_reply, other), `lastReplyPayload` JSONB for storing full webhook reply data.
+  - **New Enum**: `lastReplyTypeEnum` for categorizing reply types.
+  - **Webhook Endpoint**: `/webhooks/bulk/:userId/:bulkWebhookToken` processes delivery, read, failed, and reply events, updates message statuses, and recalculates job statistics.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
 - **Default Page Access (Oct 31)**: New user signups now receive default access to Dashboard, Channels, and Pricing pages until they subscribe to a plan. The `/api/me` endpoint returns `effectivePageAccess` which merges plan + subscription overrides for subscribed users, or default access for non-subscribed users.
 - **UI Changes**: 

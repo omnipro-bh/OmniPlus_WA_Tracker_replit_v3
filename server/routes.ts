@@ -1017,10 +1017,15 @@ export function registerRoutes(app: Express) {
         );
 
         // Extract provider message ID from WHAPI response
-        // Response structure: { sent: true, message: { id: "..." } }
-        const providerMessageId = whapiResponse.message?.id || whapiResponse.id || whapiResponse.message_id;
+        // WHAPI can return different structures:
+        // - Bulk/Interactive: { sent: true, messages: [{ id: "..." }] }
+        // - Simple text: { sent: true, message: { id: "..." } }
+        // - Legacy: { sent: true, id: "..." }
+        const providerMessageId = whapiResponse.messages?.[0]?.id || whapiResponse.message?.id || whapiResponse.id || whapiResponse.message_id;
         
-        console.log(`[Send] WHAPI response:`, {
+        console.log(`[Send] Full WHAPI response:`, JSON.stringify(whapiResponse, null, 2));
+        console.log(`[Send] Extracted provider ID: ${providerMessageId}`);
+        console.log(`[Send] Response summary:`, {
           sent: whapiResponse.sent,
           messageId: providerMessageId,
           fullResponse: JSON.stringify(whapiResponse).substring(0, 200)
@@ -1254,9 +1259,20 @@ export function registerRoutes(app: Express) {
           }
 
           if (result && result.sent) {
+            // Extract provider message ID from WHAPI response
+            // WHAPI can return different structures:
+            // - Bulk/Interactive: { sent: true, messages: [{ id: "..." }] }
+            // - Simple text: { sent: true, message: { id: "..." } }
+            // - Legacy: { sent: true, id: "..." }
+            const providerMessageId = result.messages?.[0]?.id || result.message?.id || result.id || result.message_id;
+            
+            console.log(`[Bulk] Message ${message.id} sent to ${message.to}`);
+            console.log(`[Bulk] WHAPI full response:`, JSON.stringify(result, null, 2));
+            console.log(`[Bulk] Extracted provider ID: ${providerMessageId}`);
+            
             await storage.updateMessage(message.id, { 
               status: "SENT",
-              providerMessageId: result.id,
+              providerMessageId,
               sentAt: new Date(),
             });
             const newPending = messages.filter(m => m.status === "PENDING").length;

@@ -203,7 +203,8 @@ export default function Outbox() {
                     <table className="w-full">
                       <thead className="bg-muted/50 border-b">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Message ID</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">ID</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Provider ID</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">To</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Body</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Buttons</th>
@@ -222,6 +223,9 @@ export default function Outbox() {
                               data-testid={`message-row-${message.id}`}
                             >
                               <td className="px-4 py-3 font-mono text-sm">{message.id}</td>
+                              <td className="px-4 py-3 font-mono text-xs text-muted-foreground max-w-32 truncate" title={message.providerMessageId || 'Not available'}>
+                                {message.providerMessageId ? message.providerMessageId.substring(0, 12) + '...' : '-'}
+                              </td>
                               <td className="px-4 py-3 font-mono text-sm text-success">{message.to}</td>
                               <td className="px-4 py-3 text-sm max-w-xs truncate">{message.body}</td>
                               <td className="px-4 py-3 text-sm">
