@@ -236,8 +236,21 @@ export default function Outbox() {
                               <td className="px-4 py-3">
                                 <StatusBadge status={message.status} />
                               </td>
-                              <td className="px-4 py-3 text-sm text-muted-foreground">
-                                {message.lastReply || '-'}
+                              <td className="px-4 py-3 text-sm">
+                                {message.lastReply ? (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-foreground">{message.lastReply}</span>
+                                    {message.lastReplyType && (
+                                      <span className="text-xs text-muted-foreground capitalize">
+                                        {message.lastReplyType === 'buttons_reply' ? '📱 Button Reply' :
+                                         message.lastReplyType === 'list_reply' ? '📋 List Reply' :
+                                         message.lastReplyType === 'text' ? '💬 Text' : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -284,7 +297,21 @@ export default function Outbox() {
                 <div className="col-span-2">
                   <div className="text-xs font-semibold text-muted-foreground uppercase">Last Reply</div>
                   <div className="text-sm mt-1">
-                    {selectedMessage.lastReply || <span className="text-muted-foreground">No reply</span>}
+                    {selectedMessage.lastReply ? (
+                      <div className="space-y-1">
+                        <div className="font-medium">{selectedMessage.lastReply}</div>
+                        {selectedMessage.lastReplyType && (
+                          <div className="text-xs text-muted-foreground capitalize">
+                            Type: {selectedMessage.lastReplyType === 'buttons_reply' ? 'Button Reply' :
+                                   selectedMessage.lastReplyType === 'list_reply' ? 'List Reply' :
+                                   selectedMessage.lastReplyType === 'text' ? 'Text Message' : 
+                                   selectedMessage.lastReplyType}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">No reply</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -341,6 +368,16 @@ export default function Outbox() {
                   }, null, 2)}
                 </pre>
               </div>
+
+              {/* Reply Payload */}
+              {selectedMessage.lastReplyPayload && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Reply Payload</div>
+                  <pre className="rounded-md bg-muted p-4 text-xs overflow-x-auto">
+                    {JSON.stringify(selectedMessage.lastReplyPayload, null, 2)}
+                  </pre>
+                </div>
+              )}
 
               {/* Creation/Update Timestamps */}
               <div className="grid grid-cols-2 gap-4 pt-4 border-t text-sm">

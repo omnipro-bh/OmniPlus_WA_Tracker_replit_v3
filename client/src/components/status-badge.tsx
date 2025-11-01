@@ -6,12 +6,14 @@ type Status =
   | "PENDING_AUTH"
   | "QUEUED"
   | "PENDING"
+  | "PROCESSING"
   | "SENT"
   | "DELIVERED"
   | "READ"
   | "FAILED"
   | "REPLIED"
   | "PARTIAL"
+  | "COMPLETED"
   | "EXPIRED"
   | "CANCELLED"
   | "APPROVED"
@@ -65,6 +67,16 @@ const statusStyles: Record<
     bg: "bg-warning/10",
     text: "text-warning",
     border: "border-warning/20",
+  },
+  PROCESSING: {
+    bg: "bg-info/10",
+    text: "text-info",
+    border: "border-info/20",
+  },
+  COMPLETED: {
+    bg: "bg-success/10",
+    text: "text-success",
+    border: "border-success/20",
   },
   PAUSED: {
     bg: "bg-slate-500/10",

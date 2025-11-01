@@ -1,0 +1,172 @@
+Track bulk-message status via message ID (real-time)
+Goal
+When we send WhatsApp messages via the Send API, the API returns a unique message_id. We must capture that ID and use it as the primary key to:
+•	Update the per-message status (queued, sent, delivered, read, failed, replied)
+•	Update Job Details counters in real time
+•	Show the last reply — specifically the button reply (which button the customer clicked such as “Confirm,” “Reschedule,” or “Cancel”) when the customer responds
+This is for bulk sending only, using a dedicated webhook (similar to the one used on the “Workflow” page), but scoped to bulk jobs.
+________________________________________
+Scope
+1.	On Send
+o	Capture the HTTP Send API response.
+o	Extract and persist message_id for each recipient in the bulk job.
+o	Use message_id as the primary key for tracking updates from the webhook.
+2.	Webhook (Bulk Only)
+o	Create/enable a Bulk Status Webhook that receives delivery/read/reply events.
+o	Match incoming events by message_id and update the corresponding row.
+o	Recompute Job statistics live (Delivered, Read, Replied, Failed).
+o	Webhook must be active only when Bulk module is enabled (don’t mix with Workflow webhook logic).
+o	The Bulk Webhook URL should be visible only to admin under the User Details section (for internal monitoring or verification).
+o	Users should not see or have access to this webhook URL in their interface.
+o	Apply the same rule for Workflow webhook — it should also be visible only to the admin in User Details, not to end-users.
+3.	Real-time UI
+o	In Outbox → Job Details → Messages table, keep the current layout.
+o	Update the Status and Last Reply columns live (websocket or SSE).
+o	Update the Job Statistics pills (Queued, Pending, Sent, Delivered, Read, Failed, Replied) live.
+________________________________________
+Data Model (suggested)
+•	bulk_jobs
+o	job_id (pk), created_by, created_at, status_summary_json (aggregated counts)
+•	bulk_messages
+o	message_id (pk, from Send API)
+o	job_id (fk), phone, body, buttons_json (if any)
+o	status (enum: sent, delivered, read, failed, replied)
+o	sent_at, delivered_at, read_at, failed_at, replied_at
+o	last_reply_type (enum: text, buttons_reply, list_reply, other)
+o	last_reply_payload_json (raw payload for audit)
+•	bulk_events (optional audit log)
+o	id (pk), message_id (fk), event_type, payload_json, received_at
+Indexes
+•	Unique index on bulk_messages.message_id
+•	Index on bulk_messages.job_id and bulk_events.message_id
+________________________________________
+Send API – what to capture
+When we call the Send API, store at minimum:
+•	message_id (string, unique)
+•	phone (destination)
+•	body and buttons (for display)
+•	job_id
+•	sent_at (server time)
+If the Send API returns batched ids, iterate and persist each message_id.
+Example (Send API response – illustrative)
+{
+  "messages": [
+    {
+      "message_id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+      "to": "973333027386",
+      "status": "sent",
+      "timestamp": 1761745833
+    }
+  ]
+}
+________________________________________
+Webhook (Bulk Status)
+•	Endpoint: /webhooks/bulk-status
+•	Method: POST
+•	Behavior:
+1.	Parse payload, extract message_id, event_type, and relevant timestamps.
+2.	Update bulk_messages where message_id matches.
+3.	If event includes a reply, set status = replied, capture last_reply_type and last_reply_payload_json.
+4.	Update bulk_jobs.status_summary_json (aggregated counts).
+5.	Push real-time update to UI (SSE/WebSocket).
+6.	Respond 200 OK quickly. Use idempotency on event_id to avoid double-writes.
+Events we expect
+•	Delivery → set status = delivered, store delivered_at.
+•	Read → set status = read, store read_at.
+•	Failed → set status = failed, store failed_at and reason (if provided).
+•	Reply (any incoming message from the same chat after our send):
+o	text replies → store text content.
+o	buttons_reply → capture id (button id) and label (e.g. “Confirm”, “Reschedule”, “Cancel”).
+o	list_reply → capture id (after : if present) and title/section.
+o	Set status = replied, store replied_at.
+Example (Webhook payload – illustrative)
+{
+  "event_id": "evt_7f2a",
+  "messages": [
+    {
+      "message_id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+      "type": "status",
+      "status": "delivered",
+      "timestamp": 1761746001
+    }
+  ]
+}
+Example (Reply payloads – illustrative)
+Buttons reply
+{
+  "messages": [
+    {
+      "message_id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+      "type": "reply",
+      "reply": {
+        "type": "buttons_reply",
+        "buttons_reply": {
+          "id": "ConfirmV1:b1",
+          "title": "Confirm"
+        }
+      },
+      "timestamp": 1761746200
+    }
+  ]
+}
+List reply
+{
+  "messages": [
+    {
+      "message_id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+      "type": "reply",
+      "reply": {
+        "type": "list_reply",
+        "list_reply": {
+          "id": "ListV3:r1",
+          "title": "Reschedule"
+        }
+      }
+    }
+  ]
+}
+Text reply
+{
+  "messages": [
+    {
+      "message_id": "rLIu8mLxHn_czF3vPRfgag-gG8Wqd0L7g",
+      "type": "text",
+      "text": { "body": "Yes, confirmed" }
+    }
+  ]
+}
+________________________________________
+Status Definitions (UI & logic)
+•	Queued: ready to send (pre-API or rate-limited queue).
+•	Pending: API accepted job but message not yet confirmed as sent.
+•	Sent: Send API response received with message_id.
+•	Delivered: delivery receipt received via webhook.
+•	Read: read receipt received via webhook.
+•	Failed: send or delivery failure event received.
+•	Replied: any inbound message from that chat after our message_id — text, buttons_reply, list_reply, etc. Store payload.
+________________________________________
+Aggregation & Real-time
+•	On each webhook event, recompute per-job counts:
+o	sent, delivered, read, failed, replied
+•	Update the Job Details modal and the list rows in real time.
+•	Show the last reply, specifically the button reply (which button the customer clicked such as “Confirm,” “Reschedule,” or “Cancel”) when the customer responds.
+•	Show Last Reply column as:
+o	For buttons_reply: Confirm / Reschedule / Cancel (from payload)
+o	For list_reply: item title (and internal id if available)
+o	For text: first ~60 chars of text
+o	Hover or click → show full payload.
+________________________________________
+Reliability & Security
+•	Idempotency: Ignore duplicate event_ids.
+•	Auth: Secure the webhook with a shared secret or signature verification.
+•	Timeouts: Always return 200 OK fast; do async processing if needed.
+•	Error logging: Store unrecognized events in bulk_events for debugging.
+________________________________________
+Acceptance Criteria
+1.	After sending a bulk job, each row shows Status = SENT and has its unique message_id persisted.
+2.	When delivery/read/reply events arrive, the UI updates within seconds without page refresh.
+3.	Job Statistics counts match the per-row states.
+4.	Last Reply displays exactly which button the customer clicked (Confirm, Reschedule, Cancel) or the corresponding text/list reply from payload.
+5.	Reprocessing the same webhook event does not create duplicates or double-increment counts.
+6.	The Bulk webhook and Workflow webhook are both visible only to admin under user details, not to end-users.
+

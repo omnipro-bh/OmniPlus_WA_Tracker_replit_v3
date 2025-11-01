@@ -22,7 +22,7 @@ function BulkSpeedSettings() {
   const [minDelay, setMinDelay] = useState("");
   const [maxDelay, setMaxDelay] = useState("");
 
-  const { data: settings, isLoading } = useQuery({
+  const { data: settings, isLoading } = useQuery<{minDelay?: string; maxDelay?: string}>({
     queryKey: ["/api/admin/settings/bulk-speed"],
     refetchOnMount: true,
     refetchOnWindowFocus: true,
@@ -1788,6 +1788,54 @@ export default function Admin() {
                   </div>
                 </div>
               )}
+
+              {/* Webhook URLs (Admin Only) */}
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-warning">⚠️ Webhook URLs (Admin Only)</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  These webhook URLs are for internal monitoring and should not be shared with users.
+                </p>
+                <div className="space-y-3 p-3 bg-card border rounded-md">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Bulk Message Status Webhook</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-muted p-2 rounded font-mono break-all">
+                        {window.location.origin}/webhooks/bulk/{selectedUserForDrawer.id}/{selectedUserForDrawer.bulkWebhookToken || 'not-set'}
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            `${window.location.origin}/webhooks/bulk/${selectedUserForDrawer.id}/${selectedUserForDrawer.bulkWebhookToken || 'not-set'}`
+                          );
+                          toast({ description: "Bulk webhook URL copied to clipboard" });
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Workflow Webhook (First Workflow)</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-muted p-2 rounded font-mono break-all">
+                        {window.location.origin}/webhooks/whapi/{selectedUserForDrawer.id}/[workflow-token]
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                      >
+                        N/A
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Note: Each workflow has its own unique token. View workflow details to see specific webhook URLs.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               {/* Subscription Overrides Form */}
               <div>

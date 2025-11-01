@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc } from "drizzle-orm";
-import { workflows, conversationStates, workflowExecutions, firstMessageFlags } from "@shared/schema";
+import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs } from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
@@ -3154,6 +3154,165 @@ export function registerRoutes(app: Express) {
       }
     } catch (error: any) {
       console.error("Webhook error:", error);
+      res.status(500).json({ error: "Webhook processing failed", message: error.message });
+    }
+  });
+
+  // Bulk message status webhook (for delivery, read, failed, reply tracking)
+  app.post("/webhooks/bulk/:userId/:bulkWebhookToken", async (req: Request, res: Response) => {
+    try {
+      const { userId, bulkWebhookToken } = req.params;
+      const webhookPayload = req.body;
+
+      console.log(`[Bulk Webhook] Received for user ${userId}:`, JSON.stringify(webhookPayload));
+
+      // Validate user and bulk webhook token
+      const user = await db
+        .select()
+        .from(users)
+        .where(
+          and(
+            eq(users.id, parseInt(userId)),
+            eq(users.bulkWebhookToken, bulkWebhookToken)
+          )
+        )
+        .limit(1);
+
+      if (!user || user.length === 0) {
+        console.error("[Bulk Webhook] Invalid webhook token");
+        return res.status(401).json({ error: "Invalid webhook token" });
+      }
+
+      // Extract event data from WHAPI webhook payload
+      // WHAPI sends status updates in: { messages: [{ message_id, type, status, timestamp, ... }] }
+      const incomingEvent = webhookPayload.messages?.[0];
+      
+      if (!incomingEvent) {
+        return res.json({ success: true, message: "No event to process" });
+      }
+
+      // Extract message_id (could be in different formats)
+      const providerMessageId = incomingEvent.id || incomingEvent.message_id;
+      
+      if (!providerMessageId) {
+        console.log("[Bulk Webhook] No message_id found in payload");
+        return res.json({ success: true, message: "No message_id in payload" });
+      }
+
+      console.log(`[Bulk Webhook] Processing event for message_id: ${providerMessageId}`);
+
+      // Find the message by providerMessageId
+      const existingMessages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.providerMessageId, providerMessageId))
+        .limit(1);
+
+      if (!existingMessages || existingMessages.length === 0) {
+        console.log(`[Bulk Webhook] Message not found for provider_message_id: ${providerMessageId}`);
+        return res.json({ success: true, message: "Message not found (might be from workflow)" });
+      }
+
+      const message = existingMessages[0];
+      const jobId = message.jobId;
+
+      // Determine event type and update message accordingly
+      let updateData: any = { updatedAt: new Date() };
+      let newStatus: string | null = null;
+
+      // Handle status updates (delivery, read, failed)
+      if (incomingEvent.type === 'status') {
+        const status = incomingEvent.status?.toLowerCase();
+        
+        if (status === 'delivered') {
+          updateData.status = 'DELIVERED';
+          updateData.deliveredAt = new Date(incomingEvent.timestamp * 1000);
+          newStatus = 'DELIVERED';
+          console.log(`[Bulk Webhook] Message ${providerMessageId} delivered`);
+        } else if (status === 'read') {
+          updateData.status = 'READ';
+          updateData.readAt = new Date(incomingEvent.timestamp * 1000);
+          newStatus = 'READ';
+          console.log(`[Bulk Webhook] Message ${providerMessageId} read`);
+        } else if (status === 'failed') {
+          updateData.status = 'FAILED';
+          updateData.error = incomingEvent.error || 'Delivery failed';
+          newStatus = 'FAILED';
+          console.log(`[Bulk Webhook] Message ${providerMessageId} failed`);
+        }
+      }
+      // Handle reply events (text, buttons_reply, list_reply)
+      else if (incomingEvent.type === 'reply' || incomingEvent.text || incomingEvent.reply) {
+        updateData.status = 'REPLIED';
+        updateData.repliedAt = new Date(incomingEvent.timestamp * 1000 || Date.now());
+        newStatus = 'REPLIED';
+
+        // Determine reply type and extract content
+        if (incomingEvent.reply?.type === 'buttons_reply') {
+          const buttonReply = incomingEvent.reply.buttons_reply;
+          updateData.lastReplyType = 'buttons_reply';
+          updateData.lastReply = buttonReply?.title || buttonReply?.id || 'Button clicked';
+          updateData.lastReplyPayload = incomingEvent;
+          console.log(`[Bulk Webhook] Button reply: ${updateData.lastReply}`);
+        } else if (incomingEvent.reply?.type === 'list_reply') {
+          const listReply = incomingEvent.reply.list_reply;
+          updateData.lastReplyType = 'list_reply';
+          updateData.lastReply = listReply?.title || listReply?.id || 'List item selected';
+          updateData.lastReplyPayload = incomingEvent;
+          console.log(`[Bulk Webhook] List reply: ${updateData.lastReply}`);
+        } else if (incomingEvent.text?.body) {
+          updateData.lastReplyType = 'text';
+          updateData.lastReply = incomingEvent.text.body;
+          updateData.lastReplyPayload = incomingEvent;
+          console.log(`[Bulk Webhook] Text reply: ${updateData.lastReply}`);
+        } else {
+          updateData.lastReplyType = 'other';
+          updateData.lastReply = 'Reply received';
+          updateData.lastReplyPayload = incomingEvent;
+        }
+      }
+
+      // Update the message record
+      if (Object.keys(updateData).length > 1) { // More than just updatedAt
+        await db
+          .update(messages)
+          .set(updateData)
+          .where(eq(messages.id, message.id));
+        
+        console.log(`[Bulk Webhook] Updated message ${message.id} with status: ${newStatus || 'REPLIED'}`);
+
+        // Recompute job statistics
+        const allMessages = await db
+          .select()
+          .from(messages)
+          .where(eq(messages.jobId, jobId));
+
+        const jobStats = {
+          queued: allMessages.filter(m => m.status === 'QUEUED').length,
+          pending: allMessages.filter(m => m.status === 'PENDING').length,
+          sent: allMessages.filter(m => m.status === 'SENT').length,
+          delivered: allMessages.filter(m => m.status === 'DELIVERED').length,
+          read: allMessages.filter(m => m.status === 'READ').length,
+          failed: allMessages.filter(m => m.status === 'FAILED').length,
+          replied: allMessages.filter(m => m.status === 'REPLIED').length,
+          updatedAt: new Date(),
+        };
+
+        // Update job with new statistics
+        await db
+          .update(jobs)
+          .set(jobStats)
+          .where(eq(jobs.id, jobId));
+
+        console.log(`[Bulk Webhook] Updated job ${jobId} stats:`, jobStats);
+
+        // TODO: Send real-time update via WebSocket/SSE
+        // This will be implemented in the next task
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Bulk Webhook] Error:", error);
       res.status(500).json({ error: "Webhook processing failed", message: error.message });
     }
   });

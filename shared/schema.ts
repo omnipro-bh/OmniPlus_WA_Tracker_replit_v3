@@ -21,6 +21,7 @@ export const balanceTransactionTypeEnum = pgEnum("balance_transaction_type", ["t
 export const channelDaysSourceEnum = pgEnum("channel_days_source", ["ADMIN_MANUAL", "PAYPAL", "OFFLINE", "MIGRATION"]);
 export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["SUCCESS", "ERROR"]);
 export const incomingMessageTypeEnum = pgEnum("incoming_message_type", ["text", "button_reply", "other"]);
+export const lastReplyTypeEnum = pgEnum("last_reply_type", ["text", "buttons_reply", "list_reply", "other"]);
 export const planRequestStatusEnum = pgEnum("plan_request_status", ["PENDING", "REVIEWED", "CONTACTED", "CONVERTED", "REJECTED"]);
 
 // Users table
@@ -33,6 +34,7 @@ export const users = pgTable("users", {
   daysBalance: integer("days_balance").notNull().default(0), // DEPRECATED: Use channel_days_ledger instead
   status: userStatusEnum("status").notNull().default("active"),
   whapiToken: text("whapi_token"), // Per-user WHAPI token if needed
+  bulkWebhookToken: text("bulk_webhook_token").notNull().default(sql`gen_random_uuid()::text`),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -271,6 +273,8 @@ export const messages = pgTable("messages", {
   providerMessageId: text("provider_message_id"), // WHAPI message ID from response
   status: messageStatusEnum("status").notNull().default("QUEUED"),
   lastReply: text("last_reply"), // Text content of last reply received
+  lastReplyType: lastReplyTypeEnum("last_reply_type"), // Type of reply: text, buttons_reply, list_reply, other
+  lastReplyPayload: jsonb("last_reply_payload"), // Full webhook payload for audit
   lastReplyAt: timestamp("last_reply_at"),
   sentAt: timestamp("sent_at"), // When message was sent to WHAPI
   deliveredAt: timestamp("delivered_at"), // When message was delivered to recipient
