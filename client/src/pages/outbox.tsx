@@ -4,11 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { Inbox, ExternalLink } from "lucide-react";
+import { Inbox, ExternalLink, Download } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import type { Job, Message } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
+import Papa from "papaparse";
 
 interface JobWithMessages extends Job {
   messages: Message[];
@@ -37,6 +38,49 @@ export default function Outbox() {
   });
 
   const messages = jobDetails?.messages || [];
+
+  const exportToExcel = () => {
+    if (!jobDetails || messages.length === 0) return;
+
+    // Prepare data for export
+    const exportData = messages.map((message) => {
+      const buttons = Array.isArray(message.buttons) 
+        ? message.buttons.map((btn: any) => btn.title || btn.text).join(', ')
+        : '';
+
+      return {
+        'Message ID': message.id,
+        'Provider ID': message.providerMessageId || '',
+        'Recipient': message.to,
+        'Message Body': message.body || '',
+        'Buttons': buttons,
+        'Status': message.status,
+        'Last Reply': message.lastReply || '',
+        'Reply Type': message.lastReplyType || '',
+        'Sent At': message.sentAt || '',
+        'Delivered At': message.deliveredAt || '',
+        'Read At': message.readAt || '',
+        'Error': message.error || '',
+      };
+    });
+
+    // Convert to CSV using papaparse
+    const csv = Papa.unparse(exportData);
+
+    // Create download link
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `job-${jobDetails.id}-messages.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the URL object
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -143,7 +187,7 @@ export default function Outbox() {
       <Dialog open={selectedJob !== null} onOpenChange={() => setSelectedJob(null)}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader className="pb-4 border-b">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center justify-between gap-2 mb-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -151,6 +195,16 @@ export default function Outbox() {
                 data-testid="button-back-to-outbox"
               >
                 ← Back to Outbox
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToExcel}
+                disabled={!jobDetails || messages.length === 0}
+                data-testid="button-export-excel"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export to Excel
               </Button>
             </div>
             <DialogTitle className="text-2xl font-bold">Job Details</DialogTitle>
