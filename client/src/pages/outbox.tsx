@@ -258,7 +258,7 @@ export default function Outbox() {
           <DrawerHeader>
             <DrawerTitle>Message Details</DrawerTitle>
             <DrawerDescription>
-              WHAPI payload and delivery information
+              Message payload and delivery information
             </DrawerDescription>
           </DrawerHeader>
           {selectedMessage && (
@@ -325,9 +325,9 @@ export default function Outbox() {
                 </div>
               )}
 
-              {/* WHAPI Payload */}
+              {/* Message Payload */}
               <div>
-                <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">WHAPI Payload</div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Message Payload</div>
                 <pre className="rounded-md bg-muted p-4 text-xs overflow-x-auto">
                   {JSON.stringify({
                     to: selectedMessage.to,

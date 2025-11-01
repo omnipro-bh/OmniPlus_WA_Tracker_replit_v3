@@ -150,7 +150,7 @@ export default function Channels() {
       // Unexpected response
       toast({
         title: "QR Error",
-        description: "Unexpected response from WHAPI",
+        description: "Unexpected response from server",
         variant: "destructive",
       });
       setQrDialogChannel(null);
@@ -158,7 +158,7 @@ export default function Channels() {
     onError: (error: any) => {
       toast({
         title: "Failed to fetch QR code",
-        description: error.message || "Could not retrieve QR code from WHAPI",
+        description: error.message || "Could not retrieve QR code. Please try again.",
         variant: "destructive",
       });
       setQrDialogChannel(null);
@@ -499,7 +499,7 @@ export default function Channels() {
                       </div>
                       {channel.whapiStatus && (
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">WHAPI Status:</span>
+                          <span className="text-muted-foreground">Channel Status:</span>
                           <span className="font-mono" data-testid="text-whapi-status">{channel.whapiStatus}</span>
                         </div>
                       )}

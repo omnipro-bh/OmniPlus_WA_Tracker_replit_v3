@@ -37,7 +37,7 @@ export async function testWhapiConnection(): Promise<{ success: boolean; message
     // Token is configured and has correct format
     return { 
       success: true, 
-      message: "WHAPI token configured successfully. Connection will be verified when creating channels." 
+      message: "API token configured successfully. Connection will be verified when creating channels." 
     };
   } catch (error: any) {
     return { success: false, message: `Connection test failed: ${error.message}` };

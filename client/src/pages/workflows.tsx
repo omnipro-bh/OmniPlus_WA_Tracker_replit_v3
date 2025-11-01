@@ -241,7 +241,7 @@ export default function Workflows() {
 
       <div className="bg-muted/50 rounded-lg p-4">
         <p className="text-sm text-muted-foreground">
-          <strong>Note:</strong> Each workflow has a unique webhook URL. Copy the webhook URL from each workflow card below and add it to your WHAPI channel settings.
+          <strong>Note:</strong> Each workflow has a unique webhook URL. Copy the webhook URL from each workflow card below and configure it in your WhatsApp channel settings.
         </p>
       </div>
 

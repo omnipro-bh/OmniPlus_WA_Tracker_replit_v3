@@ -625,7 +625,7 @@ export function registerRoutes(app: Express) {
       }
 
       if (!channel.whapiChannelToken) {
-        return res.status(400).json({ error: "WHAPI channel token not available" });
+        return res.status(400).json({ error: "Channel token not available. Please contact support." });
       }
 
       // Fetch QR code from WHAPI using channel token
@@ -934,9 +934,9 @@ export function registerRoutes(app: Express) {
       }
 
       // Check if channel has a valid token
-      if (!channel.token) {
+      if (!channel.whapiChannelToken) {
         return res.status(400).json({ 
-          error: "Channel is not configured. Please activate the channel with a valid WHAPI token before sending messages." 
+          error: "Channel is not properly configured. Please contact support or re-authorize this channel." 
         });
       }
 
@@ -1103,9 +1103,9 @@ export function registerRoutes(app: Express) {
       }
 
       // Check if channel has a valid token
-      if (!channel.token) {
+      if (!channel.whapiChannelToken) {
         return res.status(400).json({ 
-          error: "Channel is not configured. Please activate the channel with a valid WHAPI token before sending messages." 
+          error: "Channel is not properly configured. Please contact support or re-authorize this channel." 
         });
       }
 
