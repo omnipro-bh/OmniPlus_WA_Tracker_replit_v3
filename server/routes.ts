@@ -1023,13 +1023,14 @@ export function registerRoutes(app: Express) {
         // - Legacy: { sent: true, id: "..." }
         const providerMessageId = whapiResponse.messages?.[0]?.id || whapiResponse.message?.id || whapiResponse.id || whapiResponse.message_id;
         
-        console.log(`[Send] Full WHAPI response:`, JSON.stringify(whapiResponse, null, 2));
-        console.log(`[Send] Extracted provider ID: ${providerMessageId}`);
-        console.log(`[Send] Response summary:`, {
-          sent: whapiResponse.sent,
-          messageId: providerMessageId,
-          fullResponse: JSON.stringify(whapiResponse).substring(0, 200)
-        });
+        console.log(`[Single Send] Message to ${to}:`);
+        console.log(`[Single Send] Full WHAPI response:`, JSON.stringify(whapiResponse, null, 2));
+        console.log(`[Single Send] Provider ID extracted: ${providerMessageId || 'MISSING'}`);
+        
+        if (!providerMessageId) {
+          console.error(`[Single Send] ERROR: No provider message ID found in response!`);
+          console.error(`[Single Send] Response keys:`, Object.keys(whapiResponse));
+        }
 
         // Update message with provider ID and status
         await storage.updateMessage(message.id, {
@@ -1266,9 +1267,14 @@ export function registerRoutes(app: Express) {
             // - Legacy: { sent: true, id: "..." }
             const providerMessageId = result.messages?.[0]?.id || result.message?.id || result.id || result.message_id;
             
-            console.log(`[Bulk] Message ${message.id} sent to ${message.to}`);
-            console.log(`[Bulk] WHAPI full response:`, JSON.stringify(result, null, 2));
-            console.log(`[Bulk] Extracted provider ID: ${providerMessageId}`);
+            console.log(`[Bulk Send] Message ${message.id} to ${message.to}:`);
+            console.log(`[Bulk Send] Full WHAPI response:`, JSON.stringify(result, null, 2));
+            console.log(`[Bulk Send] Provider ID extracted: ${providerMessageId || 'MISSING'}`);
+            
+            if (!providerMessageId) {
+              console.error(`[Bulk Send] ERROR: No provider message ID found in response!`);
+              console.error(`[Bulk Send] Response keys:`, Object.keys(result));
+            }
             
             await storage.updateMessage(message.id, { 
               status: "SENT",
