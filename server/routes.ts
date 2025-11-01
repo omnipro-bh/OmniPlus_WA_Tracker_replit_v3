@@ -1055,12 +1055,12 @@ export function registerRoutes(app: Express) {
         res.json({ job, message, success: true });
 
       } catch (whapiError: any) {
-        console.error("WHAPI send error:", whapiError);
+        console.error("Message send error:", whapiError);
         
         // Update message status to failed
         await storage.updateMessage(message.id, {
           status: "FAILED",
-          error: whapiError.message || "Failed to send via WHAPI"
+          error: whapiError.message || "Failed to send message"
         });
 
         // Update job counters
@@ -1070,7 +1070,7 @@ export function registerRoutes(app: Express) {
         });
 
         return res.status(500).json({ 
-          error: "Failed to send message via WHAPI",
+          error: "Failed to send message. Please try again later.",
           details: whapiError.message 
         });
       }
@@ -1237,7 +1237,7 @@ export function registerRoutes(app: Express) {
           let result;
           if (buttons.length > 0) {
             // Send interactive message with buttons
-            result = await whapi.sendInteractiveMessage(channel.channelToken, {
+            result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
               to: message.to,
               type: "button",
               header: message.header ? { text: message.header } : undefined,
@@ -1247,7 +1247,7 @@ export function registerRoutes(app: Express) {
             });
           } else {
             // Send simple text message
-            result = await whapi.sendTextMessage(channel.channelToken, {
+            result = await whapi.sendTextMessage(channel.whapiChannelToken, {
               to: message.to,
               body: message.body || "No message",
             });
