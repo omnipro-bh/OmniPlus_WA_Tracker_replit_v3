@@ -194,6 +194,7 @@ export default function Admin() {
       workflows: false,
       outbox: false,
       logs: false,
+      bulkLogs: false,
     },
     features: [] as string[],
   });
@@ -486,6 +487,7 @@ export default function Admin() {
         workflows: false,
         outbox: false,
         logs: false,
+        bulkLogs: false,
       },
       features: [],
     });
@@ -499,6 +501,19 @@ export default function Admin() {
 
   const openEditPlanDialog = (plan: Plan) => {
     setEditingPlan(plan);
+    // Merge bulkLogs default for existing plans that don't have it
+    const pageAccessWithDefaults = {
+      dashboard: true,
+      pricing: true,
+      channels: false,
+      send: false,
+      templates: false,
+      workflows: false,
+      outbox: false,
+      logs: false,
+      bulkLogs: false,
+      ...plan.pageAccess,
+    };
     setPlanForm({
       name: plan.name,
       currency: plan.currency,
@@ -512,16 +527,7 @@ export default function Admin() {
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
       chatbotsLimit: String(plan.chatbotsLimit || ""),
-      pageAccess: (plan.pageAccess || {
-        dashboard: true,
-        pricing: true,
-        channels: false,
-        send: false,
-        templates: false,
-        workflows: false,
-        outbox: false,
-        logs: false,
-      }) as any,
+      pageAccess: pageAccessWithDefaults as any,
       features: Array.isArray(plan.features) ? plan.features : [],
     });
     setNewFeature("");
@@ -1630,7 +1636,23 @@ export default function Admin() {
                     data-testid="checkbox-page-logs"
                   />
                   <Label htmlFor="page-logs" className="text-sm font-normal cursor-pointer">
-                    Logs
+                    Workflow Logs
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-bulklogs"
+                    checked={planForm.pageAccess.bulkLogs}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, bulkLogs: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-bulklogs"
+                  />
+                  <Label htmlFor="page-bulklogs" className="text-sm font-normal cursor-pointer">
+                    Bulk Logs
                   </Label>
                 </div>
               </div>
@@ -1898,21 +1920,31 @@ export default function Admin() {
                   Check pages to grant this user access, regardless of their plan's page access settings.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  {["dashboard", "pricing", "channels", "send", "templates", "workflows", "outbox", "logs"].map((page) => (
-                    <div key={page} className="flex items-center gap-2">
+                  {[
+                    { key: "dashboard", label: "Dashboard" },
+                    { key: "pricing", label: "Pricing" },
+                    { key: "channels", label: "Channels" },
+                    { key: "send", label: "Send" },
+                    { key: "templates", label: "Templates" },
+                    { key: "workflows", label: "Workflows" },
+                    { key: "outbox", label: "Outbox" },
+                    { key: "logs", label: "Workflow Logs" },
+                    { key: "bulkLogs", label: "Bulk Logs" },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2">
                       <Checkbox
-                        id={`page-${page}`}
-                        checked={userOverrides.pageAccess[page] || false}
+                        id={`page-${key}`}
+                        checked={userOverrides.pageAccess[key] || false}
                         onCheckedChange={(checked) => {
                           setUserOverrides({
                             ...userOverrides,
-                            pageAccess: { ...userOverrides.pageAccess, [page]: !!checked },
+                            pageAccess: { ...userOverrides.pageAccess, [key]: !!checked },
                           });
                         }}
-                        data-testid={`checkbox-page-${page}`}
+                        data-testid={`checkbox-page-${key}`}
                       />
-                      <Label htmlFor={`page-${page}`} className="capitalize cursor-pointer">
-                        {page}
+                      <Label htmlFor={`page-${key}`} className="cursor-pointer">
+                        {label}
                       </Label>
                     </div>
                   ))}

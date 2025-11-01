@@ -79,6 +79,7 @@ export const plans = pgTable("plans", {
     chatbot: false,
     outbox: false,
     logs: false,
+    bulkLogs: false,
     pricing: true,
     balances: false,
     whapiSettings: false,
