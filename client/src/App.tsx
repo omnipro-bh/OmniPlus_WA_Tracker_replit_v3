@@ -18,6 +18,7 @@ import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import Outbox from "@/pages/outbox";
 import Logs from "@/pages/logs";
+import BulkLogs from "@/pages/bulk-logs";
 import Pricing from "@/pages/pricing";
 import Admin from "@/pages/admin";
 import AdminBalances from "@/pages/admin-balances";
@@ -70,6 +71,11 @@ function Router() {
       <Route path="/logs">
         <DashboardLayout>
           <Logs />
+        </DashboardLayout>
+      </Route>
+      <Route path="/bulk-logs">
+        <DashboardLayout>
+          <BulkLogs />
         </DashboardLayout>
       </Route>
       <Route path="/pricing">

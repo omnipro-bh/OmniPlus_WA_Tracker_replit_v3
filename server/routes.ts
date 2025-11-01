@@ -3206,8 +3206,12 @@ export function registerRoutes(app: Express) {
       }
 
       // Extract event data from WHAPI webhook payload
-      // WHAPI sends status updates in: { messages: [{ message_id, type, status, timestamp, ... }] }
-      const incomingEvent = webhookPayload.messages?.[0];
+      // WHAPI sends TWO types of webhooks:
+      // 1. Status updates: { statuses: [{ id, status, code, timestamp }] }
+      // 2. Message events (replies): { messages: [{ id, type, reply, ... }] }
+      const statusEvent = webhookPayload.statuses?.[0];
+      const messageEvent = webhookPayload.messages?.[0];
+      const incomingEvent = statusEvent || messageEvent;
       
       if (!incomingEvent) {
         return res.json({ success: true, message: "No event to process" });
@@ -3221,7 +3225,8 @@ export function registerRoutes(app: Express) {
         return res.json({ success: true, message: "No message_id in payload" });
       }
 
-      console.log(`[Bulk Webhook] Processing event for message_id: ${providerMessageId}`);
+      const eventType = statusEvent ? 'status' : 'message';
+      console.log(`[Bulk Webhook] Processing ${eventType} event for message_id: ${providerMessageId}`);
 
       // Find the message by providerMessageId
       const existingMessages = await db
@@ -3243,54 +3248,57 @@ export function registerRoutes(app: Express) {
       let newStatus: string | null = null;
 
       // Handle status updates (delivery, read, failed)
-      if (incomingEvent.type === 'status') {
-        const status = incomingEvent.status?.toLowerCase();
+      // Status events come from webhookPayload.statuses[0] with { id, status, code, timestamp }
+      if (statusEvent) {
+        const status = statusEvent.status?.toLowerCase();
+        const timestamp = statusEvent.timestamp ? parseInt(statusEvent.timestamp) * 1000 : Date.now();
         
         if (status === 'delivered') {
           updateData.status = 'DELIVERED';
-          updateData.deliveredAt = new Date(incomingEvent.timestamp * 1000);
+          updateData.deliveredAt = new Date(timestamp);
           newStatus = 'DELIVERED';
           console.log(`[Bulk Webhook] Message ${providerMessageId} delivered`);
         } else if (status === 'read') {
           updateData.status = 'READ';
-          updateData.readAt = new Date(incomingEvent.timestamp * 1000);
+          updateData.readAt = new Date(timestamp);
           newStatus = 'READ';
           console.log(`[Bulk Webhook] Message ${providerMessageId} read`);
-        } else if (status === 'failed') {
+        } else if (status === 'failed' || status === 'error') {
           updateData.status = 'FAILED';
-          updateData.error = incomingEvent.error || 'Delivery failed';
+          updateData.error = statusEvent.error || 'Delivery failed';
           newStatus = 'FAILED';
           console.log(`[Bulk Webhook] Message ${providerMessageId} failed`);
         }
       }
       // Handle reply events (text, buttons_reply, list_reply)
-      else if (incomingEvent.type === 'reply' || incomingEvent.text || incomingEvent.reply) {
+      // Message events come from webhookPayload.messages[0] with { id, type, reply, ... }
+      else if (messageEvent && (messageEvent.type === 'reply' || messageEvent.text || messageEvent.reply)) {
         updateData.status = 'REPLIED';
-        updateData.repliedAt = new Date(incomingEvent.timestamp * 1000 || Date.now());
+        updateData.repliedAt = new Date(messageEvent.timestamp * 1000 || Date.now());
         newStatus = 'REPLIED';
 
         // Determine reply type and extract content
-        if (incomingEvent.reply?.type === 'buttons_reply') {
-          const buttonReply = incomingEvent.reply.buttons_reply;
+        if (messageEvent.reply?.type === 'buttons_reply') {
+          const buttonReply = messageEvent.reply.buttons_reply;
           updateData.lastReplyType = 'buttons_reply';
           updateData.lastReply = buttonReply?.title || buttonReply?.id || 'Button clicked';
-          updateData.lastReplyPayload = incomingEvent;
+          updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] Button reply: ${updateData.lastReply}`);
-        } else if (incomingEvent.reply?.type === 'list_reply') {
-          const listReply = incomingEvent.reply.list_reply;
+        } else if (messageEvent.reply?.type === 'list_reply') {
+          const listReply = messageEvent.reply.list_reply;
           updateData.lastReplyType = 'list_reply';
           updateData.lastReply = listReply?.title || listReply?.id || 'List item selected';
-          updateData.lastReplyPayload = incomingEvent;
+          updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] List reply: ${updateData.lastReply}`);
-        } else if (incomingEvent.text?.body) {
+        } else if (messageEvent.text?.body) {
           updateData.lastReplyType = 'text';
-          updateData.lastReply = incomingEvent.text.body;
-          updateData.lastReplyPayload = incomingEvent;
+          updateData.lastReply = messageEvent.text.body;
+          updateData.lastReplyPayload = messageEvent;
           console.log(`[Bulk Webhook] Text reply: ${updateData.lastReply}`);
         } else {
           updateData.lastReplyType = 'other';
           updateData.lastReply = 'Reply received';
-          updateData.lastReplyPayload = incomingEvent;
+          updateData.lastReplyPayload = messageEvent;
         }
       }
 
@@ -3336,6 +3344,19 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("[Bulk Webhook] Error:", error);
       res.status(500).json({ error: "Webhook processing failed", message: error.message });
+    }
+  });
+
+  // Bulk message logs (for debugging bulk send operations)
+  app.get("/api/bulk-logs", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      // For now, return empty array - logs are visible in server console
+      // In a production system, you'd store these in a dedicated bulk_logs table
+      const recentLogs: any[] = [];
+      res.json(recentLogs);
+    } catch (error: any) {
+      console.error("Get bulk logs error:", error);
+      res.status(500).json({ error: "Failed to fetch bulk logs" });
     }
   });
 

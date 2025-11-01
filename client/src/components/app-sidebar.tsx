@@ -70,9 +70,14 @@ export function AppSidebar() {
       icon: Inbox,
     },
     {
-      title: "Logs",
+      title: "Workflow Logs",
       url: "/logs",
       icon: ScrollText,
+    },
+    {
+      title: "Bulk Logs",
+      url: "/bulk-logs",
+      icon: FileText,
     },
     {
       title: "Pricing",
