@@ -61,6 +61,13 @@ Includes entities for Users, Plans (with `billingPeriod` enum, `requestType`, `p
   - **Messages Table**: Added `lastReplyType` enum (text, buttons_reply, list_reply, other), `lastReplyPayload` JSONB for storing full webhook reply data.
   - **New Enum**: `lastReplyTypeEnum` for categorizing reply types.
   - **Webhook Endpoint**: `/webhooks/bulk/:userId/:bulkWebhookToken` processes delivery, read, failed, and reply events, updates message statuses, and recalculates job statistics.
+  - **⚠️ CRITICAL BUG FIX (Nov 1)**: Button/list reply capture now correctly uses `context.quoted_id` from webhook payload to lookup original sent message. WHAPI sends reply messages with a NEW message ID in the `id` field, while the original message ID is in `context.quoted_id`.
+- **Bulk Logs System (Nov 1)**: 
+  - **BulkLogs Table**: New table for comprehensive lifecycle logging with fields: id, userId, jobId, level (info/warning/error), category (webhook/status/reply/send/error), message, meta (JSONB), createdAt.
+  - **Storage Methods**: `createBulkLog()` for creating logs, `getBulkLogs()` for querying with filters (level, category, limit).
+  - **API Endpoint**: GET `/api/bulk-logs?level=error&category=reply&limit=50` for filtering and viewing logs.
+  - **Webhook Lifecycle Logging**: All bulk webhook events logged at key points (webhook received, status updates, reply capture, errors).
+  - **⚠️ CRITICAL SAFETY**: All logging calls wrapped in try-catch blocks to prevent logging failures from blocking webhook processing. User ID extracted from job context instead of URL params to avoid NaN foreign key violations.
 - **Helper Function**: `getDaysFromBillingPeriod(period)` converts billing period enums to days (30/180/365).
 - **Default Page Access (Oct 31)**: New user signups now receive default access to Dashboard, Channels, and Pricing pages until they subscribe to a plan. The `/api/me` endpoint returns `effectivePageAccess` which merges plan + subscription overrides for subscribed users, or default access for non-subscribed users.
 - **UI Changes**: 
