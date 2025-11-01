@@ -23,6 +23,8 @@ export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", [
 export const incomingMessageTypeEnum = pgEnum("incoming_message_type", ["text", "button_reply", "other"]);
 export const lastReplyTypeEnum = pgEnum("last_reply_type", ["text", "buttons_reply", "list_reply", "other"]);
 export const planRequestStatusEnum = pgEnum("plan_request_status", ["PENDING", "REVIEWED", "CONTACTED", "CONVERTED", "REJECTED"]);
+export const bulkLogLevelEnum = pgEnum("bulk_log_level", ["info", "warn", "error"]);
+export const bulkLogCategoryEnum = pgEnum("bulk_log_category", ["send", "webhook", "status", "reply", "error"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -386,6 +388,29 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
+// Bulk logs table for message sending and webhook event tracking
+export const bulkLogs = pgTable("bulk_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+  level: bulkLogLevelEnum("level").notNull(),
+  category: bulkLogCategoryEnum("category").notNull(),
+  message: text("message").notNull(),
+  meta: jsonb("meta"), // Additional structured data
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const bulkLogsRelations = relations(bulkLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [bulkLogs.userId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [bulkLogs.jobId],
+    references: [jobs.id],
+  }),
+}));
+
 // Settings table for global app configuration
 export const settings = pgTable("settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -523,6 +548,10 @@ export const insertWorkflowExecutionSchema = createInsertSchema(workflowExecutio
   phone: z.string().min(1),
 });
 
+export const insertBulkLogSchema = createInsertSchema(bulkLogs, {
+  message: z.string().min(1),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -558,3 +587,5 @@ export type BalanceTransaction = typeof balanceTransactions.$inferSelect;
 export type InsertBalanceTransaction = z.infer<typeof insertBalanceTransactionSchema>;
 export type ChannelDaysLedger = typeof channelDaysLedger.$inferSelect;
 export type InsertChannelDaysLedger = z.infer<typeof insertChannelDaysLedgerSchema>;
+export type BulkLog = typeof bulkLogs.$inferSelect;
+export type InsertBulkLog = z.infer<typeof insertBulkLogSchema>;
