@@ -3228,15 +3228,26 @@ export function registerRoutes(app: Express) {
       const eventType = statusEvent ? 'status' : 'message';
       console.log(`[Bulk Webhook] Processing ${eventType} event for message_id: ${providerMessageId}`);
 
-      // Find the message by providerMessageId
+      // For reply messages, use context.quoted_id to find the original message
+      // because the webhook ID is for the REPLY message, not the original we sent
+      let lookupMessageId = providerMessageId;
+      if (messageEvent && messageEvent.context?.quoted_id) {
+        lookupMessageId = messageEvent.context.quoted_id;
+        console.log(`[Bulk Webhook] Using quoted_id for reply lookup: ${lookupMessageId} (reply message was: ${providerMessageId})`);
+      }
+
+      // Find the message by providerMessageId (or quoted_id for replies)
       const existingMessages = await db
         .select()
         .from(messages)
-        .where(eq(messages.providerMessageId, providerMessageId))
+        .where(eq(messages.providerMessageId, lookupMessageId))
         .limit(1);
 
       if (!existingMessages || existingMessages.length === 0) {
-        console.log(`[Bulk Webhook] Message not found for provider_message_id: ${providerMessageId}`);
+        console.log(`[Bulk Webhook] Message not found for provider_message_id: ${lookupMessageId}`);
+        if (messageEvent && !messageEvent.context?.quoted_id) {
+          console.log(`[Bulk Webhook] Warning: Reply message received without context.quoted_id`);
+        }
         return res.json({ success: true, message: "Message not found (might be from workflow)" });
       }
 
