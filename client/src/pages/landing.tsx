@@ -485,6 +485,44 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Use Cases - Only show if there are published use cases */}
+      {useCases.length > 0 && (
+        <section id="use-cases" className="py-20 lg:py-32 bg-card/30">
+          <div className="mx-auto max-w-7xl px-6 lg:px-8">
+            <div className="text-center space-y-4 mb-16">
+              <h2 className="text-3xl font-bold tracking-tight lg:text-4xl">
+                Real-World Use Cases
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Discover how businesses across industries leverage our platform to transform their WhatsApp communications.
+              </p>
+            </div>
+
+            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              {useCases.map((useCase: any) => (
+                <Card key={useCase.id} className="overflow-hidden hover-elevate transition-all" data-testid={`usecase-${useCase.id}`}>
+                  {useCase.image && (
+                    <div className="aspect-video w-full overflow-hidden bg-muted">
+                      <img
+                        src={useCase.image}
+                        alt={useCase.title}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <CardHeader>
+                    <CardTitle>{useCase.title}</CardTitle>
+                    <CardDescription>
+                      {useCase.description}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Pricing - Only show if there are published plans */}
       {plans.length > 0 && (
         <section id="pricing" className="py-20 lg:py-32 bg-card/30">
