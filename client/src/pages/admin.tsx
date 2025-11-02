@@ -17,6 +17,98 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { User, OfflinePayment, Channel, Plan, Coupon } from "@shared/schema";
 
+function AuthSettings() {
+  const { toast } = useToast();
+  const [enableSignin, setEnableSignin] = useState(true);
+  const [enableSignup, setEnableSignup] = useState(true);
+
+  const { data: settings, isLoading } = useQuery<{enableSignin: boolean; enableSignup: boolean}>({
+    queryKey: ["/api/settings/auth"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  // Update form when settings load
+  useEffect(() => {
+    if (settings) {
+      setEnableSignin(settings.enableSignin);
+      setEnableSignup(settings.enableSignup);
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { enableSignin: boolean; enableSignup: boolean }) => {
+      return await apiRequest("PUT", "/api/admin/settings/auth", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/auth"] });
+      toast({
+        title: "Settings updated",
+        description: "Authentication settings have been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    updateSettingsMutation.mutate({ enableSignin, enableSignup });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="enable-signin">Enable Sign In</Label>
+            <p className="text-xs text-muted-foreground">
+              Allow users to sign in on the home page
+            </p>
+          </div>
+          <Switch
+            id="enable-signin"
+            checked={enableSignin}
+            onCheckedChange={setEnableSignin}
+            data-testid="switch-enable-signin"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="enable-signup">Enable Sign Up</Label>
+            <p className="text-xs text-muted-foreground">
+              Allow new users to register on the home page
+            </p>
+          </div>
+          <Switch
+            id="enable-signup"
+            checked={enableSignup}
+            onCheckedChange={setEnableSignup}
+            data-testid="switch-enable-signup"
+          />
+        </div>
+      </div>
+
+      <Button 
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-auth-settings"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
+
 function BulkSpeedSettings() {
   const { toast } = useToast();
   const [minDelay, setMinDelay] = useState("");
@@ -1688,6 +1780,18 @@ export default function Admin() {
 
         {/* Settings Tab */}
         <TabsContent value="settings" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Authentication Settings</CardTitle>
+              <CardDescription>
+                Control sign in and sign up availability on the home page
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AuthSettings />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Bulk Sending Speed Control</CardTitle>
