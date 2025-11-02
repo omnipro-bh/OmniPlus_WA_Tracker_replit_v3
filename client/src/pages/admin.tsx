@@ -1064,7 +1064,7 @@ function UseCasesManagement() {
                   <FormItem>
                     <FormLabel>Image URL (optional)</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="https://example.com/image.jpg" data-testid="input-usecase-image" />
+                      <Input {...field} value={field.value || ""} placeholder="https://example.com/image.jpg" data-testid="input-usecase-image" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1322,7 +1322,7 @@ function HomepageFeaturesManagement() {
                   <FormItem>
                     <FormLabel>Icon Name (lucide-react)</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="MessageSquare, Users, Zap, etc." data-testid="input-feature-icon" />
+                      <Input {...field} value={field.value || ""} placeholder="MessageSquare, Users, Zap, etc." data-testid="input-feature-icon" />
                     </FormControl>
                     <p className="text-xs text-muted-foreground">
                       Enter a lucide-react icon name (e.g., MessageSquare, Users, Bot, BarChart3)
