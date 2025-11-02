@@ -2653,6 +2653,27 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get workflows for a specific user (admin only)
+  app.get("/api/admin/users/:id/workflows", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const workflows = await storage.getWorkflowsForUser(userId);
+      
+      // Return only essential fields needed for webhook display
+      const workflowData = workflows.map(w => ({
+        id: w.id,
+        name: w.name,
+        webhookToken: w.webhookToken,
+        isActive: w.isActive
+      }));
+      
+      res.json(workflowData);
+    } catch (error: any) {
+      console.error("Get user workflows error:", error);
+      res.status(500).json({ error: "Failed to fetch workflows" });
+    }
+  });
+
   // Get offline payments (admin only)
   app.get("/api/admin/offline-payments", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
