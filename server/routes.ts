@@ -4194,6 +4194,117 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get default page access settings
+  app.get("/api/admin/settings/default-page-access", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const pageAccessSetting = await storage.getSetting("default_page_access");
+      
+      // Default page access for new users
+      const defaultPageAccess = {
+        dashboard: true,
+        channels: false,
+        send: false,
+        bulk: false,
+        templates: false,
+        workflows: false,
+        chatbot: false,
+        outbox: false,
+        logs: false,
+        bulkLogs: false,
+        pricing: true,
+        balances: false,
+        whapiSettings: false,
+      };
+      
+      const pageAccess = pageAccessSetting?.value 
+        ? JSON.parse(pageAccessSetting.value) 
+        : defaultPageAccess;
+      
+      res.json({ pageAccess });
+    } catch (error: any) {
+      console.error("Get default page access error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update default page access settings (admin only)
+  app.put("/api/admin/settings/default-page-access", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { pageAccess } = req.body;
+      
+      if (pageAccess && typeof pageAccess === "object") {
+        await storage.setSetting("default_page_access", JSON.stringify(pageAccess));
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "default_page_access",
+          updates: pageAccess,
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update default page access error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Get default theme setting
+  app.get("/api/admin/settings/default-theme", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const themeSetting = await storage.getSetting("default_theme");
+      const defaultTheme = themeSetting?.value || "dark"; // Default to dark
+      
+      res.json({ defaultTheme });
+    } catch (error: any) {
+      console.error("Get default theme error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update default theme setting (admin only)
+  app.put("/api/admin/settings/default-theme", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { defaultTheme } = req.body;
+      
+      if (defaultTheme && (defaultTheme === "light" || defaultTheme === "dark")) {
+        await storage.setSetting("default_theme", defaultTheme);
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "default_theme",
+          defaultTheme,
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update default theme error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Get default theme (public endpoint for initial app load)
+  app.get("/api/settings/default-theme", async (req: Request, res: Response) => {
+    try {
+      const themeSetting = await storage.getSetting("default_theme");
+      const defaultTheme = themeSetting?.value || "dark"; // Default to dark
+      
+      res.json({ defaultTheme });
+    } catch (error: any) {
+      console.error("Get default theme error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
   // ============================================================================
   // TERMS & CONDITIONS ROUTES
   // ============================================================================
