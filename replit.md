@@ -31,7 +31,13 @@ The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query,
 - **Responsiveness:** Mobile-first with a collapsible sidebar.
 
 **Data Model:**
-Includes entities for Users, Plans (with billing period, request type, publication status, page access, chatbot limits), Subscriptions (with per-user overrides, channel/coupon linking, terms acceptance), Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking and `providerMessageId`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, and PlanRequests.
+Includes entities for Users, Plans (with billing period, request type, payment methods array, PayPal Plan ID, publication status, page access, messaging/workflow limits), Subscriptions (with per-user overrides, channel/coupon linking, terms acceptance), Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking and `providerMessageId`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, and PlanRequests.
+
+**Plans Payment System:**
+- **Payment Methods:** JSONB array storing ["paypal", "offline"] combinations
+- **PayPal Integration:** Required `paypalPlanId` field when PayPal is enabled; validated in UI and backend
+- **Plan Limits:** Daily single messages, daily bulk messages, channels, and workflows (chatbots)
+- **Plan Duplication:** Automatically filters out PayPal from duplicates (PayPal Plan ID must be unique); preserves offline payment method if present
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** For channel management (creation, extension, deletion).
