@@ -4138,6 +4138,51 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get auth settings (public - needed for home page)
+  app.get("/api/settings/auth", async (req: Request, res: Response) => {
+    try {
+      const enableSignin = await storage.getSetting("enable_signin");
+      const enableSignup = await storage.getSetting("enable_signup");
+      
+      res.json({
+        enableSignin: enableSignin?.value !== "false", // Default true
+        enableSignup: enableSignup?.value !== "false", // Default true
+      });
+    } catch (error: any) {
+      console.error("Get auth settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update auth settings (admin only)
+  app.put("/api/admin/settings/auth", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { enableSignin, enableSignup } = req.body;
+      
+      if (typeof enableSignin === "boolean") {
+        await storage.setSetting("enable_signin", enableSignin.toString());
+      }
+      if (typeof enableSignup === "boolean") {
+        await storage.setSetting("enable_signup", enableSignup.toString());
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "auth_settings",
+          updates: { enableSignin, enableSignup },
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update auth settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
   // ============================================================================
   // TERMS & CONDITIONS ROUTES
   // ============================================================================
