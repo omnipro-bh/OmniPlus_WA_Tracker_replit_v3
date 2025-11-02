@@ -4,6 +4,12 @@
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
 ## Recent Changes (November 2, 2025)
+- **Channel Activation Flow Fixed:**
+  - Clarified two separate concepts: user.daysBalance (for users to extend their own channels) vs channel days via WHAPI (for admin-managed activation)
+  - Admin "+ Days" button now shows channel selector dialog first, allowing admin to select which channel to add days to
+  - Correct endpoint `/api/admin/users/:userId/channels/:channelId/activate` deducts from admin main balance → calls WHAPI API → adds days to channel ledger
+  - Old `/api/admin/users/:id/add-days` endpoint reverted to simple user balance adjustment only (no admin balance or WHAPI interaction)
+  - E2E test passed: Adding 1 day to admin@omniplus.com's channel successfully deducted from admin balance and called WHAPI Partner API
 - **Admin UI Forms Enhancement:** Migrated Use Cases and Homepage Features management dialogs to use proper Form + useForm + zodResolver pattern for better validation and error handling
 - **TypeScript Error Fixes:** Resolved optional field null handling in admin forms by providing default empty strings for image and icon fields
 - **Dynamic Landing Page Content:** 
