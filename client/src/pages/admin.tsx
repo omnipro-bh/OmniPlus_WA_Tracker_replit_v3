@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap, Copy, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
+import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap, Copy, Pencil, Trash2, Eye, EyeOff, Upload } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1315,8 +1315,21 @@ export default function Admin() {
                                 </td>
                                 <td className="px-4 py-3 text-sm max-w-xs">
                                   {payment.requestType === "PAID" ? (
-                                    <div className="text-xs text-muted-foreground">
-                                      Ref: {payment.reference || "-"}
+                                    <div className="space-y-1">
+                                      <div className="text-xs text-muted-foreground">
+                                        Ref: {payment.reference || "-"}
+                                      </div>
+                                      {payment.proofUrl && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => window.open(payment.proofUrl, '_blank')}
+                                          data-testid={`button-view-proof-${payment.id}`}
+                                        >
+                                          <Upload className="h-3 w-3 mr-1" />
+                                          View Proof
+                                        </Button>
+                                      )}
                                     </div>
                                   ) : payment.metadata ? (
                                     <div className="text-xs space-y-1">

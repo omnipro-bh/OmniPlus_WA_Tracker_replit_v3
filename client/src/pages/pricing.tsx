@@ -39,6 +39,7 @@ export default function Pricing() {
     amount: "",
     currency: "USD",
     reference: "",
+    proofUrl: "",
   });
   const [quoteRequest, setQuoteRequest] = useState({
     name: "",
@@ -64,7 +65,7 @@ export default function Pricing() {
     },
     onSuccess: () => {
       setIsOfflineDialogOpen(false);
-      setOfflinePayment({ amount: "", currency: "USD", reference: "" });
+      setOfflinePayment({ amount: "", currency: "USD", reference: "", proofUrl: "" });
       toast({
         title: "Payment submitted",
         description: "Your payment is pending admin approval.",
@@ -342,7 +343,24 @@ export default function Pricing() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="proof">Upload Proof (Optional)</Label>
-              <Input id="proof" type="file" accept="image/*,.pdf" data-testid="input-proof" />
+              <Input 
+                id="proof" 
+                type="file" 
+                accept="image/*,.pdf" 
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // Convert file to base64
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      // Use functional state update to prevent overwriting other fields
+                      setOfflinePayment(prev => ({ ...prev, proofUrl: reader.result as string }));
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                data-testid="input-proof" 
+              />
               <p className="text-xs text-muted-foreground">
                 Screenshot of payment confirmation or receipt
               </p>
@@ -360,6 +378,7 @@ export default function Pricing() {
                     amount: Math.round(parseFloat(offlinePayment.amount) * 100),
                     currency: offlinePayment.currency,
                     reference: offlinePayment.reference,
+                    proofUrl: offlinePayment.proofUrl || undefined,
                   });
                 }
               }}

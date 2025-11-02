@@ -591,7 +591,18 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, amount, currency, reference, requestType, metadata } = validationResult.data;
+      const { planId, amount, currency, reference, proofUrl, requestType, metadata } = validationResult.data;
+
+      // Validate proofUrl to prevent XSS attacks
+      if (proofUrl) {
+        if (!proofUrl.startsWith('data:')) {
+          return res.status(400).json({ error: "Invalid proof file format. Only base64 data URIs are allowed." });
+        }
+        // Check file size (5MB limit for base64)
+        if (proofUrl.length > 7000000) { // ~5MB in base64
+          return res.status(400).json({ error: "Proof file is too large. Maximum size is 5MB." });
+        }
+      }
 
       const plan = await storage.getPlan(planId);
       if (!plan) {
@@ -604,6 +615,7 @@ export function registerRoutes(app: Express) {
         amount,
         currency: currency || "USD",
         reference,
+        proofUrl,
         requestType: requestType || "PAID",
         metadata,
         status: "PENDING",
