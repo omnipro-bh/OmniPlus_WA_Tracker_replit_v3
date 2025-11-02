@@ -18,6 +18,7 @@ import {
   insertPlanRequestSchema
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
+import { verifyWebhookSignature } from "./paypal-webhooks";
 import * as whapi from "./whapi";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
@@ -60,6 +61,181 @@ export function registerRoutes(app: Express) {
 
   app.post("/paypal/order/:orderID/capture", async (req, res) => {
     await capturePaypalOrder(req, res);
+  });
+
+  // PayPal Webhook Handler for subscription payments
+  app.post("/webhooks/paypal", async (req: Request, res: Response) => {
+    try {
+      const webhookPayload = req.body;
+      const eventType = webhookPayload.event_type;
+      const eventId = webhookPayload.id;
+
+      console.log(`[PayPal Webhook] Received event: ${eventType} (ID: ${eventId})`);
+
+      if (!eventId || !eventType) {
+        console.error("[PayPal Webhook] Missing event ID or type");
+        return res.status(400).json({ error: "Invalid webhook payload" });
+      }
+
+      const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+      if (!webhookId) {
+        console.error("[PayPal Webhook] PAYPAL_WEBHOOK_ID not configured");
+        return res.status(500).json({ error: "Webhook not configured" });
+      }
+
+      const isValid = await verifyWebhookSignature(req, webhookId);
+      if (!isValid) {
+        console.error("[PayPal Webhook] Signature verification failed");
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      let webhookEvent = await storage.getWebhookEvent("paypal", eventId);
+      if (webhookEvent && webhookEvent.processed) {
+        console.log(`[PayPal Webhook] Event already processed successfully: ${eventId}`);
+        return res.status(200).json({ message: "Event already processed" });
+      }
+
+      if (!webhookEvent) {
+        webhookEvent = await storage.createWebhookEvent({
+          provider: "paypal",
+          eventId,
+          eventType,
+          payload: webhookPayload,
+        });
+      } else {
+        console.log(`[PayPal Webhook] Retrying failed event: ${eventId}`);
+      }
+
+      if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+        try {
+          const resource = webhookPayload.resource;
+          const captureId = resource.id;
+          const amount = parseFloat(resource.amount.value);
+          const currency = resource.amount.currency_code;
+          const customId = resource.custom_id;
+
+          console.log(`[PayPal Webhook] Processing payment capture:`, {
+            captureId,
+            amount,
+            currency,
+            customId,
+          });
+
+          if (!customId) {
+            throw new Error("Missing custom_id in payment capture");
+          }
+
+          const metadata = JSON.parse(customId);
+          const { userId, channelId, planId, subscriptionId } = metadata;
+
+          if (!userId || !channelId || !planId) {
+            throw new Error("Invalid custom_id metadata");
+          }
+
+          const plan = await storage.getPlan(planId);
+          if (!plan) {
+            throw new Error(`Plan not found: ${planId}`);
+          }
+
+          const user = await storage.getUser(userId);
+          if (!user) {
+            throw new Error(`User not found: ${userId}`);
+          }
+
+          const channel = await storage.getChannel(channelId);
+          if (!channel) {
+            throw new Error(`Channel not found: ${channelId}`);
+          }
+
+          const daysToAdd = plan.daysGranted || 30;
+
+          await db.transaction(async (tx) => {
+            const [ledgerEntry] = await tx.insert(schema.ledger).values({
+              userId,
+              subscriptionId: subscriptionId || null,
+              channelId,
+              transactionType: "PAYMENT_IN",
+              amount: Math.round(amount * 100),
+              currency,
+              days: daysToAdd,
+              description: `PayPal payment for plan: ${plan.name}`,
+              providerTxnId: captureId,
+              metadata: {
+                planId,
+                planName: plan.name,
+                eventId,
+              },
+            }).returning();
+
+            const now = new Date();
+            const [ledgerRecord] = await tx.insert(schema.channelDaysLedger).values({
+              channelId,
+              days: daysToAdd,
+              source: "PAYPAL",
+              subscriptionId: subscriptionId || null,
+              metadata: {
+                planId,
+                planName: plan.name,
+                captureId,
+                ledgerId: ledgerEntry.id,
+              },
+            }).returning();
+
+            const currentExpiresAt = channel.expiresAt ? new Date(channel.expiresAt) : null;
+            const startDate = currentExpiresAt && currentExpiresAt > now ? currentExpiresAt : now;
+            const newExpiresAt = new Date(startDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+            const newStatus = "ACTIVE";
+
+            await tx.update(schema.channels)
+              .set({
+                status: newStatus,
+                activeFrom: channel.activeFrom || now,
+                expiresAt: newExpiresAt,
+                daysRemaining: daysToAdd,
+                lastExtendedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(schema.channels.id, channelId));
+
+            if (subscriptionId) {
+              await tx.update(schema.subscriptions)
+                .set({ status: "ACTIVE" })
+                .where(eq(schema.subscriptions.id, subscriptionId));
+            }
+
+            await tx.insert(schema.auditLogs).values({
+              actorUserId: null,
+              action: "PAYPAL_PAYMENT_COMPLETED",
+              meta: {
+                entity: "subscription",
+                userId,
+                channelId,
+                planId,
+                subscriptionId,
+                amount,
+                currency,
+                daysAdded: daysToAdd,
+                captureId,
+              },
+            });
+          });
+
+          await storage.markWebhookProcessed(webhookEvent.id);
+          console.log(`[PayPal Webhook] Payment processed successfully for channel ${channelId}`);
+        } catch (error: any) {
+          console.error("[PayPal Webhook] Processing error:", error);
+          return res.status(500).json({ error: "Failed to process payment" });
+        }
+      } else {
+        console.log(`[PayPal Webhook] Ignoring event type: ${eventType}`);
+        await storage.markWebhookProcessed(webhookEvent.id);
+      }
+
+      res.status(200).json({ message: "Webhook processed" });
+    } catch (error: any) {
+      console.error("[PayPal Webhook] Unexpected error:", error);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
   });
 
   // ============================================================================

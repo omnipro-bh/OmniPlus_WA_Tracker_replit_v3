@@ -280,6 +280,21 @@ export const ledgerRelations = relations(ledger, ({ one }) => ({
   }),
 }));
 
+// Webhook Events table for idempotency tracking
+export const webhookEvents = pgTable("webhook_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  provider: text("provider").notNull(), // paypal, stripe, etc.
+  eventId: text("event_id").notNull(), // PayPal webhook event ID
+  eventType: text("event_type").notNull(), // PAYMENT.CAPTURE.COMPLETED, etc.
+  payload: jsonb("payload").notNull(), // Full webhook payload
+  processed: boolean("processed").notNull().default(false),
+  processedAt: timestamp("processed_at"),
+  error: text("error"), // Error message if processing failed
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  providerEventIdx: uniqueIndex("webhook_events_provider_event_idx").on(table.provider, table.eventId),
+}));
+
 // Coupons Relations
 export const couponsRelations = relations(coupons, ({ many }) => ({
   subscriptions: many(subscriptions),
@@ -676,6 +691,12 @@ export const insertLedgerSchema = createInsertSchema(ledger, {
   amount: z.number().int(),
 });
 
+export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
+  provider: z.string().min(1),
+  eventId: z.string().min(1),
+  eventType: z.string().min(1),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -721,3 +742,5 @@ export type TermsDocument = typeof termsDocuments.$inferSelect;
 export type InsertTermsDocument = z.infer<typeof insertTermsDocumentSchema>;
 export type Ledger = typeof ledger.$inferSelect;
 export type InsertLedger = z.infer<typeof insertLedgerSchema>;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;

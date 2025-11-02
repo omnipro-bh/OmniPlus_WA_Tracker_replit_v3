@@ -137,6 +137,15 @@ export interface IStorage {
   createTermsDocument(document: schema.InsertTermsDocument): Promise<schema.TermsDocument>;
   updateTermsDocument(id: number, data: Partial<schema.TermsDocument>): Promise<schema.TermsDocument | undefined>;
   setActiveTermsDocument(id: number): Promise<schema.TermsDocument | undefined>;
+
+  // Webhook Events (for idempotency)
+  getWebhookEvent(provider: string, eventId: string): Promise<schema.WebhookEvent | undefined>;
+  createWebhookEvent(event: schema.InsertWebhookEvent): Promise<schema.WebhookEvent>;
+  markWebhookProcessed(id: number, error?: string): Promise<schema.WebhookEvent | undefined>;
+
+  // Ledger
+  createLedgerEntry(entry: schema.InsertLedger): Promise<schema.Ledger>;
+  getLedgerEntries(userId?: number, limit?: number): Promise<schema.Ledger[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -717,6 +726,54 @@ export class DatabaseStorage implements IStorage {
     });
 
     return await this.getTermsDocument(id);
+  }
+
+  // Webhook Events
+  async getWebhookEvent(provider: string, eventId: string): Promise<schema.WebhookEvent | undefined> {
+    const [event] = await db
+      .select()
+      .from(schema.webhookEvents)
+      .where(and(
+        eq(schema.webhookEvents.provider, provider),
+        eq(schema.webhookEvents.eventId, eventId)
+      ));
+    return event || undefined;
+  }
+
+  async createWebhookEvent(event: schema.InsertWebhookEvent): Promise<schema.WebhookEvent> {
+    const [newEvent] = await db.insert(schema.webhookEvents).values(event).returning();
+    return newEvent;
+  }
+
+  async markWebhookProcessed(id: number, error?: string): Promise<schema.WebhookEvent | undefined> {
+    const [event] = await db
+      .update(schema.webhookEvents)
+      .set({
+        processed: true,
+        processedAt: new Date(),
+        error: error || null,
+      })
+      .where(eq(schema.webhookEvents.id, id))
+      .returning();
+    return event || undefined;
+  }
+
+  // Ledger
+  async createLedgerEntry(entry: schema.InsertLedger): Promise<schema.Ledger> {
+    const [ledgerEntry] = await db.insert(schema.ledger).values(entry).returning();
+    return ledgerEntry;
+  }
+
+  async getLedgerEntries(userId?: number, limit: number = 100): Promise<schema.Ledger[]> {
+    let query = db.select().from(schema.ledger);
+    
+    if (userId) {
+      query = query.where(eq(schema.ledger.userId, userId)) as any;
+    }
+    
+    query = query.orderBy(desc(schema.ledger.createdAt)).limit(limit) as any;
+    
+    return await query;
   }
 }
 
