@@ -1505,6 +1505,8 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/balance"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/balance/transactions"] });
       setIsDialogOpen(false);
       setDaysToAdd("");
       toast({ title: "Days balance updated" });

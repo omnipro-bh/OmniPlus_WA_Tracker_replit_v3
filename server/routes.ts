@@ -2202,9 +2202,32 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "User not found" });
       }
 
+      // Check admin main balance
+      const mainBalance = await storage.getMainDaysBalance();
+      if (mainBalance < days) {
+        return res.status(400).json({ 
+          error: "Insufficient main balance", 
+          details: `Main balance only has ${mainBalance} days available. Cannot add ${days} days.`
+        });
+      }
+
+      // Deduct from admin main balance
+      await storage.updateMainDaysBalance(-days);
+
+      // Add to user balance
+      const newUserBalance = (user.daysBalance || 0) + days;
       const updated = await storage.updateUser(userId, {
-        daysBalance: (user.daysBalance || 0) + days,
+        daysBalance: newUserBalance,
         status: "active",
+      });
+
+      // Create balance transaction
+      await storage.createBalanceTransaction({
+        type: "allocate",
+        days,
+        channelId: null,
+        userId: req.userId!,
+        note: `Admin allocated ${days} days to user ${user.email}`,
       });
 
       await storage.createAuditLog({
@@ -2214,14 +2237,16 @@ export function registerRoutes(app: Express) {
           entity: "user",
           entityId: userId,
           days,
-          adminId: req.userId
+          adminId: req.userId,
+          newUserBalance,
+          newMainBalance: mainBalance - days
         },
       });
 
       res.json(updated);
     } catch (error: any) {
       console.error("Add days error:", error);
-      res.status(500).json({ error: "Failed to add days" });
+      res.status(500).json({ error: error.message || "Failed to add days" });
     }
   });
 
@@ -2240,10 +2265,25 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "User not found" });
       }
 
+      const daysToRemove = Math.min(days, user.daysBalance || 0);
       const newBalance = Math.max(0, (user.daysBalance || 0) - days);
+      
+      // Update user balance
       const updated = await storage.updateUser(userId, {
         daysBalance: newBalance,
         status: newBalance <= 0 ? "expired" : user.status,
+      });
+
+      // Refund to admin main balance
+      await storage.updateMainDaysBalance(daysToRemove);
+
+      // Create balance transaction
+      await storage.createBalanceTransaction({
+        type: "adjustment",
+        days: daysToRemove,
+        channelId: null,
+        userId: req.userId!,
+        note: `Admin removed ${daysToRemove} days from user ${user.email}`,
       });
 
       await storage.createAuditLog({
@@ -2253,7 +2293,9 @@ export function registerRoutes(app: Express) {
           entity: "user",
           entityId: userId,
           days,
-          adminId: req.userId
+          daysRemoved: daysToRemove,
+          adminId: req.userId,
+          newUserBalance: newBalance
         },
       });
 
