@@ -22,8 +22,9 @@ The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query,
 - **Bulk Message Status Tracking:** Real-time webhook-based status tracking for bulk messages, capturing provider message IDs, delivery events, and full reply payloads.
 - **Pricing:** Displays plans with duration toggles, integrating PayPal and supporting offline payments.
 - **Admin Dashboard:** User management, billing adjustments, offline payment approval/deletion, and channel activation controls.
-- **Admin Settings:** Configuration panel with authentication controls (enable/disable sign in and sign up on home page) and bulk sending speed settings.
+- **Admin Settings:** Configuration panel with authentication controls (enable/disable sign in and sign up on home page), bulk sending speed settings, default page access controls for new users, and default theme setting for first-time visitors.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
+- **Default User Experience:** Admins can configure default page access and theme for new signups, automatically applied to users without subscriptions.
 
 **Design System:**
 - **Color Palette:** Dark mode with vibrant accents (blue, green, amber, red, cyan).
