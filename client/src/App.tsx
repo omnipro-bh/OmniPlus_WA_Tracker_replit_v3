@@ -23,6 +23,7 @@ import Pricing from "@/pages/pricing";
 import Admin from "@/pages/admin";
 import AdminBalances from "@/pages/admin-balances";
 import WHAPISettings from "@/pages/whapi-settings";
+import Settings from "@/pages/settings";
 
 function Router() {
   return (
@@ -96,6 +97,11 @@ function Router() {
       <Route path="/admin/whapi-settings">
         <DashboardLayout>
           <WHAPISettings />
+        </DashboardLayout>
+      </Route>
+      <Route path="/settings">
+        <DashboardLayout>
+          <Settings />
         </DashboardLayout>
       </Route>
 

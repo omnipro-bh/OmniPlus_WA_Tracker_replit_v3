@@ -12,6 +12,7 @@ import {
   Settings,
   Shield,
   Wallet,
+  User,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -83,6 +84,11 @@ export function AppSidebar() {
       title: "Pricing",
       url: "/pricing",
       icon: CreditCard,
+    },
+    {
+      title: "Settings",
+      url: "/settings",
+      icon: User,
     },
   ];
 

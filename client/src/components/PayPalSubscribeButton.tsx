@@ -12,6 +12,7 @@ interface PayPalSubscribeButtonProps {
   durationType: "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
   isPopular?: boolean;
   disabled?: boolean;
+  termsVersion?: string;
 }
 
 export default function PayPalSubscribeButton({
@@ -22,6 +23,7 @@ export default function PayPalSubscribeButton({
   durationType,
   isPopular = false,
   disabled = false,
+  termsVersion = "1.0",
 }: PayPalSubscribeButtonProps) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -83,6 +85,7 @@ export default function PayPalSubscribeButton({
                 planId,
                 durationType,
                 orderId: data.orderId,
+                termsVersion,
               });
 
               queryClient.invalidateQueries({ queryKey: ["/api/me"] });

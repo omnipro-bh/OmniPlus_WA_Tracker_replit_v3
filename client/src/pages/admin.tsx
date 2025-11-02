@@ -908,6 +908,42 @@ export default function Admin() {
     },
   });
 
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("POST", `/api/admin/users/${userId}/cancel-subscription`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "Subscription cancelled", description: "User subscription has been cancelled." });
+      setIsUserDrawerOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to cancel subscription",
+        description: error.error || "Could not cancel subscription",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("DELETE", `/api/admin/users/${userId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User deleted", description: "User and all related data have been permanently deleted." });
+      setIsUserDrawerOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete user",
+        description: error.error || "Could not delete user",
+        variant: "destructive",
+      });
+    },
+  });
+
   // User overrides mutation
   const updateOverridesMutation = useMutation({
     mutationFn: async ({ userId, overrides }: { userId: number; overrides: any }) => {
@@ -2693,6 +2729,34 @@ export default function Admin() {
                       Unban User
                     </Button>
                   )}
+                  {selectedUserForDrawer.currentSubscription?.status === "ACTIVE" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Cancel subscription for ${selectedUserForDrawer.email}? Their subscription will be marked as cancelled.`)) {
+                          cancelSubscriptionMutation.mutate(selectedUserForDrawer.id);
+                        }
+                      }}
+                      data-testid="button-cancel-subscription"
+                    >
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Cancel Subscription
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`DELETE user ${selectedUserForDrawer.email}? This will permanently delete all their data including channels, messages, workflows, and subscriptions. This action CANNOT be undone!`)) {
+                        deleteUserMutation.mutate(selectedUserForDrawer.id);
+                      }
+                    }}
+                    data-testid="button-delete-user"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete User
+                  </Button>
                 </div>
               </div>
             </div>

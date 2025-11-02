@@ -1,19 +1,42 @@
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Radio, Calendar, CreditCard, Send, AlertTriangle } from "lucide-react";
+import { Radio, Calendar, CreditCard, Send, AlertTriangle, XCircle } from "lucide-react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import type { Job } from "@shared/schema";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
 
   const { data: recentJobs = [] } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
     enabled: !!user,
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/me/cancel-subscription", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      toast({
+        title: "Subscription cancelled",
+        description: "Your subscription has been cancelled successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to cancel subscription",
+        description: error.error || "Could not cancel subscription",
+        variant: "destructive",
+      });
+    },
   });
 
   const hasActivePlan = user?.currentSubscription?.status === "ACTIVE";
@@ -117,6 +140,23 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">
               {hasActivePlan ? "Active subscription" : "No active plan"}
             </p>
+            {hasActivePlan && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  if (confirm("Cancel your subscription? You will still have access until your current billing period ends.")) {
+                    cancelSubscriptionMutation.mutate();
+                  }
+                }}
+                disabled={cancelSubscriptionMutation.isPending}
+                data-testid="button-cancel-subscription"
+              >
+                <XCircle className="h-3 w-3 mr-1" />
+                Cancel Subscription
+              </Button>
+            )}
           </CardContent>
         </Card>
 

@@ -6,9 +6,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Check, Upload, MessageSquare, Calendar } from "lucide-react";
+import { Check, Upload, MessageSquare, Calendar, FileText } from "lucide-react";
 import type { Plan } from "@shared/schema";
 import PayPalSubscribeButton from "@/components/PayPalSubscribeButton";
 
@@ -34,6 +36,8 @@ export default function Pricing() {
   const [isOfflineDialogOpen, setIsOfflineDialogOpen] = useState(false);
   const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
+  const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [offlinePayment, setOfflinePayment] = useState({
     amount: "",
@@ -59,13 +63,25 @@ export default function Pricing() {
     queryKey: ["/api/plans"],
   });
 
+  const { data: termsDocuments = [] } = useQuery<any[]>({
+    queryKey: ["/api/terms"],
+  });
+
   const offlinePaymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/subscribe/offline", data);
+      if (!termsAccepted) {
+        throw new Error("Please accept the terms and conditions");
+      }
+      const mainTerms = termsDocuments.find((t: any) => t.type === "MAIN" && t.isActive);
+      return await apiRequest("POST", "/api/subscribe/offline", {
+        ...data,
+        termsVersion: mainTerms?.version || "1.0",
+      });
     },
     onSuccess: () => {
       setIsOfflineDialogOpen(false);
       setOfflinePayment({ amount: "", currency: "USD", reference: "", proofUrl: "" });
+      setTermsAccepted(false);
       toast({
         title: "Payment submitted",
         description: "Your payment is pending admin approval.",
@@ -183,6 +199,35 @@ export default function Pricing() {
         </div>
       </div>
 
+      {/* Terms Acceptance */}
+      <div className="flex justify-center">
+        <div className="flex items-start space-x-2 max-w-2xl">
+          <Checkbox
+            id="global-terms"
+            checked={termsAccepted}
+            onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
+            data-testid="checkbox-global-terms"
+          />
+          <div className="grid gap-1.5 leading-none">
+            <label
+              htmlFor="global-terms"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              I accept the{" "}
+              <Button
+                variant="link"
+                className="h-auto p-0 text-sm"
+                onClick={() => setIsTermsDialogOpen(true)}
+                type="button"
+                data-testid="button-view-terms-global"
+              >
+                Terms & Conditions
+              </Button>
+            </label>
+          </div>
+        </div>
+      </div>
+
       {/* Plans Grid */}
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
         {plans.filter(plan => plan.published).map((plan, index) => {
@@ -260,6 +305,8 @@ export default function Pricing() {
                         currency={plan.currency}
                         durationType={durationType}
                         isPopular={isPopular}
+                        disabled={!termsAccepted}
+                        termsVersion={termsDocuments.find((t: any) => t.type === "MAIN" && t.isActive)?.version || "1.0"}
                       />
                     )}
                     {/* Only show Offline Payment button if offline is enabled for this plan */}
@@ -399,7 +446,7 @@ export default function Pricing() {
                   });
                 }
               }}
-              disabled={!offlinePayment.amount || offlinePaymentMutation.isPending}
+              disabled={!offlinePayment.amount || !termsAccepted || offlinePaymentMutation.isPending}
               data-testid="button-submit-offline-payment"
             >
               Submit Payment
@@ -574,6 +621,33 @@ export default function Pricing() {
               data-testid="button-submit-demo"
             >
               Book Demo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Terms and Conditions Dialog */}
+      <Dialog open={isTermsDialogOpen} onOpenChange={setIsTermsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Terms & Conditions</DialogTitle>
+            <DialogDescription>
+              Please review our terms and conditions
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[50vh] w-full rounded-md border p-4">
+            {termsDocuments.filter((doc: any) => doc.isActive).map((doc: any) => (
+              <div key={doc.id} className="mb-6">
+                <h3 className="text-lg font-semibold mb-2">{doc.title}</h3>
+                <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  {doc.content}
+                </div>
+              </div>
+            ))}
+          </ScrollArea>
+          <DialogFooter>
+            <Button onClick={() => setIsTermsDialogOpen(false)} data-testid="button-close-terms">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
