@@ -589,6 +589,8 @@ export default function Admin() {
     price: "",
     billingPeriod: "MONTHLY" as "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL",
     requestType: "PAID" as "PAID" | "REQUEST_QUOTE" | "BOOK_DEMO",
+    paymentMethods: [] as string[], // ["paypal", "offline"]
+    paypalPlanId: "",
     published: false,
     publishedOnHomepage: false,
     sortOrder: "",
@@ -882,6 +884,8 @@ export default function Admin() {
       price: "",
       billingPeriod: "MONTHLY",
       requestType: "PAID",
+      paymentMethods: [],
+      paypalPlanId: "",
       published: false,
       publishedOnHomepage: false,
       sortOrder: "",
@@ -925,12 +929,20 @@ export default function Admin() {
       bulkLogs: false,
       ...plan.pageAccess,
     };
+    
+    // Extract payment methods from JSONB field
+    const paymentMethods = Array.isArray((plan as any).paymentMethods) 
+      ? (plan as any).paymentMethods 
+      : [];
+    
     setPlanForm({
       name: plan.name,
       currency: plan.currency,
       price: plan.price ? String(plan.price / 100) : "",
       billingPeriod: plan.billingPeriod,
       requestType: plan.requestType,
+      paymentMethods: paymentMethods,
+      paypalPlanId: (plan as any).paypalPlanId || "",
       published: plan.published,
       publishedOnHomepage: (plan as any).publishedOnHomepage || false,
       sortOrder: String(plan.sortOrder),
@@ -964,12 +976,33 @@ export default function Admin() {
       toast({ title: "Validation error", description: "Valid price is required for paid plans", variant: "destructive" });
       return;
     }
+    
+    // Validate payment methods for PAID plans
+    if (planForm.requestType === "PAID" && planForm.paymentMethods.length === 0) {
+      toast({ 
+        title: "Validation error", 
+        description: "Please select at least one payment method (PayPal or Offline)", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    // Validate PayPal Plan ID if PayPal is selected
+    if (planForm.paymentMethods.includes("paypal") && !planForm.paypalPlanId.trim()) {
+      toast({ 
+        title: "Validation error", 
+        description: "Please insert the PayPal Plan ID to activate PayPal payment for this plan.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
     if (isNaN(dailyMessagesLimit) || dailyMessagesLimit <= 0) {
       toast({ title: "Validation error", description: "Valid daily messages limit is required", variant: "destructive" });
       return;
     }
     if (isNaN(bulkMessagesLimit) || bulkMessagesLimit <= 0) {
-      toast({ title: "Validation error", description: "Valid bulk messages limit is required", variant: "destructive" });
+      toast({ title: "Validation error", description: "Valid daily bulk messages limit is required", variant: "destructive" });
       return;
     }
     if (isNaN(channelsLimit) || channelsLimit <= 0) {
@@ -977,7 +1010,7 @@ export default function Admin() {
       return;
     }
     if (planForm.chatbotsLimit && (isNaN(chatbotsLimit!) || chatbotsLimit! <= 0)) {
-      toast({ title: "Validation error", description: "Valid chatbots limit is required", variant: "destructive" });
+      toast({ title: "Validation error", description: "Valid workflow (chatbot) limit is required", variant: "destructive" });
       return;
     }
 
@@ -987,6 +1020,8 @@ export default function Admin() {
       price: price ? Math.round(price * 100) : null,
       billingPeriod: planForm.billingPeriod,
       requestType: planForm.requestType,
+      paymentMethods: planForm.requestType === "PAID" ? planForm.paymentMethods : [],
+      paypalPlanId: planForm.paymentMethods.includes("paypal") ? planForm.paypalPlanId.trim() : null,
       published: planForm.published,
       publishedOnHomepage: planForm.publishedOnHomepage,
       sortOrder,
@@ -1844,12 +1879,89 @@ export default function Admin() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="PAID">Paid (PayPal + Offline)</SelectItem>
+                      <SelectItem value="PAID">Paid</SelectItem>
                       <SelectItem value="REQUEST_QUOTE">Request Quote</SelectItem>
                       <SelectItem value="BOOK_DEMO">Book Demo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Payment Methods - Only show for PAID plans */}
+                {planForm.requestType === "PAID" && (
+                  <div className="space-y-3">
+                    <Label>Payment Methods *</Label>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="payment-paypal"
+                          checked={planForm.paymentMethods.includes("paypal")}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setPlanForm({ 
+                                ...planForm, 
+                                paymentMethods: [...planForm.paymentMethods, "paypal"] 
+                              });
+                            } else {
+                              setPlanForm({ 
+                                ...planForm, 
+                                paymentMethods: planForm.paymentMethods.filter(m => m !== "paypal"),
+                                paypalPlanId: "" // Clear PayPal Plan ID when PayPal is unchecked
+                              });
+                            }
+                          }}
+                          data-testid="checkbox-payment-paypal"
+                        />
+                        <Label htmlFor="payment-paypal" className="text-sm font-normal cursor-pointer">
+                          PayPal
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="payment-offline"
+                          checked={planForm.paymentMethods.includes("offline")}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setPlanForm({ 
+                                ...planForm, 
+                                paymentMethods: [...planForm.paymentMethods, "offline"] 
+                              });
+                            } else {
+                              setPlanForm({ 
+                                ...planForm, 
+                                paymentMethods: planForm.paymentMethods.filter(m => m !== "offline") 
+                              });
+                            }
+                          }}
+                          data-testid="checkbox-payment-offline"
+                        />
+                        <Label htmlFor="payment-offline" className="text-sm font-normal cursor-pointer">
+                          Offline
+                        </Label>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Select at least one payment method
+                    </p>
+                  </div>
+                )}
+
+                {/* PayPal Plan ID - Only show when PayPal is selected */}
+                {planForm.requestType === "PAID" && planForm.paymentMethods.includes("paypal") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="paypal-plan-id">PayPal Plan ID *</Label>
+                    <Input
+                      id="paypal-plan-id"
+                      placeholder="P-XXXXXXXXXXXXXXXXXXXX"
+                      value={planForm.paypalPlanId}
+                      onChange={(e) => setPlanForm({ ...planForm, paypalPlanId: e.target.value })}
+                      data-testid="input-paypal-plan-id"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Required to activate PayPal subscription payments
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2 flex items-center gap-3">
                     <Switch
@@ -1878,7 +1990,7 @@ export default function Admin() {
               <h3 className="text-sm font-semibold">Usage Limits</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="plan-daily-messages">Daily Messages Limit</Label>
+                  <Label htmlFor="plan-daily-messages">Daily Single Messages Limit</Label>
                   <Input
                     id="plan-daily-messages"
                     type="number"
@@ -1889,7 +2001,7 @@ export default function Admin() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="plan-bulk-messages">Bulk Messages Limit</Label>
+                  <Label htmlFor="plan-bulk-messages">Daily Bulk Messages Limit</Label>
                   <Input
                     id="plan-bulk-messages"
                     type="number"
@@ -1911,7 +2023,7 @@ export default function Admin() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="plan-chatbots">Chatbots Limit (optional)</Label>
+                  <Label htmlFor="plan-chatbots">Workflow (Chatbot) Limit</Label>
                   <Input
                     id="plan-chatbots"
                     type="number"

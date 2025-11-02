@@ -1,0 +1,94 @@
+Requirements Summary
+When creating or editing a plan in the Admin panel:
+1. Payment Methods (PayPal / Offline)
+•	PayPal and Offline should be two separate selectable options, not grouped.
+•	Admin can choose:
+o	✅ PayPal only
+o	✅ Offline only
+o	✅ Both together
+•	This replaces the old “Paid (PayPal + Offline)” combined selection.
+•	Each plan must allow one or both methods.
+2. PayPal Plan ID Requirement
+•	For PayPal-enabled plans:
+o	A new input field should appear called “PayPal Plan ID”.
+o	The field is mandatory if PayPal is selected.
+o	If the PayPal Plan ID is not provided, the plan will not be activated or published.
+o	The system should show a clear validation message:
+“Please insert the PayPal Plan ID to activate PayPal payment for this plan.”
+________________________________________
+3. Daily Bulk Messages Limit (Updated Behavior)
+•	Rename “Bulk Messages Limit” to “Daily Bulk Messages Limit”.
+•	This limit enforces how many bulk campaigns a user can run per day.
+•	Even if a user tries to insert or send campaigns that exceed the daily limit:
+o	The system must notify the user:
+“You have reached your daily bulk message limit for today. Please try again tomorrow.”
+•	The system should reset the daily bulk message counter every 24 hours, based on the user’s subscribed plan.
+•	This daily enforcement is strict — it must reset automatically and not allow over-limit sending.
+________________________________________
+4. Workflow (Chatbot) Limit
+•	Rename “Chatbots Limit (optional)” to “Workflow (Chatbot) Limit”.
+•	This limit defines how many workflows (chatbots) a user can create under their current plan.
+•	The system must enforce this limit strictly:
+o	If a user tries to create more workflows than allowed, show a notification:
+“You have reached your workflow (chatbot) creation limit for your plan.”
+•	The system must prevent saving or adding any new workflow once the limit is reached.
+•	Admin should be able to view and edit this limit per plan.
+________________________________________
+5. Plan Creation/Editing UI Adjustments
+Admin Form Fields (Create or Edit Plan):
+•	Plan Name
+•	Currency
+•	Price
+•	Billing Period
+•	Sort Order
+•	Request Type (dropdown):
+o	Paid
+o	Request Quote
+o	Book Demo
+•	Payment Methods (multi-select):
+o	PayPal
+o	Offline
+o	If PayPal is selected → show PayPal Plan ID (required) input.
+•	Limits Section (with enforced validation):
+o	Daily Single Messages Limit
+o	Daily Bulk Messages Limit
+o	Channels Limit
+o	Workflow (Chatbot) Limit
+•	Page Access (checkboxes):
+Dashboard, Channels, Templates, Outbox, Bulk Logs, Pricing, Send Messages, Workflows, Workflow Logs
+•	Features List:
+Allow admin to add custom text features.
+________________________________________
+6. Enforcement Logic Summary
+•	✅ If PayPal selected but Plan ID missing → plan cannot be activated.
+•	✅ If Offline selected only → PayPal ID field hidden.
+•	✅ Daily Bulk Message Limit → enforced daily, auto-reset every 24 hours.
+•	✅ Workflow (Chatbot) Limit → enforced on workflow creation.
+•	✅ Admin can still change any limit values later.
+•	✅ Limits should be stored in plan JSON structure as:
+•	{
+•	  "daily_single_messages_limit": 1000,
+•	  "daily_bulk_messages_limit": 300,
+•	  "workflow_chatbots_limit": 5,
+•	  "channels_allowed": 2
+•	}
+________________________________________
+7. Plan Behavior Recap
+•	PayPal: Requires valid PayPal Plan ID to activate; user subscriptions auto-start when payment succeeds.
+•	Offline: Starts only when admin manually adds days after approving payment.
+•	Both: User sees both buttons (PayPal + Offline).
+•	Daily Bulk Messages: Daily limit enforced and reset automatically every 24 hours.
+•	Workflow (Chatbot) Limit: Restricts the number of workflows a user can create; enforced by system.
+________________________________________
+8. Validation Messages
+Condition	Message
+PayPal selected but no PayPal Plan ID	“Please insert the PayPal Plan ID to activate PayPal payment for this plan.”
+Exceeded daily bulk messages	“You have reached your daily bulk message limit for today. Please try again tomorrow.”
+Exceeded workflow/chatbot limit	“You have reached your workflow (chatbot) creation limit for your plan.”
+________________________________________
+9. Data Saving
+•	Save all limits and selected payment methods under the plans table.
+•	Add new column paypal_plan_id (nullable, required if PayPal selected).
+•	Add field payment_methods as array:
+Example: ["paypal"], ["offline"], or ["paypal","offline"].
+
