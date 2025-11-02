@@ -21,7 +21,8 @@ The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query,
 - **Outbox:** Tracks message sending job statuses (queued, pending, sent, delivered, read, failed, replied) with detailed info, auto-refreshing for near real-time updates.
 - **Bulk Message Status Tracking:** Real-time webhook-based status tracking for bulk messages, capturing provider message IDs, delivery events, and full reply payloads.
 - **Pricing:** Displays plans with duration toggles, integrating PayPal and supporting offline payments.
-- **Admin Dashboard:** User management, billing adjustments, offline payment approval, and channel activation controls.
+- **Admin Dashboard:** User management, billing adjustments, offline payment approval/deletion, and channel activation controls.
+- **Admin Settings:** Configuration panel with authentication controls (enable/disable sign in and sign up on home page) and bulk sending speed settings.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 
 **Design System:**
