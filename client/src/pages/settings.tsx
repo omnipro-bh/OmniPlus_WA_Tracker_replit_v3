@@ -14,22 +14,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Lock, XCircle } from "lucide-react";
-import type { User } from "@shared/schema";
 
 export default function Settings() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [passwords, setPasswords] = useState({
     newPassword: "",
     confirmPassword: "",
   });
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-
-  const { data: user } = useQuery<User>({
-    queryKey: ["/api/me"],
-  });
 
   const resetPasswordMutation = useMutation({
     mutationFn: async (data: { newPassword: string }) => {
