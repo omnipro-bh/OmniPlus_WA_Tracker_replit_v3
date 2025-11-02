@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -23,6 +23,11 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Fetch auth settings to determine if signup should be shown
+  const { data: authSettings } = useQuery<{ enableSignin: boolean; enableSignup: boolean }>({
+    queryKey: ["/api/settings/auth"],
+  });
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -133,16 +138,18 @@ export default function Login() {
             </form>
           </Form>
 
-          <div className="mt-6 text-center text-sm">
-            <span className="text-muted-foreground">Don't have an account? </span>
-            <Link href="/signup">
-              <a className="text-primary hover:underline font-medium" data-testid="link-signup">
-                Sign up
-              </a>
-            </Link>
-          </div>
+          {(authSettings?.enableSignup ?? true) && (
+            <div className="mt-6 text-center text-sm">
+              <span className="text-muted-foreground">Don't have an account? </span>
+              <Link href="/signup">
+                <a className="text-primary hover:underline font-medium" data-testid="link-signup">
+                  Sign up
+                </a>
+              </Link>
+            </div>
+          )}
 
-          <div className="mt-4 text-center">
+          <div className={`${(authSettings?.enableSignup ?? true) ? 'mt-4' : 'mt-6'} text-center`}>
             <Link href="/">
               <a className="text-sm text-muted-foreground hover:text-foreground" data-testid="link-home">
                 ← Back to home
