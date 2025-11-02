@@ -4314,6 +4314,158 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // USE CASES ROUTES
+  // ============================================================================
+
+  // Public: Get all published use cases
+  app.get("/api/use-cases", async (req: Request, res: Response) => {
+    try {
+      const cases = await db.select().from(schema.useCases).where(eq(schema.useCases.published, true)).orderBy(schema.useCases.sortOrder, schema.useCases.id);
+      res.json(cases);
+    } catch (error: any) {
+      console.error("Get use cases error:", error);
+      res.status(500).json({ error: "Failed to fetch use cases" });
+    }
+  });
+
+  // Admin: Get all use cases (including unpublished)
+  app.get("/api/admin/use-cases", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const cases = await db.select().from(schema.useCases).orderBy(schema.useCases.sortOrder, schema.useCases.id);
+      res.json(cases);
+    } catch (error: any) {
+      console.error("Get all use cases error:", error);
+      res.status(500).json({ error: "Failed to fetch use cases" });
+    }
+  });
+
+  // Admin: Create use case
+  app.post("/api/admin/use-cases", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const [useCase] = await db.insert(schema.useCases).values(req.body).returning();
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CREATE",
+        meta: { entity: "use_case", useCaseId: useCase.id, adminId: req.userId },
+      });
+      res.json(useCase);
+    } catch (error: any) {
+      console.error("Create use case error:", error);
+      res.status(500).json({ error: "Failed to create use case" });
+    }
+  });
+
+  // Admin: Update use case
+  app.put("/api/admin/use-cases/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [updated] = await db.update(schema.useCases).set({ ...req.body, updatedAt: new Date() }).where(eq(schema.useCases.id, id)).returning();
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE",
+        meta: { entity: "use_case", useCaseId: id, adminId: req.userId },
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update use case error:", error);
+      res.status(500).json({ error: "Failed to update use case" });
+    }
+  });
+
+  // Admin: Delete use case
+  app.delete("/api/admin/use-cases/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.delete(schema.useCases).where(eq(schema.useCases.id, id));
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "DELETE",
+        meta: { entity: "use_case", useCaseId: id, adminId: req.userId },
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete use case error:", error);
+      res.status(500).json({ error: "Failed to delete use case" });
+    }
+  });
+
+  // ============================================================================
+  // HOMEPAGE FEATURES ROUTES
+  // ============================================================================
+
+  // Public: Get all published homepage features
+  app.get("/api/homepage-features", async (req: Request, res: Response) => {
+    try {
+      const features = await db.select().from(schema.homepageFeatures).where(eq(schema.homepageFeatures.published, true)).orderBy(schema.homepageFeatures.sortOrder, schema.homepageFeatures.id);
+      res.json(features);
+    } catch (error: any) {
+      console.error("Get homepage features error:", error);
+      res.status(500).json({ error: "Failed to fetch homepage features" });
+    }
+  });
+
+  // Admin: Get all homepage features (including unpublished)
+  app.get("/api/admin/homepage-features", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const features = await db.select().from(schema.homepageFeatures).orderBy(schema.homepageFeatures.sortOrder, schema.homepageFeatures.id);
+      res.json(features);
+    } catch (error: any) {
+      console.error("Get all homepage features error:", error);
+      res.status(500).json({ error: "Failed to fetch homepage features" });
+    }
+  });
+
+  // Admin: Create homepage feature
+  app.post("/api/admin/homepage-features", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const [feature] = await db.insert(schema.homepageFeatures).values(req.body).returning();
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CREATE",
+        meta: { entity: "homepage_feature", featureId: feature.id, adminId: req.userId },
+      });
+      res.json(feature);
+    } catch (error: any) {
+      console.error("Create homepage feature error:", error);
+      res.status(500).json({ error: "Failed to create homepage feature" });
+    }
+  });
+
+  // Admin: Update homepage feature
+  app.put("/api/admin/homepage-features/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [updated] = await db.update(schema.homepageFeatures).set({ ...req.body, updatedAt: new Date() }).where(eq(schema.homepageFeatures.id, id)).returning();
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE",
+        meta: { entity: "homepage_feature", featureId: id, adminId: req.userId },
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update homepage feature error:", error);
+      res.status(500).json({ error: "Failed to update homepage feature" });
+    }
+  });
+
+  // Admin: Delete homepage feature
+  app.delete("/api/admin/homepage-features/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.delete(schema.homepageFeatures).where(eq(schema.homepageFeatures.id, id));
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "DELETE",
+        meta: { entity: "homepage_feature", featureId: id, adminId: req.userId },
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete homepage feature error:", error);
+      res.status(500).json({ error: "Failed to delete homepage feature" });
+    }
+  });
+
+  // ============================================================================
   // TERMS & CONDITIONS ROUTES
   // ============================================================================
 

@@ -596,6 +596,30 @@ export const channelDaysLedgerRelations = relations(channelDaysLedger, ({ one })
   }),
 }));
 
+// Use Cases table for homepage articles
+export const useCases = pgTable("use_cases", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  image: text("image"), // URL or path to image
+  sortOrder: integer("sort_order").notNull().default(0),
+  published: boolean("published").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Homepage Features table for features section
+export const homepageFeatures = pgTable("homepage_features", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  icon: text("icon"), // lucide-react icon name
+  sortOrder: integer("sort_order").notNull().default(0),
+  published: boolean("published").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -708,6 +732,16 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
   eventType: z.string().min(1),
 });
 
+export const insertUseCaseSchema = createInsertSchema(useCases, {
+  title: z.string().min(1),
+  description: z.string().min(1),
+});
+
+export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {
+  title: z.string().min(1),
+  description: z.string().min(1),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -755,3 +789,7 @@ export type Ledger = typeof ledger.$inferSelect;
 export type InsertLedger = z.infer<typeof insertLedgerSchema>;
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
+export type UseCase = typeof useCases.$inferSelect;
+export type InsertUseCase = z.infer<typeof insertUseCaseSchema>;
+export type HomepageFeature = typeof homepageFeatures.$inferSelect;
+export type InsertHomepageFeature = z.infer<typeof insertHomepageFeatureSchema>;
