@@ -15,7 +15,8 @@ import {
   insertWorkflowSchema,
   insertOfflinePaymentSchema,
   insertPlanSchema,
-  insertPlanRequestSchema
+  insertPlanRequestSchema,
+  insertCouponSchema
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import { verifyWebhookSignature } from "./paypal-webhooks";
@@ -3081,6 +3082,121 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Archive plan error:", error);
       res.status(500).json({ error: "Failed to archive plan" });
+    }
+  });
+
+  // ============================================================================
+  // ADMIN COUPON MANAGEMENT
+  // ============================================================================
+
+  // Get all coupons
+  app.get("/api/admin/coupons", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const coupons = await storage.getCoupons();
+      res.json(coupons);
+    } catch (error: any) {
+      console.error("Get coupons error:", error);
+      res.status(500).json({ error: "Failed to fetch coupons" });
+    }
+  });
+
+  // Create new coupon
+  app.post("/api/admin/coupons", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const validationResult = insertCouponSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: validationResult.error.flatten(),
+        });
+      }
+
+      const coupon = await storage.createCoupon(validationResult.data);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "coupon",
+        targetId: coupon.id,
+        action: "CREATE_COUPON",
+        meta: { code: coupon.code, discountPercent: coupon.discountPercent },
+      });
+
+      res.json(coupon);
+    } catch (error: any) {
+      console.error("Create coupon error:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ error: "Coupon code already exists" });
+      }
+      res.status(500).json({ error: "Failed to create coupon" });
+    }
+  });
+
+  // Update coupon
+  app.patch("/api/admin/coupons/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const couponId = parseInt(req.params.id);
+      
+      const coupon = await storage.updateCoupon(couponId, req.body);
+      if (!coupon) {
+        return res.status(404).json({ error: "Coupon not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "coupon",
+        targetId: coupon.id,
+        action: "UPDATE_COUPON",
+        meta: { code: coupon.code, changes: req.body },
+      });
+
+      res.json(coupon);
+    } catch (error: any) {
+      console.error("Update coupon error:", error);
+      res.status(500).json({ error: "Failed to update coupon" });
+    }
+  });
+
+  // Delete coupon
+  app.delete("/api/admin/coupons/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const couponId = parseInt(req.params.id);
+      
+      const coupon = await storage.getCoupon(couponId);
+      if (!coupon) {
+        return res.status(404).json({ error: "Coupon not found" });
+      }
+
+      await storage.deleteCoupon(couponId);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "coupon",
+        targetId: couponId,
+        action: "DELETE_COUPON",
+        meta: { code: coupon.code },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete coupon error:", error);
+      res.status(500).json({ error: "Failed to delete coupon" });
+    }
+  });
+
+  // Validate coupon (public endpoint for users)
+  app.post("/api/validate-coupon", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { code, planId } = req.body;
+      
+      if (!code || !planId) {
+        return res.status(400).json({ error: "Code and planId are required" });
+      }
+
+      const result = await storage.validateCoupon(code, req.userId!, planId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Validate coupon error:", error);
+      res.status(500).json({ error: "Failed to validate coupon" });
     }
   });
 

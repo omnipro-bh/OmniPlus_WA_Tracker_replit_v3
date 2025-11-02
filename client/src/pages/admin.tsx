@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import type { User, OfflinePayment, Channel, Plan } from "@shared/schema";
+import type { User, OfflinePayment, Channel, Plan, Coupon } from "@shared/schema";
 
 function BulkSpeedSettings() {
   const { toast } = useToast();
@@ -135,6 +135,417 @@ function BulkSpeedSettings() {
         {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
       </Button>
     </div>
+  );
+}
+
+function CouponsManagement() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+  const [formData, setFormData] = useState({
+    code: "",
+    discountPercent: "10",
+    maxUses: "",
+    expiresAt: "",
+    status: "ACTIVE" as "ACTIVE" | "EXPIRED" | "DISABLED",
+    planScope: "ALL" as "ALL" | "SPECIFIC" | "USER_SPECIFIC",
+    allowedPlanIds: [] as number[],
+    allowedUserIds: [] as number[],
+  });
+
+  const { data: coupons = [], isLoading } = useQuery<Coupon[]>({
+    queryKey: ["/api/admin/coupons"],
+  });
+
+  const { data: plans = [] } = useQuery<Plan[]>({
+    queryKey: ["/api/admin/plans"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/admin/users"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/admin/coupons", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coupons"] });
+      toast({ title: "Coupon created successfully" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create coupon",
+        description: error.error || "Could not create coupon",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest("PATCH", `/api/admin/coupons/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coupons"] });
+      toast({ title: "Coupon updated successfully" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update coupon",
+        description: error.error || "Could not update coupon",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/admin/coupons/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coupons"] });
+      toast({ title: "Coupon deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete coupon",
+        description: error.error || "Could not delete coupon",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setIsDialogOpen(false);
+    setEditingCoupon(null);
+    setFormData({
+      code: "",
+      discountPercent: "10",
+      maxUses: "",
+      expiresAt: "",
+      status: "ACTIVE",
+      planScope: "ALL",
+      allowedPlanIds: [],
+      allowedUserIds: [],
+    });
+  };
+
+  const handleEdit = (coupon: Coupon) => {
+    setEditingCoupon(coupon);
+    setFormData({
+      code: coupon.code,
+      discountPercent: String(coupon.discountPercent),
+      maxUses: coupon.maxUses ? String(coupon.maxUses) : "",
+      expiresAt: coupon.expiresAt ? new Date(coupon.expiresAt).toISOString().split('T')[0] : "",
+      status: coupon.status,
+      planScope: (coupon.planScope || "ALL") as any,
+      allowedPlanIds: (coupon.allowedPlanIds || []) as number[],
+      allowedUserIds: (coupon.allowedUserIds || []) as number[],
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSubmit = () => {
+    const data = {
+      code: formData.code.toUpperCase(),
+      discountPercent: parseInt(formData.discountPercent),
+      maxUses: formData.maxUses ? parseInt(formData.maxUses) : null,
+      expiresAt: formData.expiresAt ? new Date(formData.expiresAt) : null,
+      status: formData.status,
+      planScope: formData.planScope,
+      allowedPlanIds: formData.planScope === "SPECIFIC" ? formData.allowedPlanIds : null,
+      allowedUserIds: formData.planScope === "USER_SPECIFIC" ? formData.allowedUserIds : null,
+    };
+
+    if (editingCoupon) {
+      updateMutation.mutate({ id: editingCoupon.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Discount Coupons</CardTitle>
+            <CardDescription>Manage discount coupons for subscription plans</CardDescription>
+          </div>
+          <Button onClick={() => setIsDialogOpen(true)} data-testid="button-create-coupon">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Coupon
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-8">Loading coupons...</div>
+        ) : coupons.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No coupons yet. Create your first coupon to get started.
+          </div>
+        ) : (
+          <div className="rounded-md border">
+            <table className="w-full">
+              <thead className="bg-card border-b">
+                <tr className="text-left">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Code</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Discount</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Usage</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Scope</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Expires</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase">Status</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coupons.map((coupon) => (
+                  <tr key={coupon.id} className="border-b hover-elevate" data-testid={`coupon-${coupon.id}`}>
+                    <td className="px-4 py-3">
+                      <code className="text-sm font-mono bg-muted px-2 py-1 rounded">{coupon.code}</code>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="secondary">{coupon.discountPercent}% OFF</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {coupon.usedCount} / {coupon.maxUses || "∞"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="outline">{coupon.planScope || "ALL"}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {coupon.expiresAt ? new Date(coupon.expiresAt).toLocaleDateString() : "Never"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={coupon.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(coupon)}
+                          data-testid={`button-edit-coupon-${coupon.id}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Delete coupon "${coupon.code}"?`)) {
+                              deleteMutation.mutate(coupon.id);
+                            }
+                          }}
+                          data-testid={`button-delete-coupon-${coupon.id}`}
+                        >
+                          <Trash2 className="h-3 w-3 text-error" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={isDialogOpen} onOpenChange={(open) => !open && resetForm()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingCoupon ? "Edit Coupon" : "Create New Coupon"}</DialogTitle>
+            <DialogDescription>
+              Configure discount coupon settings and restrictions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="code">Coupon Code *</Label>
+                <Input
+                  id="code"
+                  placeholder="SAVE20"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                  data-testid="input-coupon-code"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="discount">Discount % *</Label>
+                <Input
+                  id="discount"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.discountPercent}
+                  onChange={(e) => setFormData({ ...formData, discountPercent: e.target.value })}
+                  data-testid="input-discount-percent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="maxUses">Max Uses (Optional)</Label>
+                <Input
+                  id="maxUses"
+                  type="number"
+                  min="1"
+                  placeholder="Unlimited"
+                  value={formData.maxUses}
+                  onChange={(e) => setFormData({ ...formData, maxUses: e.target.value })}
+                  data-testid="input-max-uses"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expires">Expires At (Optional)</Label>
+                <Input
+                  id="expires"
+                  type="date"
+                  value={formData.expiresAt}
+                  onChange={(e) => setFormData({ ...formData, expiresAt: e.target.value })}
+                  data-testid="input-expires-at"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value: any) => setFormData({ ...formData, status: value })}
+                >
+                  <SelectTrigger data-testid="select-coupon-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ACTIVE">Active</SelectItem>
+                    <SelectItem value="DISABLED">Disabled</SelectItem>
+                    <SelectItem value="EXPIRED">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scope">Plan Scope</Label>
+                <Select
+                  value={formData.planScope}
+                  onValueChange={(value: any) => setFormData({ ...formData, planScope: value })}
+                >
+                  <SelectTrigger data-testid="select-plan-scope">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Plans</SelectItem>
+                    <SelectItem value="SPECIFIC">Specific Plans</SelectItem>
+                    <SelectItem value="USER_SPECIFIC">Specific Users</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Conditional: Specific Plans Selection */}
+            {formData.planScope === "SPECIFIC" && (
+              <div className="space-y-2">
+                <Label>Allowed Plans *</Label>
+                <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                  {plans.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No plans available</p>
+                  ) : (
+                    plans.map((plan) => (
+                      <div key={plan.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`plan-${plan.id}`}
+                          checked={formData.allowedPlanIds.includes(plan.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFormData({
+                                ...formData,
+                                allowedPlanIds: [...formData.allowedPlanIds, plan.id],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                allowedPlanIds: formData.allowedPlanIds.filter((id) => id !== plan.id),
+                              });
+                            }
+                          }}
+                          data-testid={`checkbox-plan-${plan.id}`}
+                        />
+                        <Label htmlFor={`plan-${plan.id}`} className="text-sm font-normal cursor-pointer">
+                          {plan.name} - ${plan.price ? (plan.price / 100).toFixed(2) : 'Custom'}
+                        </Label>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Select which plans this coupon can be applied to
+                </p>
+              </div>
+            )}
+
+            {/* Conditional: Specific Users Selection */}
+            {formData.planScope === "USER_SPECIFIC" && (
+              <div className="space-y-2">
+                <Label>Allowed Users *</Label>
+                <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                  {users.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No users available</p>
+                  ) : (
+                    users.map((user) => (
+                      <div key={user.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`user-${user.id}`}
+                          checked={formData.allowedUserIds.includes(user.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFormData({
+                                ...formData,
+                                allowedUserIds: [...formData.allowedUserIds, user.id],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                allowedUserIds: formData.allowedUserIds.filter((id) => id !== user.id),
+                              });
+                            }
+                          }}
+                          data-testid={`checkbox-user-${user.id}`}
+                        />
+                        <Label htmlFor={`user-${user.id}`} className="text-sm font-normal cursor-pointer">
+                          {user.name} ({user.email})
+                        </Label>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Select which users this coupon can be redeemed by
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!formData.code || createMutation.isPending || updateMutation.isPending}
+              data-testid="button-submit-coupon"
+            >
+              {editingCoupon ? "Update Coupon" : "Create Coupon"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -635,11 +1046,12 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="users">Users & Billing</TabsTrigger>
           <TabsTrigger value="payments">Offline Payments</TabsTrigger>
           <TabsTrigger value="requests">Plan Requests</TabsTrigger>
           <TabsTrigger value="plans">Plans</TabsTrigger>
+          <TabsTrigger value="coupons">Coupons</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
@@ -1182,6 +1594,11 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Coupons Tab */}
+        <TabsContent value="coupons" className="space-y-4">
+          <CouponsManagement />
         </TabsContent>
 
         {/* Settings Tab */}

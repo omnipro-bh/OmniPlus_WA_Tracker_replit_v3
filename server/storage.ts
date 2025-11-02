@@ -26,6 +26,8 @@ import type {
   InsertSetting,
   ChannelDaysLedger,
   InsertChannelDaysLedger,
+  Coupon,
+  InsertCoupon,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -41,6 +43,16 @@ export interface IStorage {
   getPlan(id: number): Promise<Plan | undefined>;
   createPlan(plan: InsertPlan): Promise<Plan>;
   updatePlan(id: number, data: Partial<Plan>): Promise<Plan | undefined>;
+
+  // Coupons
+  getCoupons(): Promise<Coupon[]>;
+  getCoupon(id: number): Promise<Coupon | undefined>;
+  getCouponByCode(code: string): Promise<Coupon | undefined>;
+  createCoupon(coupon: InsertCoupon): Promise<Coupon>;
+  updateCoupon(id: number, data: Partial<Coupon>): Promise<Coupon | undefined>;
+  deleteCoupon(id: number): Promise<void>;
+  validateCoupon(code: string, userId: number, planId: number): Promise<{ valid: boolean; message: string; coupon?: Coupon }>;
+  incrementCouponUsage(id: number): Promise<void>;
 
   // Subscriptions
   getActiveSubscriptionForUser(userId: number): Promise<Subscription | undefined>;
@@ -200,6 +212,82 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.plans.id, id))
       .returning();
     return plan;
+  }
+
+  // Coupons
+  async getCoupons(): Promise<Coupon[]> {
+    return await db.select().from(schema.coupons).orderBy(desc(schema.coupons.createdAt));
+  }
+
+  async getCoupon(id: number): Promise<Coupon | undefined> {
+    const [coupon] = await db.select().from(schema.coupons).where(eq(schema.coupons.id, id));
+    return coupon || undefined;
+  }
+
+  async getCouponByCode(code: string): Promise<Coupon | undefined> {
+    const [coupon] = await db.select().from(schema.coupons).where(eq(schema.coupons.code, code));
+    return coupon || undefined;
+  }
+
+  async createCoupon(insertCoupon: InsertCoupon): Promise<Coupon> {
+    const [coupon] = await db.insert(schema.coupons).values(insertCoupon).returning();
+    return coupon;
+  }
+
+  async updateCoupon(id: number, data: Partial<Coupon>): Promise<Coupon | undefined> {
+    const [coupon] = await db
+      .update(schema.coupons)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.coupons.id, id))
+      .returning();
+    return coupon || undefined;
+  }
+
+  async deleteCoupon(id: number): Promise<void> {
+    await db.delete(schema.coupons).where(eq(schema.coupons.id, id));
+  }
+
+  async validateCoupon(code: string, userId: number, planId: number): Promise<{ valid: boolean; message: string; coupon?: Coupon }> {
+    const coupon = await this.getCouponByCode(code);
+    
+    if (!coupon) {
+      return { valid: false, message: "Invalid coupon code" };
+    }
+
+    if (coupon.status !== "ACTIVE") {
+      return { valid: false, message: "Coupon is not active" };
+    }
+
+    if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
+      return { valid: false, message: "Coupon has expired" };
+    }
+
+    if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+      return { valid: false, message: "Coupon usage limit reached" };
+    }
+
+    if (coupon.planScope === "SPECIFIC" && coupon.allowedPlanIds) {
+      const allowedPlans = coupon.allowedPlanIds as number[];
+      if (!allowedPlans.includes(planId)) {
+        return { valid: false, message: "Coupon not valid for this plan" };
+      }
+    }
+
+    if (coupon.planScope === "USER_SPECIFIC" && coupon.allowedUserIds) {
+      const allowedUsers = coupon.allowedUserIds as number[];
+      if (!allowedUsers.includes(userId)) {
+        return { valid: false, message: "Coupon not valid for your account" };
+      }
+    }
+
+    return { valid: true, message: "Coupon is valid", coupon };
+  }
+
+  async incrementCouponUsage(id: number): Promise<void> {
+    await db
+      .update(schema.coupons)
+      .set({ usedCount: sql`${schema.coupons.usedCount} + 1`, updatedAt: new Date() })
+      .where(eq(schema.coupons.id, id));
   }
 
   // Subscriptions
