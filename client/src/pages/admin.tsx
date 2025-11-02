@@ -1386,6 +1386,7 @@ export default function Admin() {
   
   // Channel activation dialog state
   const [isActivationDialogOpen, setIsActivationDialogOpen] = useState(false);
+  const [isChannelSelectorOpen, setIsChannelSelectorOpen] = useState(false);
   const [activationChannelId, setActivationChannelId] = useState<number | null>(null);
   const [activationUserId, setActivationUserId] = useState<number | null>(null);
   const [activationDays, setActivationDays] = useState("30");
@@ -1498,6 +1499,8 @@ export default function Admin() {
     enabled: !!expandedUserId,
   });
 
+  // No longer used - channel activation uses activateChannelMutation instead
+  // Kept for backward compatibility with remove days functionality
   const adjustDaysMutation = useMutation({
     mutationFn: async ({ userId, days, action }: { userId: number; days: number; action: "add" | "remove" }) => {
       const endpoint = action === "add" ? "add-days" : "remove-days";
@@ -2659,6 +2662,78 @@ export default function Admin() {
         </DialogContent>
       </Dialog>
 
+      {/* Channel Selector Dialog - First step when admin clicks "+ Days" */}
+      <Dialog open={isChannelSelectorOpen} onOpenChange={setIsChannelSelectorOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Channel to Add Days</DialogTitle>
+            <DialogDescription>
+              Choose which channel to add days to. Days will be deducted from the admin main balance pool.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-muted/30 p-3 rounded-md">
+              <p className="text-sm text-muted-foreground">Admin Main Balance Pool</p>
+              <p className="text-2xl font-semibold text-success">{mainBalance} days</p>
+            </div>
+            {userChannels.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                This user has no channels. Please create a channel first.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Label>Select Channel</Label>
+                {userChannels.map((channel) => (
+                  <Card 
+                    key={channel.id} 
+                    className={`cursor-pointer hover-elevate ${activationChannelId === channel.id ? 'border-primary' : ''}`}
+                    onClick={() => setActivationChannelId(channel.id)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{channel.label}</p>
+                          <p className="text-xs text-muted-foreground">{channel.phone}</p>
+                        </div>
+                        <div className="text-right">
+                          <StatusBadge status={channel.status} />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {channel.daysRemaining || 0} days remaining
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsChannelSelectorOpen(false);
+                setActivationChannelId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (activationChannelId) {
+                  setIsChannelSelectorOpen(false);
+                  setIsActivationDialogOpen(true);
+                }
+              }}
+              disabled={!activationChannelId}
+              data-testid="button-next-to-days"
+            >
+              Next
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add Days to Channel Dialog */}
       <Dialog open={isActivationDialogOpen} onOpenChange={setIsActivationDialogOpen}>
         <DialogContent>
@@ -3449,9 +3524,12 @@ export default function Admin() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setSelectedUser(selectedUserForDrawer);
-                      setAction("add");
-                      setIsDialogOpen(true);
+                      // Fetch user's channels and open channel selector
+                      setExpandedUserId(selectedUserForDrawer.id);
+                      setActivationUserId(selectedUserForDrawer.id);
+                      setActivationChannelId(null);
+                      setActivationDays("1");
+                      setIsChannelSelectorOpen(true);
                     }}
                     data-testid="button-drawer-add-days"
                   >
