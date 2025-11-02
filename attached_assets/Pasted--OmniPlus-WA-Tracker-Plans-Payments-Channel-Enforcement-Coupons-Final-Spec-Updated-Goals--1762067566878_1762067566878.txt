@@ -1,0 +1,117 @@
+
+OmniPlus WA Tracker — Plans, Payments, Channel Enforcement, Coupons (Final Spec – Updated)
+Goals
+•	Enforce channel-first rule: user must create a channel before subscribing (PayPal or Offline).
+•	PayPal: on successful payment, subscription starts immediately and plan days are added automatically to the selected channel.
+•	User should be able to see subscription period and cancel subscription, and rest login his app password. 
+•	You Should add Plan ID when Paypal option is enabled so PayPal will work fully with auto renewal. 
+•	Offline: subscription starts only when an admin adds days manually after approval.
+•	Per-Plan Payment Methods: each plan can allow PayPal, Offline, or both (only enabled methods appear to users).
+•	Require Terms & Conditions consent before any payment (offline or PayPal). Those term & conditions files should be added also into the home page (landing page)
+•	Allow Custom Plans assignable to specific users.
+•	Discount Coupons: unique, controlled uses, expiry, per-coupon % discount, redemption tracking.
+________________________________________
+Key Rules (Must-Haves)
+1) Channel-First Enforcement
+•	Users can view plans anytime.
+•	If user has no channel, all subscribe CTAs (PayPal/Offline) are disabled.
+•	Clicking a disabled CTA → “Please create a channel first to subscribe.”
+•	If multiple channels, user must select a channel (dropdown) before checkout.
+2) Terms & Conditions (Both PayPal & Offline)
+•	Before payment, show a T&C modal (admin-editable).
+•	Checkbox required; persist agreed_at and terms_version.
+3) Per-Plan Payment Methods
+•	Each plan defines payment_methods = subset of { "paypal", "offline" }.
+o	Example:
+	PayPal-only → ["paypal"]
+	Offline-only → ["offline"]
+	Both → ["paypal","offline"]
+•	UI only shows the CTAs allowed by the plan.
+•	Server-side validation enforces method restrictions.
+4) PayPal Flow (Auto Days + Immediate Start)
+•	On successful webhook (PAYMENT.CAPTURE.COMPLETED):
+o	Verify signature + idempotency on provider_txn_id.
+o	Plan must include "paypal" in payment_methods.
+o	Verify user/channel ownership.
+o	Mark subscription active with started_at = now().
+o	Add plan days automatically:
+	If expiry in future → extend by plan.days_granted.
+	If expired → set expiry_date = today + plan.days_granted.
+o	Apply valid coupon discount, mark coupon as used.
+o	Ledgers:
+	user_payment_in (final amount, txn id).
+	channel_days_granted.
+o	Send toast + email; record audit.
+5) Offline Flow (Manual Start)
+•	User submits offline payment (plan must include "offline").
+•	Create subscriptions.status = pending_offline.
+•	Admin review:
+o	Approve → admin manually adds days (default plan.days_granted).
+	Set status = active, started_at = now().
+	Extend channel expiry accordingly.
+	Ledgers: user_payment_in_offline, channel_days_granted.
+	Email user confirmation.
+o	Reject → status = rejected_offline, store reason, email user.
+•	Coupons validated and applied upon approval.
+6) Cancellation Policy
+•	No refund.
+•	Immediate account cancellation + channel deletion.
+•	Remaining channel days credited to Admin Balance (ledger entry).
+•	Audit log + cancellation email.
+7) Custom Plans
+•	Admin can create Custom Plan:
+o	name, description, price, currency, billing_period, days_granted.
+o	Limits JSON includes:
+	daily_single_messages_limit
+	daily_bulk_messages_limit
+	workflow_chatbots_limit
+	channels_allowed
+o	payment_methods (paypal/offline/both).
+•	Assign custom plans to specific users.
+8) Discount Coupons (Admin)
+•	Admin can generate coupons with:
+o	code (unique), discount_percent, expires_at, max_uses, status.
+o	Optional plan_scope, allowed_plan_ids, allowed_user_ids.
+•	Coupons validated at checkout (PayPal) or approval (Offline).
+•	Single-use guarantee via transactional lock.
+________________________________________
+Data Model (Updated Fields)
+plans
+•	id, type (public|custom)
+•	name, description, price, currency, billing_period, days_granted
+•	payment_methods JSON array (e.g., ["paypal","offline"])
+•	limits JSON object:
+•	{
+•	  "daily_single_messages_limit": 1000,
+•	  "daily_bulk_messages_limit": 300,
+•	  "workflow_chatbots_limit": 5,
+•	  "channels_allowed": 2
+•	}
+•	Timestamps and ownership metadata as before.
+Other tables
+All other tables (channels, subscriptions, user_custom_plans, ledger, coupons, etc.) remain as specified in the previous version.
+________________________________________
+UI/UX Updates
+•	Plan cards display:
+o	Daily Single Messages Limit
+o	Daily Bulk Messages Limit
+o	Workflow (Chatbots) Limit
+o	Channels Allowed
+o	Payment Methods icons (PayPal / Offline)
+•	When creating or editing a plan, admin can toggle each limit and allowed payment methods.
+________________________________________
+Validation
+•	Must have at least one payment method.
+•	Limits default to 0 if omitted.
+•	Attempting to use a disabled payment method triggers a clear validation error.
+________________________________________
+Acceptance Scenarios (Summary)
+1.	PayPal Plan → auto start, days added.
+2.	Offline Plan → admin adds days to start.
+3.	Both Methods → user sees both buttons.
+4.	Limit display → correct names:
+o	Daily Single Messages Limit
+o	Daily Bulk Messages Limit
+o	Workflow (Chatbots) Limit
+5.	Cancel → account locked, days returned to admin balance.
+
