@@ -3,16 +3,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { useMutation } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Lock, XCircle } from "lucide-react";
+import type { User } from "@shared/schema";
 
 export default function Settings() {
   const { toast } = useToast();
   const [passwords, setPasswords] = useState({
     newPassword: "",
     confirmPassword: "",
+  });
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+
+  const { data: user } = useQuery<User>({
+    queryKey: ["/api/me"],
   });
 
   const resetPasswordMutation = useMutation({
@@ -30,6 +46,26 @@ export default function Settings() {
       toast({
         title: "Failed to update password",
         description: error.error || "Could not update password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/me/cancel-subscription", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      toast({
+        title: "Subscription cancelled",
+        description: "Your subscription has been cancelled. You'll have access until the end of your billing period.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to cancel subscription",
+        description: error.error || "Could not cancel subscription",
         variant: "destructive",
       });
     },
@@ -112,6 +148,59 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
+
+      {user?.currentSubscription?.status === "ACTIVE" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5" />
+              Cancel Subscription
+            </CardTitle>
+            <CardDescription>
+              Cancel your current subscription plan
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              You are currently subscribed to the <span className="font-semibold">{user.currentPlan?.name}</span> plan.
+              Canceling will stop future billing, but you'll retain access until the end of your current billing period.
+            </p>
+            <Button
+              variant="destructive"
+              onClick={() => setIsCancelDialogOpen(true)}
+              data-testid="button-cancel-subscription"
+            >
+              Cancel Subscription
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Subscription?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel your subscription? You'll continue to have access until the end of your current billing period, but you won't be charged again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-dialog-cancel">
+              Keep Subscription
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                cancelSubscriptionMutation.mutate();
+                setIsCancelDialogOpen(false);
+              }}
+              data-testid="button-cancel-dialog-confirm"
+              className="bg-destructive text-destructive-foreground hover-elevate"
+            >
+              Yes, Cancel Subscription
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

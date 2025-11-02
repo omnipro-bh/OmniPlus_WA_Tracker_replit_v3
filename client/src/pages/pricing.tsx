@@ -420,15 +420,14 @@ export default function Pricing() {
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
                   I accept the{" "}
-                  <Button
-                    variant="link"
-                    className="h-auto p-0 text-sm"
+                  <button
+                    className="text-sm text-primary underline hover:no-underline"
                     onClick={() => setIsTermsDialogOpen(true)}
                     type="button"
                     data-testid="button-view-terms-offline"
                   >
                     Terms & Conditions
-                  </Button>
+                  </button>
                 </label>
               </div>
             </div>
