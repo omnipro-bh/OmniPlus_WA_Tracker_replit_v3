@@ -1710,6 +1710,20 @@ export default function Admin() {
     enabled: isUserDrawerOpen && !!selectedUserForDrawer?.id,
   });
 
+  // Fetch workflows for user (only when drawer is open)
+  const { data: userWorkflows } = useQuery<Array<{ id: number; name: string; webhookToken: string; isActive: boolean }>>({
+    queryKey: ["/api/admin/users", selectedUserForDrawer?.id, "workflows"],
+    queryFn: async () => {
+      if (!selectedUserForDrawer?.id) return [];
+      const response = await fetch(`/api/admin/users/${selectedUserForDrawer.id}/workflows`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch workflows");
+      return response.json();
+    },
+    enabled: isUserDrawerOpen && !!selectedUserForDrawer?.id,
+  });
+
   // Plan mutations
   const createPlanMutation = useMutation({
     mutationFn: async (planData: any) => {
