@@ -21,8 +21,9 @@ The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query,
 - **Outbox:** Tracks message sending job statuses (queued, pending, sent, delivered, read, failed, replied) with detailed info, auto-refreshing for near real-time updates.
 - **Bulk Message Status Tracking:** Real-time webhook-based status tracking for bulk messages, capturing provider message IDs, delivery events, and full reply payloads.
 - **Pricing:** Displays plans with duration toggles, integrating PayPal and supporting offline payments.
-- **Admin Dashboard:** User management, billing adjustments, offline payment approval/deletion, and channel activation controls.
+- **Admin Dashboard:** User management, billing adjustments, offline payment approval/deletion, channel activation controls, and dynamic homepage content management (Use Cases and Features tabs).
 - **Admin Settings:** Configuration panel with authentication controls (enable/disable sign in and sign up on home page), bulk sending speed settings, default page access controls for new users, and default theme setting for first-time visitors.
+- **Homepage Content Management:** Admin tabs for managing Use Cases (with title, description, image, sort order, and publication status) and Homepage Features (with title, description, icon name, sort order, and publication status) displayed on the landing page.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 - **Default User Experience:** Admins can configure default page access and theme for new signups, automatically applied to users without subscriptions.
 
@@ -33,7 +34,7 @@ The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query,
 - **Responsiveness:** Mobile-first with a collapsible sidebar.
 
 **Data Model:**
-Includes entities for Users, Plans (with billing period, request type, payment methods array, PayPal Plan ID, publication status, page access, messaging/workflow limits), Subscriptions (with per-user overrides, channel/coupon linking, terms acceptance), Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking and `providerMessageId`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, and PlanRequests.
+Includes entities for Users, Plans (with billing period, request type, payment methods array, PayPal Plan ID, publication status, page access, messaging/workflow limits), Subscriptions (with per-user overrides, channel/coupon linking, terms acceptance), Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking and `providerMessageId`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, PlanRequests, UseCases (title, description, image, sortOrder, published), and HomepageFeatures (title, description, icon, sortOrder, published).
 
 **Plans Payment System:**
 - **Payment Methods:** JSONB array storing ["paypal", "offline"] combinations

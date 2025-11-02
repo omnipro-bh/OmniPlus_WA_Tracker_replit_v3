@@ -15,7 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import type { User, OfflinePayment, Channel, Plan, Coupon } from "@shared/schema";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { User, OfflinePayment, Channel, Plan, Coupon, UseCase, HomepageFeature } from "@shared/schema";
+import { insertUseCaseSchema, insertHomepageFeatureSchema } from "@shared/schema";
+import type { z } from "zod";
 
 function AuthSettings() {
   const { toast } = useToast();
@@ -852,6 +857,509 @@ function CouponsManagement() {
   );
 }
 
+function UseCasesManagement() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingUseCase, setEditingUseCase] = useState<UseCase | null>(null);
+
+  type UseCaseForm = z.infer<typeof insertUseCaseSchema>;
+
+  const form = useForm<UseCaseForm>({
+    resolver: zodResolver(insertUseCaseSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      image: "",
+      sortOrder: 0,
+      published: true,
+    },
+  });
+
+  const { data: useCases = [], isLoading } = useQuery<UseCase[]>({
+    queryKey: ["/api/admin/use-cases"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: UseCaseForm) => {
+      return await apiRequest("POST", "/api/admin/use-cases", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
+      setIsDialogOpen(false);
+      form.reset();
+      toast({ title: "Use case created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create use case", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: UseCaseForm }) => {
+      return await apiRequest("PUT", `/api/admin/use-cases/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
+      setIsDialogOpen(false);
+      form.reset();
+      toast({ title: "Use case updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update use case", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/admin/use-cases/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
+      toast({ title: "Use case deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete use case", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const togglePublishedMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      return await apiRequest("PUT", `/api/admin/use-cases/${id}`, { published });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
+    },
+  });
+
+  const handleEdit = (useCase: UseCase) => {
+    setEditingUseCase(useCase);
+    form.reset({
+      title: useCase.title,
+      description: useCase.description,
+      image: useCase.image || "",
+      sortOrder: useCase.sortOrder,
+      published: useCase.published,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSubmit = (data: UseCaseForm) => {
+    if (editingUseCase) {
+      updateMutation.mutate({ id: editingUseCase.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading use cases...</div>;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
+        <div>
+          <CardTitle>Use Cases Management</CardTitle>
+          <CardDescription>Manage articles displayed on the homepage</CardDescription>
+        </div>
+        <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-use-case">
+          <Plus className="h-4 w-4 mr-2" />
+          Add Use Case
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {useCases.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>No use cases found. Click "Add Use Case" to create one.</p>
+            </div>
+          ) : (
+            useCases.map((useCase) => (
+            <div key={useCase.id} className="flex flex-wrap items-center justify-between gap-2 p-4 border rounded-md">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">{useCase.title}</h3>
+                  <Badge variant={useCase.published ? "default" : "secondary"}>
+                    {useCase.published ? "Published" : "Draft"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">{useCase.description}</p>
+                {useCase.image && (
+                  <p className="text-xs text-muted-foreground mt-1">Image: {useCase.image}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">Sort Order: {useCase.sortOrder}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => togglePublishedMutation.mutate({ id: useCase.id, published: !useCase.published })}
+                  data-testid={`button-toggle-usecase-${useCase.id}`}
+                >
+                  {useCase.published ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleEdit(useCase)}
+                  data-testid={`button-edit-usecase-${useCase.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteMutation.mutate(useCase.id)}
+                  data-testid={`button-delete-usecase-${useCase.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+        </div>
+      </CardContent>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingUseCase ? "Edit Use Case" : "Create Use Case"}</DialogTitle>
+            <DialogDescription>
+              {editingUseCase ? "Update the use case details" : "Add a new use case to the homepage"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Enter title" data-testid="input-usecase-title" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Enter description" rows={4} data-testid="input-usecase-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="image"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Image URL (optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="https://example.com/image.jpg" data-testid="input-usecase-image" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="sortOrder"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sort Order</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} value={field.value} data-testid="input-usecase-sortorder" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="published"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between">
+                    <FormLabel>Published</FormLabel>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-usecase-published" />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingUseCase(null); form.reset(); }} data-testid="button-cancel-usecase">
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-submit-usecase"
+                >
+                  {editingUseCase ? "Update" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+function HomepageFeaturesManagement() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingFeature, setEditingFeature] = useState<HomepageFeature | null>(null);
+
+  type FeatureForm = z.infer<typeof insertHomepageFeatureSchema>;
+
+  const form = useForm<FeatureForm>({
+    resolver: zodResolver(insertHomepageFeatureSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      icon: "",
+      sortOrder: 0,
+      published: true,
+    },
+  });
+
+  const { data: features = [], isLoading } = useQuery<HomepageFeature[]>({
+    queryKey: ["/api/admin/homepage-features"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: FeatureForm) => {
+      return await apiRequest("POST", "/api/admin/homepage-features", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/homepage-features"] });
+      setIsDialogOpen(false);
+      form.reset();
+      toast({ title: "Feature created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create feature", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: FeatureForm }) => {
+      return await apiRequest("PUT", `/api/admin/homepage-features/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/homepage-features"] });
+      setIsDialogOpen(false);
+      form.reset();
+      toast({ title: "Feature updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update feature", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/admin/homepage-features/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/homepage-features"] });
+      toast({ title: "Feature deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete feature", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const togglePublishedMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      return await apiRequest("PUT", `/api/admin/homepage-features/${id}`, { published });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/homepage-features"] });
+    },
+  });
+
+  const handleEdit = (feature: HomepageFeature) => {
+    setEditingFeature(feature);
+    form.reset({
+      title: feature.title,
+      description: feature.description,
+      icon: feature.icon || "",
+      sortOrder: feature.sortOrder,
+      published: feature.published,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSubmit = (data: FeatureForm) => {
+    if (editingFeature) {
+      updateMutation.mutate({ id: editingFeature.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading features...</div>;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
+        <div>
+          <CardTitle>Homepage Features Management</CardTitle>
+          <CardDescription>Manage features displayed on the homepage</CardDescription>
+        </div>
+        <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-feature">
+          <Plus className="h-4 w-4 mr-2" />
+          Add Feature
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {features.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>No features found. Click "Add Feature" to create one.</p>
+            </div>
+          ) : (
+            features.map((feature) => (
+            <div key={feature.id} className="flex flex-wrap items-center justify-between gap-2 p-4 border rounded-md">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">{feature.title}</h3>
+                  <Badge variant={feature.published ? "default" : "secondary"}>
+                    {feature.published ? "Published" : "Draft"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">{feature.description}</p>
+                {feature.icon && (
+                  <p className="text-xs text-muted-foreground mt-1">Icon: {feature.icon}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">Sort Order: {feature.sortOrder}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => togglePublishedMutation.mutate({ id: feature.id, published: !feature.published })}
+                  data-testid={`button-toggle-feature-${feature.id}`}
+                >
+                  {feature.published ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleEdit(feature)}
+                  data-testid={`button-edit-feature-${feature.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteMutation.mutate(feature.id)}
+                  data-testid={`button-delete-feature-${feature.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+        </div>
+      </CardContent>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingFeature ? "Edit Feature" : "Create Feature"}</DialogTitle>
+            <DialogDescription>
+              {editingFeature ? "Update the feature details" : "Add a new feature to the homepage"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="Enter title"
+                data-testid="input-feature-title"
+              />
+            </div>
+            <div>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Enter description"
+                rows={4}
+                data-testid="input-feature-description"
+              />
+            </div>
+            <div>
+              <Label htmlFor="icon">Icon Name (lucide-react)</Label>
+              <Input
+                id="icon"
+                value={formData.icon}
+                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                placeholder="MessageSquare, Users, Zap, etc."
+                data-testid="input-feature-icon"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter a lucide-react icon name (e.g., MessageSquare, Users, Bot, BarChart3)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="sortOrder">Sort Order</Label>
+              <Input
+                id="sortOrder"
+                type="number"
+                value={formData.sortOrder}
+                onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })}
+                data-testid="input-feature-sortorder"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="published">Published</Label>
+              <Switch
+                id="published"
+                checked={formData.published}
+                onCheckedChange={(checked) => setFormData({ ...formData, published: checked })}
+                data-testid="switch-feature-published"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!formData.title || !formData.description || createMutation.isPending || updateMutation.isPending}
+              data-testid="button-submit-feature"
+            >
+              {editingFeature ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 export default function Admin() {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -1441,12 +1949,14 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="users">Users & Billing</TabsTrigger>
           <TabsTrigger value="payments">Offline Payments</TabsTrigger>
           <TabsTrigger value="requests">Plan Requests</TabsTrigger>
           <TabsTrigger value="plans">Plans</TabsTrigger>
           <TabsTrigger value="coupons">Coupons</TabsTrigger>
+          <TabsTrigger value="use-cases">Use Cases</TabsTrigger>
+          <TabsTrigger value="features">Features</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
@@ -2074,6 +2584,14 @@ export default function Admin() {
               <DefaultThemeSettings />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="use-cases" className="space-y-4">
+          <UseCasesManagement />
+        </TabsContent>
+
+        <TabsContent value="features" className="space-y-4">
+          <HomepageFeaturesManagement />
         </TabsContent>
       </Tabs>
 
