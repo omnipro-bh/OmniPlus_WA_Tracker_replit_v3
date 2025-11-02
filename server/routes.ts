@@ -2,7 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc } from "drizzle-orm";
-import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs } from "@shared/schema";
+import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments } from "@shared/schema";
+import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
@@ -3783,6 +3784,144 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Update settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // ============================================================================
+  // TERMS & CONDITIONS ROUTES
+  // ============================================================================
+
+  // Public: Get all active terms documents
+  app.get("/api/terms", async (req: Request, res: Response) => {
+    try {
+      const terms = await storage.getActiveTermsDocuments();
+      res.json(terms);
+    } catch (error: any) {
+      console.error("Get terms error:", error);
+      res.status(500).json({ error: "Failed to fetch terms" });
+    }
+  });
+
+  // Public: Get active terms document by type
+  app.get("/api/terms/:type", async (req: Request, res: Response) => {
+    try {
+      const { type } = req.params;
+      const terms = await storage.getTermsDocumentByType(type);
+      
+      if (!terms) {
+        return res.status(404).json({ error: "Terms document not found" });
+      }
+
+      res.json(terms);
+    } catch (error: any) {
+      console.error("Get terms by type error:", error);
+      res.status(500).json({ error: "Failed to fetch terms" });
+    }
+  });
+
+  // Admin: Get all terms documents (including inactive)
+  app.get("/api/admin/terms", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const terms = await db.select().from(schema.termsDocuments).orderBy(desc(schema.termsDocuments.createdAt));
+      res.json(terms);
+    } catch (error: any) {
+      console.error("Get all terms error:", error);
+      res.status(500).json({ error: "Failed to fetch terms" });
+    }
+  });
+
+  // Admin: Create new terms document
+  app.post("/api/admin/terms", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const validation = schema.insertTermsDocumentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+
+      const document = await storage.createTermsDocument(validation.data);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CREATE_TERMS",
+        meta: {
+          entity: "terms_documents",
+          documentId: document.id,
+          type: document.type,
+          version: document.version,
+        },
+      });
+
+      res.json(document);
+    } catch (error: any) {
+      console.error("Create terms error:", error);
+      res.status(500).json({ error: "Failed to create terms document" });
+    }
+  });
+
+  // Admin: Update terms document (only editable fields)
+  app.put("/api/admin/terms/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      const updateSchema = z.object({
+        title: z.string().min(1).optional(),
+        content: z.string().min(1).optional(),
+        version: z.string().min(1).optional(),
+      });
+
+      const validation = updateSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+
+      const document = await storage.updateTermsDocument(id, validation.data);
+
+      if (!document) {
+        return res.status(404).json({ error: "Terms document not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_TERMS",
+        meta: {
+          entity: "terms_documents",
+          documentId: id,
+          updates: Object.keys(validation.data),
+        },
+      });
+
+      res.json(document);
+    } catch (error: any) {
+      console.error("Update terms error:", error);
+      res.status(500).json({ error: "Failed to update terms document" });
+    }
+  });
+
+  // Admin: Set active terms document (deactivates others of same type)
+  app.post("/api/admin/terms/:id/activate", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const document = await storage.setActiveTermsDocument(id);
+
+      if (!document) {
+        return res.status(404).json({ error: "Terms document not found" });
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "ACTIVATE_TERMS",
+        meta: {
+          entity: "terms_documents",
+          documentId: id,
+          type: document.type,
+          version: document.version,
+        },
+      });
+
+      res.json(document);
+    } catch (error: any) {
+      console.error("Activate terms error:", error);
+      res.status(500).json({ error: "Failed to activate terms document" });
     }
   });
 }

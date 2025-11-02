@@ -129,6 +129,14 @@ export interface IStorage {
     category?: string;
     limit?: number;
   }): Promise<schema.BulkLog[]>;
+
+  // Terms & Conditions
+  getActiveTermsDocuments(): Promise<schema.TermsDocument[]>;
+  getTermsDocument(id: number): Promise<schema.TermsDocument | undefined>;
+  getTermsDocumentByType(type: string): Promise<schema.TermsDocument | undefined>;
+  createTermsDocument(document: schema.InsertTermsDocument): Promise<schema.TermsDocument>;
+  updateTermsDocument(id: number, data: Partial<schema.TermsDocument>): Promise<schema.TermsDocument | undefined>;
+  setActiveTermsDocument(id: number): Promise<schema.TermsDocument | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -644,6 +652,71 @@ export class DatabaseStorage implements IStorage {
     }
 
     return await query;
+  }
+
+  // Terms & Conditions
+  async getActiveTermsDocuments(): Promise<schema.TermsDocument[]> {
+    return await db
+      .select()
+      .from(schema.termsDocuments)
+      .where(eq(schema.termsDocuments.isActive, true))
+      .orderBy(schema.termsDocuments.type);
+  }
+
+  async getTermsDocument(id: number): Promise<schema.TermsDocument | undefined> {
+    const [doc] = await db
+      .select()
+      .from(schema.termsDocuments)
+      .where(eq(schema.termsDocuments.id, id));
+    return doc || undefined;
+  }
+
+  async getTermsDocumentByType(type: string): Promise<schema.TermsDocument | undefined> {
+    const [doc] = await db
+      .select()
+      .from(schema.termsDocuments)
+      .where(and(
+        eq(schema.termsDocuments.type, type),
+        eq(schema.termsDocuments.isActive, true)
+      ))
+      .orderBy(desc(schema.termsDocuments.createdAt))
+      .limit(1);
+    return doc || undefined;
+  }
+
+  async createTermsDocument(document: schema.InsertTermsDocument): Promise<schema.TermsDocument> {
+    const [doc] = await db.insert(schema.termsDocuments).values(document).returning();
+    return doc;
+  }
+
+  async updateTermsDocument(id: number, data: Partial<schema.TermsDocument>): Promise<schema.TermsDocument | undefined> {
+    const [doc] = await db
+      .update(schema.termsDocuments)
+      .set(data)
+      .where(eq(schema.termsDocuments.id, id))
+      .returning();
+    return doc || undefined;
+  }
+
+  async setActiveTermsDocument(id: number): Promise<schema.TermsDocument | undefined> {
+    const doc = await this.getTermsDocument(id);
+    if (!doc) {
+      return undefined;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.termsDocuments)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(schema.termsDocuments.type, doc.type));
+
+      await tx
+        .update(schema.termsDocuments)
+        .set({ isActive: true, updatedAt: new Date() })
+        .where(eq(schema.termsDocuments.id, id));
+    });
+
+    return await this.getTermsDocument(id);
   }
 }
 
