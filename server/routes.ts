@@ -3000,13 +3000,21 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
+      // When duplicating, remove PayPal from payment methods since PayPal Plan ID must be unique
+      // Admin will need to add PayPal and set a new PayPal Plan ID if needed
+      const originalPaymentMethods = Array.isArray(original.paymentMethods) 
+        ? original.paymentMethods as string[]
+        : [];
+      const duplicatePaymentMethods = originalPaymentMethods.filter((method: string) => method !== "paypal");
+      
       const duplicated = await storage.createPlan({
         name: `${original.name} (Copy)`,
         currency: original.currency,
         price: original.price,
         billingPeriod: original.billingPeriod,
         requestType: original.requestType,
-        paypalPlanId: null,
+        paymentMethods: duplicatePaymentMethods as any, // Remove PayPal - admin must add with new Plan ID
+        paypalPlanId: null, // Reset PayPal Plan ID for duplicates (must be unique per plan)
         published: false,
         sortOrder: original.sortOrder + 1,
         dailyMessagesLimit: original.dailyMessagesLimit,
