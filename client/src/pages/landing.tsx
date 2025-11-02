@@ -49,6 +49,14 @@ const isBusinessEmail = (email: string): boolean => {
 export default function Landing() {
   const { toast } = useToast();
   
+  // Fetch auth settings
+  const { data: authSettings } = useQuery<{enableSignin: boolean; enableSignup: boolean}>({
+    queryKey: ["/api/settings/auth"],
+  });
+
+  const enableSignin = authSettings?.enableSignin ?? true; // Default to true
+  const enableSignup = authSettings?.enableSignup ?? true; // Default to true
+  
   // Fetch plans published on homepage
   const { data: allPlans = [] } = useQuery<Plan[]>({
     queryKey: ["/api/plans"],
@@ -209,14 +217,18 @@ export default function Landing() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <Link href="/login">
-                <Button variant="ghost" data-testid="button-login">
-                  Log In
-                </Button>
-              </Link>
-              <Link href="/signup">
-                <Button data-testid="button-signup">Sign Up</Button>
-              </Link>
+              {enableSignin && (
+                <Link href="/login">
+                  <Button variant="ghost" data-testid="button-login">
+                    Log In
+                  </Button>
+                </Link>
+              )}
+              {enableSignup && (
+                <Link href="/signup">
+                  <Button data-testid="button-signup">Sign Up</Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -241,11 +253,13 @@ export default function Landing() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/signup">
-                  <Button size="lg" className="w-full sm:w-auto" data-testid="button-start-trial">
-                    Start Free Trial
-                  </Button>
-                </Link>
+                {enableSignup && (
+                  <Link href="/signup">
+                    <Button size="lg" className="w-full sm:w-auto" data-testid="button-start-trial">
+                      Start Free Trial
+                    </Button>
+                  </Link>
+                )}
                 <Button 
                   size="lg" 
                   variant="outline" 
@@ -484,15 +498,26 @@ export default function Landing() {
                   </CardContent>
                   <CardFooter>
                     {plan.requestType === "PAID" ? (
-                      <Link href="/signup" className="w-full">
+                      enableSignup ? (
+                        <Link href="/signup" className="w-full">
+                          <Button
+                            className="w-full"
+                            variant={index === 1 ? "default" : "outline"}
+                            data-testid={`button-plan-${plan.name.toLowerCase()}`}
+                          >
+                            Get Started
+                          </Button>
+                        </Link>
+                      ) : (
                         <Button
                           className="w-full"
                           variant={index === 1 ? "default" : "outline"}
+                          disabled
                           data-testid={`button-plan-${plan.name.toLowerCase()}`}
                         >
-                          Get Started
+                          Sign Up Disabled
                         </Button>
-                      </Link>
+                      )
                     ) : (
                       <Button
                         className="w-full"
