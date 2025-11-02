@@ -673,9 +673,19 @@ export const insertBulkLogSchema = createInsertSchema(bulkLogs, {
   message: z.string().min(1),
 });
 
-export const insertCouponSchema = createInsertSchema(coupons, {
+export const insertCouponSchema = z.object({
   code: z.string().min(1).max(50),
   discountPercent: z.number().int().min(0).max(100),
+  maxUses: z.number().int().positive().nullable().optional(),
+  expiresAt: z.union([z.string(), z.date()]).nullable().optional().transform((val) => {
+    if (!val) return null;
+    if (typeof val === 'string') return new Date(val);
+    return val;
+  }),
+  status: z.enum(["ACTIVE", "EXPIRED", "DISABLED"]).optional(),
+  planScope: z.string().nullable().optional(),
+  allowedPlanIds: z.any().nullable().optional(),
+  allowedUserIds: z.any().nullable().optional(),
 });
 
 export const insertUserCustomPlanSchema = createInsertSchema(userCustomPlans);

@@ -3111,8 +3111,10 @@ export function registerRoutes(app: Express) {
   // Create new coupon
   app.post("/api/admin/coupons", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
+      console.log("Creating coupon with data:", JSON.stringify(req.body, null, 2));
       const validationResult = insertCouponSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.error("Coupon validation failed:", JSON.stringify(validationResult.error.flatten(), null, 2));
         return res.status(400).json({
           error: "Validation failed",
           details: validationResult.error.flatten(),
