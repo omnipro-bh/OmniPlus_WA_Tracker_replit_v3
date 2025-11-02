@@ -243,23 +243,29 @@ export default function Pricing() {
               <CardFooter className="flex flex-col gap-2">
                 {plan.requestType === "PAID" && (
                   <>
-                    <PayPalSubscribeButton
-                      planId={plan.id}
-                      planName={plan.name}
-                      amount={(discountedPrice / 100).toFixed(2)}
-                      currency={plan.currency}
-                      durationType={durationType}
-                      isPopular={isPopular}
-                    />
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handleOfflinePayment(plan)}
-                      data-testid={`button-offline-${plan.name.toLowerCase()}`}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Offline Payment
-                    </Button>
+                    {/* Only show PayPal button if PayPal is enabled for this plan */}
+                    {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("paypal") && (
+                      <PayPalSubscribeButton
+                        planId={plan.id}
+                        planName={plan.name}
+                        amount={(discountedPrice / 100).toFixed(2)}
+                        currency={plan.currency}
+                        durationType={durationType}
+                        isPopular={isPopular}
+                      />
+                    )}
+                    {/* Only show Offline Payment button if offline is enabled for this plan */}
+                    {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("offline") && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => handleOfflinePayment(plan)}
+                        data-testid={`button-offline-${plan.name.toLowerCase()}`}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Offline Payment
+                      </Button>
+                    )}
                   </>
                 )}
                 {plan.requestType === "REQUEST_QUOTE" && (
