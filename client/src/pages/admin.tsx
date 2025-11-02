@@ -927,7 +927,7 @@ export default function Admin() {
       outbox: false,
       logs: false,
       bulkLogs: false,
-      ...plan.pageAccess,
+      ...(plan.pageAccess || {}),
     };
     
     // Extract payment methods from JSONB field

@@ -17,7 +17,8 @@ type Status =
   | "EXPIRED"
   | "CANCELLED"
   | "APPROVED"
-  | "REJECTED";
+  | "REJECTED"
+  | "DISABLED";
 
 interface StatusBadgeProps {
   status: Status;
@@ -112,6 +113,11 @@ const statusStyles: Record<
     bg: "bg-success/10",
     text: "text-success",
     border: "border-success/20",
+  },
+  DISABLED: {
+    bg: "bg-slate-500/10",
+    text: "text-slate-400",
+    border: "border-slate-500/20",
   },
 };
 
