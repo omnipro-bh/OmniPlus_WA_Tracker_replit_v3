@@ -356,17 +356,25 @@ export function registerRoutes(app: Express) {
           };
         }
       } else {
-        // Default page access for users without a subscription
-        effectivePageAccess = {
-          dashboard: true,
-          channels: true,
-          pricing: true,
-          send: false,
-          templates: false,
-          workflows: false,
-          outbox: false,
-          logs: false,
-        };
+        // Default page access for users without a subscription - get from settings
+        const pageAccessSetting = await storage.getSetting("default_page_access");
+        effectivePageAccess = pageAccessSetting?.value 
+          ? JSON.parse(pageAccessSetting.value)
+          : {
+              dashboard: true,
+              channels: false,
+              send: false,
+              bulk: false,
+              templates: false,
+              workflows: false,
+              chatbot: false,
+              outbox: false,
+              logs: false,
+              bulkLogs: false,
+              pricing: true,
+              balances: false,
+              whapiSettings: false,
+            };
       }
 
       // Get channels count

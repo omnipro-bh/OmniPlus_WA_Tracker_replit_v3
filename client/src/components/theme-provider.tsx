@@ -29,6 +29,30 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
   );
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Fetch default theme from settings if no local preference exists
+  useEffect(() => {
+    const storedTheme = localStorage.getItem(storageKey);
+    if (!storedTheme && !isInitialized) {
+      fetch("/api/settings/default-theme")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.defaultTheme && (data.defaultTheme === "light" || data.defaultTheme === "dark")) {
+            setTheme(data.defaultTheme);
+          }
+        })
+        .catch(() => {
+          // Fallback to default if fetch fails
+          setTheme(defaultTheme);
+        })
+        .finally(() => {
+          setIsInitialized(true);
+        });
+    } else {
+      setIsInitialized(true);
+    }
+  }, [storageKey, defaultTheme, isInitialized]);
 
   useEffect(() => {
     const root = window.document.documentElement;
