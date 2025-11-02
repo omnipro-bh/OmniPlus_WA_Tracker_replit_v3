@@ -705,6 +705,23 @@ export default function Admin() {
     },
   });
 
+  const deletePaymentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/admin/offline-payments/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/offline-payments"] });
+      toast({ title: "Payment deleted", description: "The payment has been permanently removed." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete payment",
+        description: error.error || "Could not delete payment",
+        variant: "destructive",
+      });
+    },
+  });
+
   const updateRequestStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
       return await apiRequest("PATCH", `/api/admin/plan-requests/${id}/status`, { status });
@@ -1390,6 +1407,19 @@ export default function Admin() {
                                       >
                                         <XCircle className="h-3 w-3 mr-1 text-error" />
                                         Reject
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (confirm("Are you sure you want to permanently delete this payment? This action cannot be undone.")) {
+                                            deletePaymentMutation.mutate(payment.id);
+                                          }
+                                        }}
+                                        data-testid={`button-delete-${payment.id}`}
+                                      >
+                                        <Trash2 className="h-3 w-3 mr-1" />
+                                        Delete
                                       </Button>
                                     </div>
                                   </td>
