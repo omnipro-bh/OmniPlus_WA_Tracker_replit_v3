@@ -36,11 +36,15 @@ export default function AdminBalances() {
   // Fetch main balance
   const { data: balanceData, isLoading: balanceLoading } = useQuery<{ balance: number }>({
     queryKey: ["/api/admin/balance"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch transactions
   const { data: transactions = [], isLoading: transactionsLoading } = useQuery<BalanceTransaction[]>({
     queryKey: ["/api/admin/balance/transactions"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Top up mutation
