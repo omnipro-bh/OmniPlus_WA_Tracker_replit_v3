@@ -1287,73 +1287,89 @@ function HomepageFeaturesManagement() {
               {editingFeature ? "Update the feature details" : "Add a new feature to the homepage"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Enter title"
-                data-testid="input-feature-title"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Enter title" data-testid="input-feature-title" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Enter description"
-                rows={4}
-                data-testid="input-feature-description"
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Enter description" rows={4} data-testid="input-feature-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="icon">Icon Name (lucide-react)</Label>
-              <Input
-                id="icon"
-                value={formData.icon}
-                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                placeholder="MessageSquare, Users, Zap, etc."
-                data-testid="input-feature-icon"
+              <FormField
+                control={form.control}
+                name="icon"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Icon Name (lucide-react)</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="MessageSquare, Users, Zap, etc." data-testid="input-feature-icon" />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      Enter a lucide-react icon name (e.g., MessageSquare, Users, Bot, BarChart3)
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Enter a lucide-react icon name (e.g., MessageSquare, Users, Bot, BarChart3)
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="sortOrder">Sort Order</Label>
-              <Input
-                id="sortOrder"
-                type="number"
-                value={formData.sortOrder}
-                onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })}
-                data-testid="input-feature-sortorder"
+              <FormField
+                control={form.control}
+                name="sortOrder"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sort Order</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} value={field.value} data-testid="input-feature-sortorder" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="published">Published</Label>
-              <Switch
-                id="published"
-                checked={formData.published}
-                onCheckedChange={(checked) => setFormData({ ...formData, published: checked })}
-                data-testid="switch-feature-published"
+              <FormField
+                control={form.control}
+                name="published"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between">
+                    <FormLabel>Published</FormLabel>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-feature-published" />
+                    </FormControl>
+                  </FormItem>
+                )}
               />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={!formData.title || !formData.description || createMutation.isPending || updateMutation.isPending}
-              data-testid="button-submit-feature"
-            >
-              {editingFeature ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingFeature(null); form.reset(); }} data-testid="button-cancel-feature">
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-submit-feature"
+                >
+                  {editingFeature ? "Update" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </Card>

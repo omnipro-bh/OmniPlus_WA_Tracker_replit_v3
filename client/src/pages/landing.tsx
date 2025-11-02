@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield } from "lucide-react";
+import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield, icons } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import type { Plan } from "@shared/schema";
@@ -18,6 +18,18 @@ import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+// Helper function to dynamically render Lucide icons
+const renderIcon = (iconName: string | null, className: string = "h-6 w-6") => {
+  if (!iconName) return <MessageSquare className={className} />;
+  
+  const IconComponent = (icons as any)[iconName];
+  if (IconComponent) {
+    return <IconComponent className={className} />;
+  }
+  
+  return <MessageSquare className={className} />;
+};
 
 // Helper function to get currency symbol
 const getCurrencySymbol = (currency: string) => {
@@ -64,6 +76,18 @@ export default function Landing() {
   
   // Filter plans that are published on homepage
   const plans = allPlans.filter((plan: any) => plan.publishedOnHomepage);
+
+  // Fetch dynamic homepage features
+  const { data: allFeatures = [] } = useQuery<any[]>({
+    queryKey: ["/api/homepage-features"],
+  });
+  const features = allFeatures.filter((f: any) => f.published).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+
+  // Fetch dynamic use cases
+  const { data: allUseCases = [] } = useQuery<any[]>({
+    queryKey: ["/api/use-cases"],
+  });
+  const useCases = allUseCases.filter((u: any) => u.published).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
 
   // Dialog state
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
@@ -362,83 +386,101 @@ export default function Landing() {
           </div>
 
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <MessageSquare className="h-6 w-6" />
-                </div>
-                <CardTitle>Multi-Device Management</CardTitle>
-                <CardDescription>
-                  Connect and manage multiple WhatsApp devices from a single dashboard. Scale your
-                  messaging infrastructure effortlessly.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+            {features.length > 0 ? (
+              features.map((feature: any) => (
+                <Card key={feature.id} className="hover-elevate transition-all" data-testid={`feature-${feature.id}`}>
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      {renderIcon(feature.icon)}
+                    </div>
+                    <CardTitle>{feature.title}</CardTitle>
+                    <CardDescription>
+                      {feature.description}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ))
+            ) : (
+              <>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <MessageSquare className="h-6 w-6" />
+                    </div>
+                    <CardTitle>Multi-Device Management</CardTitle>
+                    <CardDescription>
+                      Connect and manage multiple WhatsApp devices from a single dashboard. Scale your
+                      messaging infrastructure effortlessly.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
 
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Zap className="h-6 w-6" />
-                </div>
-                <CardTitle>Interactive Messages</CardTitle>
-                <CardDescription>
-                  Send rich messages with buttons, headers, footers and custom actions. Create
-                  engaging conversations with your customers.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Zap className="h-6 w-6" />
+                    </div>
+                    <CardTitle>Interactive Messages</CardTitle>
+                    <CardDescription>
+                      Send rich messages with buttons, headers, footers and custom actions. Create
+                      engaging conversations with your customers.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
 
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Users className="h-6 w-6" />
-                </div>
-                <CardTitle>Bulk Broadcasting</CardTitle>
-                <CardDescription>
-                  Import CSV files and send personalized messages to thousands of contacts
-                  simultaneously with intelligent delivery.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Users className="h-6 w-6" />
+                    </div>
+                    <CardTitle>Bulk Broadcasting</CardTitle>
+                    <CardDescription>
+                      Import CSV files and send personalized messages to thousands of contacts
+                      simultaneously with intelligent delivery.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
 
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Bot className="h-6 w-6" />
-                </div>
-                <CardTitle>Chatbot Builder</CardTitle>
-                <CardDescription>
-                  Build intelligent chatbots with our visual workflow editor. Automate responses and
-                  create conversational experiences.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Bot className="h-6 w-4" />
+                    </div>
+                    <CardTitle>Chatbot Builder</CardTitle>
+                    <CardDescription>
+                      Build intelligent chatbots with our visual workflow editor. Automate responses and
+                      create conversational experiences.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
 
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <BarChart3 className="h-6 w-6" />
-                </div>
-                <CardTitle>Real-time Analytics</CardTitle>
-                <CardDescription>
-                  Track message delivery, read receipts, and engagement metrics. Make data-driven
-                  decisions with comprehensive reporting.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <BarChart3 className="h-6 w-6" />
+                    </div>
+                    <CardTitle>Real-time Analytics</CardTitle>
+                    <CardDescription>
+                      Track message delivery, read receipts, and engagement metrics. Make data-driven
+                      decisions with comprehensive reporting.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
 
-            <Card className="hover-elevate transition-all">
-              <CardHeader>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Shield className="h-6 w-6" />
-                </div>
-                <CardTitle>Enterprise Security</CardTitle>
-                <CardDescription>
-                  Bank-level encryption, role-based access control, and compliance-ready
-                  infrastructure to keep your data safe.
-                </CardDescription>
-              </CardHeader>
-            </Card>
+                <Card className="hover-elevate transition-all">
+                  <CardHeader>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Shield className="h-6 w-6" />
+                    </div>
+                    <CardTitle>Enterprise Security</CardTitle>
+                    <CardDescription>
+                      Bank-level encryption, role-based access control, and compliance-ready
+                      infrastructure to keep your data safe.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </>
+            )}
           </div>
         </div>
       </section>
