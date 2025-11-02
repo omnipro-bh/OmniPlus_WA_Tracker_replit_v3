@@ -17,7 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
-import { Lock, XCircle } from "lucide-react";
+import { Lock, XCircle, Calendar, Clock } from "lucide-react";
+import { format, addDays } from "date-fns";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -157,11 +158,41 @@ export default function Settings() {
               Cancel your current subscription plan
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              You are currently subscribed to the <span className="font-semibold">{user.currentPlan?.name}</span> plan.
-              Canceling will stop future billing, but you'll retain access until the end of your current billing period.
-            </p>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                You are currently subscribed to the <span className="font-semibold">{user.currentPlan?.name}</span> plan.
+              </p>
+              
+              {typeof user.daysBalance === 'number' && user.daysBalance >= 0 && (
+                <div className="flex flex-wrap items-center gap-6 p-4 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Days Remaining</p>
+                      <p className="text-lg font-semibold" data-testid="text-days-remaining">
+                        {user.daysBalance} days
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Expires On</p>
+                      <p className="text-lg font-semibold" data-testid="text-expiration-date">
+                        {format(addDays(new Date(), user.daysBalance), "MMM dd, yyyy")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-sm text-muted-foreground">
+                Canceling will stop future billing (both PayPal and offline payments), but you'll retain access until the end of your current billing period.
+              </p>
+            </div>
+            
             <Button
               variant="destructive"
               onClick={() => setIsCancelDialogOpen(true)}
