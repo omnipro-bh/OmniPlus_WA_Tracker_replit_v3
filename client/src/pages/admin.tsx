@@ -3420,24 +3420,51 @@ export default function Admin() {
                       </Button>
                     </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Workflow Webhook (First Workflow)</p>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 text-xs bg-muted p-2 rounded font-mono break-all">
-                        {window.location.origin}/webhooks/whapi/{selectedUserForDrawer.id}/[workflow-token]
-                      </code>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled
-                      >
-                        N/A
-                      </Button>
+                  {/* Display up to 2 workflows */}
+                  {userWorkflows && userWorkflows.length > 0 ? (
+                    <>
+                      {userWorkflows.slice(0, 2).map((workflow, index) => (
+                        <div key={workflow.id}>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">
+                            Workflow Webhook {userWorkflows.length > 1 ? `(${index === 0 ? 'First' : 'Second'} Workflow)` : ''}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-xs bg-muted p-2 rounded font-mono break-all" data-testid={`text-workflow-webhook-${workflow.id}`}>
+                              {window.location.origin}/webhooks/whapi/{selectedUserForDrawer.id}/{workflow.webhookToken}
+                            </code>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                navigator.clipboard.writeText(
+                                  `${window.location.origin}/webhooks/whapi/${selectedUserForDrawer.id}/${workflow.webhookToken}`
+                                );
+                                toast({ description: `Workflow "${workflow.name}" webhook URL copied` });
+                              }}
+                              data-testid={`button-copy-workflow-webhook-${workflow.id}`}
+                            >
+                              Copy
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {workflow.name} {workflow.isActive ? '(Active)' : '(Inactive)'}
+                          </p>
+                        </div>
+                      ))}
+                      {userWorkflows.length > 2 && (
+                        <p className="text-xs text-muted-foreground">
+                          Note: User has {userWorkflows.length} workflows. Only showing first 2 here.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Workflow Webhook</p>
+                      <p className="text-xs text-muted-foreground">
+                        No workflows created yet. User needs to create a workflow to get webhook URLs.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Note: Each workflow has its own unique token. View workflow details to see specific webhook URLs.
-                    </p>
-                  </div>
+                  )}
                 </div>
               </div>
 
