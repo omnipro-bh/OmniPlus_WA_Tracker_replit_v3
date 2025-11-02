@@ -3,6 +3,17 @@
 ## Overview
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
+## Recent Changes (November 2, 2025)
+- **Admin UI Forms Enhancement:** Migrated Use Cases and Homepage Features management dialogs to use proper Form + useForm + zodResolver pattern for better validation and error handling
+- **TypeScript Error Fixes:** Resolved optional field null handling in admin forms by providing default empty strings for image and icon fields
+- **Dynamic Landing Page Content:** 
+  - Landing page now fetches and displays dynamic homepage features from `/api/homepage-features`
+  - Added Use Cases section to landing page that fetches content from `/api/use-cases`
+  - Created `renderIcon` helper function to dynamically load Lucide React icons based on icon name strings
+  - Features and Use Cases are filtered by published status and sorted by sortOrder
+  - Fallback to hardcoded content when no dynamic data is available
+- **E2E Testing:** Full test coverage confirms admin-to-landing data flow works correctly with proper validation
+
 ## User Preferences
 - Dark mode by default (matches design guidelines)
 - Theme persisted in localStorage
