@@ -2055,9 +2055,12 @@ export default function Admin() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    setSelectedUser(user);
-                                    setAction("add");
-                                    setIsDialogOpen(true);
+                                    // Open channel selector for this user
+                                    setExpandedUserId(user.id);
+                                    setActivationUserId(user.id);
+                                    setActivationChannelId(null);
+                                    setActivationDays("1");
+                                    setIsChannelSelectorOpen(true);
                                   }}
                                   data-testid={`button-add-days-${user.id}`}
                                 >
