@@ -174,6 +174,7 @@ export const offlinePayments = pgTable("offline_payments", {
   status: offlinePaymentStatusEnum("status").notNull().default("PENDING"),
   requestType: requestTypeEnum("request_type"), // Request type (PAID, REQUEST_QUOTE, BOOK_DEMO)
   metadata: jsonb("metadata"), // Additional data for quote/demo requests (name, email, phone, company, message, etc.)
+  termsVersion: text("terms_version"), // Which T&C version was accepted
   approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   rejectedBy: integer("rejected_by").references(() => users.id, { onDelete: "set null" }),

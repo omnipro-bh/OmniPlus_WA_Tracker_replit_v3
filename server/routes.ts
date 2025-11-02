@@ -477,6 +477,7 @@ export function registerRoutes(app: Express) {
         planId: z.number(),
         durationType: z.enum(["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]),
         orderId: z.string().min(1),
+        termsVersion: z.string().min(1, "Terms acceptance is required"),
       }).safeParse(req.body);
 
       if (!validationResult.success) {
@@ -486,7 +487,7 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, durationType, orderId } = validationResult.data;
+      const { planId, durationType, orderId, termsVersion } = validationResult.data;
 
       // Check for duplicate transaction (idempotency)
       const existingSubscription = await storage.getActiveSubscriptionForUser(req.userId!);
@@ -538,6 +539,8 @@ export function registerRoutes(app: Express) {
         durationType: durationType || "MONTHLY",
         provider: "PAYPAL",
         transactionId: orderId,
+        termsVersion,
+        agreedAt: new Date(),
       });
 
       // Add days to user balance
@@ -591,7 +594,12 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, amount, currency, reference, proofUrl, requestType, metadata } = validationResult.data;
+      const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion } = validationResult.data;
+
+      // Validate terms acceptance
+      if (!termsVersion) {
+        return res.status(400).json({ error: "Terms acceptance is required" });
+      }
 
       // Validate proofUrl to prevent XSS attacks
       if (proofUrl) {
@@ -618,6 +626,7 @@ export function registerRoutes(app: Express) {
         proofUrl,
         requestType: requestType || "PAID",
         metadata,
+        termsVersion,
         status: "PENDING",
       });
 
@@ -2704,6 +2713,8 @@ export function registerRoutes(app: Express) {
         durationType: "MONTHLY",
         provider: "OFFLINE",
         transactionId: payment.reference,
+        termsVersion: payment.termsVersion,
+        agreedAt: payment.createdAt, // Use payment creation time as terms agreement time
       });
 
       await storage.createAuditLog({
@@ -4318,6 +4329,136 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Activate terms error:", error);
       res.status(500).json({ error: "Failed to activate terms document" });
+    }
+  });
+
+  // ============================================================================
+  // SUBSCRIPTION MANAGEMENT ROUTES
+  // ============================================================================
+
+  // Admin: Cancel user subscription
+  app.post("/api/admin/users/:id/cancel-subscription", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      if (!subscription) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
+
+      await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CANCEL_USER_SUBSCRIPTION",
+        meta: {
+          entity: "subscription",
+          entityId: subscription.id,
+          userId,
+          planId: subscription.planId,
+        },
+      });
+
+      res.json({ message: "Subscription cancelled successfully" });
+    } catch (error: any) {
+      console.error("Cancel subscription error:", error);
+      res.status(500).json({ error: "Failed to cancel subscription" });
+    }
+  });
+
+  // Admin: Delete user account (with all related data)
+  app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Prevent self-deletion
+      if (userId === req.userId) {
+        return res.status(400).json({ error: "You cannot delete your own account" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Create audit log before deletion
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "DELETE_USER",
+        meta: {
+          entity: "user",
+          userId,
+          email: user.email,
+          name: user.name,
+        },
+      });
+
+      // Delete user (cascade will handle related data)
+      await storage.deleteUser(userId);
+
+      res.json({ message: "User account deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete user error:", error);
+      res.status(500).json({ error: "Failed to delete user account" });
+    }
+  });
+
+  // User: Cancel own subscription
+  app.post("/api/me/cancel-subscription", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      if (!subscription) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
+
+      await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CANCEL_OWN_SUBSCRIPTION",
+        meta: {
+          entity: "subscription",
+          entityId: subscription.id,
+          planId: subscription.planId,
+        },
+      });
+
+      res.json({ message: "Subscription cancelled successfully" });
+    } catch (error: any) {
+      console.error("Cancel subscription error:", error);
+      res.status(500).json({ error: "Failed to cancel subscription" });
+    }
+  });
+
+  // User: Reset password
+  app.post("/api/me/reset-password", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const validation = z.object({
+        newPassword: z.string().min(6, "Password must be at least 6 characters"),
+      }).safeParse(req.body);
+
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors[0].message });
+      }
+
+      const { newPassword } = validation.data;
+      const passwordHash = await hashPassword(newPassword);
+
+      await storage.updateUser(req.userId!, { passwordHash });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "RESET_PASSWORD",
+        meta: {
+          entity: "user",
+          userId: req.userId!,
+        },
+      });
+
+      res.json({ message: "Password reset successfully" });
+    } catch (error: any) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ error: "Failed to reset password" });
     }
   });
 }

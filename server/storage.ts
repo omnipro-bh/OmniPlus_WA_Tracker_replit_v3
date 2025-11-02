@@ -36,6 +36,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: Omit<InsertUser, "passwordHash"> & { passwordHash: string }): Promise<User>;
   updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
 
   // Plans
@@ -185,6 +186,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(schema.users).where(eq(schema.users.id, id));
   }
 
   async getAllUsers(): Promise<User[]> {
