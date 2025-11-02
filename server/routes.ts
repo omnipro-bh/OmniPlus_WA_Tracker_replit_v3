@@ -2753,6 +2753,43 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Delete offline payment (admin only)
+  app.delete("/api/admin/offline-payments/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const paymentId = parseInt(req.params.id);
+      const payment = await storage.getOfflinePayment(paymentId);
+
+      if (!payment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+
+      // Permanently delete from database
+      await storage.deleteOfflinePayment(paymentId);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "DELETE_PAYMENT",
+        meta: {
+          entity: "offline_payment",
+          entityId: paymentId,
+          adminId: req.userId,
+          deletedPayment: {
+            userId: payment.userId,
+            planId: payment.planId,
+            amount: payment.amount,
+            reference: payment.reference,
+            status: payment.status
+          }
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete payment error:", error);
+      res.status(500).json({ error: "Failed to delete payment" });
+    }
+  });
+
   // ============================================================================
   // PLAN REQUESTS (Quote/Demo)
   // ============================================================================

@@ -96,6 +96,7 @@ export interface IStorage {
   getOfflinePayment(id: number): Promise<OfflinePayment | undefined>;
   createOfflinePayment(payment: InsertOfflinePayment): Promise<OfflinePayment>;
   updateOfflinePayment(id: number, data: Partial<OfflinePayment>): Promise<OfflinePayment | undefined>;
+  deleteOfflinePayment(id: number): Promise<void>;
 
   // Plan Requests
   getPlanRequests(status?: string): Promise<schema.PlanRequest[]>;
@@ -491,6 +492,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.offlinePayments.id, id))
       .returning();
     return payment || undefined;
+  }
+
+  async deleteOfflinePayment(id: number): Promise<void> {
+    await db
+      .delete(schema.offlinePayments)
+      .where(eq(schema.offlinePayments.id, id));
   }
 
   // Plan Requests
