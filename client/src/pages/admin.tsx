@@ -109,6 +109,217 @@ function AuthSettings() {
   );
 }
 
+function DefaultPageAccessSettings() {
+  const { toast } = useToast();
+  const [pageAccess, setPageAccess] = useState({
+    dashboard: true,
+    channels: false,
+    send: false,
+    bulk: false,
+    templates: false,
+    workflows: false,
+    chatbot: false,
+    outbox: false,
+    logs: false,
+    bulkLogs: false,
+    pricing: true,
+    balances: false,
+    whapiSettings: false,
+  });
+
+  const { data: settings, isLoading } = useQuery<{pageAccess: typeof pageAccess}>({
+    queryKey: ["/api/admin/settings/default-page-access"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (settings?.pageAccess) {
+      setPageAccess(settings.pageAccess);
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { pageAccess: typeof pageAccess }) => {
+      return await apiRequest("PUT", "/api/admin/settings/default-page-access", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/default-page-access"] });
+      toast({
+        title: "Settings updated",
+        description: "Default page access settings have been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    updateSettingsMutation.mutate({ pageAccess });
+  };
+
+  const handleToggle = (page: string) => {
+    setPageAccess((prev) => ({ ...prev, [page]: !prev[page as keyof typeof prev] }));
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  const pages = [
+    { key: "dashboard", label: "Dashboard", description: "Main dashboard page" },
+    { key: "channels", label: "Channels", description: "Manage WhatsApp channels" },
+    { key: "send", label: "Send", description: "Send individual messages" },
+    { key: "bulk", label: "Bulk", description: "Send bulk messages" },
+    { key: "templates", label: "Templates", description: "Message templates" },
+    { key: "workflows", label: "Workflows", description: "Workflow builder" },
+    { key: "chatbot", label: "Chatbot", description: "Chatbot management" },
+    { key: "outbox", label: "Outbox", description: "Message outbox" },
+    { key: "logs", label: "Workflow Logs", description: "Workflow execution logs" },
+    { key: "bulkLogs", label: "Bulk Logs", description: "Bulk sending logs" },
+    { key: "pricing", label: "Pricing", description: "View pricing plans" },
+    { key: "balances", label: "Balances", description: "View balance information" },
+    { key: "whapiSettings", label: "WHAPI Settings", description: "WHAPI configuration" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {pages.map((page) => (
+          <div key={page.key} className="flex flex-wrap items-center justify-between gap-2 p-3 bg-muted/30 rounded-md">
+            <div className="space-y-0.5">
+              <Label htmlFor={`page-${page.key}`} className="cursor-pointer">{page.label}</Label>
+              <p className="text-xs text-muted-foreground">
+                {page.description}
+              </p>
+            </div>
+            <Checkbox
+              id={`page-${page.key}`}
+              checked={pageAccess[page.key as keyof typeof pageAccess]}
+              onCheckedChange={() => handleToggle(page.key)}
+              data-testid={`checkbox-page-${page.key}`}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-muted/30 p-4 rounded-md">
+        <p className="text-sm text-muted-foreground">
+          These settings control which pages new users can access when they first sign up. Users with subscriptions may have different access based on their plan.
+        </p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-page-access"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
+
+function DefaultThemeSettings() {
+  const { toast } = useToast();
+  const [defaultTheme, setDefaultTheme] = useState("dark");
+
+  const { data: settings, isLoading } = useQuery<{defaultTheme: string}>({
+    queryKey: ["/api/admin/settings/default-theme"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (settings?.defaultTheme) {
+      setDefaultTheme(settings.defaultTheme);
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { defaultTheme: string }) => {
+      return await apiRequest("PUT", "/api/admin/settings/default-theme", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/default-theme"] });
+      toast({
+        title: "Settings updated",
+        description: "Default theme setting has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    updateSettingsMutation.mutate({ defaultTheme });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-muted/30 rounded-md">
+          <div className="space-y-0.5">
+            <Label htmlFor="theme-light" className="cursor-pointer">Light Theme</Label>
+            <p className="text-xs text-muted-foreground">
+              Use light mode by default for new users
+            </p>
+          </div>
+          <Checkbox
+            id="theme-light"
+            checked={defaultTheme === "light"}
+            onCheckedChange={() => setDefaultTheme("light")}
+            data-testid="checkbox-theme-light"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-muted/30 rounded-md">
+          <div className="space-y-0.5">
+            <Label htmlFor="theme-dark" className="cursor-pointer">Dark Theme</Label>
+            <p className="text-xs text-muted-foreground">
+              Use dark mode by default for new users
+            </p>
+          </div>
+          <Checkbox
+            id="theme-dark"
+            checked={defaultTheme === "dark"}
+            onCheckedChange={() => setDefaultTheme("dark")}
+            data-testid="checkbox-theme-dark"
+          />
+        </div>
+      </div>
+
+      <div className="bg-muted/30 p-4 rounded-md">
+        <p className="text-sm text-muted-foreground">
+          This setting controls the default theme that will be applied when users first visit the application. Users can change their theme preference at any time.
+        </p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-default-theme"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
+
 function BulkSpeedSettings() {
   const { toast } = useToast();
   const [minDelay, setMinDelay] = useState("");
@@ -1837,6 +2048,30 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <BulkSpeedSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Default Page Access for New Users</CardTitle>
+              <CardDescription>
+                Control which pages new users can access when they sign up
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DefaultPageAccessSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Default Theme</CardTitle>
+              <CardDescription>
+                Set the default theme for new users
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DefaultThemeSettings />
             </CardContent>
           </Card>
         </TabsContent>
