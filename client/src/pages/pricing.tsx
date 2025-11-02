@@ -37,7 +37,9 @@ export default function Pricing() {
   const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
   const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
-  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isPayPalTermsDialogOpen, setIsPayPalTermsDialogOpen] = useState(false);
+  const [offlineTermsAccepted, setOfflineTermsAccepted] = useState(false);
+  const [paypalTermsAccepted, setPayPalTermsAccepted] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [offlinePayment, setOfflinePayment] = useState({
     amount: "",
@@ -69,7 +71,7 @@ export default function Pricing() {
 
   const offlinePaymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      if (!termsAccepted) {
+      if (!offlineTermsAccepted) {
         throw new Error("Please accept the terms and conditions");
       }
       const mainTerms = termsDocuments.find((t: any) => t.type === "MAIN" && t.isActive);
@@ -81,7 +83,7 @@ export default function Pricing() {
     onSuccess: () => {
       setIsOfflineDialogOpen(false);
       setOfflinePayment({ amount: "", currency: "USD", reference: "", proofUrl: "" });
-      setTermsAccepted(false);
+      setOfflineTermsAccepted(false);
       toast({
         title: "Payment submitted",
         description: "Your payment is pending admin approval.",
@@ -151,7 +153,14 @@ export default function Pricing() {
       amount: (getDiscountedPrice(plan.price || 0) / 100).toFixed(2),
       currency: plan.currency,
     });
+    setOfflineTermsAccepted(false);
     setIsOfflineDialogOpen(true);
+  };
+
+  const handlePayPalClick = (plan: Plan) => {
+    setSelectedPlan(plan);
+    setPayPalTermsAccepted(false);
+    setIsPayPalTermsDialogOpen(true);
   };
 
   return (
@@ -196,35 +205,6 @@ export default function Pricing() {
               -10%
             </span>
           </Button>
-        </div>
-      </div>
-
-      {/* Terms Acceptance */}
-      <div className="flex justify-center">
-        <div className="flex items-start space-x-2 max-w-2xl">
-          <Checkbox
-            id="global-terms"
-            checked={termsAccepted}
-            onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
-            data-testid="checkbox-global-terms"
-          />
-          <div className="grid gap-1.5 leading-none">
-            <label
-              htmlFor="global-terms"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              I accept the{" "}
-              <Button
-                variant="link"
-                className="h-auto p-0 text-sm"
-                onClick={() => setIsTermsDialogOpen(true)}
-                type="button"
-                data-testid="button-view-terms-global"
-              >
-                Terms & Conditions
-              </Button>
-            </label>
-          </div>
         </div>
       </div>
 
@@ -298,16 +278,14 @@ export default function Pricing() {
                   <>
                     {/* Only show PayPal button if PayPal is enabled for this plan */}
                     {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("paypal") && (
-                      <PayPalSubscribeButton
-                        planId={plan.id}
-                        planName={plan.name}
-                        amount={(discountedPrice / 100).toFixed(2)}
-                        currency={plan.currency}
-                        durationType={durationType}
-                        isPopular={isPopular}
-                        disabled={!termsAccepted}
-                        termsVersion={termsDocuments.find((t: any) => t.type === "MAIN" && t.isActive)?.version || "1.0"}
-                      />
+                      <Button
+                        variant={isPopular ? "default" : "outline"}
+                        className="w-full"
+                        onClick={() => handlePayPalClick(plan)}
+                        data-testid={`button-subscribe-${plan.name.toLowerCase()}`}
+                      >
+                        Subscribe with PayPal
+                      </Button>
                     )}
                     {/* Only show Offline Payment button if offline is enabled for this plan */}
                     {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("offline") && (
@@ -429,6 +407,31 @@ export default function Pricing() {
                 Screenshot of payment confirmation or receipt
               </p>
             </div>
+            <div className="flex items-start space-x-2">
+              <Checkbox
+                id="offline-terms"
+                checked={offlineTermsAccepted}
+                onCheckedChange={(checked) => setOfflineTermsAccepted(checked as boolean)}
+                data-testid="checkbox-offline-terms"
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="offline-terms"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  I accept the{" "}
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 text-sm"
+                    onClick={() => setIsTermsDialogOpen(true)}
+                    type="button"
+                    data-testid="button-view-terms-offline"
+                  >
+                    Terms & Conditions
+                  </Button>
+                </label>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsOfflineDialogOpen(false)}>
@@ -446,7 +449,7 @@ export default function Pricing() {
                   });
                 }
               }}
-              disabled={!offlinePayment.amount || !termsAccepted || offlinePaymentMutation.isPending}
+              disabled={!offlinePayment.amount || !offlineTermsAccepted || offlinePaymentMutation.isPending}
               data-testid="button-submit-offline-payment"
             >
               Submit Payment
@@ -649,6 +652,61 @@ export default function Pricing() {
             <Button onClick={() => setIsTermsDialogOpen(false)} data-testid="button-close-terms">
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PayPal Terms and Conditions Dialog */}
+      <Dialog open={isPayPalTermsDialogOpen} onOpenChange={setIsPayPalTermsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Terms & Conditions</DialogTitle>
+            <DialogDescription>
+              Please review and accept our terms to continue with PayPal payment
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[50vh] w-full rounded-md border p-4">
+            {termsDocuments.filter((doc: any) => doc.isActive).map((doc: any) => (
+              <div key={doc.id} className="mb-6">
+                <h3 className="text-lg font-semibold mb-2">{doc.title}</h3>
+                <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  {doc.content}
+                </div>
+              </div>
+            ))}
+          </ScrollArea>
+          <div className="flex items-start space-x-2 px-4">
+            <Checkbox
+              id="paypal-terms"
+              checked={paypalTermsAccepted}
+              onCheckedChange={(checked) => setPayPalTermsAccepted(checked as boolean)}
+              data-testid="checkbox-paypal-terms"
+            />
+            <div className="grid gap-1.5 leading-none">
+              <label
+                htmlFor="paypal-terms"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                I accept the Terms & Conditions
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPayPalTermsDialogOpen(false)}>
+              Cancel
+            </Button>
+            {selectedPlan && (
+              <PayPalSubscribeButton
+                planId={selectedPlan.id}
+                planName={selectedPlan.name}
+                amount={(getDiscountedPrice(selectedPlan.price || 0) / 100).toFixed(2)}
+                currency={selectedPlan.currency}
+                durationType={durationType}
+                isPopular={false}
+                disabled={!paypalTermsAccepted}
+                termsVersion={termsDocuments.find((t: any) => t.type === "MAIN" && t.isActive)?.version || "1.0"}
+              />
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
