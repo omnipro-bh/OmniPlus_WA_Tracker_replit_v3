@@ -580,6 +580,10 @@ export default function Admin() {
     pageAccess: {} as Record<string, boolean>,
   });
 
+  // Proof viewer dialog state
+  const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
+  const [selectedProofUrl, setSelectedProofUrl] = useState<string>("");
+
   // Plan editor dialog state
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
@@ -1323,7 +1327,10 @@ export default function Admin() {
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          onClick={() => window.open(payment.proofUrl, '_blank')}
+                                          onClick={() => {
+                                            setSelectedProofUrl(payment.proofUrl);
+                                            setIsProofDialogOpen(true);
+                                          }}
                                           data-testid={`button-view-proof-${payment.id}`}
                                         >
                                           <Upload className="h-3 w-3 mr-1" />
@@ -2571,6 +2578,62 @@ export default function Admin() {
               data-testid="button-save-overrides"
             >
               Save Overrides
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proof Viewer Dialog */}
+      <Dialog open={isProofDialogOpen} onOpenChange={setIsProofDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Payment Proof</DialogTitle>
+            <DialogDescription>
+              Review the uploaded payment confirmation
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-4 bg-muted/30 rounded-lg min-h-[400px]">
+            {selectedProofUrl && (
+              selectedProofUrl.startsWith('data:image') ? (
+                <img 
+                  src={selectedProofUrl} 
+                  alt="Payment proof" 
+                  className="max-w-full max-h-[600px] object-contain"
+                  data-testid="image-proof"
+                />
+              ) : selectedProofUrl.startsWith('data:application/pdf') ? (
+                <iframe 
+                  src={selectedProofUrl} 
+                  className="w-full h-[600px] border rounded"
+                  title="Payment proof PDF"
+                  data-testid="iframe-proof"
+                />
+              ) : (
+                <div className="text-center space-y-4">
+                  <p className="text-muted-foreground">Unable to preview this file type</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = selectedProofUrl;
+                      link.download = 'payment-proof';
+                      link.click();
+                    }}
+                    data-testid="button-download-proof"
+                  >
+                    Download File
+                  </Button>
+                </div>
+              )
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsProofDialogOpen(false)}
+              data-testid="button-close-proof"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

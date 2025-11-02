@@ -71,6 +71,13 @@ export default function Pricing() {
         description: "Your payment is pending admin approval.",
       });
     },
+    onError: (error: any) => {
+      toast({
+        title: "Submission failed",
+        description: error.error || "Failed to submit payment. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const quoteRequestMutation = useMutation({
@@ -350,6 +357,16 @@ export default function Pricing() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (file) {
+                    // Check file size (5MB limit)
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast({
+                        title: "File too large",
+                        description: "Please upload a file smaller than 5MB",
+                        variant: "destructive",
+                      });
+                      e.target.value = ""; // Clear the input
+                      return;
+                    }
                     // Convert file to base64
                     const reader = new FileReader();
                     reader.onloadend = () => {
