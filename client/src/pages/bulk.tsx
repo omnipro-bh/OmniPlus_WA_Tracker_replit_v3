@@ -73,6 +73,7 @@ export default function Bulk() {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      encoding: "UTF-8",
       transformHeader: (header: string) => {
         // Normalize headers: lowercase, trim, remove all whitespace/underscores/dashes
         return header.trim().toLowerCase().replace(/[\s_-]+/g, '');
