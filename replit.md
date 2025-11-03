@@ -4,6 +4,13 @@
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
 ## Recent Changes (November 3, 2025)
+- **Bulk Page - Emoji/Unicode Support:**
+  - Fixed CSV parsing to properly preserve emoji and Unicode characters (🕓, ✋, 👋, 🎉)
+  - Added UTF-8 encoding configuration to PapaParse library
+  - Emojis now display correctly in message preview instead of replacement characters (�)
+  - Works for all message fields: header, body, footer
+  - E2E test passed: Verified emoji preservation through upload and preview
+  - Architect reviewed: No side effects or security concerns
 - **Bulk Page - User-Provided Button IDs:**
   - CSV upload now supports optional button ID columns (button1_id, button2_id, button3_id)
   - System uses user-provided IDs when available in CSV, otherwise auto-generates IDs as before
