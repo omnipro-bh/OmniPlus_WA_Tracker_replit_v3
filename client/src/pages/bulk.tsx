@@ -23,6 +23,9 @@ type BulkRow = {
   button1?: string;
   button2?: string;
   button3?: string;
+  button1_id?: string;
+  button2_id?: string;
+  button3_id?: string;
 };
 
 export default function Bulk() {
@@ -123,9 +126,12 @@ export default function Bulk() {
           (h.includes('header') && !h.includes('footer'))
         );
         const footerHeaders = availableHeaders.filter((h: string) => h.includes('footer'));
-        const button1Headers = availableHeaders.filter((h: string) => h.match(/button.*1/));
-        const button2Headers = availableHeaders.filter((h: string) => h.match(/button.*2/));
-        const button3Headers = availableHeaders.filter((h: string) => h.match(/button.*3/));
+        const button1Headers = availableHeaders.filter((h: string) => h.match(/button.*1/) && !h.includes('id'));
+        const button2Headers = availableHeaders.filter((h: string) => h.match(/button.*2/) && !h.includes('id'));
+        const button3Headers = availableHeaders.filter((h: string) => h.match(/button.*3/) && !h.includes('id'));
+        const button1IdHeaders = availableHeaders.filter((h: string) => h.match(/button.*1.*id/));
+        const button2IdHeaders = availableHeaders.filter((h: string) => h.match(/button.*2.*id/));
+        const button3IdHeaders = availableHeaders.filter((h: string) => h.match(/button.*3.*id/));
         
         if (phoneHeaders.length === 0 || bodyHeaders.length === 0) {
           toast({
@@ -147,6 +153,9 @@ export default function Bulk() {
           button1: findHeader(row, button1Headers.length > 0 ? button1Headers : ['button1']),
           button2: findHeader(row, button2Headers.length > 0 ? button2Headers : ['button2']),
           button3: findHeader(row, button3Headers.length > 0 ? button3Headers : ['button3']),
+          button1_id: findHeader(row, button1IdHeaders.length > 0 ? button1IdHeaders : ['button1id']),
+          button2_id: findHeader(row, button2IdHeaders.length > 0 ? button2IdHeaders : ['button2id']),
+          button3_id: findHeader(row, button3IdHeaders.length > 0 ? button3IdHeaders : ['button3id']),
         }));
 
         // Validate required fields
