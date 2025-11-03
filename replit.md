@@ -52,6 +52,13 @@ OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling busines
   - Features and Use Cases are filtered by published status and sorted by sortOrder
   - Fallback to hardcoded content when no dynamic data is available
 - **E2E Testing:** Full test coverage confirms admin-to-landing data flow works correctly with proper validation
+- **Legal Pages Added:**
+  - Created three legal document pages: Privacy Policy, Terms & Conditions, and Button Functionality Terms
+  - All pages accessible from landing page footer under "Legal" section
+  - Content displays with proper formatting using Card component and prose typography
+  - Each page includes header with OmniPlus logo, "Back to Home" link, and contact email (support@omniplus-bh.com)
+  - Public routes (no authentication required) registered in App.tsx
+  - E2E test passed: All three pages load correctly, navigation works, cross-links function properly
 
 ## User Preferences
 - Dark mode by default (matches design guidelines)
