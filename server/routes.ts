@@ -1373,9 +1373,19 @@ export function registerRoutes(app: Express) {
       // Create messages with enhanced data
       for (const row of rows) {
         const buttons = [];
-        if (row.button1) buttons.push({ type: "quick_reply", title: row.button1, id: `btn1_${Date.now()}` });
-        if (row.button2) buttons.push({ type: "quick_reply", title: row.button2, id: `btn2_${Date.now()}` });
-        if (row.button3) buttons.push({ type: "quick_reply", title: row.button3, id: `btn3_${Date.now()}` });
+        // Use user-provided button IDs if available, otherwise auto-generate
+        if (row.button1) {
+          const buttonId = row.button1_id || `btn1_${Date.now()}`;
+          buttons.push({ type: "quick_reply", title: row.button1, id: buttonId });
+        }
+        if (row.button2) {
+          const buttonId = row.button2_id || `btn2_${Date.now()}`;
+          buttons.push({ type: "quick_reply", title: row.button2, id: buttonId });
+        }
+        if (row.button3) {
+          const buttonId = row.button3_id || `btn3_${Date.now()}`;
+          buttons.push({ type: "quick_reply", title: row.button3, id: buttonId });
+        }
 
         await storage.createMessage({
           jobId: job.id,
