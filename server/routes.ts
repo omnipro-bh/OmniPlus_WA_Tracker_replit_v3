@@ -3461,15 +3461,25 @@ export function registerRoutes(app: Express) {
               
               if (entryNode) {
                 console.log(`Found entry node, sending message...`);
-                // Send the entry node's message
-                const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
-                executionLog.responsesSent.push(response);
-                console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                try {
+                  // Send the entry node's message
+                  const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
+                  executionLog.responsesSent.push(response);
+                  console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                } catch (sendError: any) {
+                  // Log the error but don't fail the whole workflow execution
+                  const errorMsg = sendError.message || String(sendError);
+                  console.error(`Failed to send entry node message: ${errorMsg}`);
+                  executionLog.errorMessage = `Failed to send welcome message: ${errorMsg}`;
+                  executionLog.status = "ERROR";
+                }
               } else {
                 console.log(`Entry node ${entryNodeId} not found in workflow definition`);
+                executionLog.errorMessage = `Entry node ${entryNodeId} not found in workflow definition`;
               }
             } else {
               console.log(`No entry node configured for workflow ${activeWorkflow.id}`);
+              executionLog.errorMessage = `No entry node configured for workflow`;
             }
 
             // Update conversation state for tracking
