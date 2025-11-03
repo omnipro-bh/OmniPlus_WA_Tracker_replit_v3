@@ -1855,7 +1855,7 @@ export function registerRoutes(app: Express) {
         .leftJoin(workflows, eq(workflowExecutions.workflowId, workflows.id))
         .where(inArray(workflowExecutions.workflowId, workflowIds))
         .orderBy(desc(workflowExecutions.executedAt))
-        .limit(500); // Limit to last 500 logs
+        .limit(100); // Limit to last 100 logs for performance
 
       res.json(logs);
     } catch (error: any) {
