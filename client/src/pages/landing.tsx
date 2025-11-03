@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield, icons } from "lucide-react";
+import heroImage from "@assets/generated_images/WhatsApp_chatbot_interface_buttons_368a6f70.png";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import type { Plan } from "@shared/schema";
@@ -300,48 +301,19 @@ export default function Landing() {
                   Book a Demo
                 </Button>
               </div>
-              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" />
-                  No credit card required
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" />
-                  14 day free trial
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" />
-                  Cancel anytime
-                </div>
+              <div className="text-lg font-medium text-muted-foreground">
+                Transform your business with WhatsApp Automation & Chatbot
               </div>
             </div>
             <div className="hidden lg:block">
               <div className="relative">
                 <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-info/20 rounded-2xl blur-3xl" />
-                <Card className="relative rotate-2 shadow-2xl border-primary/20">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>Dashboard Overview</CardTitle>
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-3 rounded-full bg-success animate-pulse" />
-                        <span className="text-xs text-success font-medium">10,000+</span>
-                      </div>
-                    </div>
-                    <CardDescription>Messages Sent Today</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">Channels</p>
-                        <p className="text-2xl font-bold">3/5</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">Days Left</p>
-                        <p className="text-2xl font-bold text-success">28</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <img 
+                  src={heroImage} 
+                  alt="WhatsApp Chatbot with Interactive Buttons" 
+                  className="relative rounded-2xl shadow-2xl"
+                  data-testid="img-hero"
+                />
               </div>
             </div>
           </div>
@@ -353,7 +325,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
             <div className="text-center">
-              <p className="text-4xl font-bold text-foreground">50K+</p>
+              <p className="text-4xl font-bold text-foreground">1000+</p>
               <p className="mt-2 text-sm text-muted-foreground">Active Users</p>
             </div>
             <div className="text-center">
