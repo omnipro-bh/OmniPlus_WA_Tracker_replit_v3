@@ -3,7 +3,12 @@
 ## Overview
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
-## Recent Changes (November 2, 2025)
+## Recent Changes (November 3, 2025)
+- **Expiration Date Fix:**
+  - Fixed expiration date mismatch between Channels page and Settings page
+  - Settings page now fetches actual channel data and displays real expiration date instead of calculating it incorrectly
+  - Both pages now show consistent expiration dates (e.g., Nov 3, 2025)
+  - E2E test passed: Verified both pages display the same expiration date
 - **Workflow Webhook Display in Admin:**
   - Added endpoint `GET /api/admin/users/:id/workflows` to fetch user's workflows (admin-only)
   - Admin user drawer now displays full workflow webhook URLs (up to 2 workflows)
