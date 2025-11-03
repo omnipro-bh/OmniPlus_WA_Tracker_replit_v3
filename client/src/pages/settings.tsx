@@ -16,9 +16,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lock, XCircle, Calendar, Clock } from "lucide-react";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -68,6 +68,17 @@ export default function Settings() {
       });
     },
   });
+
+  // Fetch user's channels to get actual expiration date
+  const { data: channels = [] } = useQuery<Array<{ id: number; expiresAt: string | null; status: string }>>({
+    queryKey: ["/api/channels"],
+  });
+
+  // Find the channel with the latest expiration date
+  const latestExpirationDate = channels
+    .filter((channel) => channel.status === "ACTIVE" && channel.expiresAt)
+    .map((channel) => new Date(channel.expiresAt!))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,15 +187,17 @@ export default function Settings() {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Expires On</p>
-                      <p className="text-lg font-semibold" data-testid="text-expiration-date">
-                        {format(addDays(new Date(), user.daysBalance), "MMM dd, yyyy")}
-                      </p>
+                  {latestExpirationDate && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Expires On</p>
+                        <p className="text-lg font-semibold" data-testid="text-expiration-date">
+                          {format(latestExpirationDate, "MMM dd, yyyy")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
