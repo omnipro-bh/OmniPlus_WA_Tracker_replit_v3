@@ -675,13 +675,18 @@ export default function Landing() {
               <h3 className="font-semibold mb-4">Legal</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
-                  <a href="#" className="hover:text-foreground">
+                  <a href="/privacy-policy" className="hover:text-foreground" data-testid="link-privacy">
                     Privacy
                   </a>
                 </li>
                 <li>
-                  <a href="#" className="hover:text-foreground">
+                  <a href="/terms-conditions" className="hover:text-foreground" data-testid="link-terms">
                     Terms
+                  </a>
+                </li>
+                <li>
+                  <a href="/button-terms" className="hover:text-foreground" data-testid="link-button-terms">
+                    Button Terms
                   </a>
                 </li>
               </ul>

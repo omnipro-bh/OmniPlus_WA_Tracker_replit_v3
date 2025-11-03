@@ -10,6 +10,9 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
+import PrivacyPolicy from "@/pages/privacy-policy";
+import TermsConditions from "@/pages/terms-conditions";
+import ButtonTerms from "@/pages/button-terms";
 import Dashboard from "@/pages/dashboard";
 import Channels from "@/pages/channels";
 import Send from "@/pages/send";
@@ -32,6 +35,9 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
+      <Route path="/privacy-policy" component={PrivacyPolicy} />
+      <Route path="/terms-conditions" component={TermsConditions} />
+      <Route path="/button-terms" component={ButtonTerms} />
 
       {/* Protected routes */}
       <Route path="/dashboard">
