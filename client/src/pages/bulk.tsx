@@ -352,6 +352,8 @@ export default function Bulk() {
             <h3 className="text-lg font-medium">No messages loaded</h3>
             <p className="text-sm text-muted-foreground mt-2">
               Upload a CSV file with columns: name, phone, email, header_msg, body_text, footer_text, button1, button2, button3
+              <br />
+              <span className="text-xs">Optional: button1_id, button2_id, button3_id (leave empty to auto-generate)</span>
             </p>
           </CardContent>
         </Card>
