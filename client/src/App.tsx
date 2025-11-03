@@ -13,6 +13,7 @@ import Signup from "@/pages/signup";
 import PrivacyPolicy from "@/pages/privacy-policy";
 import TermsConditions from "@/pages/terms-conditions";
 import ButtonTerms from "@/pages/button-terms";
+import About from "@/pages/about";
 import Dashboard from "@/pages/dashboard";
 import Channels from "@/pages/channels";
 import Send from "@/pages/send";
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/privacy-policy" component={PrivacyPolicy} />
       <Route path="/terms-conditions" component={TermsConditions} />
       <Route path="/button-terms" component={ButtonTerms} />
+      <Route path="/about" component={About} />
 
       {/* Protected routes */}
       <Route path="/dashboard">

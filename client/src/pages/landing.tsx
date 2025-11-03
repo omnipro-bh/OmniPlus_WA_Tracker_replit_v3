@@ -236,9 +236,13 @@ export default function Landing() {
                   Pricing
                 </a>
               )}
-              <a href="#contact" className="text-sm font-medium hover-elevate px-3 py-2 rounded-md">
+              <button 
+                onClick={() => setShowQuoteDialog(true)}
+                className="text-sm font-medium hover-elevate px-3 py-2 rounded-md"
+                data-testid="button-contact"
+              >
                 Contact
-              </a>
+              </button>
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
@@ -627,7 +631,7 @@ export default function Landing() {
               <h3 className="font-semibold mb-4">Company</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
-                  <a href="#" className="hover:text-foreground">
+                  <a href="/about" className="hover:text-foreground" data-testid="link-about">
                     About
                   </a>
                 </li>
@@ -637,9 +641,13 @@ export default function Landing() {
                   </a>
                 </li>
                 <li>
-                  <a href="#contact" className="hover:text-foreground">
+                  <button 
+                    onClick={() => setShowQuoteDialog(true)}
+                    className="hover:text-foreground text-sm"
+                    data-testid="button-footer-contact"
+                  >
                     Contact
-                  </a>
+                  </button>
                 </li>
               </ul>
             </div>
