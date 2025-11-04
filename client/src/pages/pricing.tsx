@@ -76,6 +76,10 @@ export default function Pricing() {
       return await apiRequest("POST", "/api/coupons/validate", data);
     },
     onSuccess: (data: any) => {
+      console.log("Coupon validation response:", JSON.stringify(data, null, 2));
+      console.log("data.valid:", data.valid);
+      console.log("data.coupon:", data.coupon);
+      
       if (data.valid && data.coupon) {
         setAppliedCoupon({
           code: data.coupon.code,
@@ -94,6 +98,7 @@ export default function Pricing() {
       }
     },
     onError: (error: any) => {
+      console.log("Coupon validation error:", error);
       toast({
         title: "Validation failed",
         description: error.error || "Failed to validate coupon",

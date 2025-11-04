@@ -561,7 +561,7 @@ function CouponsManagement() {
       code: formData.code.toUpperCase(),
       discountPercent: parseInt(formData.discountPercent),
       maxUses: formData.maxUses ? parseInt(formData.maxUses) : null,
-      expiresAt: formData.expiresAt ? new Date(formData.expiresAt) : null,
+      expiresAt: formData.expiresAt ? new Date(formData.expiresAt).toISOString() : null,
       status: formData.status,
       planScope: formData.planScope,
       allowedPlanIds: formData.planScope === "SPECIFIC" ? formData.allowedPlanIds : null,
