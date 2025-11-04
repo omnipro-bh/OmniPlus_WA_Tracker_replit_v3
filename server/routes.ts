@@ -2741,7 +2741,7 @@ export function registerRoutes(app: Express) {
   // Get offline payments (admin only)
   app.get("/api/admin/offline-payments", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
-      const payments = await storage.getOfflinePayments("PENDING");
+      const payments = await storage.getOfflinePayments();
 
       // Enrich with user and plan data
       const enrichedPayments = await Promise.all(

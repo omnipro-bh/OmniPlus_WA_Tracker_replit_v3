@@ -1523,6 +1523,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/offline-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setPaymentStatusTab("APPROVED");
       toast({ title: "Payment approved", description: "Days have been credited to the user." });
     },
   });
@@ -1533,6 +1534,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/offline-payments"] });
+      setPaymentStatusTab("REJECTED");
       toast({ title: "Payment rejected" });
     },
   });
@@ -2227,6 +2229,14 @@ export default function Admin() {
                                       <div className="text-xs text-muted-foreground">
                                         Ref: {payment.reference || "-"}
                                       </div>
+                                      {payment.couponCode && (
+                                        <div className="text-xs">
+                                          <span className="font-medium">Coupon:</span>{" "}
+                                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
+                                            {payment.couponCode}
+                                          </code>
+                                        </div>
+                                      )}
                                       {payment.proofUrl && (
                                         <Button
                                           variant="outline"
