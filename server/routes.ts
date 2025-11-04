@@ -2182,7 +2182,7 @@ export function registerRoutes(app: Express) {
           const { passwordHash: _, ...userWithoutPassword } = user;
           return {
             ...userWithoutPassword,
-            totalChannelDays, // Keep user.daysBalance as is, add totalChannelDays separately
+            daysBalance: totalChannelDays, // Override deprecated field with calculated channel days
             currentPlan,
             channelsUsed: channels.length,
             channelsLimit: currentPlan?.channelsLimit || 0,

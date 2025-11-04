@@ -3,6 +3,25 @@
 ## Overview
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
+## Recent Changes (November 4, 2025)
+- **Days Balance Synchronization Fix:**
+  - Fixed critical synchronization issue between channel expiration and days balance display
+  - Root cause: Admin dashboard was displaying deprecated `user.daysBalance` field instead of calculated days from active channels
+  - Solution: Updated `/api/admin/users` endpoint to override `daysBalance` with real-time calculated `totalChannelDays`
+  - Now all dashboards (user dashboard, admin dashboard, user details, channels page) show synchronized days remaining
+  - Cron job correctly sets expired channels to `daysRemaining: 0` every hour
+  - Both `/api/me` and `/api/admin/users` endpoints now consistently calculate days from channel.expiresAt dates
+  - No more mismatch between "ACTIVE" status with "1 day" and actual expired channels with "0 days"
+- **Landing Page Hero Image Updated:**
+  - Replaced WhatsApp chatbot interface image with campaign analytics showcase
+  - New image displays: Notification Campaigns, Rich Media Messages, Click-to-WhatsApp Ads with 92% read rate and 76% reply rate
+  - Updated alt text to describe campaign performance metrics
+- **Tawk.to Live Chat Integration:**
+  - Added Tawk.to chat widget to all pages (ID: 690896ac607713194fe5092a/1j94op4kn)
+  - Widget loads asynchronously in client/index.html before closing body tag
+  - Available on landing, about, legal pages, dashboard, and all authenticated pages
+  - E2E test passed: Widget loads and displays correctly on multiple pages
+
 ## Recent Changes (November 3, 2025)
 - **Log Pages Performance Optimization:**
   - Limited Workflow Logs to display last 100 executions (reduced from 500)
