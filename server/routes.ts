@@ -2179,15 +2179,20 @@ export function registerRoutes(app: Express) {
             totalChannelDays += daysRemaining;
           }
 
-          // Calculate user status based on active channels
-          const hasActiveChannels = channels.some(c => c.status === "ACTIVE");
-          const calculatedStatus = hasActiveChannels ? "active" : "expired";
+          // Calculate user status - only derive expired/active, respect manual status overrides
+          let calculatedStatus = user.status;
+          if (user.status === "active" || user.status === "expired") {
+            // Only override active/expired status based on channels
+            const hasActiveChannels = channels.some(c => c.status === "ACTIVE");
+            calculatedStatus = hasActiveChannels ? "active" : "expired";
+          }
+          // Preserve banned, disabled, pending, and other manual statuses as-is
 
           const { passwordHash: _, ...userWithoutPassword } = user;
           return {
             ...userWithoutPassword,
             daysBalance: totalChannelDays, // Override deprecated field with calculated channel days
-            status: calculatedStatus, // Override with calculated status based on active channels
+            status: calculatedStatus, // Override active/expired based on channels, preserve manual overrides
             currentPlan,
             channelsUsed: channels.length,
             channelsLimit: currentPlan?.channelsLimit || 0,
