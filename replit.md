@@ -10,6 +10,7 @@ OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling busines
   - Solution: Updated `/api/admin/users` endpoint to override both `daysBalance` and `status` with real-time calculations
   - Days balance now calculated from channel.expiresAt dates (sum of all channel days remaining)
   - User status now calculated from active channels (expired if no active channels, active otherwise)
+  - **Status Precedence:** Only calculates active/expired when current status is "active" or "expired"; preserves "banned", "disabled", "pending" manual overrides
   - Now all dashboards (user dashboard, admin dashboard, user details, channels page) show synchronized days remaining and status
   - Cron job correctly sets expired channels to `daysRemaining: 0` every hour
   - Both `/api/me` and `/api/admin/users` endpoints now consistently calculate days and status from channel data
