@@ -3314,7 +3314,12 @@ export function registerRoutes(app: Express) {
     try {
       const couponId = parseInt(req.params.id);
       
-      const coupon = await storage.updateCoupon(couponId, req.body);
+      const updateData = { ...req.body };
+      if (updateData.expiresAt) {
+        updateData.expiresAt = new Date(updateData.expiresAt);
+      }
+      
+      const coupon = await storage.updateCoupon(couponId, updateData);
       if (!coupon) {
         return res.status(404).json({ error: "Coupon not found" });
       }

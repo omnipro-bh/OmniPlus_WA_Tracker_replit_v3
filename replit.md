@@ -4,6 +4,15 @@
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
 ## Recent Changes (November 4, 2025)
+- **Coupon Update & Validation Fixes:**
+  - **Backend Fix**: Coupon update now converts `expiresAt` from ISO string to Date object before passing to Drizzle
+  - Fixed "value.toISOString is not a function" error when updating coupons with expiration dates
+  - **Frontend Fix**: Coupon validation mutation now properly parses JSON response from `apiRequest`
+  - Previously returned empty object `{}` despite valid backend response, causing "Invalid coupon" errors
+  - Admin can now successfully update coupon Max Uses and Expiration Date without errors
+  - Users can now successfully validate and apply coupons on Pricing page with proper discount display
+  - Shows discount breakdown: Original price → Discount percentage → Final discounted amount
+  - E2E tested: Both coupon update and validation work correctly with proper toast notifications
 - **Offline Payment Coupon Support:**
   - Added complete coupon support for offline payments on Pricing page
   - Amount field is now readonly, auto-populated from plan price based on selected billing duration (monthly/semi-annual/annual)
