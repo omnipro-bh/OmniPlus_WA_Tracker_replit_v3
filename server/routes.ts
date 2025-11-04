@@ -1832,6 +1832,13 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "isActive must be a boolean" });
       }
 
+      // Prevent activating workflows without an entry node
+      if (isActive && !workflow.entryNodeId) {
+        return res.status(400).json({ 
+          error: "Cannot activate workflow without an entry node. Please configure an entry node first." 
+        });
+      }
+
       const updated = await storage.updateWorkflow(workflowId, { isActive });
       res.json(updated);
     } catch (error: any) {
