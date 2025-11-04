@@ -2179,10 +2179,15 @@ export function registerRoutes(app: Express) {
             totalChannelDays += daysRemaining;
           }
 
+          // Calculate user status based on active channels
+          const hasActiveChannels = channels.some(c => c.status === "ACTIVE");
+          const calculatedStatus = hasActiveChannels ? "active" : "expired";
+
           const { passwordHash: _, ...userWithoutPassword } = user;
           return {
             ...userWithoutPassword,
             daysBalance: totalChannelDays, // Override deprecated field with calculated channel days
+            status: calculatedStatus, // Override with calculated status based on active channels
             currentPlan,
             channelsUsed: channels.length,
             channelsLimit: currentPlan?.channelsLimit || 0,

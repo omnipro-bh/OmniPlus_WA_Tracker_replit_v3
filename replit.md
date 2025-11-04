@@ -4,14 +4,16 @@
 OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple channels, send bulk/individual messages, develop interactive chatbots with workflow automation, and integrate with WHAPI Partner for billing. Its core purpose is to enhance customer engagement and operational efficiency through streamlined WhatsApp communication, offering significant market potential.
 
 ## Recent Changes (November 4, 2025)
-- **Days Balance Synchronization Fix:**
-  - Fixed critical synchronization issue between channel expiration and days balance display
-  - Root cause: Admin dashboard was displaying deprecated `user.daysBalance` field instead of calculated days from active channels
-  - Solution: Updated `/api/admin/users` endpoint to override `daysBalance` with real-time calculated `totalChannelDays`
-  - Now all dashboards (user dashboard, admin dashboard, user details, channels page) show synchronized days remaining
+- **Days Balance & Status Synchronization Fix:**
+  - Fixed critical synchronization issue between channel expiration and days balance/status display
+  - Root cause: Admin dashboard was displaying deprecated `user.daysBalance` field and stale `user.status` from database instead of calculating from active channels
+  - Solution: Updated `/api/admin/users` endpoint to override both `daysBalance` and `status` with real-time calculations
+  - Days balance now calculated from channel.expiresAt dates (sum of all channel days remaining)
+  - User status now calculated from active channels (expired if no active channels, active otherwise)
+  - Now all dashboards (user dashboard, admin dashboard, user details, channels page) show synchronized days remaining and status
   - Cron job correctly sets expired channels to `daysRemaining: 0` every hour
-  - Both `/api/me` and `/api/admin/users` endpoints now consistently calculate days from channel.expiresAt dates
-  - No more mismatch between "ACTIVE" status with "1 day" and actual expired channels with "0 days"
+  - Both `/api/me` and `/api/admin/users` endpoints now consistently calculate days and status from channel data
+  - No more mismatch between "ACTIVE" status with "0 days" - users with no active channels show as "EXPIRED"
 - **Landing Page Hero Image Updated:**
   - Replaced WhatsApp chatbot interface image with campaign analytics showcase
   - New image displays: Notification Campaigns, Rich Media Messages, Click-to-WhatsApp Ads with 92% read rate and 76% reply rate
