@@ -3388,6 +3388,7 @@ export function registerRoutes(app: Express) {
       }
 
       const result = await storage.validateCoupon(code, req.userId!, planId);
+      console.log("Coupon validation result:", JSON.stringify(result, null, 2));
       res.json(result);
     } catch (error: any) {
       console.error("Validate coupon error:", error);
