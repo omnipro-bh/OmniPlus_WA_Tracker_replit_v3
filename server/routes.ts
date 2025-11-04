@@ -602,7 +602,7 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion } = validationResult.data;
+      const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode, durationType: submittedDurationType } = validationResult.data;
 
       // Validate terms acceptance
       if (!termsVersion) {
@@ -625,6 +625,49 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
+      // Calculate expected amount based on duration type (matching frontend logic)
+      const durationType = submittedDurationType || "MONTHLY";
+      const basePlanPrice = plan.price || 0;
+      let expectedBasePrice = basePlanPrice;
+      
+      // Apply duration-based pricing (matching frontend getDiscountedPrice function)
+      if (durationType === "SEMI_ANNUAL") {
+        expectedBasePrice = basePlanPrice * 6 * 0.95; // 6 months with 5% discount
+      } else if (durationType === "ANNUAL") {
+        expectedBasePrice = basePlanPrice * 12 * 0.9; // 12 months with 10% discount
+      }
+      // MONTHLY uses base price as-is
+
+      // Validate coupon if provided and verify amount calculation
+      if (couponCode) {
+        const couponValidation = await storage.validateCoupon(couponCode, req.userId!, planId);
+        if (!couponValidation.valid) {
+          return res.status(400).json({ error: couponValidation.message });
+        }
+
+        // Calculate expected amount with coupon discount applied to duration-adjusted price
+        const discountPercent = couponValidation.coupon?.discountPercent || 0;
+        const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
+
+        // Verify the submitted amount matches the expected discounted amount
+        // Allow for small rounding differences (within 1 cent)
+        if (Math.abs(amount - expectedAmount) > 1) {
+          return res.status(400).json({ 
+            error: "Amount mismatch",
+            details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
+          });
+        }
+      } else {
+        // No coupon - verify amount matches duration-adjusted plan price
+        const expectedAmount = Math.round(expectedBasePrice);
+        if (Math.abs(amount - expectedAmount) > 1) {
+          return res.status(400).json({ 
+            error: "Amount mismatch",
+            details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
+          });
+        }
+      }
+
       const payment = await storage.createOfflinePayment({
         userId: req.userId!,
         planId,
@@ -632,6 +675,7 @@ export function registerRoutes(app: Express) {
         currency: currency || "USD",
         reference,
         proofUrl,
+        couponCode: couponCode || undefined,
         requestType: requestType || "PAID",
         metadata,
         termsVersion,
@@ -2755,10 +2799,24 @@ export function registerRoutes(app: Express) {
       // Update user status to active
       await storage.updateUser(payment.userId, { status: "active" });
 
-      // Create subscription
+      // Get coupon if one was applied
+      let couponId: number | undefined;
+      if (payment.couponCode) {
+        const coupon = await storage.getCouponByCode(payment.couponCode);
+        if (coupon) {
+          couponId = coupon.id;
+          // Increment coupon usage count
+          await storage.updateCoupon(coupon.id, {
+            usedCount: coupon.usedCount + 1,
+          });
+        }
+      }
+
+      // Create subscription (coupon linked for first payment period only)
       await storage.createSubscription({
         userId: payment.userId,
         planId: payment.planId,
+        couponId: couponId, // Link coupon to subscription (one-time discount)
         status: "ACTIVE",
         durationType: "MONTHLY",
         provider: "OFFLINE",
@@ -3305,6 +3363,23 @@ export function registerRoutes(app: Express) {
 
   // Validate coupon (public endpoint for users)
   app.post("/api/validate-coupon", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { code, planId } = req.body;
+      
+      if (!code || !planId) {
+        return res.status(400).json({ error: "Code and planId are required" });
+      }
+
+      const result = await storage.validateCoupon(code, req.userId!, planId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Validate coupon error:", error);
+      res.status(500).json({ error: "Failed to validate coupon" });
+    }
+  });
+
+  // Validate coupon (alternate endpoint for frontend consistency)
+  app.post("/api/coupons/validate", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const { code, planId } = req.body;
       

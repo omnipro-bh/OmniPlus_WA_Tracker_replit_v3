@@ -46,7 +46,9 @@ export default function Pricing() {
     currency: "USD",
     reference: "",
     proofUrl: "",
+    couponCode: "",
   });
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountPercent: number } | null>(null);
   const [quoteRequest, setQuoteRequest] = useState({
     name: "",
     businessEmail: "",
@@ -69,6 +71,37 @@ export default function Pricing() {
     queryKey: ["/api/terms"],
   });
 
+  const validateCouponMutation = useMutation({
+    mutationFn: async (data: { code: string; planId: number }) => {
+      return await apiRequest("POST", "/api/coupons/validate", data);
+    },
+    onSuccess: (data: any) => {
+      if (data.valid && data.coupon) {
+        setAppliedCoupon({
+          code: data.coupon.code,
+          discountPercent: data.coupon.discountPercent,
+        });
+        toast({
+          title: "Coupon applied",
+          description: `${data.coupon.discountPercent}% discount applied!`,
+        });
+      } else {
+        toast({
+          title: "Invalid coupon",
+          description: data.message || "Coupon is not valid",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Validation failed",
+        description: error.error || "Failed to validate coupon",
+        variant: "destructive",
+      });
+    },
+  });
+
   const offlinePaymentMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!offlineTermsAccepted) {
@@ -78,11 +111,13 @@ export default function Pricing() {
       return await apiRequest("POST", "/api/subscribe/offline", {
         ...data,
         termsVersion: mainTerms?.version || "1.0",
+        couponCode: appliedCoupon?.code || undefined,
       });
     },
     onSuccess: () => {
       setIsOfflineDialogOpen(false);
-      setOfflinePayment({ amount: "", currency: "USD", reference: "", proofUrl: "" });
+      setOfflinePayment({ amount: "", currency: "USD", reference: "", proofUrl: "", couponCode: "" });
+      setAppliedCoupon(null);
       setOfflineTermsAccepted(false);
       toast({
         title: "Payment submitted",
@@ -152,7 +187,9 @@ export default function Pricing() {
       ...offlinePayment,
       amount: (getDiscountedPrice(plan.price || 0) / 100).toFixed(2),
       currency: plan.currency,
+      couponCode: "",
     });
+    setAppliedCoupon(null);
     setOfflineTermsAccepted(false);
     setIsOfflineDialogOpen(true);
   };
@@ -346,22 +383,78 @@ export default function Pricing() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="amount">Amount</Label>
+              <Label htmlFor="coupon">Coupon Code (Optional)</Label>
               <div className="flex gap-2">
                 <Input
-                  id="amount"
-                  type="number"
-                  value={offlinePayment.amount}
-                  onChange={(e) => setOfflinePayment({ ...offlinePayment, amount: e.target.value })}
-                  data-testid="input-amount"
+                  id="coupon"
+                  placeholder="Enter coupon code"
+                  value={offlinePayment.couponCode}
+                  onChange={(e) => setOfflinePayment({ ...offlinePayment, couponCode: e.target.value.toUpperCase() })}
+                  disabled={!!appliedCoupon}
+                  data-testid="input-coupon"
                 />
-                <Input
-                  value={offlinePayment.currency}
-                  onChange={(e) => setOfflinePayment({ ...offlinePayment, currency: e.target.value })}
-                  className="w-24"
-                  data-testid="input-currency"
-                />
+                <Button
+                  type="button"
+                  variant={appliedCoupon ? "outline" : "default"}
+                  onClick={() => {
+                    if (appliedCoupon) {
+                      setAppliedCoupon(null);
+                      setOfflinePayment({ ...offlinePayment, couponCode: "" });
+                    } else if (offlinePayment.couponCode && selectedPlan) {
+                      validateCouponMutation.mutate({
+                        code: offlinePayment.couponCode,
+                        planId: selectedPlan.id,
+                      });
+                    }
+                  }}
+                  disabled={!offlinePayment.couponCode && !appliedCoupon || validateCouponMutation.isPending}
+                  data-testid="button-apply-coupon"
+                >
+                  {appliedCoupon ? "Remove" : "Apply"}
+                </Button>
               </div>
+              {appliedCoupon && (
+                <p className="text-xs text-success">
+                  ✓ {appliedCoupon.discountPercent}% discount applied
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Amount</Label>
+              {appliedCoupon && (
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Original Price:</span>
+                    <span>{getCurrencySymbol(offlinePayment.currency)}{offlinePayment.amount}</span>
+                  </div>
+                  <div className="flex justify-between text-success">
+                    <span>Discount ({appliedCoupon.discountPercent}%):</span>
+                    <span>-{getCurrencySymbol(offlinePayment.currency)}{(parseFloat(offlinePayment.amount) * appliedCoupon.discountPercent / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold border-t pt-1">
+                    <span>Final Amount:</span>
+                    <span>{getCurrencySymbol(offlinePayment.currency)}{(parseFloat(offlinePayment.amount) * (100 - appliedCoupon.discountPercent) / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+              {!appliedCoupon && (
+                <div className="flex gap-2">
+                  <Input
+                    id="amount"
+                    type="text"
+                    value={offlinePayment.amount}
+                    readOnly
+                    className="bg-muted"
+                    data-testid="input-amount"
+                  />
+                  <Input
+                    value={offlinePayment.currency}
+                    readOnly
+                    className="w-24 bg-muted"
+                    data-testid="input-currency"
+                  />
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="reference">Payment Reference</Label>
@@ -439,12 +532,18 @@ export default function Pricing() {
             <Button
               onClick={() => {
                 if (selectedPlan) {
+                  const originalAmount = parseFloat(offlinePayment.amount);
+                  const finalAmount = appliedCoupon 
+                    ? originalAmount * (100 - appliedCoupon.discountPercent) / 100
+                    : originalAmount;
+                  
                   offlinePaymentMutation.mutate({
                     planId: selectedPlan.id,
-                    amount: Math.round(parseFloat(offlinePayment.amount) * 100),
+                    amount: Math.round(finalAmount * 100),
                     currency: offlinePayment.currency,
                     reference: offlinePayment.reference,
                     proofUrl: offlinePayment.proofUrl || undefined,
+                    durationType: durationType, // Include duration type for backend validation
                   });
                 }
               }}

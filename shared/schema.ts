@@ -171,6 +171,7 @@ export const offlinePayments = pgTable("offline_payments", {
   currency: text("currency").notNull().default("USD"),
   reference: text("reference"),
   proofUrl: text("proof_url"),
+  couponCode: text("coupon_code"), // Coupon code if applied (stored for reference)
   status: offlinePaymentStatusEnum("status").notNull().default("PENDING"),
   requestType: requestTypeEnum("request_type"), // Request type (PAID, REQUEST_QUOTE, BOOK_DEMO)
   metadata: jsonb("metadata"), // Additional data for quote/demo requests (name, email, phone, company, message, etc.)
