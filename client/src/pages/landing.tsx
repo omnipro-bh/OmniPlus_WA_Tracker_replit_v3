@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield, icons } from "lucide-react";
-import heroImage from "@assets/generated_images/WhatsApp_chatbot_interface_buttons_368a6f70.png";
+import heroImage from "@assets/aiease_1762244695579_1762244824751.png";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import type { Plan } from "@shared/schema";
@@ -314,7 +314,7 @@ export default function Landing() {
                 <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-info/20 rounded-2xl blur-3xl" />
                 <img 
                   src={heroImage} 
-                  alt="WhatsApp Chatbot with Interactive Buttons" 
+                  alt="WhatsApp Campaign Analytics - Notification Campaigns, Rich Media Messages, Click-to-WhatsApp Ads with 92% Read Rate and 76% Reply Rate" 
                   className="relative rounded-2xl shadow-2xl"
                   data-testid="img-hero"
                 />
