@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
@@ -387,8 +387,29 @@ export function registerRoutes(app: Express) {
         return sum + (channel.daysRemaining || 0);
       }, 0);
 
-      // Calculate messages sent today (simplified)
-      const messagesSentToday = 0; // This would be computed from jobs/messages table in reality
+      // Calculate messages sent today
+      // Get start and end of today in UTC
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      
+      const startOfTomorrow = new Date(startOfToday);
+      startOfTomorrow.setUTCDate(startOfTomorrow.getUTCDate() + 1);
+      
+      // Query all jobs created today for this user and sum their total field
+      const todayJobs = await db
+        .select({
+          totalMessages: sql<number>`COALESCE(SUM(${jobs.total}), 0)`,
+        })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.userId, user.id),
+            gte(jobs.createdAt, startOfToday),
+            sql`${jobs.createdAt} < ${startOfTomorrow}`
+          )
+        );
+      
+      const messagesSentToday = Number(todayJobs[0]?.totalMessages || 0);
 
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json({

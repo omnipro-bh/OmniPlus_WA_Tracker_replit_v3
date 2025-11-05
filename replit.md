@@ -47,3 +47,32 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database.
 - **node-cron:** For scheduling daily tasks.
+
+## Recent Changes (November 5, 2025)
+- **Message Counter Fix (Critical):**
+  - **Problem:** Dashboard and bulk page showing "0 / X messages sent today" despite having messages sent
+  - **Root Cause:** `messagesSentToday` was hardcoded to `0` in `/api/me` endpoint
+  - **Fix Applied:**
+    - Implemented actual database query to count messages from today's jobs per user
+    - Query: `SUM(jobs.total)` for jobs where `userId = user.id` AND `createdAt >= start_of_today (UTC)`
+    - Added upper/lower bound date filtering for precise daily counting
+    - Counter now accurately reflects messages sent today per user
+  - **Result:**
+    - Dashboard displays correct count (e.g., "5 / 100 messages sent today")
+    - Bulk page shows same accurate count
+    - Per-user isolation working correctly (each user sees only their own count)
+    - Counter resets daily at midnight UTC
+  - **Location:** `server/routes.ts`, `/api/me` endpoint (lines ~393-415)
+- **Workflow Builder Canvas Expansion:**
+  - Reduced left/right sidebar widths from 320px to 256px (w-80 → w-64)
+  - Canvas area gained 128px of extra horizontal space
+  - All three panels (palette, canvas, config) remain fully functional
+  - Better use of screen real estate for building complex workflows
+- **Homepage Feature Icons Fix:**
+  - Added `toPascalCase()` helper function for dynamic lucide-react icon rendering
+  - Fixed database entry: "messagesquare" → "message-square"
+  - All 6 homepage feature icons now render correctly
+- **Workflow Entry Node Behavior Clarified:**
+  - Entry nodes are optional - workflows can function without them
+  - Workflows without entry nodes still process button/list interactions
+  - Entry node = optional welcome message trigger on first contact
