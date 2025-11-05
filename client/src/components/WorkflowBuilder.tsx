@@ -24,7 +24,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NodeConfigPanel } from '@/components/WorkflowNodeConfig';
 import { CustomWorkflowNode } from '@/components/CustomWorkflowNode';
-import { useToast } from '@/hooks/use-toast';
 import {
   MessageCircle,
   Image as ImageIcon,
@@ -187,8 +186,6 @@ export default function WorkflowBuilder({
   onToggleActive,
   workflowName = 'Untitled Workflow',
 }: WorkflowBuilderProps) {
-  const { toast } = useToast();
-  
   // Convert all nodes to use custom type for multi-handle support
   const convertedInitialNodes = initialNodes.map(node => ({
     ...node,
@@ -675,18 +672,7 @@ export default function WorkflowBuilder({
                   <Button 
                     size="sm" 
                     variant={isActive ? "default" : "outline"}
-                    onClick={() => {
-                      // Prevent activation if no entry node is configured
-                      if (!isActive && !entryNodeId) {
-                        toast({
-                          title: "Entry node required",
-                          description: "Please configure an entry node before activating the workflow. Right-click a node and select 'Set as Entry Node'.",
-                          variant: "destructive"
-                        });
-                        return;
-                      }
-                      onToggleActive(!isActive);
-                    }}
+                    onClick={() => onToggleActive(!isActive)}
                     data-testid="button-toggle-active"
                     title={isActive ? "Stop chatbot" : "Start chatbot"}
                   >

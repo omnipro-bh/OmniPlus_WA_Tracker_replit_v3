@@ -20,15 +20,28 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+// Helper function to convert icon name to PascalCase
+const toPascalCase = (str: string): string => {
+  return str
+    .split(/[-_\s]+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('');
+};
+
 // Helper function to dynamically render Lucide icons
 const renderIcon = (iconName: string | null, className: string = "h-6 w-6") => {
   if (!iconName) return <MessageSquare className={className} />;
   
-  const IconComponent = (icons as any)[iconName];
+  // Convert to PascalCase (e.g., "waypoints" -> "Waypoints", "bell-ring" -> "BellRing")
+  const pascalCaseName = toPascalCase(iconName);
+  const IconComponent = (icons as any)[pascalCaseName];
+  
   if (IconComponent) {
     return <IconComponent className={className} />;
   }
   
+  // Fallback to MessageSquare if icon not found
+  console.warn(`Icon "${iconName}" (${pascalCaseName}) not found in lucide-react, using fallback`);
   return <MessageSquare className={className} />;
 };
 

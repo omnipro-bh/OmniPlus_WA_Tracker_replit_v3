@@ -1832,13 +1832,6 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "isActive must be a boolean" });
       }
 
-      // Prevent activating workflows without an entry node
-      if (isActive && !workflow.entryNodeId) {
-        return res.status(400).json({ 
-          error: "Cannot activate workflow without an entry node. Please configure an entry node first." 
-        });
-      }
-
       const updated = await storage.updateWorkflow(workflowId, { isActive });
       res.json(updated);
     } catch (error: any) {
@@ -3548,7 +3541,7 @@ export function registerRoutes(app: Express) {
           }
 
           if (isFirstMessageToday) {
-            // Send welcome message from entry node
+            // Send welcome message from entry node (if configured)
             const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
             const entryNodeId = activeWorkflow.entryNodeId;
             
@@ -3576,8 +3569,8 @@ export function registerRoutes(app: Express) {
                 executionLog.errorMessage = `Entry node ${entryNodeId} not found in workflow definition`;
               }
             } else {
-              console.log(`No entry node configured for workflow ${activeWorkflow.id}`);
-              executionLog.errorMessage = `No entry node configured for workflow`;
+              // No entry node configured - workflow will only respond to button/list interactions
+              console.log(`No entry node configured for workflow ${activeWorkflow.id} - skipping welcome message`);
             }
 
             // Update conversation state for tracking
