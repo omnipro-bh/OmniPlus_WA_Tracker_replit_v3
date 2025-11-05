@@ -497,7 +497,7 @@ export default function WorkflowBuilder({
   return (
     <div className="flex h-full w-full gap-4">
       {/* Node Palette Sidebar */}
-      <Card className="w-80 p-4 flex-shrink-0">
+      <Card className="w-64 p-4 flex-shrink-0">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <List className="h-4 w-4" />
           Node Palette
@@ -626,7 +626,7 @@ export default function WorkflowBuilder({
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
           <Controls showInteractive={false} />
           <MiniMap pannable zoomable nodeStrokeWidth={3} />
-          <Panel position="top-left" className="bg-card border rounded-md p-2 max-w-[calc(100%-340px)]">
+          <Panel position="top-left" className="bg-card border rounded-md p-2 max-w-[calc(100%-276px)]">
             <div className="flex items-center gap-2 flex-wrap">
               <Button size="icon" variant="ghost" title="Undo" data-testid="button-undo">
                 <Undo2 className="h-4 w-4" />
@@ -702,7 +702,7 @@ export default function WorkflowBuilder({
 
       {/* Node Configuration Panel */}
       {selectedNode && (
-        <Card className="w-80 flex flex-col max-h-full flex-shrink-0">
+        <Card className="w-64 flex flex-col max-h-full flex-shrink-0">
           <div className="p-4 border-b flex items-center gap-2">
             <Settings className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">Node Configuration</h3>
