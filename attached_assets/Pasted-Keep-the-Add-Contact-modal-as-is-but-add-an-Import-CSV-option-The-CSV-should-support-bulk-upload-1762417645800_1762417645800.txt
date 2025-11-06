@@ -1,0 +1,43 @@
+Keep the “Add Contact” modal as is, but add an Import CSV option. The CSV should support bulk upload of contacts and messages. The same add contact structure should also be available in the Send page, with an option to send a single or bulk message. Preserve the same Button ID rule: if empty → generate; if filled → use the provided value.
+________________________________________
+1) Add Import CSV Option
+Do not replace the “Add Contact” modal — just add an Import CSV option next to it.
+Expected CSV Columns (all optional except where marked required):
+•	phone_number required (must include country code, e.g., +973…)
+•	name
+•	email
+•	header
+•	body
+•	footer
+•	button1_text
+•	button2_text
+•	button3_text
+•	button1_id
+•	button2_id
+•	button3_id
+Notes:
+•	Validate that phone_number includes a valid country code.
+•	Show upload summary with valid/invalid rows.
+•	Allow downloading a sample CSV.
+•	Imported rows populate a phonebook.
+________________________________________
+2) Send Page
+Keep the same structure as the screenshots, but add a Send Mode selector:
+•	Single → send to one number (current behavior).
+•	Bulk → user selects a phonebook.
+When Bulk is selected, there are two options:
+1.	Use phonebook fields per contact – each row uses its own header, body, footer, and button texts/IDs.
+2.	Use one message for all – message fields (header, body, footer, buttons) come from the Send page.
+Button ID rule:
+If a button ID field is empty, generate a new one. If filled, use it.
+________________________________________
+3) Send Page Fields (Selected Manually for Bulk Mode)
+The following fields must be entered/selected directly from the Send page, not from the CSV:
+•	Message button type: Quick Reply / Call / URL
+•	Message type: e.g., “Text + Buttons”, “Text only”, etc.
+•	Uploaded media file
+________________________________________
+4) Requirements
+•	Phonebook used in bulk mode must include at least name and phone_number with country code.
+•	Keep the existing button-ID logic exactly as before.
+•	Do not change webhook or message-sending logic — only UI and CSV import behavior.

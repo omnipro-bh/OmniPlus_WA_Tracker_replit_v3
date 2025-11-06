@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType, Upload, X } from "lucide-react";
+import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType, Upload, X, Download, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -51,7 +51,9 @@ type Contact = {
   name: string;
   email: string | null;
   messageType: string;
+  header: string | null;
   body: string;
+  footer: string | null;
   mediaUrl: string | null;
   button1Text: string | null;
   button1Type: string | null;
@@ -86,6 +88,17 @@ export default function PhonebookDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  
+  // CSV Import state
+  const [csvImportDialogOpen, setCsvImportDialogOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImportResults, setCsvImportResults] = useState<{
+    total: number;
+    valid: number;
+    invalid: number;
+    inserted: number;
+    invalidRows?: { row: number; errors: string[] }[];
+  } | null>(null);
   
   // Contact form dialog state
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
@@ -169,6 +182,30 @@ export default function PhonebookDetailPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to send messages",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // CSV import mutation
+  const importCSV = useMutation({
+    mutationFn: async (csvData: string) => {
+      const res = await apiRequest("POST", `/api/phonebooks/${phonebookId}/import-csv`, { csvData });
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/phonebooks", phonebookId] });
+      setCsvImportResults(data.summary);
+      setCsvFile(null);
+      toast({
+        title: "CSV Import Complete",
+        description: `Successfully imported ${data.summary.inserted} of ${data.summary.total} contacts`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to import CSV",
         variant: "destructive",
       });
     },
@@ -387,6 +424,75 @@ export default function PhonebookDetailPage() {
     return labels[type] || type;
   };
 
+  // CSV Import handlers
+  const handleImportCSVClick = () => {
+    setCsvFile(null);
+    setCsvImportResults(null);
+    setCsvImportDialogOpen(true);
+  };
+
+  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCsvFile(file);
+      setCsvImportResults(null);
+    }
+  };
+
+  const handleCSVImport = () => {
+    if (!csvFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a CSV file to import",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const csvData = e.target?.result as string;
+      importCSV.mutate(csvData);
+    };
+    reader.onerror = () => {
+      toast({
+        title: "File read error",
+        description: "Failed to read the CSV file",
+        variant: "destructive",
+      });
+    };
+    reader.readAsText(csvFile);
+  };
+
+  const handleDownloadSampleCSV = async () => {
+    try {
+      const response = await fetch('/api/phonebooks/sample-csv', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download sample CSV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'phonebook-contacts-sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Failed to download sample CSV",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (!phonebookId) {
     return <div className="p-8">Invalid phonebook ID</div>;
   }
@@ -436,6 +542,10 @@ export default function PhonebookDetailPage() {
               <Button variant="outline" onClick={handleAddContact} data-testid="button-add-contact">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Contact
+              </Button>
+              <Button variant="outline" onClick={handleImportCSVClick} data-testid="button-import-csv">
+                <FileUp className="w-4 h-4 mr-2" />
+                Import CSV
               </Button>
             </div>
           </div>
@@ -891,6 +1001,126 @@ export default function PhonebookDetailPage() {
               >
                 {saveContact.isPending ? "Saving..." : editingContact ? "Update Contact" : "Add Contact"}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* CSV Import Dialog */}
+        <Dialog open={csvImportDialogOpen} onOpenChange={setCsvImportDialogOpen}>
+          <DialogContent className="max-w-2xl" data-testid="dialog-csv-import">
+            <DialogHeader>
+              <DialogTitle>Import Contacts from CSV</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file to bulk import contacts into this phonebook
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              {/* Download Sample */}
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Need a template?</p>
+                  <p className="text-xs text-muted-foreground">Download a sample CSV to see the expected format</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleDownloadSampleCSV}
+                  data-testid="button-download-sample-csv"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Sample
+                </Button>
+              </div>
+
+              {/* File Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="csv-file">Select CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleCSVFileChange}
+                  data-testid="input-csv-file"
+                />
+                {csvFile && (
+                  <p className="text-xs text-muted-foreground">
+                    Selected: {csvFile.name} ({(csvFile.size / 1024).toFixed(2)} KB)
+                  </p>
+                )}
+              </div>
+
+              {/* CSV Format Info */}
+              <div className="p-3 bg-muted/30 rounded-lg text-xs space-y-1">
+                <p className="font-medium">CSV Format Requirements:</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li><strong>phone_number</strong> (required): Must include country code (e.g., +973...)</li>
+                  <li><strong>name</strong> (optional): Contact name</li>
+                  <li><strong>email</strong> (optional): Contact email</li>
+                  <li><strong>header</strong>, <strong>body</strong>, <strong>footer</strong> (optional): Message parts</li>
+                  <li><strong>button1_text</strong>, <strong>button2_text</strong>, <strong>button3_text</strong> (optional): Button labels</li>
+                  <li><strong>button1_id</strong>, <strong>button2_id</strong>, <strong>button3_id</strong> (optional): Button IDs (auto-generated if empty)</li>
+                </ul>
+              </div>
+
+              {/* Import Results */}
+              {csvImportResults && (
+                <div className="p-4 border rounded-lg space-y-3">
+                  <h3 className="font-medium text-sm">Import Summary</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                      <span className="text-muted-foreground">Total Rows:</span>
+                      <span className="font-medium">{csvImportResults.total}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-green-500/10 rounded">
+                      <span className="text-muted-foreground">Valid:</span>
+                      <span className="font-medium text-green-600 dark:text-green-400">{csvImportResults.valid}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-red-500/10 rounded">
+                      <span className="text-muted-foreground">Invalid:</span>
+                      <span className="font-medium text-red-600 dark:text-red-400">{csvImportResults.invalid}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-blue-500/10 rounded">
+                      <span className="text-muted-foreground">Inserted:</span>
+                      <span className="font-medium text-blue-600 dark:text-blue-400">{csvImportResults.inserted}</span>
+                    </div>
+                  </div>
+
+                  {/* Invalid Rows Details */}
+                  {csvImportResults.invalidRows && csvImportResults.invalidRows.length > 0 && (
+                    <div className="mt-3 p-3 bg-red-500/5 border border-red-500/20 rounded">
+                      <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">Invalid Rows:</p>
+                      <div className="space-y-1 text-xs max-h-32 overflow-y-auto">
+                        {csvImportResults.invalidRows.map((invalid, index) => (
+                          <div key={index} className="text-muted-foreground">
+                            Row {invalid.row}: {invalid.errors.join(", ")}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCsvImportDialogOpen(false)}
+                disabled={importCSV.isPending}
+                data-testid="button-cancel-csv-import"
+              >
+                {csvImportResults ? "Close" : "Cancel"}
+              </Button>
+              {!csvImportResults && (
+                <Button
+                  onClick={handleCSVImport}
+                  disabled={!csvFile || importCSV.isPending}
+                  data-testid="button-import-csv-submit"
+                >
+                  {importCSV.isPending ? "Importing..." : "Import Contacts"}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

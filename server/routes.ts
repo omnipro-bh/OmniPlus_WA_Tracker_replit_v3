@@ -2271,8 +2271,8 @@ export function registerRoutes(app: Express) {
           name: contact.name,
           email: contact.email || null,
           body: contact.body,
-          header: null,
-          footer: null,
+          header: contact.header || null,
+          footer: contact.footer || null,
           buttons: buttons,
           status: "QUEUED",
           messageType: contact.messageType,
@@ -2288,6 +2288,203 @@ export function registerRoutes(app: Express) {
       console.error("Send to phonebook error:", error);
       res.status(500).json({ error: "Failed to send messages" });
     }
+  });
+
+  // Send uniform message to all contacts in phonebook
+  app.post("/api/phonebooks/:id/send-uniform", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const { channelId, header, body, footer, buttons } = req.body;
+
+      if (!channelId || !body) {
+        return res.status(400).json({ error: "Channel ID and message body are required" });
+      }
+
+      // Verify phonebook ownership
+      const phonebook = await storage.getPhonebook(phonebookId);
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      // Verify channel ownership
+      const channel = await storage.getChannel(channelId);
+      if (!channel || channel.userId !== req.userId!) {
+        return res.status(403).json({ error: "Channel not found or access denied" });
+      }
+
+      // Get all contacts
+      const contacts = await storage.getContactsForPhonebook(phonebookId);
+      if (contacts.length === 0) {
+        return res.status(400).json({ error: "Phonebook has no contacts" });
+      }
+
+      // Create job
+      const job = await storage.createJob({
+        userId: req.userId!,
+        channelId: channelId,
+        type: "BULK",
+        status: "PENDING",
+        total: contacts.length,
+        queued: contacts.length,
+        pending: 0,
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        failed: 0,
+        replied: 0,
+      });
+
+      // Create messages for each contact with the same message content
+      for (const contact of contacts) {
+        await storage.createMessage({
+          jobId: job.id,
+          to: contact.phone,
+          name: contact.name,
+          email: contact.email || null,
+          body: body,
+          header: header || null,
+          footer: footer || null,
+          buttons: buttons || [],
+          status: "QUEUED",
+          messageType: "text_buttons",
+          mediaUrl: null,
+        });
+      }
+
+      // Start processing the job
+      processBulkJob(job.id, channel);
+
+      res.json(job);
+    } catch (error: any) {
+      console.error("Send uniform message error:", error);
+      res.status(500).json({ error: "Failed to send messages" });
+    }
+  });
+
+  // Import contacts from CSV
+  app.post("/api/phonebooks/:id/import-csv", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const { csvData } = req.body;
+
+      if (!csvData || typeof csvData !== 'string') {
+        return res.status(400).json({ error: "CSV data is required" });
+      }
+
+      // Verify phonebook ownership
+      const phonebook = await storage.getPhonebook(phonebookId);
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      // Parse CSV data
+      const Papa = await import('papaparse');
+      const parsed = Papa.parse(csvData, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header: string) => header.trim().toLowerCase().replace(/\s+/g, '_'),
+      });
+
+      const validContacts: any[] = [];
+      const invalidRows: { row: number; errors: string[] }[] = [];
+
+      // Process each row
+      parsed.data.forEach((row: any, index: number) => {
+        const rowNumber = index + 2; // +2 because index is 0-based and we skip header
+        const errors: string[] = [];
+
+        // Validate required fields
+        if (!row.phone_number || typeof row.phone_number !== 'string' || row.phone_number.trim() === '') {
+          errors.push("Phone number is required");
+        } else {
+          const phone = row.phone_number.trim();
+          // Validate phone has country code (starts with +)
+          if (!phone.startsWith('+')) {
+            errors.push("Phone number must include country code (e.g., +973...)");
+          } else if (phone.length < 8) {
+            errors.push("Phone number is too short");
+          }
+        }
+
+        // Name is optional but recommended
+        const name = row.name?.trim() || row.phone_number?.trim() || 'Unknown';
+
+        // Body is optional - use empty string if not provided
+        const body = row.body?.trim() || '';
+
+        if (errors.length > 0) {
+          invalidRows.push({ row: rowNumber, errors });
+        } else {
+          // Generate button IDs if not provided
+          const button1Id = row.button1_id?.trim() || 
+            (row.button1_text ? `btn1_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : null);
+          const button2Id = row.button2_id?.trim() || 
+            (row.button2_text ? `btn2_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : null);
+          const button3Id = row.button3_id?.trim() || 
+            (row.button3_text ? `btn3_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : null);
+
+          validContacts.push({
+            phonebookId,
+            phone: row.phone_number.trim(),
+            name,
+            email: row.email?.trim() || null,
+            header: row.header?.trim() || null,
+            body,
+            footer: row.footer?.trim() || null,
+            messageType: 'text_buttons', // Default for CSV import
+            mediaUrl: null,
+            button1Text: row.button1_text?.trim() || null,
+            button1Type: 'quick_reply', // Default type
+            button1Value: null,
+            button1Id,
+            button2Text: row.button2_text?.trim() || null,
+            button2Type: 'quick_reply',
+            button2Value: null,
+            button2Id,
+            button3Text: row.button3_text?.trim() || null,
+            button3Type: 'quick_reply',
+            button3Value: null,
+            button3Id,
+          });
+        }
+      });
+
+      // Insert valid contacts
+      let insertedCount = 0;
+      for (const contact of validContacts) {
+        try {
+          await storage.createContact(contact);
+          insertedCount++;
+        } catch (error) {
+          console.error("Error inserting contact:", error);
+        }
+      }
+
+      res.json({
+        success: true,
+        summary: {
+          total: parsed.data.length,
+          valid: validContacts.length,
+          invalid: invalidRows.length,
+          inserted: insertedCount,
+        },
+        invalidRows: invalidRows.length > 0 ? invalidRows : undefined,
+      });
+    } catch (error: any) {
+      console.error("CSV import error:", error);
+      res.status(500).json({ error: error.message || "Failed to import CSV" });
+    }
+  });
+
+  // Get sample CSV template
+  app.get("/api/phonebooks/sample-csv", requireAuth, async (req: AuthRequest, res: Response) => {
+    const sampleCSV = `phone_number,name,email,header,body,footer,button1_text,button2_text,button3_text,button1_id,button2_id,button3_id
++97312345678,John Doe,john@example.com,Hello!,This is a test message,Thank you,Option 1,Option 2,Option 3,btn1_custom,btn2_custom,btn3_custom
++97398765432,Jane Smith,jane@example.com,,Simple message without header/footer,,,,,,,`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="phonebook-contacts-sample.csv"');
+    res.send(sampleCSV);
   });
 
   // ============================================================================

@@ -660,7 +660,9 @@ export const phonebookContacts = pgTable("phonebook_contacts", {
   
   // Message Configuration (supports 5 types)
   messageType: varchar("message_type", { length: 50 }).notNull().default("text_buttons"), // text_buttons, image, image_buttons, video_buttons, document
+  header: text("header"), // Optional header text
   body: text("body").notNull(),
+  footer: text("footer"), // Optional footer text
   mediaUrl: text("media_url"), // WHAPI media ID for image/video/document
   
   // Buttons (max 3 - maintains button_id pattern)

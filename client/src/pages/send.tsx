@@ -13,9 +13,21 @@ import { Send as SendIcon, Loader2 } from "lucide-react";
 import type { Channel, Template } from "@shared/schema";
 import { Link } from "wouter";
 
+type Phonebook = {
+  id: number;
+  userId: number;
+  name: string;
+  description: string | null;
+  createdAt: string;
+};
+
 export default function Send() {
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const [sendMode, setSendMode] = useState<"single" | "bulk">("single");
+  const [bulkStrategy, setBulkStrategy] = useState<"phonebook_fields" | "single_message">("phonebook_fields");
+  const [phonebookId, setPhonebookId] = useState("");
 
   const [formData, setFormData] = useState({
     channelId: "",
@@ -39,9 +51,45 @@ export default function Send() {
     enabled: !!user,
   });
 
+  const { data: phonebooks = [] } = useQuery<Phonebook[]>({
+    queryKey: ["/api/phonebooks"],
+    enabled: !!user && sendMode === "bulk",
+  });
+
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
-      // Convert button strings to WHAPI button objects
+      // Handle bulk mode
+      if (sendMode === "bulk") {
+        if (!phonebookId) {
+          throw new Error("Please select a phonebook");
+        }
+
+        // For "single_message" strategy, send the same message to all contacts
+        if (bulkStrategy === "single_message") {
+          const buttons = data.buttons
+            .filter((b: string) => b.trim() !== "")
+            .map((title: string, index: number) => ({
+              type: "quick_reply",
+              title: title.trim(),
+              id: `btn${index + 1}`,
+            }));
+
+          return await apiRequest("POST", `/api/phonebooks/${phonebookId}/send-uniform`, {
+            channelId: parseInt(data.channelId),
+            header: data.header || null,
+            body: data.body,
+            footer: data.footer || null,
+            buttons,
+          });
+        } else {
+          // For "phonebook_fields" strategy, use each contact's own message
+          return await apiRequest("POST", `/api/phonebooks/${phonebookId}/send`, {
+            channelId: parseInt(data.channelId),
+          });
+        }
+      }
+
+      // Handle single mode (original logic)
       const buttons = data.buttons
         .filter((b: string) => b.trim() !== "")
         .map((title: string, index: number) => ({
@@ -122,6 +170,68 @@ export default function Send() {
             <CardDescription>Compose and send a WhatsApp message</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Send Mode Selector */}
+            <div className="space-y-2">
+              <Label htmlFor="send-mode">Send Mode</Label>
+              <Select
+                value={sendMode}
+                onValueChange={(value: "single" | "bulk") => setSendMode(value)}
+              >
+                <SelectTrigger id="send-mode" data-testid="select-send-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single Message</SelectItem>
+                  <SelectItem value="bulk">Bulk Message</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Phonebook Selector (Bulk Mode Only) */}
+            {sendMode === "bulk" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="phonebook">Select Phonebook *</Label>
+                  <Select
+                    value={phonebookId}
+                    onValueChange={setPhonebookId}
+                  >
+                    <SelectTrigger id="phonebook" data-testid="select-phonebook">
+                      <SelectValue placeholder="Choose phonebook" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {phonebooks.map((phonebook) => (
+                        <SelectItem key={phonebook.id} value={phonebook.id.toString()}>
+                          {phonebook.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-strategy">Bulk Send Strategy</Label>
+                  <Select
+                    value={bulkStrategy}
+                    onValueChange={(value: "phonebook_fields" | "single_message") => setBulkStrategy(value)}
+                  >
+                    <SelectTrigger id="bulk-strategy" data-testid="select-bulk-strategy">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="phonebook_fields">Use Phonebook Fields per Contact</SelectItem>
+                      <SelectItem value="single_message">Use One Message for All</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {bulkStrategy === "phonebook_fields" 
+                      ? "Each contact will receive their personalized message from the phonebook"
+                      : "All contacts will receive the same message you compose below"}
+                  </p>
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="channel">Sender Channel *</Label>
               <Select
@@ -157,40 +267,46 @@ export default function Send() {
               </Select>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number *</Label>
-                <Input
-                  id="phone"
-                  placeholder="+1234567890"
-                  value={formData.to}
-                  onChange={(e) => setFormData({ ...formData, to: e.target.value })}
-                  data-testid="input-phone"
-                />
+            {/* Recipient fields (Single Mode Only) */}
+            {sendMode === "single" && (
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    placeholder="+1234567890"
+                    value={formData.to}
+                    onChange={(e) => setFormData({ ...formData, to: e.target.value })}
+                    data-testid="input-phone"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    placeholder="Recipient name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    data-testid="input-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    data-testid="input-email"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  placeholder="Recipient name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  data-testid="input-name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="email@example.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  data-testid="input-email"
-                />
-              </div>
-            </div>
+            )}
 
+            {/* Message fields - Hidden when using phonebook fields in bulk mode */}
+            {!(sendMode === "bulk" && bulkStrategy === "phonebook_fields") && (
+              <>
             <div className="space-y-2">
               <Label htmlFor="header">Header</Label>
               <Input
@@ -243,11 +359,20 @@ export default function Send() {
                 ))}
               </div>
             </div>
+              </>
+            )}
 
             <Button
               className="w-full"
               onClick={() => sendMutation.mutate(formData)}
-              disabled={!canSend || !formData.channelId || !formData.to || !formData.body || sendMutation.isPending}
+              disabled={
+                !canSend || 
+                !formData.channelId || 
+                (sendMode === "single" && !formData.to) || 
+                (sendMode === "bulk" && !phonebookId) ||
+                (sendMode === "bulk" && bulkStrategy === "single_message" && !formData.body) ||
+                sendMutation.isPending
+              }
               data-testid="button-send-message"
             >
               {sendMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
