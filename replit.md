@@ -76,3 +76,14 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
   - **Result:** Cleaner, more professional error messages without vendor branding
   - **Note:** Console logging still includes "WHAPI" for admin debugging purposes
   - **Location:** server/routes.ts (multiple error responses)
+
+- **Media Link URL Fix (Critical):**
+  - **Problem:** Messages with images/videos failing with "media link is not available" error from WHAPI
+  - **Root Cause:** Backend was constructing media URL manually as `https://gate.whapi.cloud/media/${mediaId}`, but WHAPI requires using the actual `link` field from their upload response
+  - **Fix Applied:**
+    - Updated `/api/media/upload` endpoint to extract both `mediaId` and `mediaLink` from WHAPI response
+    - Added validation to ensure mediaLink exists before proceeding
+    - Return the actual WHAPI-provided link instead of constructed URL
+    - Added logging of full upload response for debugging
+  - **Result:** Messages with media (images/videos/documents) now send successfully with correct media URLs
+  - **Location:** server/routes.ts (lines ~2237-2265)
