@@ -2235,15 +2235,38 @@ export function registerRoutes(app: Express) {
       console.log("WHAPI upload response:", JSON.stringify(uploadData, null, 2));
       
       const mediaId = uploadData.media?.[0]?.id;
-      const mediaLink = uploadData.media?.[0]?.link;
 
       if (!mediaId) {
         throw new Error("No media ID returned from upload service");
       }
 
-      if (!mediaLink) {
-        throw new Error("No media link returned from upload service");
+      // Step 2: Retrieve the media link via GET request
+      const getMediaResponse = await fetch("https://gate.whapi.cloud/media", {
+        method: "GET",
+        headers: {
+          "Authorization": authToken,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!getMediaResponse.ok) {
+        const errorText = await getMediaResponse.text();
+        console.error("Failed to retrieve media details:", errorText);
+        throw new Error("Failed to retrieve media link");
       }
+
+      const mediaListData = await getMediaResponse.json();
+      console.log("WHAPI media list response:", JSON.stringify(mediaListData, null, 2));
+      
+      // Find the uploaded file in the response
+      const uploadedFile = mediaListData.files?.find((f: any) => f.id === mediaId);
+      
+      if (!uploadedFile || !uploadedFile.link) {
+        console.error("Media file not found in list or missing link", { mediaId, uploadedFile });
+        throw new Error("Failed to retrieve media link from service");
+      }
+
+      const mediaLink = uploadedFile.link;
 
       // Store upload record
       await storage.createMediaUpload({
@@ -2257,7 +2280,7 @@ export function registerRoutes(app: Express) {
 
       res.json({ 
         mediaId: mediaId,
-        url: mediaLink, // Use the link from WHAPI response
+        url: mediaLink, // Use the link retrieved from GET /media
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       });
     } catch (error: any) {

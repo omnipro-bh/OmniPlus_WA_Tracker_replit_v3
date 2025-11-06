@@ -79,11 +79,13 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 
 - **Media Link URL Fix (Critical):**
   - **Problem:** Messages with images/videos failing with "media link is not available" error from WHAPI
-  - **Root Cause:** Backend was constructing media URL manually as `https://gate.whapi.cloud/media/${mediaId}`, but WHAPI requires using the actual `link` field from their upload response
+  - **Root Cause:** WHAPI requires a two-step process to get media links - first upload to get mediaId, then retrieve the file list to get the actual S3 link
   - **Fix Applied:**
-    - Updated `/api/media/upload` endpoint to extract both `mediaId` and `mediaLink` from WHAPI response
-    - Added validation to ensure mediaLink exists before proceeding
-    - Return the actual WHAPI-provided link instead of constructed URL
-    - Added logging of full upload response for debugging
-  - **Result:** Messages with media (images/videos/documents) now send successfully with correct media URLs
-  - **Location:** server/routes.ts (lines ~2237-2265)
+    - Updated `/api/media/upload` endpoint to implement two-step WHAPI media flow:
+      1. POST to `/media` with file data → receive mediaId
+      2. GET to `/media` to retrieve file list → find uploaded file by ID → extract S3 link (https://s3.eu-central-1.wasabisys.com/in-files/{mediaId})
+    - Added validation at each step to ensure mediaId and link are available
+    - Return the actual S3 link from WHAPI's file list response
+    - Added logging of both upload and retrieval responses for debugging
+  - **Result:** Messages with media (images/videos/documents) now send successfully with correct S3 media URLs
+  - **Location:** server/routes.ts (lines ~2237-2288)
