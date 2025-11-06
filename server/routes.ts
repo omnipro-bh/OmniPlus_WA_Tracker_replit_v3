@@ -2232,10 +2232,17 @@ export function registerRoutes(app: Express) {
       }
 
       const uploadData = await uploadResponse.json();
+      console.log("WHAPI upload response:", JSON.stringify(uploadData, null, 2));
+      
       const mediaId = uploadData.media?.[0]?.id;
+      const mediaLink = uploadData.media?.[0]?.link;
 
       if (!mediaId) {
         throw new Error("No media ID returned from upload service");
+      }
+
+      if (!mediaLink) {
+        throw new Error("No media link returned from upload service");
       }
 
       // Store upload record
@@ -2250,7 +2257,7 @@ export function registerRoutes(app: Express) {
 
       res.json({ 
         mediaId: mediaId,
-        url: `https://gate.whapi.cloud/media/${mediaId}`,
+        url: mediaLink, // Use the link from WHAPI response
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       });
     } catch (error: any) {
