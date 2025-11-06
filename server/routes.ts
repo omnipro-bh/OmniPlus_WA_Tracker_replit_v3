@@ -24,6 +24,9 @@ import * as whapi from "./whapi";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -2160,10 +2163,10 @@ export function registerRoutes(app: Express) {
   // MEDIA UPLOADS
   // ============================================================================
 
-  // Upload media using channel token
+  // Upload media to local storage
   app.post("/api/media/upload", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { file, fileType, channelId } = req.body;
+      const { file, fileType, fileName } = req.body;
 
       if (!file || !fileType) {
         return res.status(400).json({ error: "File data and fileType are required" });
@@ -2201,103 +2204,72 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Get channel - if channelId provided, use it; otherwise use first available authorized channel
-      let channel;
-      if (channelId) {
-        channel = await storage.getChannel(parseInt(channelId));
-        if (!channel || channel.userId !== req.userId!) {
-          return res.status(403).json({ error: "Channel not found or access denied" });
-        }
-      } else {
-        // Find first active, authorized channel for this user
-        const userChannels = await storage.getChannelsForUser(req.userId!);
-        channel = userChannels.find(c => 
-          c.status === "ACTIVE" && 
-          c.authStatus === "AUTHORIZED" && 
-          c.whapiChannelToken
-        );
-        
-        if (!channel) {
-          return res.status(400).json({ error: "No authorized channel available. Please authorize a channel first." });
-        }
-      }
-
-      if (!channel.whapiChannelToken) {
-        return res.status(400).json({ error: "Channel not authorized" });
-      }
-
-      // Upload to Gate API using channel token
-      const authToken = channel.whapiChannelToken.startsWith("Bearer ") 
-        ? channel.whapiChannelToken 
-        : `Bearer ${channel.whapiChannelToken}`;
-
-      const uploadResponse = await fetch("https://gate.whapi.cloud/media", {
-        method: "POST",
-        headers: {
-          "Authorization": authToken,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          media: file // Send the data URL directly
-        })
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error("Media upload failed:", errorText);
-        throw new Error(`Upload failed: ${uploadResponse.status === 401 ? 'Unauthorized' : 'Server error'}`);
-      }
-
-      const uploadData = await uploadResponse.json();
-      console.log("WHAPI upload response:", JSON.stringify(uploadData, null, 2));
+      // Extract MIME type from data URL to determine file extension
+      const mimeMatch = file.match(/^data:([^;]+);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
       
-      const mediaId = uploadData.media?.[0]?.id;
+      // Map MIME type to extension
+      const extensionMap: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'video/mp4': 'mp4',
+        'video/mpeg': 'mpeg',
+        'video/quicktime': 'mov',
+        'video/x-msvideo': 'avi',
+        'application/pdf': 'pdf',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      };
 
-      if (!mediaId) {
-        throw new Error("No media ID returned from upload service");
-      }
-
-      // Step 2: Retrieve the media link via GET request
-      const getMediaResponse = await fetch("https://gate.whapi.cloud/media", {
-        method: "GET",
-        headers: {
-          "Authorization": authToken,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!getMediaResponse.ok) {
-        const errorText = await getMediaResponse.text();
-        console.error("Failed to retrieve media details:", errorText);
-        throw new Error("Failed to retrieve media link");
-      }
-
-      const mediaListData = await getMediaResponse.json();
-      console.log("WHAPI media list response:", JSON.stringify(mediaListData, null, 2));
+      const extension = extensionMap[mimeType] || 'bin';
       
-      // Find the uploaded file in the response
-      const uploadedFile = mediaListData.files?.find((f: any) => f.id === mediaId);
+      // Generate unique filename: {timestamp}-{random}.{ext}
+      const uniqueId = crypto.randomBytes(8).toString('hex');
+      const timestamp = Date.now();
+      const generatedFileName = `${timestamp}-${uniqueId}.${extension}`;
       
-      if (!uploadedFile || !uploadedFile.link) {
-        console.error("Media file not found in list or missing link", { mediaId, uploadedFile });
-        throw new Error("Failed to retrieve media link from service");
+      // Ensure uploads directory exists
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
       }
 
-      const mediaLink = uploadedFile.link;
+      // Write file to disk
+      const filePath = path.join(uploadsDir, generatedFileName);
+      fs.writeFileSync(filePath, buffer);
+
+      // Generate public URL
+      // In production, this should be your actual domain: https://yourdomain.com/uploads/...
+      // In development/Replit, use the REPLIT_DEV_DOMAIN or current host
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : `${req.protocol}://${req.get('host')}`;
+      
+      const publicUrl = `${baseUrl}/uploads/${generatedFileName}`;
 
       // Store upload record
+      const mediaId = `local-${uniqueId}`;
       await storage.createMediaUpload({
         userId: req.userId!,
         whapiMediaId: mediaId,
-        fileName: req.body.fileName || null,
+        fileName: fileName || generatedFileName,
         fileType: fileType,
         fileSizeMB: Math.round(fileSizeMB),
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       });
 
+      console.log(`[Media Upload] Saved ${generatedFileName} (${fileSizeMB.toFixed(2)}MB) for user ${req.userId}`);
+
       res.json({ 
         mediaId: mediaId,
-        url: mediaLink, // Use the link retrieved from GET /media
+        url: publicUrl,
+        fileName: generatedFileName,
+        fileSizeMB: fileSizeMB.toFixed(2),
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       });
     } catch (error: any) {
