@@ -74,11 +74,12 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 
 - **Image/Video Buttons Media Fix (Critical):**
   - **Problem:** Messages with image_buttons and video_buttons types were sending without media attachments
-  - **Root Cause:** Incorrect WHAPI payload format - media needs to be sent as direct base64 string in header, not wrapped in object
+  - **Root Cause:** Incorrect WHAPI payload structure - for button messages with media, the `media` field must be at ROOT level, not in `header`
   - **Fix Applied:**
     - Updated both single send and bulk send routes for image_buttons and video_buttons
-    - Correct format: `header: { type: "image", image: "data:image/png;base64,..." }` (direct string)
-    - Previous attempts used `{ link: url }` or `{ media: base64 }` which WHAPI rejects
-    - Both routes now use proper WHAPI interactive message format with inline base64
-  - **Result:** Image + Buttons and Video + Buttons messages now send with media correctly inline
-  - **Location:** server/routes.ts (single send and bulk send image_buttons/video_buttons cases)
+    - Correct format per WHAPI docs: `{ "type": "button", "media": "data:image/png;base64,...", "body": {...}, "action": {...} }`
+    - Previous attempts incorrectly used `header: { type: "image", image: base64 }` which WHAPI strips out
+    - Both routes now use proper WHAPI interactive message format with media at root level
+  - **Result:** Image + Buttons and Video + Buttons messages now send with media correctly attached
+  - **Location:** server/routes.ts (single send: lines ~1312-1352, bulk send: lines ~1612-1640)
+  - **Documentation Reference:** WHAPI "Send buttons with images" and "Send Buttons with Video" sections

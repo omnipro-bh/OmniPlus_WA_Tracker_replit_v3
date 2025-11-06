@@ -1307,16 +1307,11 @@ export function registerRoutes(app: Express) {
           });
           
         } else if (currentMessageType === "image_buttons") {
-          // Image with buttons - send base64 inline (direct string, not wrapped)
+          // Image with buttons - media at ROOT level per WHAPI docs
           const imageButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { 
-              header: { 
-                type: "image", 
-                image: mediaUrl // Direct base64 string per WHAPI docs
-              } 
-            }),
+            ...(mediaUrl && { media: mediaUrl }), // Media at root level!
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1329,20 +1324,15 @@ export function registerRoutes(app: Express) {
               }))
             }
           };
-          console.log(`[Single Send] image_buttons with inline base64`);
+          console.log(`[Single Send] image_buttons with media at root level`);
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, imageButtonPayload);
           
         } else if (currentMessageType === "video_buttons") {
-          // Video with buttons - send base64 inline (direct string, not wrapped)
+          // Video with buttons - media at ROOT level per WHAPI docs
           const videoButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { 
-              header: { 
-                type: "video", 
-                video: mediaUrl // Direct base64 string per WHAPI docs
-              } 
-            }),
+            ...(mediaUrl && { media: mediaUrl }), // Media at root level!
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1355,7 +1345,7 @@ export function registerRoutes(app: Express) {
               }))
             }
           };
-          console.log(`[Single Send] video_buttons with inline base64`);
+          console.log(`[Single Send] video_buttons with media at root level`);
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, videoButtonPayload);
           
         } else if (currentMessageType === "document") {
@@ -1617,41 +1607,31 @@ export function registerRoutes(app: Express) {
               break;
               
             case "image_buttons": {
-              // Send image with buttons (interactive) - base64 inline (direct string)
+              // Send image with buttons - media at ROOT level per WHAPI docs
               const imgPayload = {
                 to: message.to,
                 type: "button",
-                ...(message.mediaUrl && { 
-                  header: { 
-                    type: "image", 
-                    image: message.mediaUrl // Direct base64 string per WHAPI docs
-                  } 
-                }),
+                ...(message.mediaUrl && { media: message.mediaUrl }), // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] image_buttons with inline base64 for ${message.to}`);
+              console.log(`[Bulk Send] image_buttons with media at root for ${message.to}`);
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, imgPayload);
               break;
             }
               
             case "video_buttons": {
-              // Send video with buttons (interactive) - base64 inline (direct string)
+              // Send video with buttons - media at ROOT level per WHAPI docs
               const vidPayload = {
                 to: message.to,
                 type: "button",
-                ...(message.mediaUrl && { 
-                  header: { 
-                    type: "video", 
-                    video: message.mediaUrl // Direct base64 string per WHAPI docs
-                  } 
-                }),
+                ...(message.mediaUrl && { media: message.mediaUrl }), // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] video_buttons with inline base64 for ${message.to}`);
+              console.log(`[Bulk Send] video_buttons with media at root for ${message.to}`);
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, vidPayload);
               break;
             }
