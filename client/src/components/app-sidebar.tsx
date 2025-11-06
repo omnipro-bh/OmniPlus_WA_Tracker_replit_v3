@@ -6,6 +6,7 @@ import {
   Users,
   FileText,
   GitBranch,
+  Book,
   Inbox,
   ScrollText,
   CreditCard,
@@ -64,6 +65,11 @@ export function AppSidebar() {
       title: "Workflows",
       url: "/workflows",
       icon: GitBranch,
+    },
+    {
+      title: "Phonebooks",
+      url: "/phonebooks",
+      icon: Book,
     },
     {
       title: "Outbox",

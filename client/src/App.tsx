@@ -20,6 +20,8 @@ import Send from "@/pages/send";
 import Bulk from "@/pages/bulk";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
+import Phonebooks from "@/pages/phonebooks";
+import PhonebookDetail from "@/pages/phonebook-detail";
 import Outbox from "@/pages/outbox";
 import Logs from "@/pages/logs";
 import BulkLogs from "@/pages/bulk-logs";
@@ -70,6 +72,16 @@ function Router() {
       <Route path="/workflows">
         <DashboardLayout>
           <Workflows />
+        </DashboardLayout>
+      </Route>
+      <Route path="/phonebooks">
+        <DashboardLayout>
+          <Phonebooks />
+        </DashboardLayout>
+      </Route>
+      <Route path="/phonebooks/:id">
+        <DashboardLayout>
+          <PhonebookDetail />
         </DashboardLayout>
       </Route>
       <Route path="/outbox">
