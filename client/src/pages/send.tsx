@@ -206,13 +206,32 @@ export default function Send() {
 
     setUploadingFile(true);
     try {
-      const formDataUpload = new FormData();
-      formDataUpload.append("file", file);
+      // Determine file type
+      let fileType = "document";
+      if (file.type.startsWith("image/")) {
+        fileType = "image";
+      } else if (file.type.startsWith("video/")) {
+        fileType = "video";
+      }
+
+      // Convert file to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
       const response = await fetch("/api/media/upload", {
         method: "POST",
         credentials: "include",
-        body: formDataUpload,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          file: base64,
+          fileType: fileType,
+        }),
       });
 
       if (!response.ok) {
