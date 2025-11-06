@@ -1736,6 +1736,508 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // PHONEBOOKS
+  // ============================================================================
+
+  // Get phonebooks
+  app.get("/api/phonebooks", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebooks = await storage.getPhonebooksForUser(req.userId!);
+      
+      // Include contact count for each phonebook
+      const phonebooksWithCount = await Promise.all(
+        phonebooks.map(async (phonebook) => {
+          const contacts = await storage.getContactsForPhonebook(phonebook.id);
+          return {
+            ...phonebook,
+            contactCount: contacts.length,
+          };
+        })
+      );
+      
+      res.json(phonebooksWithCount);
+    } catch (error: any) {
+      console.error("Get phonebooks error:", error);
+      res.status(500).json({ error: "Failed to fetch phonebooks" });
+    }
+  });
+
+  // Get single phonebook with contacts
+  app.get("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const phonebook = await storage.getPhonebook(phonebookId);
+
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      const contacts = await storage.getContactsForPhonebook(phonebookId);
+      
+      res.json({
+        ...phonebook,
+        contacts,
+      });
+    } catch (error: any) {
+      console.error("Get phonebook error:", error);
+      res.status(500).json({ error: "Failed to fetch phonebook" });
+    }
+  });
+
+  // Create phonebook
+  app.post("/api/phonebooks", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { name, description } = req.body;
+
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ error: "Phonebook name is required" });
+      }
+
+      const phonebook = await storage.createPhonebook({
+        userId: req.userId!,
+        name: name.trim(),
+        description: description || null,
+      });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "CREATE",
+        meta: {
+          entity: "phonebook",
+          entityId: phonebook.id,
+          name
+        },
+      });
+
+      res.json(phonebook);
+    } catch (error: any) {
+      console.error("Create phonebook error:", error);
+      res.status(500).json({ error: "Failed to create phonebook" });
+    }
+  });
+
+  // Update phonebook
+  app.put("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const phonebook = await storage.getPhonebook(phonebookId);
+
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      const { name, description } = req.body;
+      const updated = await storage.updatePhonebook(phonebookId, {
+        name,
+        description,
+      });
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE",
+        meta: {
+          entity: "phonebook",
+          entityId: phonebookId,
+          name
+        },
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update phonebook error:", error);
+      res.status(500).json({ error: "Failed to update phonebook" });
+    }
+  });
+
+  // Delete phonebook
+  app.delete("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const phonebook = await storage.getPhonebook(phonebookId);
+
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      await storage.deletePhonebook(phonebookId);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "DELETE",
+        meta: {
+          entity: "phonebook",
+          entityId: phonebookId,
+          name: phonebook.name
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete phonebook error:", error);
+      res.status(500).json({ error: "Failed to delete phonebook" });
+    }
+  });
+
+  // ============================================================================
+  // PHONEBOOK CONTACTS
+  // ============================================================================
+
+  // Get contacts for a phonebook
+  app.get("/api/phonebooks/:id/contacts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const phonebook = await storage.getPhonebook(phonebookId);
+
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      const contacts = await storage.getContactsForPhonebook(phonebookId);
+      res.json(contacts);
+    } catch (error: any) {
+      console.error("Get contacts error:", error);
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  // Create contact
+  app.post("/api/phonebooks/:id/contacts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const phonebook = await storage.getPhonebook(phonebookId);
+
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      const {
+        phone,
+        name,
+        email,
+        messageType,
+        body,
+        mediaUrl,
+        button1Text,
+        button1Type,
+        button1Value,
+        button1Id,
+        button2Text,
+        button2Type,
+        button2Value,
+        button2Id,
+        button3Text,
+        button3Type,
+        button3Value,
+        button3Id,
+      } = req.body;
+
+      if (!phone || !name || !body) {
+        return res.status(400).json({ error: "Phone, name, and message body are required" });
+      }
+
+      const contact = await storage.createContact({
+        phonebookId,
+        phone,
+        name,
+        email: email || null,
+        messageType: messageType || "text_buttons",
+        body,
+        mediaUrl: mediaUrl || null,
+        button1Text: button1Text || null,
+        button1Type: button1Type || null,
+        button1Value: button1Value || null,
+        button1Id: button1Id || null,
+        button2Text: button2Text || null,
+        button2Type: button2Type || null,
+        button2Value: button2Value || null,
+        button2Id: button2Id || null,
+        button3Text: button3Text || null,
+        button3Type: button3Type || null,
+        button3Value: button3Value || null,
+        button3Id: button3Id || null,
+      });
+
+      res.json(contact);
+    } catch (error: any) {
+      console.error("Create contact error:", error);
+      res.status(500).json({ error: "Failed to create contact" });
+    }
+  });
+
+  // Update contact
+  app.put("/api/contacts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const contactId = parseInt(req.params.id);
+      const contact = await storage.getContact(contactId);
+
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      // Verify ownership through phonebook
+      const phonebook = await storage.getPhonebook(contact.phonebookId);
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateContact(contactId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update contact error:", error);
+      res.status(500).json({ error: "Failed to update contact" });
+    }
+  });
+
+  // Delete contact
+  app.delete("/api/contacts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const contactId = parseInt(req.params.id);
+      const contact = await storage.getContact(contactId);
+
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      // Verify ownership through phonebook
+      const phonebook = await storage.getPhonebook(contact.phonebookId);
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteContact(contactId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete contact error:", error);
+      res.status(500).json({ error: "Failed to delete contact" });
+    }
+  });
+
+  // ============================================================================
+  // MEDIA UPLOADS
+  // ============================================================================
+
+  // Upload media to WHAPI
+  app.post("/api/media/upload", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { file, fileType } = req.body;
+
+      if (!file || !fileType) {
+        return res.status(400).json({ error: "File data and fileType are required" });
+      }
+
+      // Get user's plan to check file size limits
+      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      if (!subscription) {
+        return res.status(403).json({ error: "No active subscription" });
+      }
+
+      const plan = await storage.getPlan(subscription.planId);
+      if (!plan) {
+        return res.status(403).json({ error: "Plan not found" });
+      }
+
+      // Parse base64 file and check size
+      const base64Data = file.split(',')[1] || file;
+      const buffer = Buffer.from(base64Data, 'base64');
+      const fileSizeMB = buffer.length / (1024 * 1024);
+
+      // Check against plan limits
+      let maxAllowed = 5; // Default
+      if (fileType === "image") {
+        maxAllowed = plan.maxImageSizeMB || 5;
+      } else if (fileType === "video") {
+        maxAllowed = plan.maxVideoSizeMB || 16;
+      } else if (fileType === "document") {
+        maxAllowed = plan.maxDocumentSizeMB || 10;
+      }
+
+      if (fileSizeMB > maxAllowed) {
+        return res.status(400).json({ 
+          error: `File size (${fileSizeMB.toFixed(2)}MB) exceeds plan limit (${maxAllowed}MB)` 
+        });
+      }
+
+      // Get WHAPI settings
+      const whapiBaseUrl = await storage.getSetting("whapi_base_url");
+      const whapiToken = await storage.getSetting("whapi_partner_token");
+
+      if (!whapiBaseUrl || !whapiToken) {
+        return res.status(500).json({ error: "WHAPI settings not configured" });
+      }
+
+      // Upload to WHAPI using base64 data
+      const whapiResponse = await fetch(`${whapiBaseUrl.value}/media`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${whapiToken.value}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          media: file // Send the data URL directly
+        })
+      });
+
+      if (!whapiResponse.ok) {
+        const errorText = await whapiResponse.text();
+        throw new Error(`WHAPI upload failed: ${errorText}`);
+      }
+
+      const whapiData = await whapiResponse.json();
+      const mediaId = whapiData.media?.[0]?.id;
+
+      if (!mediaId) {
+        throw new Error("No media ID returned from WHAPI");
+      }
+
+      // Store upload record
+      await storage.createMediaUpload({
+        userId: req.userId!,
+        whapiMediaId: mediaId,
+        fileName: req.body.fileName || null,
+        fileType: fileType,
+        fileSizeMB: Math.round(fileSizeMB),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      });
+
+      res.json({ 
+        mediaId: mediaId,
+        url: `${whapiBaseUrl.value}/media/${mediaId}`,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      });
+    } catch (error: any) {
+      console.error("Media upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to upload media" });
+    }
+  });
+
+  // ============================================================================
+  // SEND TO PHONEBOOK
+  // ============================================================================
+
+  // Send messages to all contacts in a phonebook
+  app.post("/api/phonebooks/:id/send", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const phonebookId = parseInt(req.params.id);
+      const { channelId } = req.body;
+
+      if (!channelId) {
+        return res.status(400).json({ error: "Channel ID is required" });
+      }
+
+      // Verify phonebook ownership
+      const phonebook = await storage.getPhonebook(phonebookId);
+      if (!phonebook || phonebook.userId !== req.userId!) {
+        return res.status(404).json({ error: "Phonebook not found" });
+      }
+
+      // Verify channel ownership
+      const channel = await storage.getChannel(channelId);
+      if (!channel || channel.userId !== req.userId!) {
+        return res.status(403).json({ error: "Channel not found or access denied" });
+      }
+
+      // Get all contacts
+      const contacts = await storage.getContactsForPhonebook(phonebookId);
+      if (contacts.length === 0) {
+        return res.status(400).json({ error: "Phonebook has no contacts" });
+      }
+
+      // Create job
+      const job = await storage.createJob({
+        userId: req.userId!,
+        channelId: channelId,
+        type: "BULK",
+        status: "PENDING",
+        total: contacts.length,
+        queued: contacts.length,
+        pending: 0,
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        failed: 0,
+        replied: 0,
+      });
+
+      // Create messages for each contact
+      for (const contact of contacts) {
+        // Build buttons array
+        const buttons: any[] = [];
+        
+        if (contact.button1Text) {
+          const button: any = {
+            type: contact.button1Type || "quick_reply",
+            title: contact.button1Text,
+            id: contact.button1Id || `btn1_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          };
+          
+          if (contact.button1Type === "url" && contact.button1Value) {
+            button.url = contact.button1Value;
+          } else if (contact.button1Type === "call" && contact.button1Value) {
+            button.phone = contact.button1Value;
+          }
+          
+          buttons.push(button);
+        }
+        
+        if (contact.button2Text) {
+          const button: any = {
+            type: contact.button2Type || "quick_reply",
+            title: contact.button2Text,
+            id: contact.button2Id || `btn2_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          };
+          
+          if (contact.button2Type === "url" && contact.button2Value) {
+            button.url = contact.button2Value;
+          } else if (contact.button2Type === "call" && contact.button2Value) {
+            button.phone = contact.button2Value;
+          }
+          
+          buttons.push(button);
+        }
+        
+        if (contact.button3Text) {
+          const button: any = {
+            type: contact.button3Type || "quick_reply",
+            title: contact.button3Text,
+            id: contact.button3Id || `btn3_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          };
+          
+          if (contact.button3Type === "url" && contact.button3Value) {
+            button.url = contact.button3Value;
+          } else if (contact.button3Type === "call" && contact.button3Value) {
+            button.phone = contact.button3Value;
+          }
+          
+          buttons.push(button);
+        }
+
+        // Create message
+        await storage.createMessage({
+          jobId: job.id,
+          to: contact.phone,
+          name: contact.name,
+          email: contact.email || null,
+          body: contact.body,
+          header: null,
+          footer: null,
+          buttons: buttons,
+          status: "QUEUED",
+          messageType: contact.messageType,
+          mediaUrl: contact.mediaUrl || null,
+        });
+      }
+
+      // Start processing the job (trigger processBulkJob)
+      processBulkJob(job.id, channel);
+
+      res.json(job);
+    } catch (error: any) {
+      console.error("Send to phonebook error:", error);
+      res.status(500).json({ error: "Failed to send messages" });
+    }
+  });
+
+  // ============================================================================
   // WORKFLOWS
   // ============================================================================
 
