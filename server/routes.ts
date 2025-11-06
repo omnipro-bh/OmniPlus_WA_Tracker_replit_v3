@@ -1307,11 +1307,16 @@ export function registerRoutes(app: Express) {
           });
           
         } else if (currentMessageType === "image_buttons") {
-          // Image with buttons
+          // Image with buttons - send base64 inline (direct string, not wrapped)
           const imageButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { header: { type: "image", image: { link: mediaUrl } } }),
+            ...(mediaUrl && { 
+              header: { 
+                type: "image", 
+                image: mediaUrl // Direct base64 string per WHAPI docs
+              } 
+            }),
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1324,16 +1329,20 @@ export function registerRoutes(app: Express) {
               }))
             }
           };
-          console.log(`[Single Send] image_buttons payload:`, JSON.stringify(imageButtonPayload, null, 2));
-          console.log(`[Single Send] mediaUrl value:`, mediaUrl);
+          console.log(`[Single Send] image_buttons with inline base64`);
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, imageButtonPayload);
           
         } else if (currentMessageType === "video_buttons") {
-          // Video with buttons
+          // Video with buttons - send base64 inline (direct string, not wrapped)
           const videoButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { header: { type: "video", video: { link: mediaUrl } } }),
+            ...(mediaUrl && { 
+              header: { 
+                type: "video", 
+                video: mediaUrl // Direct base64 string per WHAPI docs
+              } 
+            }),
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1346,8 +1355,7 @@ export function registerRoutes(app: Express) {
               }))
             }
           };
-          console.log(`[Single Send] video_buttons payload:`, JSON.stringify(videoButtonPayload, null, 2));
-          console.log(`[Single Send] mediaUrl value:`, mediaUrl);
+          console.log(`[Single Send] video_buttons with inline base64`);
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, videoButtonPayload);
           
         } else if (currentMessageType === "document") {
@@ -1609,37 +1617,41 @@ export function registerRoutes(app: Express) {
               break;
               
             case "image_buttons": {
-              // Send image with buttons (interactive)
+              // Send image with buttons (interactive) - base64 inline (direct string)
               const imgPayload = {
                 to: message.to,
                 type: "button",
                 ...(message.mediaUrl && { 
-                  header: { type: "image", image: { link: message.mediaUrl } } 
+                  header: { 
+                    type: "image", 
+                    image: message.mediaUrl // Direct base64 string per WHAPI docs
+                  } 
                 }),
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] image_buttons payload for ${message.to}:`, JSON.stringify(imgPayload, null, 2));
-              console.log(`[Bulk Send] mediaUrl value:`, message.mediaUrl);
+              console.log(`[Bulk Send] image_buttons with inline base64 for ${message.to}`);
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, imgPayload);
               break;
             }
               
             case "video_buttons": {
-              // Send video with buttons (interactive)
+              // Send video with buttons (interactive) - base64 inline (direct string)
               const vidPayload = {
                 to: message.to,
                 type: "button",
                 ...(message.mediaUrl && { 
-                  header: { type: "video", video: { link: message.mediaUrl } } 
+                  header: { 
+                    type: "video", 
+                    video: message.mediaUrl // Direct base64 string per WHAPI docs
+                  } 
                 }),
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] video_buttons payload for ${message.to}:`, JSON.stringify(vidPayload, null, 2));
-              console.log(`[Bulk Send] mediaUrl value:`, message.mediaUrl);
+              console.log(`[Bulk Send] video_buttons with inline base64 for ${message.to}`);
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, vidPayload);
               break;
             }
@@ -2163,10 +2175,10 @@ export function registerRoutes(app: Express) {
   // MEDIA UPLOADS
   // ============================================================================
 
-  // Upload media - Hybrid approach: Save locally + upload to WHAPI for S3 link
+  // Upload media - Local storage only (instant)
   app.post("/api/media/upload", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { file, fileType, fileName, channelId } = req.body;
+      const { file, fileType, fileName } = req.body;
 
       if (!file || !fileType) {
         return res.status(400).json({ error: "File data and fileType are required" });
@@ -2204,7 +2216,7 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Step 1: Save locally for backup (fast ~500ms)
+      // Save locally for backup
       const mimeMatch = file.match(/^data:([^;]+);/);
       const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
       
@@ -2237,84 +2249,9 @@ export function registerRoutes(app: Express) {
 
       const filePath = path.join(uploadsDir, generatedFileName);
       fs.writeFileSync(filePath, buffer);
-      console.log(`[Media Upload] Saved locally: ${generatedFileName} (${fileSizeMB.toFixed(2)}MB)`);
 
-      // Step 2: Get channel for WHAPI upload
-      let channel;
-      if (channelId) {
-        channel = await storage.getChannel(parseInt(channelId));
-        if (!channel || channel.userId !== req.userId!) {
-          return res.status(403).json({ error: "Channel not found or access denied" });
-        }
-      } else {
-        const userChannels = await storage.getChannelsForUser(req.userId!);
-        channel = userChannels.find(c => 
-          c.status === "ACTIVE" && 
-          c.authStatus === "AUTHORIZED" && 
-          c.whapiChannelToken
-        );
-        
-        if (!channel) {
-          return res.status(400).json({ error: "No authorized channel available. Please authorize a channel first." });
-        }
-      }
-
-      if (!channel.whapiChannelToken) {
-        return res.status(400).json({ error: "Channel not authorized" });
-      }
-
-      // Step 3: Upload to WHAPI to get S3 link (for WhatsApp compatibility)
-      const authToken = channel.whapiChannelToken.startsWith("Bearer ") 
-        ? channel.whapiChannelToken 
-        : `Bearer ${channel.whapiChannelToken}`;
-
-      const uploadResponse = await fetch("https://gate.whapi.cloud/media", {
-        method: "POST",
-        headers: {
-          "Authorization": authToken,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          media: file
-        })
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error("WHAPI upload failed:", errorText);
-        throw new Error(`Upload failed: ${uploadResponse.status === 401 ? 'Unauthorized' : 'Server error'}`);
-      }
-
-      const uploadData = await uploadResponse.json();
-      const mediaId = uploadData.media?.[0]?.id;
-
-      if (!mediaId) {
-        throw new Error("No media ID returned from upload service");
-      }
-
-      // Step 4: Get S3 link from WHAPI
-      const getMediaResponse = await fetch("https://gate.whapi.cloud/media", {
-        method: "GET",
-        headers: {
-          "Authorization": authToken,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!getMediaResponse.ok) {
-        throw new Error("Failed to retrieve media link");
-      }
-
-      const mediaListData = await getMediaResponse.json();
-      const uploadedFile = mediaListData.files?.find((f: any) => f.id === mediaId);
-      
-      if (!uploadedFile || !uploadedFile.link) {
-        throw new Error("Failed to retrieve media link from service");
-      }
-
-      const s3Url = uploadedFile.link;
-
-      // Store upload record with both local and S3 info
+      // Store upload record
+      const mediaId = `local-${uniqueId}`;
       await storage.createMediaUpload({
         userId: req.userId!,
         whapiMediaId: mediaId,
@@ -2324,11 +2261,12 @@ export function registerRoutes(app: Express) {
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       });
 
-      console.log(`[Media Upload] WHAPI S3 URL: ${s3Url}`);
+      console.log(`[Media Upload] Saved ${generatedFileName} (${fileSizeMB.toFixed(2)}MB) for user ${req.userId}`);
 
+      // Return the original base64 data URL for inline sending
       res.json({ 
         mediaId: mediaId,
-        url: s3Url, // Return S3 URL for WhatsApp compatibility
+        url: file, // Return original base64 data URL for inline sending
         fileName: generatedFileName,
         fileSizeMB: fileSizeMB.toFixed(2),
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
