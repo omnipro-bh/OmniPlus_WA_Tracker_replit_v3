@@ -52,6 +52,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   workflows: many(workflows),
   offlinePayments: many(offlinePayments),
   auditLogs: many(auditLogs),
+  phonebooks: many(phonebooks),
+  mediaUploads: many(mediaUploads),
 }));
 
 // Plans table
@@ -74,6 +76,10 @@ export const plans = pgTable("plans", {
   bulkMessagesLimit: integer("bulk_messages_limit").notNull().default(-1),
   channelsLimit: integer("channels_limit").notNull().default(1),
   chatbotsLimit: integer("chatbots_limit").notNull().default(-1),
+  // File Upload Limits (in MB)
+  maxImageSizeMB: integer("max_image_size_mb").notNull().default(5), // Default 5MB (WhatsApp limit: 5MB)
+  maxVideoSizeMB: integer("max_video_size_mb").notNull().default(16), // Default 16MB (WhatsApp limit: 16MB)
+  maxDocumentSizeMB: integer("max_document_size_mb").notNull().default(10), // Default 10MB (WhatsApp limit: 100MB)
   // Page Access (checkbox matrix)
   pageAccess: jsonb("page_access").notNull().default({
     dashboard: true,
@@ -89,6 +95,7 @@ export const plans = pgTable("plans", {
     pricing: true,
     balances: false,
     whapiSettings: false,
+    phonebooks: false,
   }),
   features: jsonb("features").notNull().default([]), // Array of feature strings
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -395,6 +402,8 @@ export const messages = pgTable("messages", {
   header: text("header"),
   footer: text("footer"),
   buttons: jsonb("buttons").notNull().default([]), // Array of button objects: [{ type, title, id }]
+  messageType: varchar("message_type", { length: 50 }).default("text_buttons"), // text_buttons, image, image_buttons, video_buttons, document
+  mediaUrl: text("media_url"), // WHAPI media ID or URL for image/video/document
   providerMessageId: text("provider_message_id"), // WHAPI message ID from response
   status: messageStatusEnum("status").notNull().default("QUEUED"),
   lastReply: text("last_reply"), // Text content of last reply received
@@ -621,6 +630,87 @@ export const homepageFeatures = pgTable("homepage_features", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Phonebooks table - Contact lists for bulk messaging
+export const phonebooks = pgTable("phonebooks", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const phonebooksRelations = relations(phonebooks, ({ one, many }) => ({
+  user: one(users, {
+    fields: [phonebooks.userId],
+    references: [users.id],
+  }),
+  contacts: many(phonebookContacts),
+}));
+
+// Phonebook Contacts table - Individual contacts with pre-filled messages
+export const phonebookContacts = pgTable("phonebook_contacts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  phonebookId: integer("phonebook_id").notNull().references(() => phonebooks.id, { onDelete: "cascade" }),
+  
+  // Contact Info
+  phone: varchar("phone", { length: 50 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  
+  // Message Configuration (supports 5 types)
+  messageType: varchar("message_type", { length: 50 }).notNull().default("text_buttons"), // text_buttons, image, image_buttons, video_buttons, document
+  body: text("body").notNull(),
+  mediaUrl: text("media_url"), // WHAPI media ID for image/video/document
+  
+  // Buttons (max 3 - maintains button_id pattern)
+  button1Text: varchar("button1_text", { length: 255 }),
+  button1Type: varchar("button1_type", { length: 20 }), // quick_reply, url, call
+  button1Value: text("button1_value"), // URL or phone number
+  button1Id: varchar("button1_id", { length: 50 }), // Button reference ID
+  
+  button2Text: varchar("button2_text", { length: 255 }),
+  button2Type: varchar("button2_type", { length: 20 }),
+  button2Value: text("button2_value"),
+  button2Id: varchar("button2_id", { length: 50 }),
+  
+  button3Text: varchar("button3_text", { length: 255 }),
+  button3Type: varchar("button3_type", { length: 20 }),
+  button3Value: text("button3_value"),
+  button3Id: varchar("button3_id", { length: 50 }),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const phonebookContactsRelations = relations(phonebookContacts, ({ one }) => ({
+  phonebook: one(phonebooks, {
+    fields: [phonebookContacts.phonebookId],
+    references: [phonebooks.id],
+  }),
+}));
+
+// Media Uploads table - Track uploaded media files
+export const mediaUploads = pgTable("media_uploads", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  whapiMediaId: varchar("whapi_media_id", { length: 255 }).notNull(), // From WHAPI response
+  fileName: varchar("file_name", { length: 255 }),
+  fileType: varchar("file_type", { length: 50 }), // image, video, document
+  fileSizeMB: integer("file_size_mb"), // File size in MB (stored as integer for simplicity)
+  
+  expiresAt: timestamp("expires_at"), // WHAPI stores for 30 days
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
+  user: one(users, {
+    fields: [mediaUploads.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -743,6 +833,21 @@ export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, 
   description: z.string().min(1),
 });
 
+export const insertPhonebookSchema = createInsertSchema(phonebooks, {
+  name: z.string().min(1, "Phonebook name is required"),
+});
+
+export const insertPhonebookContactSchema = createInsertSchema(phonebookContacts, {
+  phone: z.string().min(1, "Phone number is required"),
+  name: z.string().min(1, "Contact name is required"),
+  body: z.string().min(1, "Message body is required"),
+});
+
+export const insertMediaUploadSchema = createInsertSchema(mediaUploads, {
+  whapiMediaId: z.string().min(1),
+  fileType: z.enum(["image", "video", "document"]),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -794,3 +899,9 @@ export type UseCase = typeof useCases.$inferSelect;
 export type InsertUseCase = z.infer<typeof insertUseCaseSchema>;
 export type HomepageFeature = typeof homepageFeatures.$inferSelect;
 export type InsertHomepageFeature = z.infer<typeof insertHomepageFeatureSchema>;
+export type Phonebook = typeof phonebooks.$inferSelect;
+export type InsertPhonebook = z.infer<typeof insertPhonebookSchema>;
+export type PhonebookContact = typeof phonebookContacts.$inferSelect;
+export type InsertPhonebookContact = z.infer<typeof insertPhonebookContactSchema>;
+export type MediaUpload = typeof mediaUploads.$inferSelect;
+export type InsertMediaUpload = z.infer<typeof insertMediaUploadSchema>;
