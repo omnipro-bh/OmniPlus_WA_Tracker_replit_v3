@@ -78,7 +78,7 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
   - Entry node = optional welcome message trigger on first contact
 
 ## Recent Changes (November 6, 2025)
-- **Phonebook Feature Implementation (Complete Backend + Partial Frontend):**
+- **Phonebook Feature Implementation (Complete):**
   - **Database Schema:**
     - Added `phonebooks` table (id, userId, name, description, createdAt)
     - Added `phonebookContacts` table with comprehensive message configuration:
@@ -107,9 +107,20 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
       - Contact table showing phone, name, message type, preview, and buttons
       - Send to all contacts functionality with channel selection
       - Delete contact functionality
+      - Complete contact form dialog with:
+        - Contact details (phone, name, email)
+        - Message type selector (5 types)
+        - File upload with plan-based size validation
+        - Message body/caption input
+        - Up to 3 configurable buttons (text, type, value, ID)
+        - Real-time validation and error handling
     - Added Phonebooks to sidebar navigation with Book icon
     - Integrated routes in App.tsx
-    - **Pending:** Contact form dialog implementation (state and imports added, full UI/handlers in progress)
+  
+  - **Admin Controls:**
+    - Added file size limit fields to plan editor (maxImageSizeMB, maxVideoSizeMB, maxDocumentSizeMB)
+    - Defaults: 5MB (images), 16MB (videos), 10MB (documents)
+    - Properly preserves 0 values using nullish coalescing and NaN checks
   
   - **Message Type Support:**
     - `text_buttons`: Text message with up to 3 interactive buttons
