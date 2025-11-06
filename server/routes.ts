@@ -2491,16 +2491,12 @@ export function registerRoutes(app: Express) {
         if (!row.phone_number || typeof row.phone_number !== 'string' || row.phone_number.trim() === '') {
           errors.push("Phone number is required");
         } else {
-          let phone = row.phone_number.trim();
-          // Auto-add '+' if missing
-          if (!phone.startsWith('+')) {
-            phone = '+' + phone;
-          }
-          // Validate phone length (minimum 8 digits after +)
-          if (phone.length < 9) {
+          const phone = row.phone_number.trim();
+          // Validate phone length (minimum 8 digits)
+          if (phone.length < 8) {
             errors.push("Phone number is too short");
           }
-          // Update the row with normalized phone
+          // Update the row with trimmed phone
           row.phone_number = phone;
         }
 

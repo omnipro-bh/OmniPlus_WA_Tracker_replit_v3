@@ -51,6 +51,13 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 
 ## Recent Changes (November 6, 2025 - Continued)
 
+- **CSV Import Phone Number Validation Fix:**
+  - **Problem:** CSV import was rejecting all rows as "invalid" because it required phone numbers to start with '+'
+  - **Root Cause:** Validation logic incorrectly required '+' prefix, but WHAPI accepts phone numbers with country code without '+'
+  - **Fix Applied:** Removed '+' prefix requirement from CSV import validation
+  - **Result:** CSV imports now accept phone numbers with or without '+' prefix (e.g., both "97339116526" and "+97339116526" are valid)
+  - **Location:** server/routes.ts (CSV import validation, lines ~2493-2508)
+
 - **Local Media Upload System (Performance Fix):**
   - **Problem:** WHAPI media uploads taking 1.5-2 minutes per file, making the system unusable
   - **Solution:** Local-only file storage with inline base64 message sending
