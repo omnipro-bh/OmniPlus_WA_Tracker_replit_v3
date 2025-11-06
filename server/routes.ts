@@ -831,7 +831,7 @@ export function registerRoutes(app: Express) {
       } catch (whapiError: any) {
         console.error("WHAPI channel creation failed:", whapiError.message);
         return res.status(500).json({ 
-          error: "Failed to create WHAPI channel", 
+          error: "Failed to create channel", 
           details: whapiError.message 
         });
       }
@@ -906,8 +906,8 @@ export function registerRoutes(app: Express) {
         res.json(qrData);
       } catch (whapiError: any) {
         console.error("Failed to fetch QR code from WHAPI:", whapiError.message);
-        // Return the actual WHAPI error message for accurate troubleshooting
-        res.status(500).json({ error: whapiError.message || "Failed to fetch QR code from WHAPI" });
+        // Return the actual error message for accurate troubleshooting
+        res.status(500).json({ error: whapiError.message || "Failed to fetch QR code" });
       }
     } catch (error: any) {
       console.error("Get QR code error:", error);
@@ -2143,10 +2143,10 @@ export function registerRoutes(app: Express) {
   // MEDIA UPLOADS
   // ============================================================================
 
-  // Upload media to WHAPI
+  // Upload media using channel token
   app.post("/api/media/upload", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { file, fileType } = req.body;
+      const { file, fileType, channelId } = req.body;
 
       if (!file || !fileType) {
         return res.status(400).json({ error: "File data and fileType are required" });
@@ -2184,19 +2184,40 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Get WHAPI settings
-      const whapiBaseUrl = await storage.getSetting("whapi_base_url");
-      const whapiToken = await storage.getSetting("whapi_partner_token");
-
-      if (!whapiBaseUrl || !whapiToken) {
-        return res.status(500).json({ error: "WHAPI settings not configured" });
+      // Get channel - if channelId provided, use it; otherwise use first available authorized channel
+      let channel;
+      if (channelId) {
+        channel = await storage.getChannel(parseInt(channelId));
+        if (!channel || channel.userId !== req.userId!) {
+          return res.status(403).json({ error: "Channel not found or access denied" });
+        }
+      } else {
+        // Find first active, authorized channel for this user
+        const userChannels = await storage.getChannelsForUser(req.userId!);
+        channel = userChannels.find(c => 
+          c.status === "ACTIVE" && 
+          c.authStatus === "AUTHORIZED" && 
+          c.whapiChannelToken
+        );
+        
+        if (!channel) {
+          return res.status(400).json({ error: "No authorized channel available. Please authorize a channel first." });
+        }
       }
 
-      // Upload to WHAPI using base64 data
-      const whapiResponse = await fetch(`${whapiBaseUrl.value}/media`, {
+      if (!channel.whapiChannelToken) {
+        return res.status(400).json({ error: "Channel not authorized" });
+      }
+
+      // Upload to Gate API using channel token
+      const authToken = channel.whapiChannelToken.startsWith("Bearer ") 
+        ? channel.whapiChannelToken 
+        : `Bearer ${channel.whapiChannelToken}`;
+
+      const uploadResponse = await fetch("https://gate.whapi.cloud/media", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${whapiToken.value}`,
+          "Authorization": authToken,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -2204,16 +2225,17 @@ export function registerRoutes(app: Express) {
         })
       });
 
-      if (!whapiResponse.ok) {
-        const errorText = await whapiResponse.text();
-        throw new Error(`WHAPI upload failed: ${errorText}`);
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error("Media upload failed:", errorText);
+        throw new Error(`Upload failed: ${uploadResponse.status === 401 ? 'Unauthorized' : 'Server error'}`);
       }
 
-      const whapiData = await whapiResponse.json();
-      const mediaId = whapiData.media?.[0]?.id;
+      const uploadData = await uploadResponse.json();
+      const mediaId = uploadData.media?.[0]?.id;
 
       if (!mediaId) {
-        throw new Error("No media ID returned from WHAPI");
+        throw new Error("No media ID returned from upload service");
       }
 
       // Store upload record
@@ -2228,7 +2250,7 @@ export function registerRoutes(app: Express) {
 
       res.json({ 
         mediaId: mediaId,
-        url: `${whapiBaseUrl.value}/media/${mediaId}`,
+        url: `https://gate.whapi.cloud/media/${mediaId}`,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       });
     } catch (error: any) {
@@ -3251,16 +3273,16 @@ export function registerRoutes(app: Express) {
         await storage.updateMainDaysBalance(days);
         await storage.deleteBalanceTransaction(balanceTransaction.id);
         
-        // Check if WHAPI Partner account has insufficient days (402 error)
+        // Check if Partner account has insufficient days (402 error)
         if (whapiError.message && whapiError.message.includes("402")) {
           return res.status(503).json({ 
-            error: "WHAPI Partner account has insufficient days", 
-            details: "The WHAPI Partner account needs to be topped up with days to activate channels. Please contact the administrator."
+            error: "Insufficient channel days available", 
+            details: "The system needs to be topped up with days to activate channels. Please contact the administrator."
           });
         }
         
         return res.status(500).json({ 
-          error: "Failed to create/extend WHAPI channel", 
+          error: "Failed to create/extend channel", 
           details: whapiError.message 
         });
       }
@@ -3455,7 +3477,7 @@ export function registerRoutes(app: Express) {
           } else {
             // Network/auth errors - do not proceed with local deletion
             return res.status(500).json({ 
-              error: "Failed to delete channel from WHAPI provider",
+              error: "Failed to delete channel from provider",
               details: whapiError
             });
           }

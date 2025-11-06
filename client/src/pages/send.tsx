@@ -204,6 +204,16 @@ export default function Send() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Check if channel is selected
+    if (!formData.channelId) {
+      toast({
+        title: "Channel required",
+        description: "Please select a channel first before uploading files",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploadingFile(true);
     try {
       // Determine file type
@@ -231,6 +241,7 @@ export default function Send() {
         body: JSON.stringify({
           file: base64,
           fileType: fileType,
+          channelId: formData.channelId,
         }),
       });
 
