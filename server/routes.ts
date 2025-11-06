@@ -1308,7 +1308,7 @@ export function registerRoutes(app: Express) {
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
             to,
             type: "button",
-            ...(header && { header: { type: "image", image: { link: mediaUrl } } }),
+            ...(mediaUrl && { header: { type: "image", image: { link: mediaUrl } } }),
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1327,7 +1327,7 @@ export function registerRoutes(app: Express) {
           whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
             to,
             type: "button",
-            ...(header && { header: { type: "video", video: { link: mediaUrl } } }),
+            ...(mediaUrl && { header: { type: "video", video: { link: mediaUrl } } }),
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1604,7 +1604,9 @@ export function registerRoutes(app: Express) {
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
                 to: message.to,
                 type: "button",
-                media: message.mediaUrl || "",
+                ...(message.mediaUrl && { 
+                  header: { type: "image", image: { link: message.mediaUrl } } 
+                }),
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
@@ -1616,8 +1618,9 @@ export function registerRoutes(app: Express) {
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
                 to: message.to,
                 type: "button",
-                media: message.mediaUrl || "",
-                no_encode: true,
+                ...(message.mediaUrl && { 
+                  header: { type: "video", video: { link: message.mediaUrl } } 
+                }),
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },

@@ -89,3 +89,15 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
     - Added logging of both upload and retrieval responses for debugging
   - **Result:** Messages with media (images/videos/documents) now send successfully with correct S3 media URLs
   - **Location:** server/routes.ts (lines ~2237-2288)
+  - **Note:** Upload time averages 10-12 seconds due to two-step WHAPI process and base64 encoding
+
+- **Image/Video Buttons Media Fix (Critical):**
+  - **Problem:** Messages with image_buttons and video_buttons types were sending without media attachments
+  - **Root Cause:** Media was being passed incorrectly - as flat `media` field instead of nested in `header` field per WHAPI's interactive message format. Also, condition was checking for `header` text instead of `mediaUrl`
+  - **Fix Applied:**
+    - Updated both single send and bulk send routes for image_buttons and video_buttons
+    - Changed from: `media: message.mediaUrl` to: `header: { type: "image", image: { link: mediaUrl } }`
+    - Changed condition from checking `header` to checking `mediaUrl` presence
+    - Both routes now properly structure media in the header field per WHAPI API requirements
+  - **Result:** Image + Buttons and Video + Buttons messages now send with media correctly attached
+  - **Location:** server/routes.ts (single send: lines ~1309-1345, bulk send: lines ~1605-1631)
