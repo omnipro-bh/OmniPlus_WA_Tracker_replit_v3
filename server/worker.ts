@@ -1,16 +1,24 @@
 import cron from "node-cron";
 import { storage } from "./storage";
 import { logoutChannel } from "./whapi";
+import fs from "fs";
+import path from "path";
 
 // Background worker for automated tasks
 export class BackgroundWorker {
   private dailyBalanceJob: ReturnType<typeof cron.schedule> | null = null;
   private messageProcessorJob: ReturnType<typeof cron.schedule> | null = null;
+  private mediaCleanupJob: ReturnType<typeof cron.schedule> | null = null;
 
   start() {
     // Channel expiration check - runs every hour to catch expirations quickly
     this.dailyBalanceJob = cron.schedule("0 * * * *", async () => {
       await this.deductDailyBalance();
+    });
+
+    // Media cleanup - runs daily at 3 AM to delete files older than 30 days
+    this.mediaCleanupJob = cron.schedule("0 3 * * *", async () => {
+      await this.cleanupOldMedia();
     });
 
     // Message queue processor - disabled for now
@@ -25,6 +33,9 @@ export class BackgroundWorker {
     }
     if (this.messageProcessorJob) {
       this.messageProcessorJob.stop();
+    }
+    if (this.mediaCleanupJob) {
+      this.mediaCleanupJob.stop();
     }
   }
 
@@ -193,6 +204,48 @@ export class BackgroundWorker {
     if (sent > 0 || delivered > 0) return "SENT";
     if (pending > 0) return "PENDING";
     return "QUEUED";
+  }
+
+  // Clean up uploaded media files older than 30 days
+  private async cleanupOldMedia() {
+    try {
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      
+      // Skip if directory doesn't exist
+      if (!fs.existsSync(uploadsDir)) {
+        return;
+      }
+
+      const now = Date.now();
+      const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+      let deletedCount = 0;
+
+      // Read all files in uploads directory
+      const files = fs.readdirSync(uploadsDir);
+
+      for (const file of files) {
+        // Skip .gitkeep
+        if (file === '.gitkeep') continue;
+
+        const filePath = path.join(uploadsDir, file);
+        const stats = fs.statSync(filePath);
+
+        // Check if file is older than 30 days
+        if (stats.mtimeMs < thirtyDaysAgo) {
+          try {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+            console.log(`Deleted old media file: ${file}`);
+          } catch (error) {
+            console.error(`Failed to delete ${file}:`, error);
+          }
+        }
+      }
+
+      console.log(`Media cleanup completed. Deleted ${deletedCount} files older than 30 days.`);
+    } catch (error) {
+      console.error("Error in media cleanup:", error);
+    }
   }
 }
 
