@@ -135,3 +135,35 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
     - Plan-based file size validation before upload
   
   - **Location:** Backend in server/routes.ts, server/storage.ts, shared/schema.ts; Frontend in client/src/pages/phonebooks.tsx, client/src/pages/phonebook-detail.tsx
+
+- **CSV Import and Bulk Send Enhancements:**
+  - **Database Schema Updates:**
+    - Added `header` and `footer` fields to phonebookContacts for flexible messaging
+  
+  - **CSV Import Feature:**
+    - Created `/api/phonebooks/:id/import-csv` endpoint with comprehensive validation
+    - Phone validation enforces country code (must start with +) and minimum length (8 chars)
+    - Button ID rule: empty fields → auto-generate stable IDs; filled fields → use provided value
+    - CSV columns supported: phone_number (required), name, email, header, body, footer, button1-3_text, button1-3_id
+    - Returns detailed summary: total rows, successful imports, invalid rows with specific errors
+    - Sample CSV download endpoint: GET `/api/phonebooks/sample-csv`
+    - Frontend UI with file upload, validation summary display, and sample CSV download button
+  
+  - **Send Page Bulk Mode:**
+    - Added Send Mode selector: Single (default) or Bulk
+    - Bulk mode features:
+      - Phonebook selector dropdown
+      - Bulk strategy selector with two options:
+        1. "Use Phonebook Fields per Contact" - Each contact receives their personalized message from phonebook data (reuses `/api/phonebooks/:id/send`)
+        2. "Use One Message for All" - All contacts receive same message content from Send page (uses new `/api/phonebooks/:id/send-uniform`)
+    - Conditional UI visibility:
+      - Recipient fields (phone, name, email) hidden in bulk mode
+      - Message fields (header, body, footer, buttons) hidden when using phonebook fields strategy
+    - Button validation updated to handle both single and bulk modes
+  
+  - **Backend Implementation:**
+    - New endpoint: POST `/api/phonebooks/:id/send-uniform` for uniform bulk messaging
+    - Preserves existing single-send functionality and webhook logic
+    - Button ID generation logic maintained in both CSV import and bulk send flows
+  
+  - **Location:** server/routes.ts, client/src/pages/phonebook-detail.tsx, client/src/pages/send.tsx, shared/schema.ts

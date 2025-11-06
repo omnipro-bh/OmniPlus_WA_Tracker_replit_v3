@@ -1815,6 +1815,17 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get sample CSV template (must be before :id route)
+  app.get("/api/phonebooks/sample-csv", requireAuth, async (req: AuthRequest, res: Response) => {
+    const sampleCSV = `phone_number,name,email,header,body,footer,button1_text,button2_text,button3_text,button1_id,button2_id,button3_id
++97312345678,John Doe,john@example.com,Hello!,This is a test message,Thank you,Option 1,Option 2,Option 3,btn1_custom,btn2_custom,btn3_custom
++97398765432,Jane Smith,jane@example.com,,Simple message without header/footer,,,,,,,`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="phonebook-contacts-sample.csv"');
+    res.send(sampleCSV);
+  });
+
   // Get single phonebook with contacts
   app.get("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -2379,7 +2390,7 @@ export function registerRoutes(app: Express) {
 
       // Parse CSV data
       const Papa = await import('papaparse');
-      const parsed = Papa.parse(csvData, {
+      const parsed = Papa.default.parse(csvData, {
         header: true,
         skipEmptyLines: true,
         transformHeader: (header: string) => header.trim().toLowerCase().replace(/\s+/g, '_'),
@@ -2474,17 +2485,6 @@ export function registerRoutes(app: Express) {
       console.error("CSV import error:", error);
       res.status(500).json({ error: error.message || "Failed to import CSV" });
     }
-  });
-
-  // Get sample CSV template
-  app.get("/api/phonebooks/sample-csv", requireAuth, async (req: AuthRequest, res: Response) => {
-    const sampleCSV = `phone_number,name,email,header,body,footer,button1_text,button2_text,button3_text,button1_id,button2_id,button3_id
-+97312345678,John Doe,john@example.com,Hello!,This is a test message,Thank you,Option 1,Option 2,Option 3,btn1_custom,btn2_custom,btn3_custom
-+97398765432,Jane Smith,jane@example.com,,Simple message without header/footer,,,,,,,`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="phonebook-contacts-sample.csv"');
-    res.send(sampleCSV);
   });
 
   // ============================================================================
