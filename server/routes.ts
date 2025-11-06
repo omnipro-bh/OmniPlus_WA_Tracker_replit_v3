@@ -2491,13 +2491,17 @@ export function registerRoutes(app: Express) {
         if (!row.phone_number || typeof row.phone_number !== 'string' || row.phone_number.trim() === '') {
           errors.push("Phone number is required");
         } else {
-          const phone = row.phone_number.trim();
-          // Validate phone has country code (starts with +)
+          let phone = row.phone_number.trim();
+          // Auto-add '+' if missing
           if (!phone.startsWith('+')) {
-            errors.push("Phone number must include country code (e.g., +973...)");
-          } else if (phone.length < 8) {
+            phone = '+' + phone;
+          }
+          // Validate phone length (minimum 8 digits after +)
+          if (phone.length < 9) {
             errors.push("Phone number is too short");
           }
+          // Update the row with normalized phone
+          row.phone_number = phone;
         }
 
         // Name is optional but recommended
