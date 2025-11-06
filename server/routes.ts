@@ -1518,27 +1518,80 @@ export function registerRoutes(app: Express) {
           const pending = messages.filter(m => m.status === "PENDING").length + 1;
           await storage.updateJob(jobId, { queued, pending });
 
-          // Get buttons from message
+          // Get message type and buttons
+          const messageType = message.messageType || "text_buttons";
           const buttons = Array.isArray(message.buttons) ? message.buttons : [];
 
-          // Send message via WHAPI
+          // Send message via WHAPI based on message type
           let result;
-          if (buttons.length > 0) {
-            // Send interactive message with buttons
-            result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
-              to: message.to,
-              type: "button",
-              header: message.header ? { text: message.header } : undefined,
-              body: { text: message.body || "No message" },
-              footer: message.footer ? { text: message.footer } : undefined,
-              action: { buttons },
-            });
-          } else {
-            // Send simple text message
-            result = await whapi.sendTextMessage(channel.whapiChannelToken, {
-              to: message.to,
-              body: message.body || "No message",
-            });
+          
+          switch (messageType) {
+            case "image":
+              // Send image without buttons
+              result = await whapi.sendMediaMessage(channel.whapiChannelToken, {
+                to: message.to,
+                media: message.mediaUrl || "",
+                caption: message.body || "",
+                mediaType: "Image",
+              });
+              break;
+              
+            case "image_buttons":
+              // Send image with buttons (interactive)
+              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+                to: message.to,
+                type: "button",
+                media: message.mediaUrl || "",
+                body: { text: message.body || "No message" },
+                footer: message.footer ? { text: message.footer } : undefined,
+                action: { buttons },
+              });
+              break;
+              
+            case "video_buttons":
+              // Send video with buttons (interactive)
+              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+                to: message.to,
+                type: "button",
+                media: message.mediaUrl || "",
+                no_encode: true,
+                body: { text: message.body || "No message" },
+                footer: message.footer ? { text: message.footer } : undefined,
+                action: { buttons },
+              });
+              break;
+              
+            case "document":
+              // Send document file
+              result = await whapi.sendMediaMessage(channel.whapiChannelToken, {
+                to: message.to,
+                media: message.mediaUrl || "",
+                caption: message.body || "",
+                mediaType: "Document",
+              });
+              break;
+              
+            case "text_buttons":
+            default:
+              // Send text with buttons or simple text
+              if (buttons.length > 0) {
+                // Send interactive message with buttons
+                result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+                  to: message.to,
+                  type: "button",
+                  header: message.header ? { text: message.header } : undefined,
+                  body: { text: message.body || "No message" },
+                  footer: message.footer ? { text: message.footer } : undefined,
+                  action: { buttons },
+                });
+              } else {
+                // Send simple text message
+                result = await whapi.sendTextMessage(channel.whapiChannelToken, {
+                  to: message.to,
+                  body: message.body || "No message",
+                });
+              }
+              break;
           }
 
           if (result && result.sent) {
