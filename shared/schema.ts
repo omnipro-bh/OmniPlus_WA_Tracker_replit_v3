@@ -76,6 +76,7 @@ export const plans = pgTable("plans", {
   bulkMessagesLimit: integer("bulk_messages_limit").notNull().default(-1),
   channelsLimit: integer("channels_limit").notNull().default(1),
   chatbotsLimit: integer("chatbots_limit").notNull().default(-1),
+  phonebookLimit: integer("phonebook_limit").notNull().default(-1), // Max contacts per phonebook (-1 = unlimited)
   // File Upload Limits (in MB)
   maxImageSizeMB: integer("max_image_size_mb").notNull().default(5), // Default 5MB (WhatsApp limit: 5MB)
   maxVideoSizeMB: integer("max_video_size_mb").notNull().default(16), // Default 16MB (WhatsApp limit: 16MB)
@@ -145,6 +146,7 @@ export const subscriptions = pgTable("subscriptions", {
   bulkMessagesLimit: integer("bulk_messages_limit_override"), // null = use plan default
   channelsLimit: integer("channels_limit_override"), // null = use plan default
   chatbotsLimit: integer("chatbots_limit_override"), // null = use plan default
+  phonebookLimit: integer("phonebook_limit_override"), // null = use plan default
   pageAccess: jsonb("page_access_override"), // null = use plan default, object = override specific pages
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

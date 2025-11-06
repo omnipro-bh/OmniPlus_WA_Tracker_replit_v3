@@ -141,19 +141,15 @@ export default function Login() {
           {(authSettings?.enableSignup ?? true) && (
             <div className="mt-6 text-center text-sm">
               <span className="text-muted-foreground">Don't have an account? </span>
-              <Link href="/signup">
-                <a className="text-primary hover:underline font-medium" data-testid="link-signup">
-                  Sign up
-                </a>
+              <Link href="/signup" className="text-primary hover:underline font-medium" data-testid="link-signup">
+                Sign up
               </Link>
             </div>
           )}
 
           <div className={`${(authSettings?.enableSignup ?? true) ? 'mt-4' : 'mt-6'} text-center`}>
-            <Link href="/">
-              <a className="text-sm text-muted-foreground hover:text-foreground" data-testid="link-home">
-                ← Back to home
-              </a>
+            <Link href="/" className="text-sm text-muted-foreground hover:text-foreground" data-testid="link-home">
+              ← Back to home
             </Link>
           </div>
         </CardContent>

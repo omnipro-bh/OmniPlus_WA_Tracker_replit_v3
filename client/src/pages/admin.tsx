@@ -130,6 +130,7 @@ function DefaultPageAccessSettings() {
     settings: false,
     balances: false,
     whapiSettings: false,
+    phonebooks: false,
   });
 
   const { data: settings, isLoading } = useQuery<{pageAccess: typeof pageAccess}>({
@@ -186,6 +187,7 @@ function DefaultPageAccessSettings() {
     { key: "outbox", label: "Outbox", description: "Message outbox" },
     { key: "logs", label: "Workflow Logs", description: "Workflow execution logs" },
     { key: "bulkLogs", label: "Bulk Logs", description: "Bulk sending logs" },
+    { key: "phonebooks", label: "Phonebooks", description: "Manage contact phonebooks" },
     { key: "pricing", label: "Pricing", description: "View pricing plans" },
     { key: "settings", label: "Settings", description: "User account settings" },
     { key: "balances", label: "Balances", description: "View balance information" },
@@ -1405,6 +1407,7 @@ export default function Admin() {
     bulkMessagesLimit: "",
     channelsLimit: "",
     chatbotsLimit: "",
+    phonebookLimit: "",
     pageAccess: {} as Record<string, boolean>,
   });
 
@@ -1426,10 +1429,11 @@ export default function Admin() {
     published: false,
     publishedOnHomepage: false,
     sortOrder: "",
-    dailyMessagesLimit: "",
-    bulkMessagesLimit: "",
-    channelsLimit: "",
-    chatbotsLimit: "",
+    dailyMessagesLimit: "1000",
+    bulkMessagesLimit: "5000",
+    channelsLimit: "5",
+    chatbotsLimit: "10",
+    phonebookLimit: "10",
     maxImageSizeMB: "5",
     maxVideoSizeMB: "16",
     maxDocumentSizeMB: "10",
@@ -1443,6 +1447,7 @@ export default function Admin() {
       outbox: false,
       logs: false,
       bulkLogs: false,
+      phonebooks: false,
     },
     features: [] as string[],
   });
@@ -1801,6 +1806,7 @@ export default function Admin() {
       bulkMessagesLimit: "",
       channelsLimit: "",
       chatbotsLimit: "",
+      phonebookLimit: "",
       maxImageSizeMB: "5",
       maxVideoSizeMB: "16",
       maxDocumentSizeMB: "10",
@@ -1814,6 +1820,7 @@ export default function Admin() {
         outbox: false,
         logs: false,
         bulkLogs: false,
+        phonebooks: false,
       },
       features: [],
     });
@@ -1861,6 +1868,7 @@ export default function Admin() {
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
       chatbotsLimit: String(plan.chatbotsLimit || ""),
+      phonebookLimit: String((plan as any).phonebookLimit || ""),
       maxImageSizeMB: String((plan as any).maxImageSizeMB ?? 5),
       maxVideoSizeMB: String((plan as any).maxVideoSizeMB ?? 16),
       maxDocumentSizeMB: String((plan as any).maxDocumentSizeMB ?? 10),
@@ -1879,6 +1887,7 @@ export default function Admin() {
     const bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
     const channelsLimit = parseInt(planForm.channelsLimit);
     const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : null;
+    const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : null;
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
@@ -1891,24 +1900,26 @@ export default function Admin() {
       return;
     }
     
-    // Validate payment methods for PAID plans
-    if (planForm.requestType === "PAID" && planForm.paymentMethods.length === 0) {
-      toast({ 
-        title: "Validation error", 
-        description: "Please select at least one payment method (PayPal or Offline)", 
-        variant: "destructive" 
-      });
-      return;
-    }
-    
-    // Validate PayPal Plan ID if PayPal is selected
-    if (planForm.paymentMethods.includes("paypal") && !planForm.paypalPlanId.trim()) {
-      toast({ 
-        title: "Validation error", 
-        description: "Please insert the PayPal Plan ID to activate PayPal payment for this plan.", 
-        variant: "destructive" 
-      });
-      return;
+    // Validate payment methods for PAID plans only
+    if (planForm.requestType === "PAID") {
+      if (planForm.paymentMethods.length === 0) {
+        toast({ 
+          title: "Validation error", 
+          description: "Please select at least one payment method (PayPal or Offline)", 
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      // Validate PayPal Plan ID if PayPal is selected for PAID plans
+      if (planForm.paymentMethods.includes("paypal") && !planForm.paypalPlanId.trim()) {
+        toast({ 
+          title: "Validation error", 
+          description: "Please insert the PayPal Plan ID to activate PayPal payment for this plan.", 
+          variant: "destructive" 
+        });
+        return;
+      }
     }
     
     if (isNaN(dailyMessagesLimit) || dailyMessagesLimit <= 0) {
@@ -1950,6 +1961,7 @@ export default function Admin() {
       bulkMessagesLimit,
       channelsLimit,
       chatbotsLimit,
+      phonebookLimit,
       maxImageSizeMB,
       maxVideoSizeMB,
       maxDocumentSizeMB,
@@ -1974,6 +1986,7 @@ export default function Admin() {
       bulkMessagesLimit: subscription?.bulkMessagesLimit ? String(subscription.bulkMessagesLimit) : "",
       channelsLimit: subscription?.channelsLimit ? String(subscription.channelsLimit) : "",
       chatbotsLimit: subscription?.chatbotsLimit ? String(subscription.chatbotsLimit) : "",
+      phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
       pageAccess: subscription?.pageAccess || {},
     });
     setIsUserDrawerOpen(true);
@@ -1988,6 +2001,7 @@ export default function Admin() {
       bulkMessagesLimit: userOverrides.bulkMessagesLimit ? parseInt(userOverrides.bulkMessagesLimit) : null,
       channelsLimit: userOverrides.channelsLimit ? parseInt(userOverrides.channelsLimit) : null,
       chatbotsLimit: userOverrides.chatbotsLimit ? parseInt(userOverrides.chatbotsLimit) : null,
+      phonebookLimit: userOverrides.phonebookLimit ? parseInt(userOverrides.phonebookLimit) : null,
       pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
     };
 
@@ -3115,6 +3129,17 @@ export default function Admin() {
                     data-testid="input-plan-chatbots"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-phonebook">Phonebook Limit</Label>
+                  <Input
+                    id="plan-phonebook"
+                    type="number"
+                    placeholder="1000"
+                    value={planForm.phonebookLimit}
+                    onChange={(e) => setPlanForm({ ...planForm, phonebookLimit: e.target.value })}
+                    data-testid="input-plan-phonebook"
+                  />
+                </div>
               </div>
               
               <h3 className="text-sm font-semibold mt-4">File Size Limits (MB)</h3>
@@ -3301,6 +3326,22 @@ export default function Admin() {
                   />
                   <Label htmlFor="page-bulklogs" className="text-sm font-normal cursor-pointer">
                     Bulk Logs
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-phonebooks"
+                    checked={planForm.pageAccess.phonebooks}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, phonebooks: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-phonebooks"
+                  />
+                  <Label htmlFor="page-phonebooks" className="text-sm font-normal cursor-pointer">
+                    Phonebooks
                   </Label>
                 </div>
               </div>
@@ -3585,6 +3626,17 @@ export default function Admin() {
                       data-testid="input-override-chatbots"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="override-phonebook">Phonebook Limit</Label>
+                    <Input
+                      id="override-phonebook"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.phonebookLimit || "Plan default"}
+                      value={userOverrides.phonebookLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, phonebookLimit: e.target.value })}
+                      data-testid="input-override-phonebook"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -3605,6 +3657,7 @@ export default function Admin() {
                     { key: "outbox", label: "Outbox" },
                     { key: "logs", label: "Workflow Logs" },
                     { key: "bulkLogs", label: "Bulk Logs" },
+                    { key: "phonebooks", label: "Phonebooks" },
                   ].map(({ key, label }) => (
                     <div key={key} className="flex items-center gap-2">
                       <Checkbox
