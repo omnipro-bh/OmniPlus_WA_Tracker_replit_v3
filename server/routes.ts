@@ -1181,7 +1181,7 @@ export function registerRoutes(app: Express) {
   // Send single message
   app.post("/api/messages/send", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { channelId, to, header, body, footer, buttons } = req.body;
+      const { channelId, to, header, body, footer, buttons, messageType, mediaUrl } = req.body;
 
       // Validate required fields
       if (!channelId || !to || !body) {
@@ -1264,29 +1264,92 @@ export function registerRoutes(app: Express) {
         footer,
         buttons: buttons || [],
         status: "PENDING",
+        messageType: messageType || "text_buttons",
+        mediaUrl: mediaUrl || null,
       });
 
       // Call WHAPI to send the message
       try {
-        const whapiPayload = {
-          to,
-          type: "button",
-          ...(header && { header: { text: header } }),
-          body: { text: body },
-          ...(footer && { footer: { text: footer } }),
-          action: {
-            buttons: (buttons || []).map((btn: any, idx: number) => ({
-              type: "quick_reply",
-              title: btn.title || btn,
-              id: btn.id || `btn${idx + 1}`
-            }))
-          }
-        };
+        let whapiResponse;
+        const currentMessageType = messageType || "text_buttons";
 
-        const whapiResponse = await whapi.sendInteractiveMessage(
-          channel.whapiChannelToken!,
-          whapiPayload
-        );
+        // Handle different message types
+        if (currentMessageType === "text_buttons") {
+          // Text with buttons
+          const whapiPayload = {
+            to,
+            type: "button",
+            ...(header && { header: { text: header } }),
+            body: { text: body },
+            ...(footer && { footer: { text: footer } }),
+            action: {
+              buttons: (buttons || []).map((btn: any) => ({
+                type: btn.type || "quick_reply",
+                title: btn.text || btn.title || btn,
+                id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`,
+                ...(btn.type === "url" && btn.value && { url: btn.value }),
+                ...(btn.type === "call" && btn.value && { phone_number: btn.value })
+              }))
+            }
+          };
+          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, whapiPayload);
+          
+        } else if (currentMessageType === "image") {
+          // Image only (no buttons)
+          whapiResponse = await whapi.sendMediaMessage(channel.whapiChannelToken!, {
+            to,
+            media: mediaUrl || "",
+            caption: body,
+            mediaType: "Image",
+          });
+          
+        } else if (currentMessageType === "image_buttons") {
+          // Image with buttons
+          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
+            to,
+            type: "button",
+            ...(header && { header: { type: "image", image: { link: mediaUrl } } }),
+            body: { text: body },
+            ...(footer && { footer: { text: footer } }),
+            action: {
+              buttons: (buttons || []).map((btn: any) => ({
+                type: btn.type || "quick_reply",
+                title: btn.text || btn.title || btn,
+                id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`,
+                ...(btn.type === "url" && btn.value && { url: btn.value }),
+                ...(btn.type === "call" && btn.value && { phone_number: btn.value })
+              }))
+            }
+          });
+          
+        } else if (currentMessageType === "video_buttons") {
+          // Video with buttons
+          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
+            to,
+            type: "button",
+            ...(header && { header: { type: "video", video: { link: mediaUrl } } }),
+            body: { text: body },
+            ...(footer && { footer: { text: footer } }),
+            action: {
+              buttons: (buttons || []).map((btn: any) => ({
+                type: btn.type || "quick_reply",
+                title: btn.text || btn.title || btn,
+                id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`,
+                ...(btn.type === "url" && btn.value && { url: btn.value }),
+                ...(btn.type === "call" && btn.value && { phone_number: btn.value })
+              }))
+            }
+          });
+          
+        } else if (currentMessageType === "document") {
+          // Document (no buttons)
+          whapiResponse = await whapi.sendMediaMessage(channel.whapiChannelToken!, {
+            to,
+            media: mediaUrl || "",
+            caption: body,
+            mediaType: "Document",
+          });
+        }
 
         // Extract provider message ID from WHAPI response
         // WHAPI can return different structures:
@@ -2305,7 +2368,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/phonebooks/:id/send-uniform", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const phonebookId = parseInt(req.params.id);
-      const { channelId, header, body, footer, buttons } = req.body;
+      const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
 
       if (!channelId || !body) {
         return res.status(400).json({ error: "Channel ID and message body are required" });
@@ -2357,8 +2420,8 @@ export function registerRoutes(app: Express) {
           footer: footer || null,
           buttons: buttons || [],
           status: "QUEUED",
-          messageType: "text_buttons",
-          mediaUrl: null,
+          messageType: messageType || "text_buttons",
+          mediaUrl: mediaUrl || null,
         });
       }
 

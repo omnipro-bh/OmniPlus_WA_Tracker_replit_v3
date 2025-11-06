@@ -38,8 +38,23 @@ export default function Send() {
     header: "",
     body: "",
     footer: "",
-    buttons: ["", "", ""],
+    messageType: "text_buttons",
+    mediaUrl: "",
+    button1Text: "",
+    button1Type: "quick_reply",
+    button1Value: "",
+    button1Id: "",
+    button2Text: "",
+    button2Type: "quick_reply",
+    button2Value: "",
+    button2Id: "",
+    button3Text: "",
+    button3Type: "quick_reply",
+    button3Value: "",
+    button3Id: "",
   });
+
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   const { data: channels = [] } = useQuery<Channel[]>({
     queryKey: ["/api/channels"],
@@ -58,6 +73,20 @@ export default function Send() {
 
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Build buttons array from enhanced button configuration
+      const buttons = [];
+      for (let i = 1; i <= 3; i++) {
+        const text = data[`button${i}Text`];
+        if (text && text.trim()) {
+          buttons.push({
+            text: text.trim(),
+            type: data[`button${i}Type`],
+            value: data[`button${i}Value`] || null,
+            id: data[`button${i}Id`] || `btn${i}`,
+          });
+        }
+      }
+
       // Handle bulk mode
       if (sendMode === "bulk") {
         if (!phonebookId) {
@@ -66,19 +95,13 @@ export default function Send() {
 
         // For "single_message" strategy, send the same message to all contacts
         if (bulkStrategy === "single_message") {
-          const buttons = data.buttons
-            .filter((b: string) => b.trim() !== "")
-            .map((title: string, index: number) => ({
-              type: "quick_reply",
-              title: title.trim(),
-              id: `btn${index + 1}`,
-            }));
-
           return await apiRequest("POST", `/api/phonebooks/${phonebookId}/send-uniform`, {
             channelId: parseInt(data.channelId),
             header: data.header || null,
             body: data.body,
             footer: data.footer || null,
+            messageType: data.messageType,
+            mediaUrl: data.mediaUrl || null,
             buttons,
           });
         } else {
@@ -89,15 +112,7 @@ export default function Send() {
         }
       }
 
-      // Handle single mode (original logic)
-      const buttons = data.buttons
-        .filter((b: string) => b.trim() !== "")
-        .map((title: string, index: number) => ({
-          type: "quick_reply",
-          title: title.trim(),
-          id: `btn${index + 1}`,
-        }));
-
+      // Handle single mode
       return await apiRequest("POST", "/api/messages/send", {
         ...data,
         buttons,
@@ -120,7 +135,20 @@ export default function Send() {
         header: "",
         body: "",
         footer: "",
-        buttons: ["", "", ""],
+        messageType: "text_buttons",
+        mediaUrl: "",
+        button1Text: "",
+        button1Type: "quick_reply",
+        button1Value: "",
+        button1Id: "",
+        button2Text: "",
+        button2Type: "quick_reply",
+        button2Value: "",
+        button2Id: "",
+        button3Text: "",
+        button3Type: "quick_reply",
+        button3Value: "",
+        button3Id: "",
       });
     },
     onError: (error: any) => {
@@ -145,18 +173,67 @@ export default function Send() {
   const handleTemplateSelect = (templateId: string) => {
     const template = templates.find((t) => t.id === parseInt(templateId));
     if (template) {
+      // Templates store buttons as simple text strings, convert to enhanced button structure
+      const button1Text = template.buttons[0] || "";
+      const button2Text = template.buttons[1] || "";
+      const button3Text = template.buttons[2] || "";
+      
       setFormData({
         ...formData,
         templateId,
         header: template.header || "",
         body: template.body,
         footer: template.footer || "",
-        buttons: [
-          template.buttons[0] || "",
-          template.buttons[1] || "",
-          template.buttons[2] || "",
-        ],
+        button1Text: button1Text,
+        button1Type: "quick_reply",
+        button1Value: "",
+        button1Id: "",
+        button2Text: button2Text,
+        button2Type: "quick_reply",
+        button2Value: "",
+        button2Id: "",
+        button3Text: button3Text,
+        button3Type: "quick_reply",
+        button3Value: "",
+        button3Id: "",
       });
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingFile(true);
+    try {
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+
+      const response = await fetch("/api/media/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formDataUpload,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Upload failed");
+      }
+
+      const result = await response.json();
+      setFormData({ ...formData, mediaUrl: result.url });
+      toast({
+        title: "File uploaded",
+        description: "Media file ready to send",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -307,6 +384,51 @@ export default function Send() {
             {/* Message fields - Hidden when using phonebook fields in bulk mode */}
             {!(sendMode === "bulk" && bulkStrategy === "phonebook_fields") && (
               <>
+            {/* Message Type Selector */}
+            <div className="space-y-2">
+              <Label htmlFor="messageType">Message Type *</Label>
+              <Select
+                value={formData.messageType}
+                onValueChange={(value) => setFormData({ ...formData, messageType: value, mediaUrl: "" })}
+              >
+                <SelectTrigger data-testid="select-message-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text_buttons">Text + Buttons</SelectItem>
+                  <SelectItem value="image">Image Only</SelectItem>
+                  <SelectItem value="image_buttons">Image + Buttons</SelectItem>
+                  <SelectItem value="video_buttons">Video + Buttons</SelectItem>
+                  <SelectItem value="document">Document</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* File Upload (for media types) */}
+            {["image", "image_buttons", "video_buttons", "document"].includes(formData.messageType) && (
+              <div className="space-y-2">
+                <Label htmlFor="file">Upload File *</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="file"
+                    type="file"
+                    accept={
+                      formData.messageType.includes("image") ? "image/*" :
+                      formData.messageType.includes("video") ? "video/*" :
+                      "*/*"
+                    }
+                    onChange={handleFileUpload}
+                    disabled={uploadingFile}
+                    data-testid="input-file-upload"
+                  />
+                  {uploadingFile && <Loader2 className="h-4 w-4 animate-spin" />}
+                </div>
+                {formData.mediaUrl && (
+                  <p className="text-xs text-green-600">File uploaded successfully</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="header">Header</Label>
               <Input
@@ -341,24 +463,138 @@ export default function Send() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Buttons (up to 3)</Label>
-              <div className="space-y-2">
-                {formData.buttons.map((button, index) => (
+            {/* Enhanced Button Configuration */}
+            {!["image", "document"].includes(formData.messageType) && (
+              <div className="space-y-3">
+                <Label>Buttons (Optional - up to 3)</Label>
+                
+                {/* Button 1 */}
+                <div className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Button 1</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Button Text"
+                      value={formData.button1Text}
+                      onChange={(e) => setFormData({ ...formData, button1Text: e.target.value })}
+                      data-testid="input-button1-text"
+                    />
+                    <Select
+                      value={formData.button1Type}
+                      onValueChange={(value) => setFormData({ ...formData, button1Type: value })}
+                    >
+                      <SelectTrigger data-testid="select-button1-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                        <SelectItem value="url">URL</SelectItem>
+                        <SelectItem value="call">Call</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.button1Type !== "quick_reply" && (
+                    <Input
+                      placeholder={formData.button1Type === "url" ? "https://example.com" : "+1234567890"}
+                      value={formData.button1Value}
+                      onChange={(e) => setFormData({ ...formData, button1Value: e.target.value })}
+                      data-testid="input-button1-value"
+                    />
+                  )}
                   <Input
-                    key={index}
-                    placeholder={`Button ${index + 1}`}
-                    value={button}
-                    onChange={(e) => {
-                      const newButtons = [...formData.buttons];
-                      newButtons[index] = e.target.value;
-                      setFormData({ ...formData, buttons: newButtons });
-                    }}
-                    data-testid={`input-button-${index + 1}`}
+                    placeholder="Button ID (optional)"
+                    value={formData.button1Id}
+                    onChange={(e) => setFormData({ ...formData, button1Id: e.target.value })}
+                    data-testid="input-button1-id"
                   />
-                ))}
+                </div>
+
+                {/* Button 2 */}
+                <div className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Button 2</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Button Text"
+                      value={formData.button2Text}
+                      onChange={(e) => setFormData({ ...formData, button2Text: e.target.value })}
+                      data-testid="input-button2-text"
+                    />
+                    <Select
+                      value={formData.button2Type}
+                      onValueChange={(value) => setFormData({ ...formData, button2Type: value })}
+                    >
+                      <SelectTrigger data-testid="select-button2-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                        <SelectItem value="url">URL</SelectItem>
+                        <SelectItem value="call">Call</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.button2Type !== "quick_reply" && (
+                    <Input
+                      placeholder={formData.button2Type === "url" ? "https://example.com" : "+1234567890"}
+                      value={formData.button2Value}
+                      onChange={(e) => setFormData({ ...formData, button2Value: e.target.value })}
+                      data-testid="input-button2-value"
+                    />
+                  )}
+                  <Input
+                    placeholder="Button ID (optional)"
+                    value={formData.button2Id}
+                    onChange={(e) => setFormData({ ...formData, button2Id: e.target.value })}
+                    data-testid="input-button2-id"
+                  />
+                </div>
+
+                {/* Button 3 */}
+                <div className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Button 3</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Button Text"
+                      value={formData.button3Text}
+                      onChange={(e) => setFormData({ ...formData, button3Text: e.target.value })}
+                      data-testid="input-button3-text"
+                    />
+                    <Select
+                      value={formData.button3Type}
+                      onValueChange={(value) => setFormData({ ...formData, button3Type: value })}
+                    >
+                      <SelectTrigger data-testid="select-button3-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                        <SelectItem value="url">URL</SelectItem>
+                        <SelectItem value="call">Call</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.button3Type !== "quick_reply" && (
+                    <Input
+                      placeholder={formData.button3Type === "url" ? "https://example.com" : "+1234567890"}
+                      value={formData.button3Value}
+                      onChange={(e) => setFormData({ ...formData, button3Value: e.target.value })}
+                      data-testid="input-button3-value"
+                    />
+                  )}
+                  <Input
+                    placeholder="Button ID (optional)"
+                    value={formData.button3Id}
+                    onChange={(e) => setFormData({ ...formData, button3Id: e.target.value })}
+                    data-testid="input-button3-id"
+                  />
+                </div>
               </div>
-            </div>
+            )}
               </>
             )}
 
@@ -430,18 +666,23 @@ export default function Send() {
               {formData.footer && (
                 <div className="text-xs text-muted-foreground mt-2">{formData.footer}</div>
               )}
-              {formData.buttons.some((b) => b.trim()) && (
+              {(formData.button1Text.trim() || formData.button2Text.trim() || formData.button3Text.trim()) && (
                 <div className="mt-3 space-y-1">
-                  {formData.buttons
-                    .filter((b) => b.trim())
-                    .map((button, index) => (
-                      <button
-                        key={index}
-                        className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate"
-                      >
-                        {button}
-                      </button>
-                    ))}
+                  {formData.button1Text.trim() && (
+                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
+                      {formData.button1Text}
+                    </button>
+                  )}
+                  {formData.button2Text.trim() && (
+                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
+                      {formData.button2Text}
+                    </button>
+                  )}
+                  {formData.button3Text.trim() && (
+                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
+                      {formData.button3Text}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
