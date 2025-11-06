@@ -48,3 +48,12 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database.
 - **node-cron:** For scheduling daily tasks.
+- **File Upload Bug Fix:**
+  - **Problem:** Send page file upload was failing with "Network Error when attempting to fetch resource"
+  - **Root Cause:** Frontend was sending files as FormData, but backend `/api/media/upload` expects base64-encoded file data in JSON format
+  - **Fix Applied:**
+    - Updated `handleFileUpload` function in Send page to convert files to base64 before sending
+    - Added automatic file type detection from MIME type (image/video/document)
+    - Changed request format from FormData to JSON with proper headers
+  - **Result:** File uploads now work correctly with proper base64 encoding matching backend expectations
+  - **Location:** client/src/pages/send.tsx (handleFileUpload function)
