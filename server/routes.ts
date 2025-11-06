@@ -1305,7 +1305,7 @@ export function registerRoutes(app: Express) {
           
         } else if (currentMessageType === "image_buttons") {
           // Image with buttons
-          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
+          const imageButtonPayload = {
             to,
             type: "button",
             ...(mediaUrl && { header: { type: "image", image: { link: mediaUrl } } }),
@@ -1320,11 +1320,14 @@ export function registerRoutes(app: Express) {
                 ...(btn.type === "call" && btn.value && { phone_number: btn.value })
               }))
             }
-          });
+          };
+          console.log(`[Single Send] image_buttons payload:`, JSON.stringify(imageButtonPayload, null, 2));
+          console.log(`[Single Send] mediaUrl value:`, mediaUrl);
+          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, imageButtonPayload);
           
         } else if (currentMessageType === "video_buttons") {
           // Video with buttons
-          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, {
+          const videoButtonPayload = {
             to,
             type: "button",
             ...(mediaUrl && { header: { type: "video", video: { link: mediaUrl } } }),
@@ -1339,7 +1342,10 @@ export function registerRoutes(app: Express) {
                 ...(btn.type === "call" && btn.value && { phone_number: btn.value })
               }))
             }
-          });
+          };
+          console.log(`[Single Send] video_buttons payload:`, JSON.stringify(videoButtonPayload, null, 2));
+          console.log(`[Single Send] mediaUrl value:`, mediaUrl);
+          whapiResponse = await whapi.sendInteractiveMessage(channel.whapiChannelToken!, videoButtonPayload);
           
         } else if (currentMessageType === "document") {
           // Document (no buttons)
@@ -1599,9 +1605,9 @@ export function registerRoutes(app: Express) {
               });
               break;
               
-            case "image_buttons":
+            case "image_buttons": {
               // Send image with buttons (interactive)
-              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+              const imgPayload = {
                 to: message.to,
                 type: "button",
                 ...(message.mediaUrl && { 
@@ -1610,12 +1616,16 @@ export function registerRoutes(app: Express) {
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
-              });
+              };
+              console.log(`[Bulk Send] image_buttons payload for ${message.to}:`, JSON.stringify(imgPayload, null, 2));
+              console.log(`[Bulk Send] mediaUrl value:`, message.mediaUrl);
+              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, imgPayload);
               break;
+            }
               
-            case "video_buttons":
+            case "video_buttons": {
               // Send video with buttons (interactive)
-              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+              const vidPayload = {
                 to: message.to,
                 type: "button",
                 ...(message.mediaUrl && { 
@@ -1624,8 +1634,12 @@ export function registerRoutes(app: Express) {
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
-              });
+              };
+              console.log(`[Bulk Send] video_buttons payload for ${message.to}:`, JSON.stringify(vidPayload, null, 2));
+              console.log(`[Bulk Send] mediaUrl value:`, message.mediaUrl);
+              result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, vidPayload);
               break;
+            }
               
             case "document":
               // Send document file
