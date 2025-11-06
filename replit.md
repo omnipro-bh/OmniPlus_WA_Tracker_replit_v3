@@ -51,19 +51,19 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 
 ## Recent Changes (November 6, 2025 - Continued)
 
-- **Internal Media Hosting (Critical Performance Fix):**
+- **Hybrid Media Upload System (Performance Fix):**
   - **Problem:** WHAPI media uploads taking 1.5-2 minutes per file, making the system unusable
-  - **Solution:** Implemented internal file hosting with local storage
+  - **Solution:** Implemented hybrid approach - local storage + WHAPI S3 for WhatsApp compatibility
   - **Implementation:**
-    - Created `/uploads` directory served via Express static middleware
-    - Updated `/api/media/upload` to save files locally (500ms-1s upload time)
-    - Files stored as `{timestamp}-{randomId}.{ext}` with proper MIME type detection
+    - Step 1: Save files locally to `/uploads` directory (fast ~500ms)
+    - Step 2: Upload to WHAPI to get S3 link (for WhatsApp compatibility)
+    - Step 3: Return S3 URL that WhatsApp can access
+    - Files stored as `{timestamp}-{randomId}.{ext}` with MIME type detection
     - Added 30-day automatic cleanup cron job (runs daily at 3 AM)
-    - Generates public URLs: `https://yourdomain.com/uploads/{filename}`
-    - VPS deployment ready with HTTPS support
-  - **Result:** 100-200x faster uploads (1.5-2 min → <1 sec)
+    - Express static middleware serves `/uploads` for local backup access
+  - **Result:** Faster upload experience (~10-12 seconds total vs 1.5-2 minutes), WhatsApp-compatible URLs
   - **Location:** server/index.ts (static serving), server/routes.ts (upload endpoint), server/worker.ts (cleanup job)
-  - **Note:** For production VPS deployment, ensure HTTPS is configured as WhatsApp requires secure URLs
+  - **Note:** Uses WHAPI S3 URLs for message sending to ensure WhatsApp can fetch media
 
 - **User-Facing Error Message Cleanup:**
   - **Problem:** Error notifications displayed "WHAPI" brand name to end users

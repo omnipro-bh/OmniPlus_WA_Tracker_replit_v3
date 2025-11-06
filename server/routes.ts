@@ -2163,10 +2163,10 @@ export function registerRoutes(app: Express) {
   // MEDIA UPLOADS
   // ============================================================================
 
-  // Upload media to local storage
+  // Upload media - Hybrid approach: Save locally + upload to WHAPI for S3 link
   app.post("/api/media/upload", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { file, fileType, fileName } = req.body;
+      const { file, fileType, fileName, channelId } = req.body;
 
       if (!file || !fileType) {
         return res.status(400).json({ error: "File data and fileType are required" });
@@ -2204,11 +2204,10 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Extract MIME type from data URL to determine file extension
+      // Step 1: Save locally for backup (fast ~500ms)
       const mimeMatch = file.match(/^data:([^;]+);/);
       const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
       
-      // Map MIME type to extension
       const extensionMap: Record<string, string> = {
         'image/jpeg': 'jpg',
         'image/jpg': 'jpg',
@@ -2227,47 +2226,109 @@ export function registerRoutes(app: Express) {
       };
 
       const extension = extensionMap[mimeType] || 'bin';
-      
-      // Generate unique filename: {timestamp}-{random}.{ext}
       const uniqueId = crypto.randomBytes(8).toString('hex');
       const timestamp = Date.now();
       const generatedFileName = `${timestamp}-${uniqueId}.${extension}`;
       
-      // Ensure uploads directory exists
       const uploadsDir = path.join(process.cwd(), 'uploads');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
 
-      // Write file to disk
       const filePath = path.join(uploadsDir, generatedFileName);
       fs.writeFileSync(filePath, buffer);
+      console.log(`[Media Upload] Saved locally: ${generatedFileName} (${fileSizeMB.toFixed(2)}MB)`);
 
-      // Generate public URL
-      // In production, this should be your actual domain: https://yourdomain.com/uploads/...
-      // In development/Replit, use the REPLIT_DEV_DOMAIN or current host
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : `${req.protocol}://${req.get('host')}`;
+      // Step 2: Get channel for WHAPI upload
+      let channel;
+      if (channelId) {
+        channel = await storage.getChannel(parseInt(channelId));
+        if (!channel || channel.userId !== req.userId!) {
+          return res.status(403).json({ error: "Channel not found or access denied" });
+        }
+      } else {
+        const userChannels = await storage.getChannelsForUser(req.userId!);
+        channel = userChannels.find(c => 
+          c.status === "ACTIVE" && 
+          c.authStatus === "AUTHORIZED" && 
+          c.whapiChannelToken
+        );
+        
+        if (!channel) {
+          return res.status(400).json({ error: "No authorized channel available. Please authorize a channel first." });
+        }
+      }
+
+      if (!channel.whapiChannelToken) {
+        return res.status(400).json({ error: "Channel not authorized" });
+      }
+
+      // Step 3: Upload to WHAPI to get S3 link (for WhatsApp compatibility)
+      const authToken = channel.whapiChannelToken.startsWith("Bearer ") 
+        ? channel.whapiChannelToken 
+        : `Bearer ${channel.whapiChannelToken}`;
+
+      const uploadResponse = await fetch("https://gate.whapi.cloud/media", {
+        method: "POST",
+        headers: {
+          "Authorization": authToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          media: file
+        })
+      });
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error("WHAPI upload failed:", errorText);
+        throw new Error(`Upload failed: ${uploadResponse.status === 401 ? 'Unauthorized' : 'Server error'}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      const mediaId = uploadData.media?.[0]?.id;
+
+      if (!mediaId) {
+        throw new Error("No media ID returned from upload service");
+      }
+
+      // Step 4: Get S3 link from WHAPI
+      const getMediaResponse = await fetch("https://gate.whapi.cloud/media", {
+        method: "GET",
+        headers: {
+          "Authorization": authToken,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!getMediaResponse.ok) {
+        throw new Error("Failed to retrieve media link");
+      }
+
+      const mediaListData = await getMediaResponse.json();
+      const uploadedFile = mediaListData.files?.find((f: any) => f.id === mediaId);
       
-      const publicUrl = `${baseUrl}/uploads/${generatedFileName}`;
+      if (!uploadedFile || !uploadedFile.link) {
+        throw new Error("Failed to retrieve media link from service");
+      }
 
-      // Store upload record
-      const mediaId = `local-${uniqueId}`;
+      const s3Url = uploadedFile.link;
+
+      // Store upload record with both local and S3 info
       await storage.createMediaUpload({
         userId: req.userId!,
         whapiMediaId: mediaId,
         fileName: fileName || generatedFileName,
         fileType: fileType,
         fileSizeMB: Math.round(fileSizeMB),
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       });
 
-      console.log(`[Media Upload] Saved ${generatedFileName} (${fileSizeMB.toFixed(2)}MB) for user ${req.userId}`);
+      console.log(`[Media Upload] WHAPI S3 URL: ${s3Url}`);
 
       res.json({ 
         mediaId: mediaId,
-        url: publicUrl,
+        url: s3Url, // Return S3 URL for WhatsApp compatibility
         fileName: generatedFileName,
         fileSizeMB: fileSizeMB.toFixed(2),
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
