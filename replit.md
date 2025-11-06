@@ -48,12 +48,31 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database.
 - **node-cron:** For scheduling daily tasks.
-- **File Upload Bug Fix:**
-  - **Problem:** Send page file upload was failing with "Network Error when attempting to fetch resource"
-  - **Root Cause:** Frontend was sending files as FormData, but backend `/api/media/upload` expects base64-encoded file data in JSON format
+
+## Recent Changes (November 6, 2025 - Continued)
+
+- **Media Upload Authorization Fix (Critical):**
+  - **Problem:** File uploads failing with "Upload failed: Unauthorized" error
+  - **Root Cause:** Backend was using Partner API token instead of Channel token. WHAPI Gate API requires channel tokens for media uploads
   - **Fix Applied:**
-    - Updated `handleFileUpload` function in Send page to convert files to base64 before sending
+    - Updated `/api/media/upload` endpoint to use channel token instead of partner token
+    - Changed API endpoint from partner base URL to `https://gate.whapi.cloud/media`
+    - Made channelId optional - if provided uses that channel, otherwise uses first available authorized channel
+    - Frontend Send page validates channel selection before upload and passes channelId
     - Added automatic file type detection from MIME type (image/video/document)
-    - Changed request format from FormData to JSON with proper headers
-  - **Result:** File uploads now work correctly with proper base64 encoding matching backend expectations
-  - **Location:** client/src/pages/send.tsx (handleFileUpload function)
+    - Convert files to base64 before sending (matching backend JSON expectations)
+  - **Result:** File uploads now work correctly using proper channel authorization
+  - **Location:** server/routes.ts (lines ~2149-2252), client/src/pages/send.tsx (handleFileUpload function)
+
+- **User-Facing Error Message Cleanup:**
+  - **Problem:** Error notifications displayed "WHAPI" brand name to end users
+  - **Fix Applied:** Removed "WHAPI" from all user-facing error messages:
+    - "Failed to create WHAPI channel" → "Failed to create channel"
+    - "Failed to fetch QR code from WHAPI" → "Failed to fetch QR code"
+    - "WHAPI Partner account has insufficient days" → "Insufficient channel days available"
+    - "Failed to create/extend WHAPI channel" → "Failed to create/extend channel"
+    - "Failed to delete channel from WHAPI provider" → "Failed to delete channel from provider"
+    - "WHAPI upload failed" → "Upload failed"
+  - **Result:** Cleaner, more professional error messages without vendor branding
+  - **Note:** Console logging still includes "WHAPI" for admin debugging purposes
+  - **Location:** server/routes.ts (multiple error responses)
