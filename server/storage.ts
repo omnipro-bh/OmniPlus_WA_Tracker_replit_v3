@@ -160,6 +160,25 @@ export interface IStorage {
   // Ledger
   createLedgerEntry(entry: schema.InsertLedger): Promise<schema.Ledger>;
   getLedgerEntries(userId?: number, limit?: number): Promise<schema.Ledger[]>;
+
+  // Phonebooks
+  getPhonebooksForUser(userId: number): Promise<schema.Phonebook[]>;
+  getPhonebook(id: number): Promise<schema.Phonebook | undefined>;
+  createPhonebook(phonebook: schema.InsertPhonebook): Promise<schema.Phonebook>;
+  updatePhonebook(id: number, data: Partial<schema.Phonebook>): Promise<schema.Phonebook | undefined>;
+  deletePhonebook(id: number): Promise<void>;
+
+  // Phonebook Contacts
+  getContactsForPhonebook(phonebookId: number): Promise<schema.PhonebookContact[]>;
+  getContact(id: number): Promise<schema.PhonebookContact | undefined>;
+  createContact(contact: schema.InsertPhonebookContact): Promise<schema.PhonebookContact>;
+  updateContact(id: number, data: Partial<schema.PhonebookContact>): Promise<schema.PhonebookContact | undefined>;
+  deleteContact(id: number): Promise<void>;
+
+  // Media Uploads
+  createMediaUpload(upload: schema.InsertMediaUpload): Promise<schema.MediaUpload>;
+  getMediaUploadsForUser(userId: number, limit?: number): Promise<schema.MediaUpload[]>;
+  getMediaUpload(id: number): Promise<schema.MediaUpload | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -874,6 +893,99 @@ export class DatabaseStorage implements IStorage {
     query = query.orderBy(desc(schema.ledger.createdAt)).limit(limit) as any;
     
     return await query;
+  }
+
+  // Phonebooks
+  async getPhonebooksForUser(userId: number): Promise<schema.Phonebook[]> {
+    return await db
+      .select()
+      .from(schema.phonebooks)
+      .where(eq(schema.phonebooks.userId, userId))
+      .orderBy(desc(schema.phonebooks.createdAt));
+  }
+
+  async getPhonebook(id: number): Promise<schema.Phonebook | undefined> {
+    const [phonebook] = await db
+      .select()
+      .from(schema.phonebooks)
+      .where(eq(schema.phonebooks.id, id));
+    return phonebook || undefined;
+  }
+
+  async createPhonebook(phonebook: schema.InsertPhonebook): Promise<schema.Phonebook> {
+    const [newPhonebook] = await db.insert(schema.phonebooks).values(phonebook).returning();
+    return newPhonebook;
+  }
+
+  async updatePhonebook(id: number, data: Partial<schema.Phonebook>): Promise<schema.Phonebook | undefined> {
+    const [phonebook] = await db
+      .update(schema.phonebooks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.phonebooks.id, id))
+      .returning();
+    return phonebook || undefined;
+  }
+
+  async deletePhonebook(id: number): Promise<void> {
+    await db.delete(schema.phonebooks).where(eq(schema.phonebooks.id, id));
+  }
+
+  // Phonebook Contacts
+  async getContactsForPhonebook(phonebookId: number): Promise<schema.PhonebookContact[]> {
+    return await db
+      .select()
+      .from(schema.phonebookContacts)
+      .where(eq(schema.phonebookContacts.phonebookId, phonebookId))
+      .orderBy(desc(schema.phonebookContacts.createdAt));
+  }
+
+  async getContact(id: number): Promise<schema.PhonebookContact | undefined> {
+    const [contact] = await db
+      .select()
+      .from(schema.phonebookContacts)
+      .where(eq(schema.phonebookContacts.id, id));
+    return contact || undefined;
+  }
+
+  async createContact(contact: schema.InsertPhonebookContact): Promise<schema.PhonebookContact> {
+    const [newContact] = await db.insert(schema.phonebookContacts).values(contact).returning();
+    return newContact;
+  }
+
+  async updateContact(id: number, data: Partial<schema.PhonebookContact>): Promise<schema.PhonebookContact | undefined> {
+    const [contact] = await db
+      .update(schema.phonebookContacts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.phonebookContacts.id, id))
+      .returning();
+    return contact || undefined;
+  }
+
+  async deleteContact(id: number): Promise<void> {
+    await db.delete(schema.phonebookContacts).where(eq(schema.phonebookContacts.id, id));
+  }
+
+  // Media Uploads
+  async createMediaUpload(upload: schema.InsertMediaUpload): Promise<schema.MediaUpload> {
+    const [newUpload] = await db.insert(schema.mediaUploads).values(upload).returning();
+    return newUpload;
+  }
+
+  async getMediaUploadsForUser(userId: number, limit: number = 100): Promise<schema.MediaUpload[]> {
+    return await db
+      .select()
+      .from(schema.mediaUploads)
+      .where(eq(schema.mediaUploads.userId, userId))
+      .orderBy(desc(schema.mediaUploads.createdAt))
+      .limit(limit);
+  }
+
+  async getMediaUpload(id: number): Promise<schema.MediaUpload | undefined> {
+    const [upload] = await db
+      .select()
+      .from(schema.mediaUploads)
+      .where(eq(schema.mediaUploads.id, id));
+    return upload || undefined;
   }
 }
 
