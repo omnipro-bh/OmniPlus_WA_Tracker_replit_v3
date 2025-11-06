@@ -34,7 +34,7 @@ The platform utilizes a modern tech stack with a React TypeScript frontend (Vite
 - **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans (with billing periods, payment methods, PayPal Plan ID, publication status, page access, limits), Subscriptions, Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking and `providerMessageId`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, PlanRequests, UseCases, and HomepageFeatures.
+Key entities include Users, Plans (with billing periods, payment methods, PayPal Plan ID, publication status, page access, limits, file size limits for media), Subscriptions, Coupons, TermsDocuments, Channels, Templates, Jobs, Messages (with delivery tracking, `providerMessageId`, `messageType`, `mediaUrl`), Workflows (`webhookToken`, `isActive`, `entryNodeId`, `definitionJson`), Phonebooks, PhonebookContacts (with message type, media URL, and button configuration), MediaUploads, ConversationStates, FirstMessageFlags, WorkflowExecutions, OfflinePayments, AuditLogs, Settings, BalanceTransactions, PlanRequests, UseCases, and HomepageFeatures.
 
 **Plans Payment System:**
 - **Payment Methods:** Supports PayPal and offline payments, stored as a JSONB array.
@@ -76,3 +76,51 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
   - Entry nodes are optional - workflows can function without them
   - Workflows without entry nodes still process button/list interactions
   - Entry node = optional welcome message trigger on first contact
+
+## Recent Changes (November 6, 2025)
+- **Phonebook Feature Implementation (Complete Backend + Partial Frontend):**
+  - **Database Schema:**
+    - Added `phonebooks` table (id, userId, name, description, createdAt)
+    - Added `phonebookContacts` table with comprehensive message configuration:
+      - Contact details: phone, name, email
+      - Message type: text_buttons, image, image_buttons, video_buttons, document
+      - Message content: body, mediaUrl
+      - Three button slots: button1-3 with text, type (quick_reply/url/call), value, and id
+    - Added `mediaUploads` table for tracking WHAPI media uploads (whapiMediaId, fileName, fileType, fileSizeMB, expiresAt)
+    - Added file size limits to plans: maxImageSizeMB (default 5), maxVideoSizeMB (default 16), maxDocumentSizeMB (default 10)
+    - Extend messages table with messageType and mediaUrl columns for supporting 5 message types
+  
+  - **Backend API (Fully Implemented):**
+    - Phonebook CRUD: GET/POST/PUT/DELETE `/api/phonebooks`
+    - Contact CRUD: GET/POST/PUT/DELETE for contacts within phonebooks
+    - Media upload: POST `/api/media/upload` with plan-based size validation, uploads to WHAPI, returns mediaId and URL
+    - Send to phonebook: POST `/api/phonebooks/:id/send` creates bulk job for all contacts
+    - Updated `processBulkJob` to handle all 5 message types using appropriate WHAPI methods (sendMediaMessage, sendInteractiveMessage, sendTextMessage)
+  
+  - **Storage Interface:**
+    - Added complete CRUD methods for phonebooks, contacts, and media uploads
+    - All methods follow existing patterns in server/storage.ts
+  
+  - **Frontend Pages:**
+    - Created `/phonebooks` list page with create/delete functionality
+    - Created `/phonebooks/:id` detail page with:
+      - Contact table showing phone, name, message type, preview, and buttons
+      - Send to all contacts functionality with channel selection
+      - Delete contact functionality
+    - Added Phonebooks to sidebar navigation with Book icon
+    - Integrated routes in App.tsx
+    - **Pending:** Contact form dialog implementation (state and imports added, full UI/handlers in progress)
+  
+  - **Message Type Support:**
+    - `text_buttons`: Text message with up to 3 interactive buttons
+    - `image`: Image only with caption (no buttons)
+    - `image_buttons`: Image with caption and up to 3 buttons
+    - `video_buttons`: Video with caption and up to 3 buttons
+    - `document`: Document file with caption (no buttons)
+  
+  - **WHAPI Integration:**
+    - File upload uses WHAPI free media API (30-day storage)
+    - Media stored with unique mediaId, accessible via WHAPI Gate URL
+    - Plan-based file size validation before upload
+  
+  - **Location:** Backend in server/routes.ts, server/storage.ts, shared/schema.ts; Frontend in client/src/pages/phonebooks.tsx, client/src/pages/phonebook-detail.tsx

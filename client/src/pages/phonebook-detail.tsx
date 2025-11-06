@@ -2,9 +2,20 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType } from "lucide-react";
+import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -75,6 +86,32 @@ export default function PhonebookDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  
+  // Contact form dialog state
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [contactForm, setContactForm] = useState({
+    phone: "",
+    name: "",
+    email: "",
+    messageType: "text_buttons",
+    body: "",
+    mediaUrl: "",
+    button1Text: "",
+    button1Type: "quick_reply",
+    button1Value: "",
+    button1Id: "",
+    button2Text: "",
+    button2Type: "quick_reply",
+    button2Value: "",
+    button2Id: "",
+    button3Text: "",
+    button3Type: "quick_reply",
+    button3Value: "",
+    button3Id: "",
+  });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Fetch phonebook with contacts
   const { data: phonebook, isLoading } = useQuery<Phonebook>({
@@ -137,6 +174,79 @@ export default function PhonebookDetailPage() {
     },
   });
 
+  // Create/update contact mutation
+  const saveContact = useMutation({
+    mutationFn: async (data: any) => {
+      if (editingContact) {
+        const res = await apiRequest("PUT", `/api/contacts/${editingContact.id}`, data);
+        return await res.json();
+      } else {
+        const res = await apiRequest("POST", `/api/phonebooks/${phonebookId}/contacts`, data);
+        return await res.json();
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/phonebooks", phonebookId] });
+      setContactDialogOpen(false);
+      resetContactForm();
+      toast({
+        title: "Success",
+        description: editingContact ? "Contact updated successfully" : "Contact created successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save contact",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // File upload mutation
+  const uploadFile = useMutation({
+    mutationFn: async (file: File) => {
+      return new Promise<{ mediaId: string; url: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const base64 = reader.result as string;
+            const fileType = contactForm.messageType.includes("image") ? "image" : 
+                           contactForm.messageType.includes("video") ? "video" : "document";
+            
+            const res = await apiRequest("POST", "/api/media/upload", {
+              file: base64,
+              fileType,
+              fileName: file.name,
+            });
+            const data = await res.json();
+            resolve(data);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+    },
+    onSuccess: (data) => {
+      setContactForm((prev) => ({ ...prev, mediaUrl: data.url }));
+      setIsUploading(false);
+      toast({
+        title: "Success",
+        description: "File uploaded successfully",
+      });
+    },
+    onError: (error: Error) => {
+      setIsUploading(false);
+      toast({
+        title: "Upload Error",
+        description: error.message || "Failed to upload file",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteClick = (contact: Contact) => {
     setContactToDelete(contact);
     setDeleteDialogOpen(true);
@@ -162,6 +272,94 @@ export default function PhonebookDetailPage() {
 
   const confirmSend = () => {
     sendToPhonebook.mutate(selectedChannelId);
+  };
+
+  const resetContactForm = () => {
+    setContactForm({
+      phone: "",
+      name: "",
+      email: "",
+      messageType: "text_buttons",
+      body: "",
+      mediaUrl: "",
+      button1Text: "",
+      button1Type: "quick_reply",
+      button1Value: "",
+      button1Id: "",
+      button2Text: "",
+      button2Type: "quick_reply",
+      button2Value: "",
+      button2Id: "",
+      button3Text: "",
+      button3Type: "quick_reply",
+      button3Value: "",
+      button3Id: "",
+    });
+    setUploadedFile(null);
+    setEditingContact(null);
+  };
+
+  const handleAddContact = () => {
+    resetContactForm();
+    setContactDialogOpen(true);
+  };
+
+  const handleEditContact = (contact: Contact) => {
+    setContactForm({
+      phone: contact.phone,
+      name: contact.name,
+      email: contact.email || "",
+      messageType: contact.messageType,
+      body: contact.body,
+      mediaUrl: contact.mediaUrl || "",
+      button1Text: contact.button1Text || "",
+      button1Type: contact.button1Type || "quick_reply",
+      button1Value: contact.button1Value || "",
+      button1Id: contact.button1Id || "",
+      button2Text: contact.button2Text || "",
+      button2Type: contact.button2Type || "quick_reply",
+      button2Value: contact.button2Value || "",
+      button2Id: contact.button2Id || "",
+      button3Text: contact.button3Text || "",
+      button3Type: contact.button3Type || "quick_reply",
+      button3Value: contact.button3Value || "",
+      button3Id: contact.button3Id || "",
+    });
+    setEditingContact(contact);
+    setContactDialogOpen(true);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedFile(file);
+      setIsUploading(true);
+      uploadFile.mutate(file);
+    }
+  };
+
+  const handleSaveContact = () => {
+    if (!contactForm.phone || !contactForm.name || !contactForm.body) {
+      toast({
+        title: "Validation Error",
+        description: "Phone, name, and message body are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if media is required but missing
+    const requiresMedia = ["image", "image_buttons", "video_buttons", "document"].includes(contactForm.messageType);
+    if (requiresMedia && !contactForm.mediaUrl) {
+      toast({
+        title: "Validation Error",
+        description: "Please upload a file for this message type",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    saveContact.mutate(contactForm);
   };
 
   const getMessageTypeIcon = (type: string) => {
@@ -235,7 +433,7 @@ export default function PhonebookDetailPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" data-testid="button-add-contact">
+              <Button variant="outline" onClick={handleAddContact} data-testid="button-add-contact">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Contact
               </Button>
@@ -301,7 +499,7 @@ export default function PhonebookDetailPage() {
             {phonebook.contacts.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-sm text-muted-foreground mb-4">No contacts in this phonebook yet</p>
-                <Button data-testid="button-add-first-contact">
+                <Button onClick={handleAddContact} data-testid="button-add-first-contact">
                   <Plus className="w-4 h-4 mr-2" />
                   Add First Contact
                 </Button>
@@ -363,6 +561,7 @@ export default function PhonebookDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => handleEditContact(contact)}
                               data-testid={`button-edit-contact-${contact.id}`}
                             >
                               <Edit className="w-4 h-4" />
@@ -428,6 +627,273 @@ export default function PhonebookDetailPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Contact Form Dialog */}
+        <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-contact-form">
+            <DialogHeader>
+              <DialogTitle>{editingContact ? "Edit Contact" : "Add Contact"}</DialogTitle>
+              <DialogDescription>
+                Configure contact details and message template
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {/* Contact Details */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    value={contactForm.phone}
+                    onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                    placeholder="+1234567890"
+                    data-testid="input-contact-phone"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name *</Label>
+                  <Input
+                    id="name"
+                    value={contactForm.name}
+                    onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                    placeholder="Contact Name"
+                    data-testid="input-contact-name"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email (Optional)</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={contactForm.email}
+                  onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                  placeholder="contact@example.com"
+                  data-testid="input-contact-email"
+                />
+              </div>
+
+              {/* Message Type */}
+              <div className="space-y-2">
+                <Label htmlFor="messageType">Message Type *</Label>
+                <Select
+                  value={contactForm.messageType}
+                  onValueChange={(value) => setContactForm({ ...contactForm, messageType: value, mediaUrl: "" })}
+                >
+                  <SelectTrigger data-testid="select-message-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text_buttons">Text + Buttons</SelectItem>
+                    <SelectItem value="image">Image Only</SelectItem>
+                    <SelectItem value="image_buttons">Image + Buttons</SelectItem>
+                    <SelectItem value="video_buttons">Video + Buttons</SelectItem>
+                    <SelectItem value="document">Document</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* File Upload (for media types) */}
+              {["image", "image_buttons", "video_buttons", "document"].includes(contactForm.messageType) && (
+                <div className="space-y-2">
+                  <Label htmlFor="file">Upload File *</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="file"
+                      type="file"
+                      accept={
+                        contactForm.messageType.includes("image") ? "image/*" :
+                        contactForm.messageType.includes("video") ? "video/*" :
+                        "*/*"
+                      }
+                      onChange={handleFileSelect}
+                      disabled={isUploading}
+                      data-testid="input-file-upload"
+                    />
+                    {isUploading && <span className="text-sm text-muted-foreground">Uploading...</span>}
+                    {contactForm.mediaUrl && !isUploading && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setContactForm({ ...contactForm, mediaUrl: "" })}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {contactForm.mediaUrl && (
+                    <p className="text-xs text-muted-foreground">File uploaded successfully</p>
+                  )}
+                </div>
+              )}
+
+              {/* Message Body */}
+              <div className="space-y-2">
+                <Label htmlFor="body">Message {contactForm.messageType === "text_buttons" ? "Body" : "Caption"} *</Label>
+                <Textarea
+                  id="body"
+                  value={contactForm.body}
+                  onChange={(e) => setContactForm({ ...contactForm, body: e.target.value })}
+                  placeholder="Enter your message here..."
+                  rows={4}
+                  data-testid="input-message-body"
+                />
+              </div>
+
+              {/* Buttons (for button types) */}
+              {contactForm.messageType !== "image" && contactForm.messageType !== "document" && (
+                <div className="space-y-3">
+                  <Label>Buttons (Optional - Up to 3)</Label>
+                  
+                  {/* Button 1 */}
+                  <div className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Button 1</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Button Text"
+                        value={contactForm.button1Text}
+                        onChange={(e) => setContactForm({ ...contactForm, button1Text: e.target.value })}
+                        data-testid="input-button1-text"
+                      />
+                      <Select
+                        value={contactForm.button1Type}
+                        onValueChange={(value) => setContactForm({ ...contactForm, button1Type: value })}
+                      >
+                        <SelectTrigger data-testid="select-button1-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                          <SelectItem value="url">URL</SelectItem>
+                          <SelectItem value="call">Call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {contactForm.button1Type !== "quick_reply" && (
+                      <Input
+                        placeholder={contactForm.button1Type === "url" ? "https://example.com" : "+1234567890"}
+                        value={contactForm.button1Value}
+                        onChange={(e) => setContactForm({ ...contactForm, button1Value: e.target.value })}
+                        data-testid="input-button1-value"
+                      />
+                    )}
+                    <Input
+                      placeholder="Button ID (optional)"
+                      value={contactForm.button1Id}
+                      onChange={(e) => setContactForm({ ...contactForm, button1Id: e.target.value })}
+                      data-testid="input-button1-id"
+                    />
+                  </div>
+
+                  {/* Button 2 */}
+                  <div className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Button 2</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Button Text"
+                        value={contactForm.button2Text}
+                        onChange={(e) => setContactForm({ ...contactForm, button2Text: e.target.value })}
+                        data-testid="input-button2-text"
+                      />
+                      <Select
+                        value={contactForm.button2Type}
+                        onValueChange={(value) => setContactForm({ ...contactForm, button2Type: value })}
+                      >
+                        <SelectTrigger data-testid="select-button2-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                          <SelectItem value="url">URL</SelectItem>
+                          <SelectItem value="call">Call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {contactForm.button2Type !== "quick_reply" && (
+                      <Input
+                        placeholder={contactForm.button2Type === "url" ? "https://example.com" : "+1234567890"}
+                        value={contactForm.button2Value}
+                        onChange={(e) => setContactForm({ ...contactForm, button2Value: e.target.value })}
+                        data-testid="input-button2-value"
+                      />
+                    )}
+                    <Input
+                      placeholder="Button ID (optional)"
+                      value={contactForm.button2Id}
+                      onChange={(e) => setContactForm({ ...contactForm, button2Id: e.target.value })}
+                      data-testid="input-button2-id"
+                    />
+                  </div>
+
+                  {/* Button 3 */}
+                  <div className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Button 3</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Button Text"
+                        value={contactForm.button3Text}
+                        onChange={(e) => setContactForm({ ...contactForm, button3Text: e.target.value })}
+                        data-testid="input-button3-text"
+                      />
+                      <Select
+                        value={contactForm.button3Type}
+                        onValueChange={(value) => setContactForm({ ...contactForm, button3Type: value })}
+                      >
+                        <SelectTrigger data-testid="select-button3-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                          <SelectItem value="url">URL</SelectItem>
+                          <SelectItem value="call">Call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {contactForm.button3Type !== "quick_reply" && (
+                      <Input
+                        placeholder={contactForm.button3Type === "url" ? "https://example.com" : "+1234567890"}
+                        value={contactForm.button3Value}
+                        onChange={(e) => setContactForm({ ...contactForm, button3Value: e.target.value })}
+                        data-testid="input-button3-value"
+                      />
+                    )}
+                    <Input
+                      placeholder="Button ID (optional)"
+                      value={contactForm.button3Id}
+                      onChange={(e) => setContactForm({ ...contactForm, button3Id: e.target.value })}
+                      data-testid="input-button3-id"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setContactDialogOpen(false)}
+                disabled={saveContact.isPending}
+                data-testid="button-cancel-contact"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveContact}
+                disabled={saveContact.isPending || isUploading}
+                data-testid="button-save-contact"
+              >
+                {saveContact.isPending ? "Saving..." : editingContact ? "Update Contact" : "Add Contact"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
