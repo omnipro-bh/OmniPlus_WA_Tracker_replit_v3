@@ -1430,6 +1430,9 @@ export default function Admin() {
     bulkMessagesLimit: "",
     channelsLimit: "",
     chatbotsLimit: "",
+    maxImageSizeMB: "5",
+    maxVideoSizeMB: "16",
+    maxDocumentSizeMB: "10",
     pageAccess: {
       dashboard: true,
       pricing: true,
@@ -1798,6 +1801,9 @@ export default function Admin() {
       bulkMessagesLimit: "",
       channelsLimit: "",
       chatbotsLimit: "",
+      maxImageSizeMB: "5",
+      maxVideoSizeMB: "16",
+      maxDocumentSizeMB: "10",
       pageAccess: {
         dashboard: true,
         pricing: true,
@@ -1855,6 +1861,9 @@ export default function Admin() {
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
       chatbotsLimit: String(plan.chatbotsLimit || ""),
+      maxImageSizeMB: String((plan as any).maxImageSizeMB ?? 5),
+      maxVideoSizeMB: String((plan as any).maxVideoSizeMB ?? 16),
+      maxDocumentSizeMB: String((plan as any).maxDocumentSizeMB ?? 10),
       pageAccess: pageAccessWithDefaults as any,
       features: Array.isArray(plan.features) ? plan.features : [],
     });
@@ -1919,6 +1928,13 @@ export default function Admin() {
       return;
     }
 
+    const maxImageSizeMBRaw = parseInt(planForm.maxImageSizeMB);
+    const maxVideoSizeMBRaw = parseInt(planForm.maxVideoSizeMB);
+    const maxDocumentSizeMBRaw = parseInt(planForm.maxDocumentSizeMB);
+    const maxImageSizeMB = Number.isNaN(maxImageSizeMBRaw) ? 5 : maxImageSizeMBRaw;
+    const maxVideoSizeMB = Number.isNaN(maxVideoSizeMBRaw) ? 16 : maxVideoSizeMBRaw;
+    const maxDocumentSizeMB = Number.isNaN(maxDocumentSizeMBRaw) ? 10 : maxDocumentSizeMBRaw;
+
     const planData = {
       name: planForm.name.trim(),
       currency: planForm.currency,
@@ -1934,6 +1950,9 @@ export default function Admin() {
       bulkMessagesLimit,
       channelsLimit,
       chatbotsLimit,
+      maxImageSizeMB,
+      maxVideoSizeMB,
+      maxDocumentSizeMB,
       pageAccess: planForm.pageAccess,
       features: planForm.features.filter(f => f.trim()).map(f => f.trim()),
     };
@@ -3094,6 +3113,43 @@ export default function Admin() {
                     value={planForm.chatbotsLimit}
                     onChange={(e) => setPlanForm({ ...planForm, chatbotsLimit: e.target.value })}
                     data-testid="input-plan-chatbots"
+                  />
+                </div>
+              </div>
+              
+              <h3 className="text-sm font-semibold mt-4">File Size Limits (MB)</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="plan-max-image">Max Image Size (MB)</Label>
+                  <Input
+                    id="plan-max-image"
+                    type="number"
+                    placeholder="5"
+                    value={planForm.maxImageSizeMB}
+                    onChange={(e) => setPlanForm({ ...planForm, maxImageSizeMB: e.target.value })}
+                    data-testid="input-plan-max-image"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-max-video">Max Video Size (MB)</Label>
+                  <Input
+                    id="plan-max-video"
+                    type="number"
+                    placeholder="16"
+                    value={planForm.maxVideoSizeMB}
+                    onChange={(e) => setPlanForm({ ...planForm, maxVideoSizeMB: e.target.value })}
+                    data-testid="input-plan-max-video"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-max-document">Max Document Size (MB)</Label>
+                  <Input
+                    id="plan-max-document"
+                    type="number"
+                    placeholder="10"
+                    value={planForm.maxDocumentSizeMB}
+                    onChange={(e) => setPlanForm({ ...planForm, maxDocumentSizeMB: e.target.value })}
+                    data-testid="input-plan-max-document"
                   />
                 </div>
               </div>
