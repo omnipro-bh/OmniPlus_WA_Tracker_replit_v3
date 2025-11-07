@@ -2062,13 +2062,31 @@ export default function Admin() {
     const maxDocumentSizeMB = Number.isNaN(maxDocumentSizeMBRaw) ? 10 : maxDocumentSizeMBRaw;
 
     // Parse discount percentages - preserve 0% instead of defaulting to legacy values
+    console.log("[DiscountParsing] Raw form values:", {
+      quarterly: planForm.quarterlyDiscountPercent,
+      semiAnnual: planForm.semiAnnualDiscountPercent,
+      annual: planForm.annualDiscountPercent,
+    });
+    
     const quarterlyDiscountRaw = parseInt(planForm.quarterlyDiscountPercent);
     const semiAnnualDiscountRaw = parseInt(planForm.semiAnnualDiscountPercent);
     const annualDiscountRaw = parseInt(planForm.annualDiscountPercent);
     
+    console.log("[DiscountParsing] Parsed integers:", {
+      quarterlyRaw: quarterlyDiscountRaw,
+      semiAnnualRaw: semiAnnualDiscountRaw,
+      annualRaw: annualDiscountRaw,
+    });
+    
     const quarterlyDiscountPercent = Number.isNaN(quarterlyDiscountRaw) ? 0 : Math.max(0, Math.min(100, quarterlyDiscountRaw));
     const semiAnnualDiscountPercent = Number.isNaN(semiAnnualDiscountRaw) ? 5 : Math.max(0, Math.min(100, semiAnnualDiscountRaw));
     const annualDiscountPercent = Number.isNaN(annualDiscountRaw) ? 10 : Math.max(0, Math.min(100, annualDiscountRaw));
+    
+    console.log("[DiscountParsing] Final clamped values:", {
+      quarterly: quarterlyDiscountPercent,
+      semiAnnual: semiAnnualDiscountPercent,
+      annual: annualDiscountPercent,
+    });
 
     const planData = {
       name: planForm.name.trim(),
@@ -2097,6 +2115,14 @@ export default function Admin() {
       pageAccess: planForm.pageAccess,
       features: planForm.features.filter(f => f.trim()).map(f => f.trim()),
     };
+    
+    console.log("[PlanSave] Plan data being sent to API:", {
+      isPopular: planData.isPopular,
+      quarterlyDiscountPercent: planData.quarterlyDiscountPercent,
+      semiAnnualDiscountPercent: planData.semiAnnualDiscountPercent,
+      annualDiscountPercent: planData.annualDiscountPercent,
+      enabledBillingPeriods: planData.enabledBillingPeriods,
+    });
 
     if (editingPlan) {
       updatePlanMutation.mutate({ id: editingPlan.id, data: planData });

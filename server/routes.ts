@@ -4115,10 +4115,21 @@ export function registerRoutes(app: Express) {
     try {
       const planId = parseInt(req.params.id);
       
+      console.log("[PlanUpdate] Received request body keys:", Object.keys(req.body));
+      console.log("[PlanUpdate] isPopular in request:", req.body.isPopular);
+      console.log("[PlanUpdate] enabledBillingPeriods in request:", req.body.enabledBillingPeriods);
+      console.log("[PlanUpdate] Discount percentages:", {
+        quarterly: req.body.quarterlyDiscountPercent,
+        semiAnnual: req.body.semiAnnualDiscountPercent,
+        annual: req.body.annualDiscountPercent,
+      });
+      
       const plan = await storage.updatePlan(planId, req.body);
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
       }
+      
+      console.log("[PlanUpdate] After update, plan.isPopular:", plan.isPopular);
 
       await storage.createAuditLog({
         actorUserId: req.userId!,
