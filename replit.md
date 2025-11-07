@@ -49,6 +49,31 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 - **PostgreSQL (Neon):** Primary database.
 - **node-cron:** For scheduling daily tasks.
 
+## Recent Changes (November 7, 2025)
+
+- **Phonebook Limit System (Complete):**
+  - **Purpose:** Enforce plan-based limits on number of contacts per phonebook
+  - **Implementation:**
+    - Added `phonebookLimit` field to both `plans` and `users` tables (nullable integer, -1 or negative = unlimited)
+    - Created `getPhonebookLimit(userId)` helper function with hierarchical logic:
+      1. Check user-level override first (if set, use that)
+      2. Get ALL active subscriptions for user
+      3. Use MOST PERMISSIVE limit (if any plan is unlimited, user gets unlimited; otherwise use highest limit)
+      4. Normalize -1 and negative values to null (unlimited)
+    - Validation enforcement in:
+      - Manual "Add Contact" route: Checks current count vs limit before allowing addition
+      - CSV Import route: Validates total contacts (existing + imported) against limit before import
+    - Direct database query (`db.query.subscriptions.findMany`) to handle users with multiple active subscriptions
+  - **Edge Cases Handled:**
+    - Users with no subscription = unlimited
+    - Users with multiple active subscriptions = most permissive limit applies
+    - User-level overrides take precedence over all plan limits
+    - Negative values normalize to unlimited (null)
+  - **Result:** Plan-based phonebook limits fully enforced, supports both limited and unlimited plans
+  - **Location:** server/routes.ts (helper function lines ~48-103, validation in contact routes), shared/schema.ts (schema updates)
+  - **Testing:** E2E tests confirmed limited plans block at limit, unlimited plans allow 5+ contacts
+  - **Note:** Verbose console logging enabled for debugging (`[PhonebookLimit]` prefix) - consider trimming for production
+
 ## Recent Changes (November 6, 2025 - Continued)
 
 - **CSV Import Phone Number Validation Fix:**
