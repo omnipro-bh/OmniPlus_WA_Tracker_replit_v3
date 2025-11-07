@@ -1933,12 +1933,28 @@ export default function Admin() {
   };
 
   const handleSavePlan = () => {
+    console.log("[PlanSave] Starting validation, showMessageLimits:", planForm.showMessageLimits);
+    
     // Validate required numeric fields
     const price = planForm.price ? parseFloat(planForm.price) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
-    // If message limits are hidden, automatically set to unlimited (-1)
-    const dailyMessagesLimit = planForm.showMessageLimits ? parseInt(planForm.dailyMessagesLimit) : -1;
-    const bulkMessagesLimit = planForm.showMessageLimits ? parseInt(planForm.bulkMessagesLimit) : -1;
+    
+    // If message limits checkbox is UNCHECKED, force unlimited (-1) and skip ALL validation
+    let dailyMessagesLimit: number;
+    let bulkMessagesLimit: number;
+    
+    if (!planForm.showMessageLimits) {
+      // Toggle is OFF - force unlimited, no validation needed
+      dailyMessagesLimit = -1;
+      bulkMessagesLimit = -1;
+      console.log("[PlanSave] Message limits disabled - forcing unlimited");
+    } else {
+      // Toggle is ON - parse values and validate
+      dailyMessagesLimit = parseInt(planForm.dailyMessagesLimit);
+      bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
+      console.log("[PlanSave] Message limits enabled - validating:", { dailyMessagesLimit, bulkMessagesLimit });
+    }
+    
     const channelsLimit = parseInt(planForm.channelsLimit);
     const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : -1; // Default to unlimited
     const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : -1; // Default to unlimited
@@ -1976,16 +1992,22 @@ export default function Admin() {
       }
     }
     
-    // Only validate message limits if they are shown
+    // ONLY validate message limits if the checkbox is CHECKED
     if (planForm.showMessageLimits) {
+      console.log("[PlanSave] Validating message limits...");
       if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
+        console.log("[PlanSave] Daily messages limit validation FAILED:", dailyMessagesLimit);
         toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
         return;
       }
       if (isNaN(bulkMessagesLimit) || (bulkMessagesLimit <= 0 && bulkMessagesLimit !== -1)) {
+        console.log("[PlanSave] Bulk messages limit validation FAILED:", bulkMessagesLimit);
         toast({ title: "Validation error", description: "Valid daily bulk messages limit is required (use -1 for unlimited)", variant: "destructive" });
         return;
       }
+      console.log("[PlanSave] Message limits validation PASSED");
+    } else {
+      console.log("[PlanSave] Skipping message limits validation (toggle is OFF)");
     }
     if (isNaN(channelsLimit) || channelsLimit <= 0) {
       toast({ title: "Validation error", description: "Valid channels limit is required", variant: "destructive" });
