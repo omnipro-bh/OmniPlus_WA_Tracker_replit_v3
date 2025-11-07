@@ -1922,12 +1922,12 @@ export default function Admin() {
       }
     }
     
-    if (isNaN(dailyMessagesLimit) || dailyMessagesLimit <= 0) {
-      toast({ title: "Validation error", description: "Valid daily messages limit is required", variant: "destructive" });
+    if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
+      toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
       return;
     }
-    if (isNaN(bulkMessagesLimit) || bulkMessagesLimit <= 0) {
-      toast({ title: "Validation error", description: "Valid daily bulk messages limit is required", variant: "destructive" });
+    if (isNaN(bulkMessagesLimit) || (bulkMessagesLimit <= 0 && bulkMessagesLimit !== -1)) {
+      toast({ title: "Validation error", description: "Valid daily bulk messages limit is required (use -1 for unlimited)", variant: "destructive" });
       return;
     }
     if (isNaN(channelsLimit) || channelsLimit <= 0) {
