@@ -44,6 +44,7 @@ export interface IStorage {
   getPlan(id: number): Promise<Plan | undefined>;
   createPlan(plan: InsertPlan): Promise<Plan>;
   updatePlan(id: number, data: Partial<Plan>): Promise<Plan | undefined>;
+  deletePlan(id: number): Promise<void>;
 
   // Coupons
   getCoupons(): Promise<Coupon[]>;
@@ -237,6 +238,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.plans.id, id))
       .returning();
     return plan;
+  }
+
+  async deletePlan(id: number): Promise<void> {
+    await db.delete(schema.plans).where(eq(schema.plans.id, id));
   }
 
   // Coupons

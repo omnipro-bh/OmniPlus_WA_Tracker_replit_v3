@@ -4203,7 +4203,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Archive/delete plan (soft delete by unpublishing)
+  // Delete plan
   app.delete("/api/admin/plans/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
       const planId = parseInt(req.params.id);
@@ -4213,20 +4213,33 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      await storage.updatePlan(planId, { published: false });
+      console.log(`[DELETE Plan] Attempting to delete plan ID ${planId}: ${plan.name}`);
 
-      await storage.createAuditLog({
-        actorUserId: req.userId!,
-        targetType: "plan",
-        targetId: planId,
-        action: "ARCHIVE_PLAN",
-        meta: { planName: plan.name },
-      });
+      try {
+        await storage.deletePlan(planId);
+        console.log(`[DELETE Plan] Successfully deleted plan ID ${planId}`);
 
-      res.json({ success: true });
+        await storage.createAuditLog({
+          actorUserId: req.userId!,
+          targetType: "plan",
+          targetId: planId,
+          action: "DELETE_PLAN",
+          meta: { planName: plan.name },
+        });
+
+        res.json({ success: true });
+      } catch (deleteError: any) {
+        if (deleteError.code === '23503') {
+          console.log(`[DELETE Plan] Cannot delete plan ${planId} - has related records`);
+          return res.status(400).json({ 
+            error: "Cannot delete this plan because it has active subscriptions, offline payments, or plan requests. Please remove or reassign those first." 
+          });
+        }
+        throw deleteError;
+      }
     } catch (error: any) {
-      console.error("Archive plan error:", error);
-      res.status(500).json({ error: "Failed to archive plan" });
+      console.error("Delete plan error:", error);
+      res.status(500).json({ error: "Failed to delete plan" });
     }
   });
 
