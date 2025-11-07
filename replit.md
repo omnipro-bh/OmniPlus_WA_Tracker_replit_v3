@@ -51,6 +51,22 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
 
 ## Recent Changes (November 7, 2025)
 
+- **Plan Deletion Fix (Critical):**
+  - **Problem:** DELETE /api/admin/plans/:id was returning 200 success but not actually deleting plans from database
+  - **Root Cause:** Route was only setting `published: false` (archiving) instead of deleting the record
+  - **Fix Applied:**
+    - Added `deletePlan(id)` method to IStorage interface and DatabaseStorage implementation
+    - Updated DELETE route to call `storage.deletePlan(planId)` instead of updating published status
+    - Added proper foreign key constraint error handling (PostgreSQL error code 23503)
+    - Plans with active subscriptions, offline payments, or plan requests cannot be deleted (protected by FK constraints)
+  - **Error Handling:**
+    - 404: Plan not found
+    - 400: Cannot delete due to foreign key constraints with user-friendly message
+    - 200: Successfully deleted
+  - **Result:** Plan deletion now works correctly - plans are actually removed from database
+  - **Location:** server/storage.ts (deletePlan method), server/routes.ts (DELETE route ~4210-4247)
+  - **Testing:** E2E test confirmed plans without dependencies delete successfully, plans with subscriptions are protected
+
 - **Phonebook Limit System (Complete):**
   - **Purpose:** Enforce plan-based limits on number of contacts per phonebook
   - **Implementation:**
