@@ -4161,13 +4161,23 @@ export function registerRoutes(app: Express) {
         paymentMethods: duplicatePaymentMethods as any, // Remove PayPal - admin must add with new Plan ID
         paypalPlanId: null, // Reset PayPal Plan ID for duplicates (must be unique per plan)
         published: false,
+        publishedOnHomepage: original.publishedOnHomepage,
         sortOrder: original.sortOrder + 1,
         dailyMessagesLimit: original.dailyMessagesLimit,
         bulkMessagesLimit: original.bulkMessagesLimit,
         channelsLimit: original.channelsLimit,
         chatbotsLimit: original.chatbotsLimit,
+        phonebookLimit: original.phonebookLimit,
+        maxImageSizeMB: original.maxImageSizeMB,
+        maxVideoSizeMB: original.maxVideoSizeMB,
+        maxDocumentSizeMB: original.maxDocumentSizeMB,
         pageAccess: original.pageAccess as any,
         features: original.features as any,
+        quarterlyDiscountPercent: original.quarterlyDiscountPercent,
+        semiAnnualDiscountPercent: original.semiAnnualDiscountPercent,
+        annualDiscountPercent: original.annualDiscountPercent,
+        enabledBillingPeriods: original.enabledBillingPeriods as any,
+        isPopular: false, // Reset popular flag for duplicates
       });
 
       await storage.createAuditLog({
