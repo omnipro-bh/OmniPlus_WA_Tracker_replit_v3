@@ -1745,6 +1745,28 @@ export default function Admin() {
       setIsPlanDialogOpen(false);
       toast({ title: "Plan created successfully" });
     },
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to create plan";
+      const details = error?.details;
+      
+      // If we have detailed validation errors, show them
+      if (details?.fieldErrors) {
+        const fieldErrors = Object.entries(details.fieldErrors)
+          .map(([field, errors]: [string, any]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+          .join('\n');
+        toast({ 
+          title: "Validation error", 
+          description: fieldErrors,
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Error", 
+          description: errorMessage,
+          variant: "destructive" 
+        });
+      }
+    },
   });
 
   const updatePlanMutation = useMutation({
@@ -1756,6 +1778,28 @@ export default function Admin() {
       resetPlanForm();
       setIsPlanDialogOpen(false);
       toast({ title: "Plan updated successfully" });
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to update plan";
+      const details = error?.details;
+      
+      // If we have detailed validation errors, show them
+      if (details?.fieldErrors) {
+        const fieldErrors = Object.entries(details.fieldErrors)
+          .map(([field, errors]: [string, any]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+          .join('\n');
+        toast({ 
+          title: "Validation error", 
+          description: fieldErrors,
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Error", 
+          description: errorMessage,
+          variant: "destructive" 
+        });
+      }
     },
   });
 
