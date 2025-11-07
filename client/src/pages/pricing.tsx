@@ -276,7 +276,7 @@ export default function Pricing() {
 
       {/* Plans Grid */}
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
-        {plans.filter(plan => plan.published).map((plan, index) => {
+        {plans.filter(plan => plan.published).sort((a, b) => a.sortOrder - b.sortOrder).map((plan, index) => {
           const isPopular = (plan as any).isPopular || false;
           const discountedPrice = getDiscountedPrice(plan.price || 0, plan);
           const features = Array.isArray(plan.features) ? plan.features : [];
