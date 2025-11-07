@@ -43,6 +43,66 @@ function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "SEMI_ANNUAL" | "AN
   }
 }
 
+// Helper function to get the effective phonebook limit for a user
+async function getPhonebookLimit(userId: number): Promise<number | null> {
+  const user = await storage.getUser(userId);
+  if (!user) {
+    console.log(`[PhonebookLimit] User ${userId} not found`);
+    return null;
+  }
+
+  // Check if user has an override
+  if (user.phonebookLimit !== null && user.phonebookLimit !== undefined) {
+    console.log(`[PhonebookLimit] User ${userId} has override: ${user.phonebookLimit}`);
+    // Normalize -1 (and other negative values) to null for unlimited
+    const normalizedLimit = user.phonebookLimit < 0 ? null : user.phonebookLimit;
+    console.log(`[PhonebookLimit] Normalized override: ${normalizedLimit}`);
+    return normalizedLimit;
+  }
+
+  // Get ALL active subscriptions and use the most permissive limit
+  const activeSubscriptions = await db.query.subscriptions.findMany({
+    where: (subscriptions, { eq, and }) => and(
+      eq(subscriptions.userId, userId),
+      eq(subscriptions.status, "ACTIVE")
+    ),
+  });
+  
+  if (activeSubscriptions.length === 0) {
+    console.log(`[PhonebookLimit] User ${userId} has no active subscription - unlimited`);
+    return null; // No subscription = unlimited
+  }
+
+  console.log(`[PhonebookLimit] User ${userId} has ${activeSubscriptions.length} active subscriptions`);
+  
+  // Get all plan limits
+  let mostPermissiveLimit: number | null = null;
+  
+  for (const subscription of activeSubscriptions) {
+    const plan = await storage.getPlan(subscription.planId);
+    if (!plan) continue;
+    
+    const planLimit = plan.phonebookLimit ?? null;
+    const normalizedPlanLimit = (planLimit !== null && planLimit < 0) ? null : planLimit;
+    
+    console.log(`[PhonebookLimit] Plan ${plan.name} (ID ${plan.id}) limit: ${normalizedPlanLimit}`);
+    
+    // If any plan is unlimited, user gets unlimited
+    if (normalizedPlanLimit === null) {
+      console.log(`[PhonebookLimit] Found unlimited plan - returning unlimited`);
+      return null;
+    }
+    
+    // Otherwise, use the highest limit
+    if (mostPermissiveLimit === null || normalizedPlanLimit > mostPermissiveLimit) {
+      mostPermissiveLimit = normalizedPlanLimit;
+    }
+  }
+
+  console.log(`[PhonebookLimit] Final most permissive limit: ${mostPermissiveLimit}`);
+  return mostPermissiveLimit;
+}
+
 export function registerRoutes(app: Express) {
   // ============================================================================
   // PAYPAL INTEGRATION
@@ -626,7 +686,8 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode, durationType: submittedDurationType } = validationResult.data;
+      const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode } = validationResult.data;
+      const submittedDurationType = (validationResult.data as any).durationType;
 
       // Validate terms acceptance
       if (!termsVersion) {
@@ -2049,6 +2110,19 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
+      // Check phonebook limit
+      const limit = await getPhonebookLimit(req.userId!);
+      console.log(`[Add Contact] User ${req.userId} phonebook ${phonebookId} limit:`, limit);
+      if (limit !== null) {
+        const currentContacts = await storage.getContactsForPhonebook(phonebookId);
+        console.log(`[Add Contact] Current contacts: ${currentContacts.length}, Limit: ${limit}`);
+        if (currentContacts.length >= limit) {
+          return res.status(400).json({ 
+            error: `Phonebook limit reached. Your plan allows a maximum of ${limit} contacts per phonebook.`
+          });
+        }
+      }
+
       const {
         phone,
         name,
@@ -2471,6 +2545,10 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
+      // Check phonebook limit before parsing
+      const limit = await getPhonebookLimit(req.userId!);
+      const currentContacts = await storage.getContactsForPhonebook(phonebookId);
+
       // Parse CSV data
       const Papa = await import('papaparse');
       const parsed = Papa.default.parse(csvData, {
@@ -2542,6 +2620,16 @@ export function registerRoutes(app: Express) {
           });
         }
       });
+
+      // Check if adding these contacts would exceed the limit
+      if (limit !== null) {
+        const totalAfterImport = currentContacts.length + validContacts.length;
+        if (totalAfterImport > limit) {
+          return res.status(400).json({ 
+            error: `Cannot import ${validContacts.length} contacts. Your plan allows a maximum of ${limit} contacts per phonebook. You currently have ${currentContacts.length} contacts.`
+          });
+        }
+      }
 
       // Insert valid contacts
       let insertedCount = 0;

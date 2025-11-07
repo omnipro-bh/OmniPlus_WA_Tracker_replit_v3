@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   status: userStatusEnum("status").notNull().default("active"),
   whapiToken: text("whapi_token"), // Per-user WHAPI token if needed
   bulkWebhookToken: text("bulk_webhook_token").notNull().default(sql`gen_random_uuid()::text`),
+  phonebookLimit: integer("phonebook_limit"), // Per-user override for phonebook contact limit (null = use plan limit)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
