@@ -2621,19 +2621,33 @@ export function registerRoutes(app: Express) {
         }
       });
 
-      // Check if adding these contacts would exceed the limit
+      // Check phonebook limit and determine how many contacts can be imported
+      let contactsToImport = validContacts;
+      let limitWarning: string | undefined = undefined;
+      let contactsSkipped = 0;
+
       if (limit !== null) {
-        const totalAfterImport = currentContacts.length + validContacts.length;
-        if (totalAfterImport > limit) {
+        const availableSlots = limit - currentContacts.length;
+        
+        if (availableSlots <= 0) {
+          // No slots available
           return res.status(400).json({ 
-            error: `Cannot import ${validContacts.length} contacts. Your plan allows a maximum of ${limit} contacts per phonebook. You currently have ${currentContacts.length} contacts.`
+            error: `Your phonebook is full. Your plan allows a maximum of ${limit} contacts per phonebook and you currently have ${currentContacts.length} contacts.`
           });
+        }
+        
+        if (validContacts.length > availableSlots) {
+          // Trim the import to fit within the limit
+          contactsToImport = validContacts.slice(0, availableSlots);
+          contactsSkipped = validContacts.length - availableSlots;
+          limitWarning = `Your plan allows a maximum of ${limit} contacts per phonebook. You currently have ${currentContacts.length} contacts. Only the first ${availableSlots} contact(s) from your CSV will be imported. ${contactsSkipped} contact(s) will be skipped.`;
+          console.log(`[PhonebookLimit] Trimming CSV import: ${validContacts.length} valid rows, only importing ${availableSlots}, skipping ${contactsSkipped}`);
         }
       }
 
-      // Insert valid contacts
+      // Insert contacts (up to the limit)
       let insertedCount = 0;
-      for (const contact of validContacts) {
+      for (const contact of contactsToImport) {
         try {
           await storage.createContact(contact);
           insertedCount++;
@@ -2649,7 +2663,9 @@ export function registerRoutes(app: Express) {
           valid: validContacts.length,
           invalid: invalidRows.length,
           inserted: insertedCount,
+          skipped: contactsSkipped,
         },
+        limitWarning,
         invalidRows: invalidRows.length > 0 ? invalidRows : undefined,
       });
     } catch (error: any) {

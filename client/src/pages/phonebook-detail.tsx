@@ -97,8 +97,10 @@ export default function PhonebookDetailPage() {
     valid: number;
     invalid: number;
     inserted: number;
+    skipped?: number;
     invalidRows?: { row: number; errors: string[] }[];
   } | null>(null);
+  const [csvLimitWarning, setCsvLimitWarning] = useState<string | null>(null);
   
   // Contact form dialog state
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
@@ -196,10 +198,18 @@ export default function PhonebookDetailPage() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/phonebooks", phonebookId] });
       setCsvImportResults(data.summary);
+      setCsvLimitWarning(data.limitWarning || null);
       setCsvFile(null);
+      
+      let description = `Successfully imported ${data.summary.inserted} of ${data.summary.total} contacts`;
+      if (data.summary.skipped > 0) {
+        description += `. ${data.summary.skipped} contact(s) skipped due to plan limit.`;
+      }
+      
       toast({
         title: "CSV Import Complete",
-        description: `Successfully imported ${data.summary.inserted} of ${data.summary.total} contacts`,
+        description,
+        variant: data.summary.skipped > 0 ? "default" : "default",
       });
     },
     onError: (error: Error) => {
@@ -1067,6 +1077,16 @@ export default function PhonebookDetailPage() {
               {csvImportResults && (
                 <div className="p-4 border rounded-lg space-y-3">
                   <h3 className="font-medium text-sm">Import Summary</h3>
+                  
+                  {/* Limit Warning */}
+                  {csvLimitWarning && (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded">
+                      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                        {csvLimitWarning}
+                      </p>
+                    </div>
+                  )}
+                  
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                       <span className="text-muted-foreground">Total Rows:</span>
@@ -1084,6 +1104,12 @@ export default function PhonebookDetailPage() {
                       <span className="text-muted-foreground">Inserted:</span>
                       <span className="font-medium text-blue-600 dark:text-blue-400">{csvImportResults.inserted}</span>
                     </div>
+                    {csvImportResults.skipped !== undefined && csvImportResults.skipped > 0 && (
+                      <div className="flex items-center justify-between p-2 bg-amber-500/10 rounded col-span-2">
+                        <span className="text-muted-foreground">Skipped (Plan Limit):</span>
+                        <span className="font-medium text-amber-600 dark:text-amber-400">{csvImportResults.skipped}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Invalid Rows Details */}
