@@ -62,16 +62,23 @@ Key entities include Users, Plans (with billing periods, payment methods, PayPal
       4. Normalize -1 and negative values to null (unlimited)
     - Validation enforcement in:
       - Manual "Add Contact" route: Checks current count vs limit before allowing addition
-      - CSV Import route: Validates total contacts (existing + imported) against limit before import
+      - CSV Import route: **Allows partial imports** - imports up to the limit and skips remaining contacts
     - Direct database query (`db.query.subscriptions.findMany`) to handle users with multiple active subscriptions
+  - **CSV Partial Import Feature:**
+    - When CSV has more contacts than plan allows, system imports up to the limit instead of blocking entirely
+    - Returns `skipped` count and descriptive `limitWarning` message
+    - Frontend displays amber warning banner and "Skipped (Plan Limit)" row in Import Summary
+    - Toast notification includes skipped count
+    - Example: User with limit=3 uploads 5 contacts → imports first 3, skips 2, shows clear warning
   - **Edge Cases Handled:**
     - Users with no subscription = unlimited
     - Users with multiple active subscriptions = most permissive limit applies
     - User-level overrides take precedence over all plan limits
     - Negative values normalize to unlimited (null)
-  - **Result:** Plan-based phonebook limits fully enforced, supports both limited and unlimited plans
-  - **Location:** server/routes.ts (helper function lines ~48-103, validation in contact routes), shared/schema.ts (schema updates)
-  - **Testing:** E2E tests confirmed limited plans block at limit, unlimited plans allow 5+ contacts
+    - CSV imports trim to available slots (total limit - current contacts)
+  - **Result:** Plan-based phonebook limits fully enforced with user-friendly partial import behavior
+  - **Location:** server/routes.ts (helper ~48-103, CSV import ~2627-2673), client/src/pages/phonebook-detail.tsx (UI), shared/schema.ts
+  - **Testing:** E2E tests confirmed limited plans block at limit, unlimited plans allow 5+ contacts, partial imports work correctly
   - **Note:** Verbose console logging enabled for debugging (`[PhonebookLimit]` prefix) - consider trimming for production
 
 ## Recent Changes (November 6, 2025 - Continued)
