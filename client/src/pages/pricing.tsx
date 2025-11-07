@@ -291,18 +291,47 @@ export default function Pricing() {
               </CardHeader>
               <CardContent className="flex-1">
                 <ul className="space-y-3">
-                  <li className="flex items-start gap-2">
-                    <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">{plan.channelsLimit} WhatsApp Channel{plan.channelsLimit > 1 ? "s" : ""}</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">{plan.dailyMessagesLimit.toLocaleString()} messages/day</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">{plan.bulkMessagesLimit.toLocaleString()} bulk messages</span>
-                  </li>
+                  {/* Only show enabled limits (not -1) */}
+                  {plan.channelsLimit !== -1 && (
+                    <li className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">
+                        {plan.channelsLimit === -1 ? "Unlimited" : plan.channelsLimit} WhatsApp Channel{plan.channelsLimit > 1 ? "s" : ""}
+                      </span>
+                    </li>
+                  )}
+                  {plan.dailyMessagesLimit !== -1 && (
+                    <li className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">
+                        {plan.dailyMessagesLimit === -1 ? "Unlimited" : plan.dailyMessagesLimit.toLocaleString()} messages/day
+                      </span>
+                    </li>
+                  )}
+                  {plan.bulkMessagesLimit !== -1 && (
+                    <li className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">
+                        {plan.bulkMessagesLimit === -1 ? "Unlimited" : plan.bulkMessagesLimit.toLocaleString()} bulk messages
+                      </span>
+                    </li>
+                  )}
+                  {(plan as any).chatbotsLimit !== undefined && (plan as any).chatbotsLimit !== -1 && (
+                    <li className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">
+                        {(plan as any).chatbotsLimit === -1 ? "Unlimited" : (plan as any).chatbotsLimit} workflow{(plan as any).chatbotsLimit > 1 ? "s" : ""}
+                      </span>
+                    </li>
+                  )}
+                  {(plan as any).phonebookLimit !== undefined && (plan as any).phonebookLimit !== -1 && (
+                    <li className="flex items-start gap-2">
+                      <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">
+                        {(plan as any).phonebookLimit === -1 ? "Unlimited" : (plan as any).phonebookLimit} contact{(plan as any).phonebookLimit > 1 ? "s" : ""} per phonebook
+                      </span>
+                    </li>
+                  )}
                   {features.map((feature: string, idx: number) => (
                     <li key={idx} className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />

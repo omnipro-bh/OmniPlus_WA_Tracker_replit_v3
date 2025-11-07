@@ -3587,6 +3587,8 @@ export default function Admin() {
               disabled={
                 !planForm.name ||
                 (planForm.requestType === "PAID" && !planForm.price) ||
+                (planForm.requestType === "PAID" && planForm.paymentMethods.length === 0) ||
+                (planForm.requestType === "PAID" && planForm.paymentMethods.includes("paypal") && !planForm.paypalPlanId) ||
                 (planForm.enableDailyMessages && !planForm.dailyMessagesLimit) ||
                 (planForm.enableBulkMessages && !planForm.bulkMessagesLimit) ||
                 (planForm.enableChannels && !planForm.channelsLimit) ||

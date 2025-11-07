@@ -499,6 +499,15 @@ export function registerRoutes(app: Express) {
   app.get("/api/plans", async (req: Request, res: Response) => {
     try {
       const plans = await storage.getPlans();
+      console.log("[GET /api/plans] Returning plans with limits:", plans.map(p => ({ 
+        id: p.id, 
+        name: p.name,
+        channelsLimit: p.channelsLimit,
+        chatbotsLimit: p.chatbotsLimit,
+        phonebookLimit: p.phonebookLimit,
+        dailyMessagesLimit: p.dailyMessagesLimit,
+        bulkMessagesLimit: p.bulkMessagesLimit
+      })));
       res.json(plans);
     } catch (error: any) {
       console.error("Get plans error:", error);
