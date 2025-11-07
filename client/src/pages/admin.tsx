@@ -1429,7 +1429,12 @@ export default function Admin() {
     published: false,
     publishedOnHomepage: false,
     sortOrder: "",
-    showMessageLimits: true, // Toggle to show/hide message limit fields
+    // Individual checkboxes for each limit
+    enableDailyMessages: true,
+    enableBulkMessages: true,
+    enableChannels: true,
+    enableWorkflows: true,
+    enablePhonebooks: true,
     dailyMessagesLimit: "1000",
     bulkMessagesLimit: "5000",
     channelsLimit: "5",
@@ -1848,7 +1853,11 @@ export default function Admin() {
       published: false,
       publishedOnHomepage: false,
       sortOrder: "",
-      showMessageLimits: true, // Show by default
+      enableDailyMessages: true,
+      enableBulkMessages: true,
+      enableChannels: true,
+      enableWorkflows: true,
+      enablePhonebooks: true,
       dailyMessagesLimit: "",
       bulkMessagesLimit: "",
       channelsLimit: "",
@@ -1902,8 +1911,12 @@ export default function Admin() {
       ? (plan as any).paymentMethods 
       : [];
     
-    // Detect if message limits should be shown (show if either is not -1)
-    const showMessageLimits = plan.dailyMessagesLimit !== -1 || plan.bulkMessagesLimit !== -1;
+    // Detect which limits are enabled (not -1)
+    const enableDailyMessages = plan.dailyMessagesLimit !== -1;
+    const enableBulkMessages = plan.bulkMessagesLimit !== -1;
+    const enableChannels = plan.channelsLimit !== -1;
+    const enableWorkflows = plan.chatbotsLimit !== -1;
+    const enablePhonebooks = (plan as any).phonebookLimit !== -1;
     
     setPlanForm({
       name: plan.name,
@@ -1916,7 +1929,11 @@ export default function Admin() {
       published: plan.published,
       publishedOnHomepage: (plan as any).publishedOnHomepage || false,
       sortOrder: String(plan.sortOrder),
-      showMessageLimits: showMessageLimits,
+      enableDailyMessages,
+      enableBulkMessages,
+      enableChannels,
+      enableWorkflows,
+      enablePhonebooks,
       dailyMessagesLimit: String(plan.dailyMessagesLimit),
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
@@ -1933,31 +1950,24 @@ export default function Admin() {
   };
 
   const handleSavePlan = () => {
-    console.log("[PlanSave] Starting validation, showMessageLimits:", planForm.showMessageLimits);
+    console.log("[PlanSave] Starting validation with enabled limits:", {
+      enableDailyMessages: planForm.enableDailyMessages,
+      enableBulkMessages: planForm.enableBulkMessages,
+      enableChannels: planForm.enableChannels,
+      enableWorkflows: planForm.enableWorkflows,
+      enablePhonebooks: planForm.enablePhonebooks,
+    });
     
     // Validate required numeric fields
     const price = planForm.price ? parseFloat(planForm.price) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
     
-    // If message limits checkbox is UNCHECKED, force unlimited (-1) and skip ALL validation
-    let dailyMessagesLimit: number;
-    let bulkMessagesLimit: number;
-    
-    if (!planForm.showMessageLimits) {
-      // Toggle is OFF - force unlimited, no validation needed
-      dailyMessagesLimit = -1;
-      bulkMessagesLimit = -1;
-      console.log("[PlanSave] Message limits disabled - forcing unlimited");
-    } else {
-      // Toggle is ON - parse values and validate
-      dailyMessagesLimit = parseInt(planForm.dailyMessagesLimit);
-      bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
-      console.log("[PlanSave] Message limits enabled - validating:", { dailyMessagesLimit, bulkMessagesLimit });
-    }
-    
-    const channelsLimit = parseInt(planForm.channelsLimit);
-    const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : -1; // Default to unlimited
-    const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : -1; // Default to unlimited
+    // Each limit: if checkbox unchecked, force -1 (unlimited/disabled), otherwise parse value
+    const dailyMessagesLimit = planForm.enableDailyMessages ? parseInt(planForm.dailyMessagesLimit) : -1;
+    const bulkMessagesLimit = planForm.enableBulkMessages ? parseInt(planForm.bulkMessagesLimit) : -1;
+    const channelsLimit = planForm.enableChannels ? parseInt(planForm.channelsLimit) : -1;
+    const chatbotsLimit = planForm.enableWorkflows ? parseInt(planForm.chatbotsLimit) : -1;
+    const phonebookLimit = planForm.enablePhonebooks ? parseInt(planForm.phonebookLimit) : -1;
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
@@ -1992,30 +2002,36 @@ export default function Admin() {
       }
     }
     
-    // ONLY validate message limits if the checkbox is CHECKED
-    if (planForm.showMessageLimits) {
-      console.log("[PlanSave] Validating message limits...");
+    // Validate each limit ONLY if its checkbox is CHECKED
+    if (planForm.enableDailyMessages) {
       if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
-        console.log("[PlanSave] Daily messages limit validation FAILED:", dailyMessagesLimit);
         toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
         return;
       }
+    }
+    if (planForm.enableBulkMessages) {
       if (isNaN(bulkMessagesLimit) || (bulkMessagesLimit <= 0 && bulkMessagesLimit !== -1)) {
-        console.log("[PlanSave] Bulk messages limit validation FAILED:", bulkMessagesLimit);
         toast({ title: "Validation error", description: "Valid daily bulk messages limit is required (use -1 for unlimited)", variant: "destructive" });
         return;
       }
-      console.log("[PlanSave] Message limits validation PASSED");
-    } else {
-      console.log("[PlanSave] Skipping message limits validation (toggle is OFF)");
     }
-    if (isNaN(channelsLimit) || channelsLimit <= 0) {
-      toast({ title: "Validation error", description: "Valid channels limit is required", variant: "destructive" });
-      return;
+    if (planForm.enableChannels) {
+      if (isNaN(channelsLimit) || (channelsLimit <= 0 && channelsLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid channels limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
     }
-    if (planForm.chatbotsLimit && (isNaN(chatbotsLimit!) || chatbotsLimit! <= 0)) {
-      toast({ title: "Validation error", description: "Valid workflow (chatbot) limit is required", variant: "destructive" });
-      return;
+    if (planForm.enableWorkflows) {
+      if (isNaN(chatbotsLimit) || (chatbotsLimit <= 0 && chatbotsLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid workflow (chatbot) limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
+    }
+    if (planForm.enablePhonebooks) {
+      if (isNaN(phonebookLimit) || (phonebookLimit <= 0 && phonebookLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid phonebook limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
     }
 
     const maxImageSizeMBRaw = parseInt(planForm.maxImageSizeMB);
@@ -3162,80 +3178,133 @@ export default function Admin() {
 
             {/* Limits */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Usage Limits</h3>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="show-message-limits"
-                    checked={planForm.showMessageLimits}
-                    onCheckedChange={(checked) => setPlanForm({ ...planForm, showMessageLimits: checked as boolean })}
-                    data-testid="checkbox-show-message-limits"
-                  />
-                  <Label htmlFor="show-message-limits" className="text-xs cursor-pointer">
-                    Enable Message Limits
-                  </Label>
-                </div>
-              </div>
+              <h3 className="text-sm font-semibold">Usage Limits</h3>
+              <p className="text-xs text-muted-foreground">Check each option to enable it in the plan. Unchecked options will be disabled.</p>
+              
               <div className="grid grid-cols-2 gap-4">
-                {/* Only show message limits if toggle is enabled */}
-                {planForm.showMessageLimits && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="plan-daily-messages">Daily Single Messages Limit</Label>
-                      <Input
-                        id="plan-daily-messages"
-                        type="number"
-                        placeholder="1000"
-                        value={planForm.dailyMessagesLimit}
-                        onChange={(e) => setPlanForm({ ...planForm, dailyMessagesLimit: e.target.value })}
-                        data-testid="input-plan-daily-messages"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="plan-bulk-messages">Daily Bulk Messages Limit</Label>
-                      <Input
-                        id="plan-bulk-messages"
-                        type="number"
-                        placeholder="5000"
-                        value={planForm.bulkMessagesLimit}
-                        onChange={(e) => setPlanForm({ ...planForm, bulkMessagesLimit: e.target.value })}
-                        data-testid="input-plan-bulk-messages"
-                      />
-                    </div>
-                  </>
-                )}
+                {/* Daily Single Messages Limit */}
                 <div className="space-y-2">
-                  <Label htmlFor="plan-channels">Channels Limit</Label>
-                  <Input
-                    id="plan-channels"
-                    type="number"
-                    placeholder="5"
-                    value={planForm.channelsLimit}
-                    onChange={(e) => setPlanForm({ ...planForm, channelsLimit: e.target.value })}
-                    data-testid="input-plan-channels"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-daily-messages"
+                      checked={planForm.enableDailyMessages}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableDailyMessages: checked as boolean })}
+                      data-testid="checkbox-enable-daily-messages"
+                    />
+                    <Label htmlFor="enable-daily-messages" className="cursor-pointer">
+                      Daily Single Messages Limit
+                    </Label>
+                  </div>
+                  {planForm.enableDailyMessages && (
+                    <Input
+                      id="plan-daily-messages"
+                      type="number"
+                      placeholder="1000"
+                      value={planForm.dailyMessagesLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, dailyMessagesLimit: e.target.value })}
+                      data-testid="input-plan-daily-messages"
+                    />
+                  )}
                 </div>
+
+                {/* Daily Bulk Messages Limit */}
                 <div className="space-y-2">
-                  <Label htmlFor="plan-chatbots">Workflow (Chatbot) Limit</Label>
-                  <Input
-                    id="plan-chatbots"
-                    type="number"
-                    placeholder="10"
-                    value={planForm.chatbotsLimit}
-                    onChange={(e) => setPlanForm({ ...planForm, chatbotsLimit: e.target.value })}
-                    data-testid="input-plan-chatbots"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-bulk-messages"
+                      checked={planForm.enableBulkMessages}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableBulkMessages: checked as boolean })}
+                      data-testid="checkbox-enable-bulk-messages"
+                    />
+                    <Label htmlFor="enable-bulk-messages" className="cursor-pointer">
+                      Daily Bulk Messages Limit
+                    </Label>
+                  </div>
+                  {planForm.enableBulkMessages && (
+                    <Input
+                      id="plan-bulk-messages"
+                      type="number"
+                      placeholder="5000"
+                      value={planForm.bulkMessagesLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, bulkMessagesLimit: e.target.value })}
+                      data-testid="input-plan-bulk-messages"
+                    />
+                  )}
                 </div>
+
+                {/* Channels Limit */}
                 <div className="space-y-2">
-                  <Label htmlFor="plan-phonebook">Phonebook Limit</Label>
-                  <Input
-                    id="plan-phonebook"
-                    type="number"
-                    placeholder="1000"
-                    value={planForm.phonebookLimit}
-                    onChange={(e) => setPlanForm({ ...planForm, phonebookLimit: e.target.value })}
-                    data-testid="input-plan-phonebook"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-channels"
+                      checked={planForm.enableChannels}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableChannels: checked as boolean })}
+                      data-testid="checkbox-enable-channels"
+                    />
+                    <Label htmlFor="enable-channels" className="cursor-pointer">
+                      Channels Limit
+                    </Label>
+                  </div>
+                  {planForm.enableChannels && (
+                    <Input
+                      id="plan-channels"
+                      type="number"
+                      placeholder="5"
+                      value={planForm.channelsLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, channelsLimit: e.target.value })}
+                      data-testid="input-plan-channels"
+                    />
+                  )}
+                </div>
+
+                {/* Workflow (Chatbot) Limit */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-workflows"
+                      checked={planForm.enableWorkflows}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableWorkflows: checked as boolean })}
+                      data-testid="checkbox-enable-workflows"
+                    />
+                    <Label htmlFor="enable-workflows" className="cursor-pointer">
+                      Workflow (Chatbot) Limit
+                    </Label>
+                  </div>
+                  {planForm.enableWorkflows && (
+                    <Input
+                      id="plan-chatbots"
+                      type="number"
+                      placeholder="10"
+                      value={planForm.chatbotsLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, chatbotsLimit: e.target.value })}
+                      data-testid="input-plan-chatbots"
+                    />
+                  )}
+                </div>
+
+                {/* Phonebook Limit */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-phonebooks"
+                      checked={planForm.enablePhonebooks}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enablePhonebooks: checked as boolean })}
+                      data-testid="checkbox-enable-phonebooks"
+                    />
+                    <Label htmlFor="enable-phonebooks" className="cursor-pointer">
+                      Phonebook Limit
+                    </Label>
+                  </div>
+                  {planForm.enablePhonebooks && (
+                    <Input
+                      id="plan-phonebook"
+                      type="number"
+                      placeholder="1000"
+                      value={planForm.phonebookLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, phonebookLimit: e.target.value })}
+                      data-testid="input-plan-phonebook"
+                    />
+                  )}
                 </div>
               </div>
               
@@ -3518,9 +3587,11 @@ export default function Admin() {
               disabled={
                 !planForm.name ||
                 (planForm.requestType === "PAID" && !planForm.price) ||
-                (planForm.showMessageLimits && !planForm.dailyMessagesLimit) ||
-                (planForm.showMessageLimits && !planForm.bulkMessagesLimit) ||
-                !planForm.channelsLimit ||
+                (planForm.enableDailyMessages && !planForm.dailyMessagesLimit) ||
+                (planForm.enableBulkMessages && !planForm.bulkMessagesLimit) ||
+                (planForm.enableChannels && !planForm.channelsLimit) ||
+                (planForm.enableWorkflows && !planForm.chatbotsLimit) ||
+                (planForm.enablePhonebooks && !planForm.phonebookLimit) ||
                 createPlanMutation.isPending ||
                 updatePlanMutation.isPending
               }
