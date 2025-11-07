@@ -1442,6 +1442,7 @@ export default function Admin() {
       pricing: true,
       channels: false,
       send: false,
+      bulk: false,
       templates: false,
       workflows: false,
       outbox: false,
@@ -1859,6 +1860,7 @@ export default function Admin() {
         pricing: true,
         channels: false,
         send: false,
+        bulk: false,
         templates: false,
         workflows: false,
         outbox: false,
@@ -1878,12 +1880,13 @@ export default function Admin() {
 
   const openEditPlanDialog = (plan: Plan) => {
     setEditingPlan(plan);
-    // Merge bulkLogs default for existing plans that don't have it
+    // Merge defaults for existing plans that don't have all fields
     const pageAccessWithDefaults = {
       dashboard: true,
       pricing: true,
       channels: false,
       send: false,
+      bulk: false,
       templates: false,
       workflows: false,
       outbox: false,
@@ -1927,11 +1930,13 @@ export default function Admin() {
     // Validate required numeric fields
     const price = planForm.price ? parseFloat(planForm.price) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
-    const dailyMessagesLimit = parseInt(planForm.dailyMessagesLimit);
-    const bulkMessagesLimit = parseInt(planForm.bulkMessagesLimit);
+    // For workflow-only plans (no Send/Bulk access), automatically set unlimited message limits
+    const isMessagingPlan = planForm.pageAccess.send || planForm.pageAccess.bulk;
+    const dailyMessagesLimit = isMessagingPlan ? parseInt(planForm.dailyMessagesLimit) : -1;
+    const bulkMessagesLimit = isMessagingPlan ? parseInt(planForm.bulkMessagesLimit) : -1;
     const channelsLimit = parseInt(planForm.channelsLimit);
-    const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : null;
-    const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : null;
+    const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : -1; // Default to unlimited
+    const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : -1; // Default to unlimited
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
@@ -1966,13 +1971,16 @@ export default function Admin() {
       }
     }
     
-    if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
-      toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
-      return;
-    }
-    if (isNaN(bulkMessagesLimit) || (bulkMessagesLimit <= 0 && bulkMessagesLimit !== -1)) {
-      toast({ title: "Validation error", description: "Valid daily bulk messages limit is required (use -1 for unlimited)", variant: "destructive" });
-      return;
+    // Only validate message limits if this is a messaging plan
+    if (isMessagingPlan) {
+      if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
+      if (isNaN(bulkMessagesLimit) || (bulkMessagesLimit <= 0 && bulkMessagesLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid daily bulk messages limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
     }
     if (isNaN(channelsLimit) || channelsLimit <= 0) {
       toast({ title: "Validation error", description: "Valid channels limit is required", variant: "destructive" });
@@ -3129,28 +3137,33 @@ export default function Admin() {
             <div className="space-y-4">
               <h3 className="text-sm font-semibold">Usage Limits</h3>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="plan-daily-messages">Daily Single Messages Limit</Label>
-                  <Input
-                    id="plan-daily-messages"
-                    type="number"
-                    placeholder="1000"
-                    value={planForm.dailyMessagesLimit}
-                    onChange={(e) => setPlanForm({ ...planForm, dailyMessagesLimit: e.target.value })}
-                    data-testid="input-plan-daily-messages"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="plan-bulk-messages">Daily Bulk Messages Limit</Label>
-                  <Input
-                    id="plan-bulk-messages"
-                    type="number"
-                    placeholder="5000"
-                    value={planForm.bulkMessagesLimit}
-                    onChange={(e) => setPlanForm({ ...planForm, bulkMessagesLimit: e.target.value })}
-                    data-testid="input-plan-bulk-messages"
-                  />
-                </div>
+                {/* Only show message limits if Send Messages or Bulk is enabled */}
+                {(planForm.pageAccess.send || planForm.pageAccess.bulk) && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="plan-daily-messages">Daily Single Messages Limit</Label>
+                      <Input
+                        id="plan-daily-messages"
+                        type="number"
+                        placeholder="1000"
+                        value={planForm.dailyMessagesLimit}
+                        onChange={(e) => setPlanForm({ ...planForm, dailyMessagesLimit: e.target.value })}
+                        data-testid="input-plan-daily-messages"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="plan-bulk-messages">Daily Bulk Messages Limit</Label>
+                      <Input
+                        id="plan-bulk-messages"
+                        type="number"
+                        placeholder="5000"
+                        value={planForm.bulkMessagesLimit}
+                        onChange={(e) => setPlanForm({ ...planForm, bulkMessagesLimit: e.target.value })}
+                        data-testid="input-plan-bulk-messages"
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="plan-channels">Channels Limit</Label>
                   <Input
