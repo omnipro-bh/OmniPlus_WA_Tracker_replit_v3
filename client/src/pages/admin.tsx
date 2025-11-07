@@ -3518,8 +3518,8 @@ export default function Admin() {
               disabled={
                 !planForm.name ||
                 (planForm.requestType === "PAID" && !planForm.price) ||
-                !planForm.dailyMessagesLimit ||
-                !planForm.bulkMessagesLimit ||
+                (planForm.showMessageLimits && !planForm.dailyMessagesLimit) ||
+                (planForm.showMessageLimits && !planForm.bulkMessagesLimit) ||
                 !planForm.channelsLimit ||
                 createPlanMutation.isPending ||
                 updatePlanMutation.isPending
