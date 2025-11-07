@@ -32,10 +32,12 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 // Helper function to calculate days from billing period
-function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL"): number {
+function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"): number {
   switch (billingPeriod) {
     case "MONTHLY":
       return 30;
+    case "QUARTERLY":
+      return 90;
     case "SEMI_ANNUAL":
       return 180;
     case "ANNUAL":
@@ -527,7 +529,9 @@ export function registerRoutes(app: Express) {
 
       // Calculate days based on duration type
       let days = getDaysFromBillingPeriod(plan.billingPeriod);
-      if (durationType === "SEMI_ANNUAL") {
+      if (durationType === "QUARTERLY") {
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 3;
+      } else if (durationType === "SEMI_ANNUAL") {
         days = getDaysFromBillingPeriod(plan.billingPeriod) * 6;
       } else if (durationType === "ANNUAL") {
         days = getDaysFromBillingPeriod(plan.billingPeriod) * 12;
@@ -576,7 +580,7 @@ export function registerRoutes(app: Express) {
       // Validate request body
       const validationResult = z.object({
         planId: z.number(),
-        durationType: z.enum(["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]),
+        durationType: z.enum(["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]),
         orderId: z.string().min(1),
         termsVersion: z.string().min(1, "Terms acceptance is required"),
       }).safeParse(req.body);
@@ -613,13 +617,17 @@ export function registerRoutes(app: Express) {
       let discountMultiplier = 1;
       let days = getDaysFromBillingPeriod(plan.billingPeriod);
       
-      if (durationType === "SEMI_ANNUAL") {
+      if (durationType === "QUARTERLY") {
+        durationMultiplier = 3;
+        discountMultiplier = 1 - ((plan.quarterlyDiscountPercent || 0) / 100); // Use plan's quarterly discount
+        days = getDaysFromBillingPeriod(plan.billingPeriod) * 3;
+      } else if (durationType === "SEMI_ANNUAL") {
         durationMultiplier = 6;
-        discountMultiplier = 0.95; // 5% discount
+        discountMultiplier = 1 - ((plan.semiAnnualDiscountPercent || 5) / 100); // Use plan's semi-annual discount
         days = getDaysFromBillingPeriod(plan.billingPeriod) * 6;
       } else if (durationType === "ANNUAL") {
         durationMultiplier = 12;
-        discountMultiplier = 0.9; // 10% discount
+        discountMultiplier = 1 - ((plan.annualDiscountPercent || 10) / 100); // Use plan's annual discount
         days = getDaysFromBillingPeriod(plan.billingPeriod) * 12;
       }
 

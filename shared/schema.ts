@@ -10,8 +10,8 @@ export const userStatusEnum = pgEnum("user_status", ["active", "suspended", "exp
 export const channelStatusEnum = pgEnum("channel_status", ["PENDING", "ACTIVE", "PAUSED"]);
 export const authStatusEnum = pgEnum("auth_status", ["PENDING", "AUTHORIZED"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["PENDING", "ACTIVE", "EXPIRED", "CANCELLED", "PENDING_OFFLINE", "REJECTED_OFFLINE"]);
-export const durationTypeEnum = pgEnum("duration_type", ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]);
-export const billingPeriodEnum = pgEnum("billing_period", ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]);
+export const durationTypeEnum = pgEnum("duration_type", ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
+export const billingPeriodEnum = pgEnum("billing_period", ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
 export const requestTypeEnum = pgEnum("request_type", ["PAID", "REQUEST_QUOTE", "BOOK_DEMO"]);
 export const offlinePaymentStatusEnum = pgEnum("offline_payment_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const jobTypeEnum = pgEnum("job_type", ["SINGLE", "BULK"]);
@@ -100,6 +100,12 @@ export const plans = pgTable("plans", {
     phonebooks: false,
   }),
   features: jsonb("features").notNull().default([]), // Array of feature strings
+  // Pricing Controls
+  quarterlyDiscountPercent: integer("quarterly_discount_percent").notNull().default(0), // 0-100
+  semiAnnualDiscountPercent: integer("semi_annual_discount_percent").notNull().default(5), // 0-100
+  annualDiscountPercent: integer("annual_discount_percent").notNull().default(10), // 0-100
+  enabledBillingPeriods: jsonb("enabled_billing_periods").notNull().default(["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]), // Which billing periods to show
+  isPopular: boolean("is_popular").notNull().default(false), // Show POPULAR badge
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
