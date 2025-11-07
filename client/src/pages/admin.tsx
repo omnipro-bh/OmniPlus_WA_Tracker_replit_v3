@@ -1422,13 +1422,18 @@ export default function Admin() {
     name: "",
     currency: "USD",
     price: "",
-    billingPeriod: "MONTHLY" as "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL",
+    billingPeriod: "MONTHLY" as "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL",
     requestType: "PAID" as "PAID" | "REQUEST_QUOTE" | "BOOK_DEMO",
     paymentMethods: [] as string[], // ["paypal", "offline"]
     paypalPlanId: "",
     published: false,
     publishedOnHomepage: false,
     sortOrder: "",
+    quarterlyDiscountPercent: "0",
+    semiAnnualDiscountPercent: "5",
+    annualDiscountPercent: "10",
+    enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"] as string[],
+    isPopular: false,
     // Individual checkboxes for each limit
     enableDailyMessages: true,
     enableBulkMessages: true,
@@ -1853,6 +1858,11 @@ export default function Admin() {
       published: false,
       publishedOnHomepage: false,
       sortOrder: "",
+      quarterlyDiscountPercent: "0",
+      semiAnnualDiscountPercent: "5",
+      annualDiscountPercent: "10",
+      enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"],
+      isPopular: false,
       enableDailyMessages: true,
       enableBulkMessages: true,
       enableChannels: true,
@@ -1918,6 +1928,11 @@ export default function Admin() {
     const enableWorkflows = plan.chatbotsLimit !== -1;
     const enablePhonebooks = (plan as any).phonebookLimit !== -1;
     
+    // Extract enabled billing periods from plan or use defaults
+    const enabledBillingPeriods = Array.isArray((plan as any).enabledBillingPeriods)
+      ? (plan as any).enabledBillingPeriods
+      : ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"];
+    
     setPlanForm({
       name: plan.name,
       currency: plan.currency,
@@ -1929,6 +1944,11 @@ export default function Admin() {
       published: plan.published,
       publishedOnHomepage: (plan as any).publishedOnHomepage || false,
       sortOrder: String(plan.sortOrder),
+      quarterlyDiscountPercent: String((plan as any).quarterlyDiscountPercent ?? 0),
+      semiAnnualDiscountPercent: String((plan as any).semiAnnualDiscountPercent ?? 5),
+      annualDiscountPercent: String((plan as any).annualDiscountPercent ?? 10),
+      enabledBillingPeriods: enabledBillingPeriods,
+      isPopular: (plan as any).isPopular || false,
       enableDailyMessages,
       enableBulkMessages,
       enableChannels,
@@ -2041,6 +2061,15 @@ export default function Admin() {
     const maxVideoSizeMB = Number.isNaN(maxVideoSizeMBRaw) ? 16 : maxVideoSizeMBRaw;
     const maxDocumentSizeMB = Number.isNaN(maxDocumentSizeMBRaw) ? 10 : maxDocumentSizeMBRaw;
 
+    // Parse discount percentages - preserve 0% instead of defaulting to legacy values
+    const quarterlyDiscountRaw = parseInt(planForm.quarterlyDiscountPercent);
+    const semiAnnualDiscountRaw = parseInt(planForm.semiAnnualDiscountPercent);
+    const annualDiscountRaw = parseInt(planForm.annualDiscountPercent);
+    
+    const quarterlyDiscountPercent = Number.isNaN(quarterlyDiscountRaw) ? 0 : Math.max(0, Math.min(100, quarterlyDiscountRaw));
+    const semiAnnualDiscountPercent = Number.isNaN(semiAnnualDiscountRaw) ? 5 : Math.max(0, Math.min(100, semiAnnualDiscountRaw));
+    const annualDiscountPercent = Number.isNaN(annualDiscountRaw) ? 10 : Math.max(0, Math.min(100, annualDiscountRaw));
+
     const planData = {
       name: planForm.name.trim(),
       currency: planForm.currency,
@@ -2052,6 +2081,11 @@ export default function Admin() {
       published: planForm.published,
       publishedOnHomepage: planForm.publishedOnHomepage,
       sortOrder,
+      quarterlyDiscountPercent,
+      semiAnnualDiscountPercent,
+      annualDiscountPercent,
+      enabledBillingPeriods: planForm.enabledBillingPeriods,
+      isPopular: planForm.isPopular,
       dailyMessagesLimit,
       bulkMessagesLimit,
       channelsLimit,
@@ -3052,6 +3086,7 @@ export default function Admin() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="MONTHLY">Monthly</SelectItem>
+                      <SelectItem value="QUARTERLY">Quarterly (3 months)</SelectItem>
                       <SelectItem value="SEMI_ANNUAL">Semi-Annual (6 months)</SelectItem>
                       <SelectItem value="ANNUAL">Annual</SelectItem>
                     </SelectContent>
@@ -3173,6 +3208,168 @@ export default function Admin() {
                     <Label htmlFor="plan-published-homepage">Published on Homepage</Label>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Pricing Controls */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Pricing Controls</h3>
+              
+              {/* Discount Percentages */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quarterly-discount">Quarterly Discount %</Label>
+                  <Input
+                    id="quarterly-discount"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    value={planForm.quarterlyDiscountPercent}
+                    onChange={(e) => setPlanForm({ ...planForm, quarterlyDiscountPercent: e.target.value })}
+                    data-testid="input-quarterly-discount"
+                  />
+                  <p className="text-xs text-muted-foreground">3 months (0-100)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="semi-annual-discount">Semi-Annual Discount %</Label>
+                  <Input
+                    id="semi-annual-discount"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="5"
+                    value={planForm.semiAnnualDiscountPercent}
+                    onChange={(e) => setPlanForm({ ...planForm, semiAnnualDiscountPercent: e.target.value })}
+                    data-testid="input-semi-annual-discount"
+                  />
+                  <p className="text-xs text-muted-foreground">6 months (0-100)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="annual-discount">Annual Discount %</Label>
+                  <Input
+                    id="annual-discount"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="10"
+                    value={planForm.annualDiscountPercent}
+                    onChange={(e) => setPlanForm({ ...planForm, annualDiscountPercent: e.target.value })}
+                    data-testid="input-annual-discount"
+                  />
+                  <p className="text-xs text-muted-foreground">12 months (0-100)</p>
+                </div>
+              </div>
+
+              {/* Enabled Billing Periods */}
+              <div className="space-y-3">
+                <Label>Enabled Billing Periods</Label>
+                <p className="text-xs text-muted-foreground">Select which billing periods to show on pricing page</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="billing-monthly"
+                      checked={planForm.enabledBillingPeriods.includes("MONTHLY")}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: [...planForm.enabledBillingPeriods, "MONTHLY"] 
+                          });
+                        } else {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: planForm.enabledBillingPeriods.filter(p => p !== "MONTHLY") 
+                          });
+                        }
+                      }}
+                      data-testid="checkbox-billing-monthly"
+                    />
+                    <Label htmlFor="billing-monthly" className="text-sm font-normal cursor-pointer">
+                      Monthly
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="billing-quarterly"
+                      checked={planForm.enabledBillingPeriods.includes("QUARTERLY")}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: [...planForm.enabledBillingPeriods, "QUARTERLY"] 
+                          });
+                        } else {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: planForm.enabledBillingPeriods.filter(p => p !== "QUARTERLY") 
+                          });
+                        }
+                      }}
+                      data-testid="checkbox-billing-quarterly"
+                    />
+                    <Label htmlFor="billing-quarterly" className="text-sm font-normal cursor-pointer">
+                      Quarterly
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="billing-semi-annual"
+                      checked={planForm.enabledBillingPeriods.includes("SEMI_ANNUAL")}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: [...planForm.enabledBillingPeriods, "SEMI_ANNUAL"] 
+                          });
+                        } else {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: planForm.enabledBillingPeriods.filter(p => p !== "SEMI_ANNUAL") 
+                          });
+                        }
+                      }}
+                      data-testid="checkbox-billing-semi-annual"
+                    />
+                    <Label htmlFor="billing-semi-annual" className="text-sm font-normal cursor-pointer">
+                      Semi-Annual
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="billing-annual"
+                      checked={planForm.enabledBillingPeriods.includes("ANNUAL")}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: [...planForm.enabledBillingPeriods, "ANNUAL"] 
+                          });
+                        } else {
+                          setPlanForm({ 
+                            ...planForm, 
+                            enabledBillingPeriods: planForm.enabledBillingPeriods.filter(p => p !== "ANNUAL") 
+                          });
+                        }
+                      }}
+                      data-testid="checkbox-billing-annual"
+                    />
+                    <Label htmlFor="billing-annual" className="text-sm font-normal cursor-pointer">
+                      Annual
+                    </Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Popular Badge Toggle */}
+              <div className="space-y-2 flex items-center gap-3">
+                <Switch
+                  id="plan-is-popular"
+                  checked={planForm.isPopular}
+                  onCheckedChange={(checked) => setPlanForm({ ...planForm, isPopular: checked })}
+                  data-testid="switch-plan-is-popular"
+                />
+                <Label htmlFor="plan-is-popular">Show POPULAR badge on pricing page</Label>
               </div>
             </div>
 

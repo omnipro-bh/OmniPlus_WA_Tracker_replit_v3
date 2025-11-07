@@ -32,7 +32,7 @@ const getCurrencySymbol = (currency: string) => {
 
 export default function Pricing() {
   const { toast } = useToast();
-  const [durationType, setDurationType] = useState<"MONTHLY" | "SEMI_ANNUAL" | "ANNUAL">("MONTHLY");
+  const [durationType, setDurationType] = useState<"MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL">("MONTHLY");
   const [isOfflineDialogOpen, setIsOfflineDialogOpen] = useState(false);
   const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
@@ -69,6 +69,13 @@ export default function Pricing() {
 
   const { data: termsDocuments = [] } = useQuery<any[]>({
     queryKey: ["/api/terms"],
+  });
+
+  // Calculate which billing periods are enabled across all plans (union)
+  const enabledPeriods = new Set<string>();
+  plans.forEach((plan) => {
+    const planPeriods = (plan as any).enabledBillingPeriods || ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"];
+    planPeriods.forEach((period: string) => enabledPeriods.add(period));
   });
 
   const validateCouponMutation = useMutation({
@@ -176,9 +183,20 @@ export default function Pricing() {
     },
   });
 
-  const getDiscountedPrice = (price: number) => {
-    if (durationType === "SEMI_ANNUAL") return price * 6 * 0.95;
-    if (durationType === "ANNUAL") return price * 12 * 0.9;
+  const getDiscountedPrice = (price: number, plan: Plan) => {
+    const planData = plan as any; // Type cast to access new fields
+    if (durationType === "QUARTERLY") {
+      const discount = 1 - ((planData.quarterlyDiscountPercent || 0) / 100);
+      return price * 3 * discount;
+    }
+    if (durationType === "SEMI_ANNUAL") {
+      const discount = 1 - ((planData.semiAnnualDiscountPercent || 5) / 100);
+      return price * 6 * discount;
+    }
+    if (durationType === "ANNUAL") {
+      const discount = 1 - ((planData.annualDiscountPercent || 10) / 100);
+      return price * 12 * discount;
+    }
     return price;
   };
 
@@ -186,7 +204,7 @@ export default function Pricing() {
     setSelectedPlan(plan);
     setOfflinePayment({
       ...offlinePayment,
-      amount: (getDiscountedPrice(plan.price || 0) / 100).toFixed(2),
+      amount: (getDiscountedPrice(plan.price || 0, plan) / 100).toFixed(2),
       currency: plan.currency,
       couponCode: "",
     });
@@ -213,45 +231,59 @@ export default function Pricing() {
       {/* Duration Toggle */}
       <div className="flex justify-center">
         <div className="inline-flex rounded-lg border border-border p-1">
-          <Button
-            variant={durationType === "MONTHLY" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setDurationType("MONTHLY")}
-            data-testid="button-monthly"
-          >
-            Monthly
-          </Button>
-          <Button
-            variant={durationType === "SEMI_ANNUAL" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setDurationType("SEMI_ANNUAL")}
-            data-testid="button-semi-annual"
-          >
-            Semi-Annual
-            <span className="ml-2 rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
-              -5%
-            </span>
-          </Button>
-          <Button
-            variant={durationType === "ANNUAL" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setDurationType("ANNUAL")}
-            data-testid="button-annual"
-          >
-            Annual
-            <span className="ml-2 rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
-              -10%
-            </span>
-          </Button>
+          {enabledPeriods.has("MONTHLY") && (
+            <Button
+              variant={durationType === "MONTHLY" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setDurationType("MONTHLY")}
+              data-testid="button-monthly"
+            >
+              Monthly
+            </Button>
+          )}
+          {enabledPeriods.has("QUARTERLY") && (
+            <Button
+              variant={durationType === "QUARTERLY" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setDurationType("QUARTERLY")}
+              data-testid="button-quarterly"
+            >
+              Quarterly
+            </Button>
+          )}
+          {enabledPeriods.has("SEMI_ANNUAL") && (
+            <Button
+              variant={durationType === "SEMI_ANNUAL" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setDurationType("SEMI_ANNUAL")}
+              data-testid="button-semi-annual"
+            >
+              Semi-Annual
+            </Button>
+          )}
+          {enabledPeriods.has("ANNUAL") && (
+            <Button
+              variant={durationType === "ANNUAL" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setDurationType("ANNUAL")}
+              data-testid="button-annual"
+            >
+              Annual
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Plans Grid */}
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
         {plans.filter(plan => plan.published).map((plan, index) => {
-          const isPopular = index === 1;
-          const discountedPrice = getDiscountedPrice(plan.price || 0);
+          const isPopular = (plan as any).isPopular || false;
+          const discountedPrice = getDiscountedPrice(plan.price || 0, plan);
           const features = Array.isArray(plan.features) ? plan.features : [];
+          
+          // Check if this plan supports the currently selected billing period
+          const planEnabledPeriods = (plan as any).enabledBillingPeriods || ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"];
+          const isPeriodAvailable = planEnabledPeriods.includes(durationType);
 
           return (
             <Card
@@ -273,7 +305,7 @@ export default function Pricing() {
                     <>
                       <span className="text-4xl font-bold">{getCurrencySymbol(plan.currency)}{(discountedPrice / 100).toFixed(0)}</span>
                       <span className="text-muted-foreground">/
-                        {durationType === "MONTHLY" ? "month" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
+                        {durationType === "MONTHLY" ? "month" : durationType === "QUARTERLY" ? "3 months" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
                         <div className="text-sm text-muted-foreground line-through">
@@ -343,28 +375,36 @@ export default function Pricing() {
               <CardFooter className="flex flex-col gap-2">
                 {plan.requestType === "PAID" && (
                   <>
-                    {/* Only show PayPal button if PayPal is enabled for this plan */}
-                    {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("paypal") && (
-                      <Button
-                        variant={isPopular ? "default" : "outline"}
-                        className="w-full"
-                        onClick={() => handlePayPalClick(plan)}
-                        data-testid={`button-subscribe-${plan.name.toLowerCase()}`}
-                      >
-                        Subscribe with PayPal
-                      </Button>
-                    )}
-                    {/* Only show Offline Payment button if offline is enabled for this plan */}
-                    {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("offline") && (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => handleOfflinePayment(plan)}
-                        data-testid={`button-offline-${plan.name.toLowerCase()}`}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Offline Payment
-                      </Button>
+                    {isPeriodAvailable ? (
+                      <>
+                        {/* Only show PayPal button if PayPal is enabled for this plan */}
+                        {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("paypal") && (
+                          <Button
+                            variant={isPopular ? "default" : "outline"}
+                            className="w-full"
+                            onClick={() => handlePayPalClick(plan)}
+                            data-testid={`button-subscribe-${plan.name.toLowerCase()}`}
+                          >
+                            Subscribe with PayPal
+                          </Button>
+                        )}
+                        {/* Only show Offline Payment button if offline is enabled for this plan */}
+                        {Array.isArray((plan as any).paymentMethods) && (plan as any).paymentMethods.includes("offline") && (
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => handleOfflinePayment(plan)}
+                            data-testid={`button-offline-${plan.name.toLowerCase()}`}
+                          >
+                            <Upload className="h-4 w-4 mr-2" />
+                            Offline Payment
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-sm text-center text-muted-foreground py-2">
+                        Not available for {durationType === "MONTHLY" ? "monthly" : durationType === "QUARTERLY" ? "quarterly" : durationType === "SEMI_ANNUAL" ? "semi-annual" : "annual"} billing
+                      </div>
                     )}
                   </>
                 )}
@@ -827,7 +867,7 @@ export default function Pricing() {
               <PayPalSubscribeButton
                 planId={selectedPlan.id}
                 planName={selectedPlan.name}
-                amount={(getDiscountedPrice(selectedPlan.price || 0) / 100).toFixed(2)}
+                amount={(getDiscountedPrice(selectedPlan.price || 0, selectedPlan) / 100).toFixed(2)}
                 currency={selectedPlan.currency}
                 durationType={durationType}
                 isPopular={false}

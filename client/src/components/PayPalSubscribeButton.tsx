@@ -9,7 +9,7 @@ interface PayPalSubscribeButtonProps {
   planName: string;
   amount: string;
   currency: string;
-  durationType: "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
+  durationType: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL";
   isPopular?: boolean;
   disabled?: boolean;
   termsVersion?: string;
