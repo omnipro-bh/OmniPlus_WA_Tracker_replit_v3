@@ -526,14 +526,16 @@ export default function Landing() {
             </div>
 
             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-              {plans.map((plan: any, index: number) => (
+              {plans.map((plan: any, index: number) => {
+                const isPopular = plan.isPopular || false;
+                return (
                 <Card
                   key={plan.id}
                   className={`relative flex flex-col ${
-                    index === 1 ? "border-primary shadow-lg" : ""
+                    isPopular ? "border-primary shadow-lg scale-105" : ""
                   }`}
                 >
-                  {index === 1 && (
+                  {isPopular && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                       <span className="rounded-full bg-primary px-4 py-1 text-xs font-semibold text-primary-foreground">
                         POPULAR
@@ -571,7 +573,7 @@ export default function Landing() {
                         <Link href="/signup" className="w-full">
                           <Button
                             className="w-full"
-                            variant={index === 1 ? "default" : "outline"}
+                            variant={isPopular ? "default" : "outline"}
                             data-testid={`button-plan-${plan.name.toLowerCase()}`}
                           >
                             Get Started
@@ -580,7 +582,7 @@ export default function Landing() {
                       ) : (
                         <Button
                           className="w-full"
-                          variant={index === 1 ? "default" : "outline"}
+                          variant={isPopular ? "default" : "outline"}
                           disabled
                           data-testid={`button-plan-${plan.name.toLowerCase()}`}
                         >
@@ -590,7 +592,7 @@ export default function Landing() {
                     ) : (
                       <Button
                         className="w-full"
-                        variant={index === 1 ? "default" : "outline"}
+                        variant={isPopular ? "default" : "outline"}
                         data-testid={`button-plan-${plan.name.toLowerCase()}`}
                         onClick={() => handlePlanAction(plan)}
                       >
@@ -599,7 +601,8 @@ export default function Landing() {
                     )}
                   </CardFooter>
                 </Card>
-              ))}
+              );
+              })}
             </div>
           </div>
         </section>
