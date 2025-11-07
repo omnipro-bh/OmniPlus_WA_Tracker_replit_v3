@@ -1429,6 +1429,7 @@ export default function Admin() {
     published: false,
     publishedOnHomepage: false,
     sortOrder: "",
+    showMessageLimits: true, // Toggle to show/hide message limit fields
     dailyMessagesLimit: "1000",
     bulkMessagesLimit: "5000",
     channelsLimit: "5",
@@ -1847,6 +1848,7 @@ export default function Admin() {
       published: false,
       publishedOnHomepage: false,
       sortOrder: "",
+      showMessageLimits: true, // Show by default
       dailyMessagesLimit: "",
       bulkMessagesLimit: "",
       channelsLimit: "",
@@ -1900,6 +1902,9 @@ export default function Admin() {
       ? (plan as any).paymentMethods 
       : [];
     
+    // Detect if message limits should be shown (show if either is not -1)
+    const showMessageLimits = plan.dailyMessagesLimit !== -1 || plan.bulkMessagesLimit !== -1;
+    
     setPlanForm({
       name: plan.name,
       currency: plan.currency,
@@ -1911,6 +1916,7 @@ export default function Admin() {
       published: plan.published,
       publishedOnHomepage: (plan as any).publishedOnHomepage || false,
       sortOrder: String(plan.sortOrder),
+      showMessageLimits: showMessageLimits,
       dailyMessagesLimit: String(plan.dailyMessagesLimit),
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
@@ -1930,10 +1936,9 @@ export default function Admin() {
     // Validate required numeric fields
     const price = planForm.price ? parseFloat(planForm.price) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
-    // For workflow-only plans (no Send/Bulk access), automatically set unlimited message limits
-    const isMessagingPlan = planForm.pageAccess.send || planForm.pageAccess.bulk;
-    const dailyMessagesLimit = isMessagingPlan ? parseInt(planForm.dailyMessagesLimit) : -1;
-    const bulkMessagesLimit = isMessagingPlan ? parseInt(planForm.bulkMessagesLimit) : -1;
+    // If message limits are hidden, automatically set to unlimited (-1)
+    const dailyMessagesLimit = planForm.showMessageLimits ? parseInt(planForm.dailyMessagesLimit) : -1;
+    const bulkMessagesLimit = planForm.showMessageLimits ? parseInt(planForm.bulkMessagesLimit) : -1;
     const channelsLimit = parseInt(planForm.channelsLimit);
     const chatbotsLimit = planForm.chatbotsLimit ? parseInt(planForm.chatbotsLimit) : -1; // Default to unlimited
     const phonebookLimit = planForm.phonebookLimit ? parseInt(planForm.phonebookLimit) : -1; // Default to unlimited
@@ -1971,8 +1976,8 @@ export default function Admin() {
       }
     }
     
-    // Only validate message limits if this is a messaging plan
-    if (isMessagingPlan) {
+    // Only validate message limits if they are shown
+    if (planForm.showMessageLimits) {
       if (isNaN(dailyMessagesLimit) || (dailyMessagesLimit <= 0 && dailyMessagesLimit !== -1)) {
         toast({ title: "Validation error", description: "Valid daily messages limit is required (use -1 for unlimited)", variant: "destructive" });
         return;
@@ -3135,10 +3140,23 @@ export default function Admin() {
 
             {/* Limits */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold">Usage Limits</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Usage Limits</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="show-message-limits"
+                    checked={planForm.showMessageLimits}
+                    onCheckedChange={(checked) => setPlanForm({ ...planForm, showMessageLimits: checked as boolean })}
+                    data-testid="checkbox-show-message-limits"
+                  />
+                  <Label htmlFor="show-message-limits" className="text-xs cursor-pointer">
+                    Enable Message Limits
+                  </Label>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                {/* Only show message limits if Send Messages or Bulk is enabled */}
-                {(planForm.pageAccess.send || planForm.pageAccess.bulk) && (
+                {/* Only show message limits if toggle is enabled */}
+                {planForm.showMessageLimits && (
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="plan-daily-messages">Daily Single Messages Limit</Label>
