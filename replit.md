@@ -53,3 +53,41 @@ Key entities include Users, Plans (with billing periods, payment methods, limits
 - **PayPal Web SDK:** For subscription payments.
 - **PostgreSQL (Neon):** Primary database.
 - **node-cron:** For scheduling daily tasks.
+
+## Recent Changes (November 7, 2025)
+
+### Comprehensive Pricing Controls System
+**Purpose:** Full admin control over pricing page configuration including quarterly billing, configurable discounts, popular plan badges, and per-plan billing period enforcement.
+
+**Features Implemented:**
+- **QUARTERLY Billing Period:** Added 90-day billing period throughout entire stack (schema, backend routes, frontend UI, PayPal integration)
+- **Database-Driven Discount Percentages:** Three new fields per plan (`quarterlyDiscountPercent`, `semiAnnualDiscountPercent`, `annualDiscountPercent`) with 0-100% range, replacing hardcoded 5%/10% values
+- **Popular Plan Badge Control:** `isPopular` boolean field enables admins to mark any plan with "POPULAR" badge on pricing page and homepage
+- **Enabled Billing Periods:** `enabledBillingPeriods` JSONB array allows per-plan control of which billing periods are available for purchase
+- **Dynamic Pricing Page:** Billing period toggles automatically show/hide based on union of all plans' enabled periods
+- **Per-Plan Billing Enforcement:** Purchase buttons only shown for billing periods each plan supports; shows "Not available for [period] billing" message when unavailable
+
+**Critical Bugs Fixed:**
+1. **Discount Parsing:** Changed from `parseInt(...) || 5/10` to `Number.isNaN()` check with 0-100 clamping - now preserves explicit 0% discounts instead of forcing them to legacy defaults
+2. **Billing Period Enforcement:** Added validation to prevent users from purchasing plans in unsupported billing periods
+3. **Plan Sorting Inconsistency:** Added `.sort((a, b) => a.sortOrder - b.sortOrder)` to Pricing page - both admin and public pages now show identical plan order
+4. **Homepage POPULAR Badge Bug:** Changed landing page from hardcoded `index === 1` to database `plan.isPopular` field - badge now correctly controlled by admin toggle on both homepage and pricing page
+
+**Database Schema Changes:**
+- Added `QUARTERLY` to `billingPeriodEnum`
+- Added `quarterlyDiscountPercent` (integer, default 0)
+- Added `semiAnnualDiscountPercent` (integer, default 5)  
+- Added `annualDiscountPercent` (integer, default 10)
+- Added `enabledBillingPeriods` (JSONB, default `["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]`)
+- Added `isPopular` (boolean, default false)
+
+**Admin Panel Updates:**
+- New "Pricing Controls" section with discount percentage inputs (0-100%) for each billing period
+- Billing period checkboxes (Monthly, Quarterly, Semi-Annual, Annual) to control availability per plan
+- Popular Plan toggle switch to enable/disable POPULAR badge
+
+**Testing:** Full E2E Playwright tests validated discount persistence (including 0% values), popular badge toggling (both pages), per-plan billing period enforcement, consistent plan sorting across pages, and PayPal/offline payment flows.
+
+**Result:** Admins have complete control over pricing page appearance and behavior; all discount values 0-100% persist correctly; per-plan billing restrictions prevent invalid purchases; plan order is consistent across all pages; POPULAR badge controlled by database on both homepage and pricing page.
+
+**Location:** `shared/schema.ts`, `server/routes.ts` (PUT /api/admin/plans/:id), `client/src/pages/admin.tsx` (lines ~3220-3400), `client/src/pages/pricing.tsx` (discount calculation ~124-140, billing enforcement ~287-410, sorting ~282), `client/src/pages/landing.tsx` (POPULAR badge ~533-608)
