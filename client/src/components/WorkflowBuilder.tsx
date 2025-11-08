@@ -705,7 +705,7 @@ export default function WorkflowBuilder({
 
       {/* Node Configuration Panel */}
       {selectedNode && (
-        <Card className="w-64 flex flex-col max-h-full flex-shrink-0">
+        <Card className="w-96 flex flex-col max-h-full flex-shrink-0">
           <div className="p-4 border-b flex items-center gap-2">
             <Settings className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">Node Configuration</h3>
