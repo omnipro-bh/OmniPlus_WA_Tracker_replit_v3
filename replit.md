@@ -102,3 +102,31 @@ Key entities include Users, Plans (with billing periods, payment methods, limits
 **Result:** Entry node badge removal now persists across save/close/reopen cycles.
 
 **Location:** `client/src/pages/workflows.tsx` (lines 49-67)
+
+### Outbox Pagination Implementation
+**Purpose:** Prevent performance degradation as job data grows by implementing server-side pagination for the Outbox page.
+
+**Features Implemented:**
+- **Entries Selector:** Dropdown to select number of entries per page (10, 25, 50, 100)
+- **Page Navigation:** Previous/Next buttons with numbered page buttons (shows up to 5 pages)
+- **Server-Side Pagination:** Backend only loads requested page of data, not all jobs
+- **Showing Info:** Displays "Showing X to Y of Z entries" text
+- **Auto-Refresh:** Maintains 3-second auto-refresh with pagination state
+
+**Backend Changes:**
+- Updated `GET /api/jobs` route to accept `page` and `limit` query parameters
+- Added `countJobsForUser(userId)` method to storage interface
+- Modified `getJobsForUser(userId, limit?, offset?)` to support pagination
+- Returns paginated response with jobs array and pagination metadata (page, limit, total, totalPages)
+
+**Frontend Changes:**
+- Added pagination state management (page, limit)
+- Updated query to use pagination parameters
+- Added entries selector UI component (10/25/50/100)
+- Added page navigation with Previous/Next and page number buttons
+- Resets to page 1 when changing entries per page
+- Shows pagination controls only when there are entries
+
+**Result:** Outbox page now loads only the requested page of jobs, preventing performance issues with large datasets. Users can control entries per page and navigate through pages efficiently.
+
+**Location:** `server/routes.ts` (lines ~2891-2914), `server/storage.ts` (interface lines ~82-83, implementation lines ~417-440), `client/src/pages/outbox.tsx` (pagination state lines ~31-40, UI lines ~139-290)
