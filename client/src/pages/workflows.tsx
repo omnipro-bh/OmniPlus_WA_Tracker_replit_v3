@@ -44,11 +44,13 @@ export default function Workflows() {
   });
 
   const updateWorkflow = useMutation({
-    mutationFn: async ({ id, nodes, edges, entryNodeId }: { id: number; nodes: Node[]; edges: Edge[]; entryNodeId?: string }) => {
-      return apiRequest("PUT", `/api/workflows/${id}`, {
+    mutationFn: async ({ id, nodes, edges, entryNodeId }: { id: number; nodes: Node[]; edges: Edge[]; entryNodeId?: string | null }) => {
+      const payload = {
         definitionJson: { nodes, edges },
         entryNodeId,
-      }) as Promise<Workflow>;
+      };
+      console.log('[workflows mutation] Sending PUT with payload:', JSON.stringify(payload, null, 2));
+      return apiRequest("PUT", `/api/workflows/${id}`, payload) as Promise<Workflow>;
     },
     onSuccess: (updatedWorkflow) => {
       // Update the selectedWorkflow state with the fresh data from the server
@@ -106,8 +108,9 @@ export default function Workflows() {
     setShowBuilder(true);
   };
 
-  const handleSaveWorkflow = (nodes: Node[], edges: Edge[], entryNodeId?: string) => {
+  const handleSaveWorkflow = (nodes: Node[], edges: Edge[], entryNodeId?: string | null) => {
     if (selectedWorkflow) {
+      console.log('[workflows handleSaveWorkflow] Received entryNodeId:', entryNodeId);
       updateWorkflow.mutate({ id: selectedWorkflow.id, nodes, edges, entryNodeId });
     }
   };

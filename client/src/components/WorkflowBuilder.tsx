@@ -171,7 +171,7 @@ interface WorkflowBuilderProps {
   initialEntryNodeId?: string;
   initialWorkflowId?: number;
   isActive?: boolean;
-  onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string) => void;
+  onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string | null) => void;
   onToggleActive?: (isActive: boolean) => void;
   workflowName?: string;
 }
@@ -376,7 +376,10 @@ export default function WorkflowBuilder({
 
   const handleSave = () => {
     if (onSave) {
-      onSave(nodes, edges, entryNodeId);
+      // Explicitly send null when entryNodeId is undefined so the backend receives the update
+      const finalEntryNodeId = entryNodeId ?? null;
+      console.log('[WorkflowBuilder handleSave] entryNodeId:', entryNodeId, '→ finalEntryNodeId:', finalEntryNodeId);
+      onSave(nodes, edges, finalEntryNodeId);
     }
   };
   
