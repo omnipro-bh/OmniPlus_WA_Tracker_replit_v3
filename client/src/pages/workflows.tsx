@@ -48,9 +48,13 @@ export default function Workflows() {
       return apiRequest("PUT", `/api/workflows/${id}`, {
         definitionJson: { nodes, edges },
         entryNodeId,
-      });
+      }) as Promise<Workflow>;
     },
-    onSuccess: () => {
+    onSuccess: (updatedWorkflow) => {
+      // Update the selectedWorkflow state with the fresh data from the server
+      if (selectedWorkflow && updatedWorkflow) {
+        setSelectedWorkflow(updatedWorkflow);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
       toast({ title: "Workflow saved successfully" });
     },

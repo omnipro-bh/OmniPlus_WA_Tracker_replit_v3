@@ -91,3 +91,14 @@ Key entities include Users, Plans (with billing periods, payment methods, limits
 **Result:** Admins have complete control over pricing page appearance and behavior; all discount values 0-100% persist correctly; per-plan billing restrictions prevent invalid purchases; plan order is consistent across all pages; POPULAR badge controlled by database on both homepage and pricing page.
 
 **Location:** `shared/schema.ts`, `server/routes.ts` (PUT /api/admin/plans/:id), `client/src/pages/admin.tsx` (lines ~3220-3400), `client/src/pages/pricing.tsx` (discount calculation ~124-140, billing enforcement ~287-410, sorting ~282), `client/src/pages/landing.tsx` (POPULAR badge ~533-608)
+
+### Workflow Entry Node Persistence Fix
+**Problem:** When removing the "Entry Node" badge from a workflow node and saving, the badge would reappear when closing and reopening the workflow builder.
+
+**Root Cause:** The `updateWorkflow` mutation invalidated the cache but did not update the `selectedWorkflow` state. When the builder was closed and reopened, it used the stale `selectedWorkflow` object which still contained the old `entryNodeId` value.
+
+**Fix:** Updated the mutation's `onSuccess` callback to update the `selectedWorkflow` state with the fresh data returned from the server, ensuring entry node changes persist correctly.
+
+**Result:** Entry node badge removal now persists across save/close/reopen cycles.
+
+**Location:** `client/src/pages/workflows.tsx` (lines 49-67)
