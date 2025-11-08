@@ -48,6 +48,8 @@ import {
   MapPin,
   Download,
   Upload,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -196,6 +198,7 @@ export default function WorkflowBuilder({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [entryNodeId, setEntryNodeId] = useState<string | undefined>(initialEntryNodeId);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Derive selectedNode from nodes array to always have latest data
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
@@ -214,14 +217,36 @@ export default function WorkflowBuilder({
     [nodes, entryNodeId]
   );
 
-  // Handle keyboard shortcuts for node deletion
+  // Toggle fullscreen mode
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(prev => !prev);
+  }, []);
+
+  // Handle keyboard shortcuts for node deletion and fullscreen
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if we're focused on an input field
+      const target = event.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+      // F11 key - toggle fullscreen (prevent default browser fullscreen)
+      if (event.key === 'F11') {
+        event.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Escape key - exit fullscreen
+      if (event.key === 'Escape' && isFullscreen) {
+        event.preventDefault();
+        setIsFullscreen(false);
+        return;
+      }
+      
       // Delete or Backspace key - delete selected nodes
       if (event.key === 'Delete' || event.key === 'Backspace') {
-        // Check if we're focused on an input field - don't delete nodes
-        const target = event.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        // Don't delete nodes if input is focused
+        if (isInputFocused) {
           return;
         }
         
@@ -255,7 +280,7 @@ export default function WorkflowBuilder({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, entryNodeId, setNodes, setEdges]);
+  }, [nodes, entryNodeId, isFullscreen, setNodes, setEdges, toggleFullscreen]);
 
   // Handle delete button clicks from CustomWorkflowNode
   useEffect(() => {
@@ -500,7 +525,8 @@ export default function WorkflowBuilder({
   return (
     <div className="flex h-full w-full gap-4">
       {/* Node Palette Sidebar */}
-      <Card className="w-64 p-4 flex-shrink-0">
+      {!isFullscreen && (
+        <Card className="w-64 p-4 flex-shrink-0">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <List className="h-4 w-4" />
           Node Palette
@@ -606,6 +632,7 @@ export default function WorkflowBuilder({
           </TabsContent>
         </Tabs>
       </Card>
+      )}
 
       {/* ReactFlow Canvas */}
       <div className="flex-1 h-full border rounded-lg" ref={reactFlowWrapper}>
@@ -670,6 +697,26 @@ export default function WorkflowBuilder({
                 Auto Layout
               </Button>
               <div className="w-px h-6 bg-border mx-1" />
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "Exit fullscreen (Esc or F11)" : "Enter fullscreen (F11)"}
+                data-testid="button-toggle-fullscreen"
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="h-4 w-4 mr-2" />
+                    Exit Fullscreen
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="h-4 w-4 mr-2" />
+                    Fullscreen
+                  </>
+                )}
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
               {onToggleActive && (
                 <>
                   <Button 
@@ -704,7 +751,7 @@ export default function WorkflowBuilder({
       </div>
 
       {/* Node Configuration Panel */}
-      {selectedNode && (
+      {selectedNode && !isFullscreen && (
         <Card className="w-96 flex flex-col max-h-full flex-shrink-0">
           <div className="p-4 border-b flex items-center gap-2">
             <Settings className="h-5 w-5 text-primary" />
