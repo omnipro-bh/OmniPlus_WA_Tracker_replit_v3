@@ -8,14 +8,12 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   const config = (data.config || {}) as any;
   const buttons = (config.buttons || []) as any[];
   const sections = (config.sections || []) as any[];
+  const cards = (config.cards || []) as any[];
   const isEntryNode = (data as any).entryNodeId === id;
   const nodeType = (data.type as string) || '';
   
   // Check if this is an end node (terminal node with no outputs)
   const isEndNode = nodeType.startsWith('message.');
-  
-  // Determine if this node has multiple outputs
-  const hasMultipleOutputs = buttons.length > 0 || sections.length > 0;
   
   // For list messages, collect all row IDs from all sections
   const listRowIds: { id: string; title: string; sectionTitle?: string }[] = [];
@@ -33,7 +31,29 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
     });
   }
   
-  const totalOutputs = buttons.length + listRowIds.length;
+  // For carousel, collect all quick reply buttons from all cards
+  const carouselQuickReplies: { id: string; title: string; cardIndex: number }[] = [];
+  if (cards.length > 0) {
+    cards.forEach((card: any, cardIndex: number) => {
+      if (card.buttons && card.buttons.length > 0) {
+        card.buttons.forEach((button: any) => {
+          // Only include quick_reply buttons (not url buttons)
+          if (button.type === 'quick_reply') {
+            carouselQuickReplies.push({
+              id: button.id,
+              title: button.title || `Quick Reply ${cardIndex + 1}`,
+              cardIndex: cardIndex,
+            });
+          }
+        });
+      }
+    });
+  }
+  
+  // Determine if this node has multiple outputs
+  const hasMultipleOutputs = buttons.length > 0 || sections.length > 0 || carouselQuickReplies.length > 0;
+  
+  const totalOutputs = buttons.length + listRowIds.length + carouselQuickReplies.length;
   
   // Handle node deletion
   const handleDelete = (e: React.MouseEvent) => {
@@ -188,6 +208,37 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
                       position={Position.Right}
                       id={row.id}
                       className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+                      style={{ 
+                        position: 'absolute',
+                        right: '-12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Output Handles - one for each carousel quick reply button */}
+          {carouselQuickReplies.length > 0 && (
+            <div className="space-y-1 mt-3">
+              {carouselQuickReplies.map((quickReply, index) => {
+                return (
+                  <div key={quickReply.id} className="relative flex items-center justify-end gap-2 h-6">
+                    <Badge 
+                      variant="secondary" 
+                      className="text-xs truncate max-w-[140px] bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20"
+                      title={`Card ${quickReply.cardIndex + 1}: ${quickReply.title}`}
+                    >
+                      {quickReply.title}
+                    </Badge>
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={quickReply.id}
+                      className="!w-3 !h-3 !bg-purple-500 !border-2 !border-white dark:!border-gray-800"
                       style={{ 
                         position: 'absolute',
                         right: '-12px',
