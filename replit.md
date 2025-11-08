@@ -126,3 +126,20 @@ Key entities include Users, Plans (with billing periods, payment methods, limits
 **Result:** Users can now efficiently navigate through large job lists with configurable page sizes and clear pagination controls. The UI updates correctly during auto-refresh scenarios.
 
 **Location:** `client/src/pages/outbox.tsx` (lines 22-60 for state/logic, 145-290 for UI controls)
+
+### Workflow Carousel Node Configuration Panel Fix (November 8, 2025)
+**Problem:** The Node Configuration panel in the Workflow Builder was too narrow (256px), causing the carousel node configuration content to be clipped/cut off on the right side. Fields and buttons were not fully visible or clickable.
+
+**Root Cause:** The Node Configuration panel had a fixed width of `w-64` (256px), which was insufficient for the extensive carousel configuration content including:
+- Introduction text textarea
+- Multiple carousel cards (up to 10)
+- Each card with: Card ID, Media URL, Card Text, and Buttons section
+- Each button with: Title, ID, and URL fields
+
+**Fix:** Increased the Node Configuration panel width from `w-64` (256px) to `w-96` (384px) in WorkflowBuilder.tsx to accommodate the carousel's extensive nested content.
+
+**Testing:** E2E Playwright test confirmed panel width is now 382px with no horizontal clipping (scrollWidth=382). All carousel configuration fields are fully visible and accessible.
+
+**Result:** The carousel node configuration panel now displays all content without clipping. Users can see and interact with all fields, buttons, and controls.
+
+**Location:** `client/src/components/WorkflowBuilder.tsx` (line 708: Card className width change)
