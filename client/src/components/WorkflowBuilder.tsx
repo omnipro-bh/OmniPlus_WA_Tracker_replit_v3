@@ -377,9 +377,7 @@ export default function WorkflowBuilder({
   const handleSave = () => {
     if (onSave) {
       // Explicitly send null when entryNodeId is undefined so the backend receives the update
-      const finalEntryNodeId = entryNodeId ?? null;
-      console.log('[WorkflowBuilder handleSave] entryNodeId:', entryNodeId, '→ finalEntryNodeId:', finalEntryNodeId);
-      onSave(nodes, edges, finalEntryNodeId);
+      onSave(nodes, edges, entryNodeId ?? null);
     }
   };
   

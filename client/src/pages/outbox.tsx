@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { Inbox, ExternalLink, Download } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Inbox, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import type { Job, Message } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
@@ -15,14 +16,29 @@ interface JobWithMessages extends Job {
   messages: Message[];
 }
 
+interface PaginatedJobsResponse {
+  jobs: Job[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
 export default function Outbox() {
   const [selectedJob, setSelectedJob] = useState<number | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
 
-  const { data: jobs = [], isLoading } = useQuery<Job[]>({
-    queryKey: ["/api/jobs"],
+  const { data, isLoading } = useQuery<PaginatedJobsResponse>({
+    queryKey: ["/api/jobs", { page, limit }],
     refetchInterval: 3000, // Auto-refresh every 3 seconds
   });
+
+  const jobs = data?.jobs || [];
+  const pagination = data?.pagination;
 
   const { data: jobDetails } = useQuery<JobWithMessages>({
     queryKey: ["/api/jobs", selectedJob],
@@ -116,6 +132,37 @@ export default function Outbox() {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* Pagination Controls - Top */}
+          {pagination && pagination.total > 0 && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Show</span>
+                <Select
+                  value={limit.toString()}
+                  onValueChange={(value) => {
+                    setLimit(parseInt(value));
+                    setPage(1); // Reset to first page when changing limit
+                  }}
+                >
+                  <SelectTrigger className="w-20" data-testid="select-entries-per-page">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">entries</span>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, pagination.total)} of {pagination.total} entries
+              </div>
+            </div>
+          )}
+
+          {/* Jobs List */}
           {jobs.map((job) => (
             <Card
               key={job.id}
@@ -180,6 +227,64 @@ export default function Outbox() {
               </CardContent>
             </Card>
           ))}
+
+          {/* Pagination Controls - Bottom */}
+          {pagination && pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm text-muted-foreground">
+                Page {page} of {pagination.totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  data-testid="button-previous-page"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {/* Page numbers */}
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={page === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setPage(pageNum)}
+                        data-testid={`button-page-${pageNum}`}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page === pagination.totalPages}
+                  data-testid="button-next-page"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
