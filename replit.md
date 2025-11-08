@@ -102,3 +102,27 @@ Key entities include Users, Plans (with billing periods, payment methods, limits
 **Result:** Entry node badge removal now persists across save/close/reopen cycles.
 
 **Location:** `client/src/pages/workflows.tsx` (lines 49-67)
+
+### Outbox Pagination (November 8, 2025)
+**Purpose:** Improve user experience when viewing large numbers of message sending jobs by adding configurable pagination controls.
+
+**Features Implemented:**
+- **Show Entries Selector:** Dropdown to select number of jobs per page (10, 25, 50, 100 options)
+- **Page Navigation:** Previous/Next buttons with disabled states for first/last pages
+- **Page Number Buttons:** Shows up to 5 page number buttons with smart positioning based on current page
+- **Info Display:** "Showing X to Y of Z entries" text showing current range
+- **Auto-Reset Logic:** Automatically resets to page 1 when items per page changes or when current page becomes invalid (e.g., after job list shrinks from auto-refresh)
+- **Client-Side Implementation:** All pagination is client-side, no backend changes required
+
+**Technical Implementation:**
+- React useState for `itemsPerPage` (default: 10) and `currentPage` (default: 1)
+- useEffect hook to handle page reset when current page exceeds total pages (prevents React rendering violations)
+- Array slicing to display only jobs for current page: `jobs.slice(startIndex, endIndex)`
+- Pagination controls only render when there's more than 1 page of results
+- All existing functionality preserved (auto-refresh, job details dialog, export to Excel)
+
+**Testing:** Full E2E Playwright test validated selector functionality (10→25 change), page navigation (Next/Previous/page numbers), state management (highlighted current page, disabled/enabled buttons), and display text accuracy with 64 jobs across multiple pages.
+
+**Result:** Users can now efficiently navigate through large job lists with configurable page sizes and clear pagination controls. The UI updates correctly during auto-refresh scenarios.
+
+**Location:** `client/src/pages/outbox.tsx` (lines 22-60 for state/logic, 145-290 for UI controls)
