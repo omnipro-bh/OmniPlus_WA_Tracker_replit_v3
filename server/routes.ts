@@ -2885,25 +2885,11 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Get all jobs for current user with pagination
+  // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const offset = (page - 1) * limit;
-
-      const jobs = await storage.getJobsForUser(req.userId!, limit, offset);
-      const totalJobs = await storage.countJobsForUser(req.userId!);
-
-      res.json({
-        jobs,
-        pagination: {
-          page,
-          limit,
-          total: totalJobs,
-          totalPages: Math.ceil(totalJobs / limit),
-        },
-      });
+      const jobs = await storage.getJobsForUser(req.userId!);
+      res.json(jobs);
     } catch (error: any) {
       console.error("Get jobs error:", error);
       res.status(500).json({ error: "Failed to fetch jobs" });

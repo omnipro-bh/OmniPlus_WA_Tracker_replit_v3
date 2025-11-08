@@ -76,8 +76,7 @@ export interface IStorage {
   deleteTemplate(id: number): Promise<void>;
 
   // Jobs
-  getJobsForUser(userId: number, limit?: number, offset?: number): Promise<Job[]>;
-  countJobsForUser(userId: number): Promise<number>;
+  getJobsForUser(userId: number): Promise<Job[]>;
   getJob(id: number): Promise<Job | undefined>;
   createJob(job: InsertJob): Promise<Job>;
   updateJob(id: number, data: Partial<Job>): Promise<Job | undefined>;
@@ -411,29 +410,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Jobs
-  async getJobsForUser(userId: number, limit?: number, offset?: number): Promise<Job[]> {
-    let query = db
+  async getJobsForUser(userId: number): Promise<Job[]> {
+    return await db
       .select()
       .from(schema.jobs)
       .where(eq(schema.jobs.userId, userId))
       .orderBy(desc(schema.jobs.createdAt));
-    
-    if (limit !== undefined) {
-      query = query.limit(limit) as any;
-    }
-    if (offset !== undefined) {
-      query = query.offset(offset) as any;
-    }
-    
-    return await query;
-  }
-
-  async countJobsForUser(userId: number): Promise<number> {
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.jobs)
-      .where(eq(schema.jobs.userId, userId));
-    return Number(result[0]?.count || 0);
   }
 
   async getJob(id: number): Promise<Job | undefined> {
