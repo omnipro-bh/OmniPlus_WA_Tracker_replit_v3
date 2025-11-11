@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { is } from "drizzle-orm";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -20,7 +21,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !user) {
+    if(isLoading) return;
+    if (!user) {
       setLocation("/login");
     }
   }, [user, isLoading, setLocation]);

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
@@ -82,7 +83,12 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+     const __dirname = path.resolve();
+    const clientDist = path.join(__dirname, "client-dist");
+    app.use(express.static(clientDist));
+    app.get("*", (_, res) => {
+      res.sendFile(path.join(clientDist, "index.html"));
+    });
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
