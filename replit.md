@@ -17,7 +17,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Channel Management:** Admin-controlled activation and user QR authorization.
 - **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, respecting plan limits.
 - **Templates:** CRUD operations for message templates with preview functionality.
-- **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view.
+- **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections.
 - **Outbox:** Tracks the status of message sending jobs with pagination for large lists.
 - **Bulk Message Status Tracking:** Real-time status updates via webhooks.
 - **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
