@@ -106,6 +106,7 @@ export const plans = pgTable("plans", {
   annualDiscountPercent: integer("annual_discount_percent").notNull().default(10), // 0-100
   enabledBillingPeriods: jsonb("enabled_billing_periods").notNull().default(["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]), // Which billing periods to show
   isPopular: boolean("is_popular").notNull().default(false), // Show POPULAR badge
+  safetyMeterEnabled: boolean("safety_meter_enabled").notNull().default(false), // Enable WhatsApp Safety Meter feature
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
