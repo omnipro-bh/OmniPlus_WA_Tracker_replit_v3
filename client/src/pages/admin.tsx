@@ -1434,6 +1434,7 @@ export default function Admin() {
     annualDiscountPercent: "10",
     enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"] as string[],
     isPopular: false,
+    safetyMeterEnabled: false,
     // Individual checkboxes for each limit
     enableDailyMessages: true,
     enableBulkMessages: true,
@@ -1863,6 +1864,7 @@ export default function Admin() {
       annualDiscountPercent: "10",
       enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"],
       isPopular: false,
+      safetyMeterEnabled: false,
       enableDailyMessages: true,
       enableBulkMessages: true,
       enableChannels: true,
@@ -1949,6 +1951,7 @@ export default function Admin() {
       annualDiscountPercent: String((plan as any).annualDiscountPercent ?? 10),
       enabledBillingPeriods: enabledBillingPeriods,
       isPopular: (plan as any).isPopular || false,
+      safetyMeterEnabled: (plan as any).safetyMeterEnabled || false,
       enableDailyMessages,
       enableBulkMessages,
       enableChannels,
@@ -2104,6 +2107,7 @@ export default function Admin() {
       annualDiscountPercent,
       enabledBillingPeriods: planForm.enabledBillingPeriods,
       isPopular: planForm.isPopular,
+      safetyMeterEnabled: planForm.safetyMeterEnabled,
       dailyMessagesLimit,
       bulkMessagesLimit,
       channelsLimit,
@@ -3396,6 +3400,17 @@ export default function Admin() {
                   data-testid="switch-plan-is-popular"
                 />
                 <Label htmlFor="plan-is-popular">Show POPULAR badge on pricing page</Label>
+              </div>
+
+              {/* Safety Meter Toggle */}
+              <div className="space-y-2 flex items-center gap-3">
+                <Switch
+                  id="plan-safety-meter"
+                  checked={planForm.safetyMeterEnabled}
+                  onCheckedChange={(checked) => setPlanForm({ ...planForm, safetyMeterEnabled: checked })}
+                  data-testid="switch-plan-safety-meter"
+                />
+                <Label htmlFor="plan-safety-meter">Enable Safety Meter feature</Label>
               </div>
             </div>
 
