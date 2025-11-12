@@ -1311,6 +1311,7 @@ export function registerRoutes(app: Express) {
       }
 
       const safetyData = await whapiResponse.json();
+      console.log("[Safety Meter] WHAPI raw response:", JSON.stringify(safetyData, null, 2));
       res.json(safetyData);
     } catch (error: any) {
       console.error("Get safety meter error:", error);
@@ -1383,6 +1384,7 @@ export function registerRoutes(app: Express) {
       }
 
       const safetyData = await whapiResponse.json();
+      console.log("[Safety Meter Refresh] WHAPI raw response:", JSON.stringify(safetyData, null, 2));
       
       // Log the refresh action
       await storage.createAuditLog({
