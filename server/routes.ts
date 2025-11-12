@@ -22,8 +22,8 @@ import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalO
 import { verifyWebhookSignature } from "./paypal-webhooks";
 import * as whapi from "./whapi";
 import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc";
-import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
