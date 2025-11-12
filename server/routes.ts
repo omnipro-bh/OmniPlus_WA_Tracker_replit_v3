@@ -1255,6 +1255,153 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get Safety Meter metrics for a channel
+  app.get("/api/channels/:id/safety-meter", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const channelId = parseInt(req.params.id);
+
+      // Get channel
+      const channel = await storage.getChannel(channelId);
+      if (!channel || channel.userId !== req.userId!) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      // Check if user has access to Safety Meter feature from their plan
+      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      let hasSafetyMeterAccess = false;
+
+      if (subscription) {
+        const plan = await storage.getPlan(subscription.planId);
+        if (plan) {
+          hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+        }
+      }
+
+      if (!hasSafetyMeterAccess) {
+        return res.status(403).json({ 
+          error: "Safety Meter feature not available",
+          message: "This feature is not included in your current plan. Please upgrade to access Safety Meter."
+        });
+      }
+
+      // Check if channel has a valid token
+      if (!channel.whapiChannelToken) {
+        return res.status(400).json({ 
+          error: "Channel token not found",
+          message: "Channel must be authorized before checking Safety Meter."
+        });
+      }
+
+      // Fetch safety metrics from WHAPI Tools API
+      const whapiResponse = await fetch("https://tools.whapi.cloud/services/riskOfBlocking", {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${channel.whapiChannelToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!whapiResponse.ok) {
+        const errorText = await whapiResponse.text();
+        console.error("[Safety Meter] WHAPI API error:", errorText);
+        return res.status(whapiResponse.status).json({ 
+          error: "Failed to fetch safety metrics",
+          message: "Could not retrieve safety metrics from the server. Please try again later."
+        });
+      }
+
+      const safetyData = await whapiResponse.json();
+      res.json(safetyData);
+    } catch (error: any) {
+      console.error("Get safety meter error:", error);
+      res.status(500).json({ error: "Failed to fetch safety metrics" });
+    }
+  });
+
+  // Refresh/recalculate Safety Meter metrics for a channel
+  app.post("/api/channels/:id/safety-meter/refresh", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const channelId = parseInt(req.params.id);
+
+      // Get channel
+      const channel = await storage.getChannel(channelId);
+      if (!channel || channel.userId !== req.userId!) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      // Check if user has access to Safety Meter feature from their plan
+      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      let hasSafetyMeterAccess = false;
+
+      if (subscription) {
+        const plan = await storage.getPlan(subscription.planId);
+        if (plan) {
+          hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+        }
+      }
+
+      if (!hasSafetyMeterAccess) {
+        return res.status(403).json({ 
+          error: "Safety Meter feature not available",
+          message: "This feature is not included in your current plan. Please upgrade to access Safety Meter."
+        });
+      }
+
+      // Check if channel has a valid token
+      if (!channel.whapiChannelToken) {
+        return res.status(400).json({ 
+          error: "Channel token not found",
+          message: "Channel must be authorized before checking Safety Meter."
+        });
+      }
+
+      // Recalculate safety metrics via WHAPI Tools API
+      const whapiResponse = await fetch("https://tools.whapi.cloud/services/riskOfBlocking", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${channel.whapiChannelToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!whapiResponse.ok) {
+        const errorText = await whapiResponse.text();
+        console.error("[Safety Meter] WHAPI API refresh error:", errorText);
+        
+        // Check if it's a rate limit error (already refreshed today)
+        if (whapiResponse.status === 429 || errorText.includes("once a day")) {
+          return res.status(429).json({ 
+            error: "Rate limit exceeded",
+            message: "Safety metrics can only be refreshed once per day. Please try again tomorrow."
+          });
+        }
+
+        return res.status(whapiResponse.status).json({ 
+          error: "Failed to refresh safety metrics",
+          message: "Could not refresh safety metrics. Please try again later."
+        });
+      }
+
+      const safetyData = await whapiResponse.json();
+      
+      // Log the refresh action
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "SAFETY_METER_REFRESH",
+        meta: {
+          channelId,
+          channelLabel: channel.label,
+          metrics: safetyData,
+        },
+      });
+
+      res.json(safetyData);
+    } catch (error: any) {
+      console.error("Refresh safety meter error:", error);
+      res.status(500).json({ error: "Failed to refresh safety metrics" });
+    }
+  });
+
   // ============================================================================
   // MESSAGING
   // ============================================================================
