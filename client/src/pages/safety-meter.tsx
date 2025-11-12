@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,10 +39,12 @@ export default function SafetyMeter() {
     ch => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED"
   );
 
-  // Auto-select first available channel
-  if (!selectedChannelId && availableChannels.length > 0) {
-    setSelectedChannelId(availableChannels[0].id);
-  }
+  // Auto-select first available channel (using useEffect to avoid render loop)
+  useEffect(() => {
+    if (!selectedChannelId && availableChannels.length > 0) {
+      setSelectedChannelId(availableChannels[0].id);
+    }
+  }, [selectedChannelId, availableChannels]);
 
   // Fetch safety metrics for selected channel
   const {
