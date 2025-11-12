@@ -20,6 +20,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections.
 - **Outbox:** Tracks the status of message sending jobs with pagination for large lists.
 - **Bulk Message Status Tracking:** Real-time status updates via webhooks.
+- **Safety Meter:** Real-time WhatsApp channel health monitoring with plan-based access control. Displays 4 color-coded metrics (lifetime, coverage, response rate, overall rating) from WHAPI Tools API. Features channel selector, manual refresh, and plan-gating. No database caching - metrics fetched on-demand with WHAPI's daily refresh limit.
 - **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
 - **Admin Dashboard:** Manages users, billing, offline payments, channel activation, and dynamic homepage content.
 - **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access, and theme.
