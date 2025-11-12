@@ -30,6 +30,7 @@ import Admin from "@/pages/admin";
 import AdminBalances from "@/pages/admin-balances";
 import WHAPISettings from "@/pages/whapi-settings";
 import Settings from "@/pages/settings";
+import SafetyMeter from "@/pages/safety-meter";
 
 function Router() {
   return (
@@ -122,6 +123,11 @@ function Router() {
       <Route path="/settings">
         <DashboardLayout>
           <Settings />
+        </DashboardLayout>
+      </Route>
+      <Route path="/safety-meter">
+        <DashboardLayout>
+          <SafetyMeter />
         </DashboardLayout>
       </Route>
 

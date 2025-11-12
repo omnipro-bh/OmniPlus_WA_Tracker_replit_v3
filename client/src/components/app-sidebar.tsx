@@ -14,6 +14,7 @@ import {
   Shield,
   Wallet,
   User,
+  ShieldCheck,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -45,6 +46,11 @@ export function AppSidebar() {
       title: "Channels",
       url: "/channels",
       icon: Radio,
+    },
+    {
+      title: "Safety Meter",
+      url: "/safety-meter",
+      icon: ShieldCheck,
     },
     {
       title: "Send",
