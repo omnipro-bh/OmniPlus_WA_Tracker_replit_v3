@@ -179,10 +179,41 @@ export default function Send() {
   const handleTemplateSelect = (templateId: string) => {
     const template = templates.find((t) => t.id === parseInt(templateId));
     if (template) {
-      // Templates store buttons as simple text strings, convert to enhanced button structure
-      const button1Text = template.buttons[0] || "";
-      const button2Text = template.buttons[1] || "";
-      const button3Text = template.buttons[2] || "";
+      // Parse buttons - handle both old text[] format and new structured format
+      let button1Text = "", button1Type = "quick_reply", button1Value = "", button1Id = "";
+      let button2Text = "", button2Type = "quick_reply", button2Value = "", button2Id = "";
+      let button3Text = "", button3Type = "quick_reply", button3Value = "", button3Id = "";
+      
+      if (Array.isArray(template.buttons)) {
+        template.buttons.forEach((button: any, index: number) => {
+          if (typeof button === "string") {
+            // Old format: simple text strings
+            if (index === 0) button1Text = button;
+            if (index === 1) button2Text = button;
+            if (index === 2) button3Text = button;
+          } else if (button && typeof button === "object") {
+            // New format: structured button objects
+            if (index === 0) {
+              button1Text = button.text || "";
+              button1Type = button.type || "quick_reply";
+              button1Value = button.value || "";
+              button1Id = button.id || "";
+            }
+            if (index === 1) {
+              button2Text = button.text || "";
+              button2Type = button.type || "quick_reply";
+              button2Value = button.value || "";
+              button2Id = button.id || "";
+            }
+            if (index === 2) {
+              button3Text = button.text || "";
+              button3Type = button.type || "quick_reply";
+              button3Value = button.value || "";
+              button3Id = button.id || "";
+            }
+          }
+        });
+      }
       
       setFormData({
         ...formData,
@@ -190,18 +221,20 @@ export default function Send() {
         header: template.header || "",
         body: template.body,
         footer: template.footer || "",
-        button1Text: button1Text,
-        button1Type: "quick_reply",
-        button1Value: "",
-        button1Id: "",
-        button2Text: button2Text,
-        button2Type: "quick_reply",
-        button2Value: "",
-        button2Id: "",
-        button3Text: button3Text,
-        button3Type: "quick_reply",
-        button3Value: "",
-        button3Id: "",
+        messageType: (template as any).messageType || "text_buttons",
+        mediaUrl: (template as any).mediaUrl || "",
+        button1Text,
+        button1Type,
+        button1Value,
+        button1Id,
+        button2Text,
+        button2Type,
+        button2Value,
+        button2Id,
+        button3Text,
+        button3Type,
+        button3Value,
+        button3Id,
       });
     }
   };
