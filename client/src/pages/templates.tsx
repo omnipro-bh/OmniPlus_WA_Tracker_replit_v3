@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Edit, Trash2, FileText, Smile, Loader2, Image as ImageIcon, Video, FileUp } from "lucide-react";
 import type { Template, Channel } from "@shared/schema";
-import { WhatsAppPreview } from "@/components/whatsapp-preview";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 
@@ -554,7 +553,7 @@ export default function Templates() {
         setIsDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingTemplate ? "Edit Template" : "Create Template"}</DialogTitle>
             <DialogDescription>
@@ -562,9 +561,7 @@ export default function Templates() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Form Column */}
-            <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Template Title *</Label>
                 <Input
@@ -814,41 +811,6 @@ export default function Templates() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Preview Column */}
-            <div className="space-y-4 py-4">
-              <div>
-                <Label className="mb-2 block">WhatsApp Preview</Label>
-                <WhatsAppPreview
-                  header={formData.header}
-                  body={formData.body}
-                  footer={formData.footer}
-                  buttons={[
-                    formData.button1Text ? {
-                      text: formData.button1Text,
-                      type: formData.button1Type as any,
-                      value: formData.button1Value || undefined,
-                      id: formData.button1Id || undefined,
-                    } : null,
-                    formData.button2Text ? {
-                      text: formData.button2Text,
-                      type: formData.button2Type as any,
-                      value: formData.button2Value || undefined,
-                      id: formData.button2Id || undefined,
-                    } : null,
-                    formData.button3Text ? {
-                      text: formData.button3Text,
-                      type: formData.button3Type as any,
-                      value: formData.button3Value || undefined,
-                      id: formData.button3Id || undefined,
-                    } : null,
-                  ].filter(Boolean) as any}
-                  messageType={formData.messageType}
-                  mediaUrl={formData.mediaUrl || undefined}
-                />
-              </div>
-            </div>
           </div>
 
           <DialogFooter>
