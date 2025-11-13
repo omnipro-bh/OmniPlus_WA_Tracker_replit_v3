@@ -394,15 +394,36 @@ export default function Templates() {
     }
   };
 
-  // Helper to render button badges for template cards
+  // Helper to render button badges for template cards - shows all slots including empty ones
   const renderButtonBadges = (buttons: any) => {
     if (!Array.isArray(buttons) || buttons.length === 0) return null;
     
     return (
       <div className="mt-3 flex flex-wrap gap-1">
         {buttons.map((button: any, index: number) => {
-          const buttonText = typeof button === "string" ? button : button.text;
-          const buttonType = typeof button === "object" ? button.type : "quick_reply";
+          // Extract button text from string or object format
+          let buttonText = "";
+          if (typeof button === "string") {
+            buttonText = button;
+          } else if (button && typeof button === "object" && button.text) {
+            buttonText = button.text;
+          }
+          
+          // Render placeholder for empty/invalid button slots
+          if (!button || !buttonText || buttonText.trim().length === 0) {
+            return (
+              <span
+                key={index}
+                className="rounded-full bg-destructive/10 px-2 py-1 text-xs text-destructive"
+                title="Empty button slot - edit template to fix"
+              >
+                [Empty]
+              </span>
+            );
+          }
+          
+          // Extract button type
+          const buttonType = (typeof button === "object" && button.type) ? button.type : "quick_reply";
           
           return (
             <span
