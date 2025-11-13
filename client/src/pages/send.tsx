@@ -454,7 +454,30 @@ export default function Send() {
               <Label htmlFor="messageType">Message Type *</Label>
               <Select
                 value={formData.messageType}
-                onValueChange={(value) => setFormData({ ...formData, messageType: value, mediaUrl: "" })}
+                onValueChange={(value) => {
+                  // Clear button data when switching to types that don't support buttons
+                  if (value === "image" || value === "document") {
+                    setFormData({
+                      ...formData,
+                      messageType: value,
+                      mediaUrl: "",
+                      button1Text: "",
+                      button1Type: "quick_reply",
+                      button1Value: "",
+                      button1Id: "",
+                      button2Text: "",
+                      button2Type: "quick_reply",
+                      button2Value: "",
+                      button2Id: "",
+                      button3Text: "",
+                      button3Type: "quick_reply",
+                      button3Value: "",
+                      button3Id: "",
+                    });
+                  } else {
+                    setFormData({ ...formData, messageType: value, mediaUrl: "" });
+                  }
+                }}
               >
                 <SelectTrigger data-testid="select-message-type">
                   <SelectValue />
