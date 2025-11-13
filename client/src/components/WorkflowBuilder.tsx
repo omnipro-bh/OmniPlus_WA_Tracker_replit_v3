@@ -22,6 +22,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { NodeConfigPanel } from '@/components/WorkflowNodeConfig';
 import { CustomWorkflowNode } from '@/components/CustomWorkflowNode';
 import {
@@ -50,6 +61,9 @@ import {
   Upload,
   Maximize2,
   Minimize2,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -199,6 +213,44 @@ export default function WorkflowBuilder({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [entryNodeId, setEntryNodeId] = useState<string | undefined>(initialEntryNodeId);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Panel state management
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [showNodePaletteSheet, setShowNodePaletteSheet] = useState(false);
+  const [showConfigSheet, setShowConfigSheet] = useState(false);
+  
+  // Load panel preferences from localStorage
+  useEffect(() => {
+    const savedLeftCollapsed = localStorage.getItem('workflow-builder-left-collapsed');
+    const savedRightCollapsed = localStorage.getItem('workflow-builder-right-collapsed');
+    
+    if (savedLeftCollapsed) setLeftPanelCollapsed(savedLeftCollapsed === 'true');
+    if (savedRightCollapsed) setRightPanelCollapsed(savedRightCollapsed === 'true');
+  }, []);
+  
+  // Save panel collapse state to localStorage
+  useEffect(() => {
+    localStorage.setItem('workflow-builder-left-collapsed', leftPanelCollapsed.toString());
+  }, [leftPanelCollapsed]);
+  
+  useEffect(() => {
+    localStorage.setItem('workflow-builder-right-collapsed', rightPanelCollapsed.toString());
+  }, [rightPanelCollapsed]);
+  
+  // Auto-expand right panel when node is selected (only if in normal mode)
+  useEffect(() => {
+    if (selectedNodeId && !isFullscreen && rightPanelCollapsed) {
+      setRightPanelCollapsed(false);
+    }
+  }, [selectedNodeId, isFullscreen, rightPanelCollapsed]);
+  
+  // In fullscreen mode, show config sheet when node is selected
+  useEffect(() => {
+    if (isFullscreen && selectedNodeId) {
+      setShowConfigSheet(true);
+    }
+  }, [isFullscreen, selectedNodeId]);
   
   // Derive selectedNode from nodes array to always have latest data
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
@@ -522,243 +574,412 @@ export default function WorkflowBuilder({
     setSelectedNodeId(node.id);
   }, []);
 
+  // Node Palette Content (reusable)
+  const renderNodePalette = () => (
+    <Tabs defaultValue="message" className="flex flex-col h-full">
+      <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
+        <TabsTrigger value="message" data-testid="tab-message">MESSAGE</TabsTrigger>
+        <TabsTrigger value="end" data-testid="tab-end">END</TabsTrigger>
+        <TabsTrigger value="trigger" data-testid="tab-trigger">TRIGGER</TabsTrigger>
+      </TabsList>
+      
+      <TabsContent value="message" className="flex-1 min-h-0 mt-4">
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-2">
+              {nodeTypes.MESSAGE.map((node) => (
+                <div
+                  key={node.id}
+                  className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                  onClick={() => addNodeToCanvas(node.id, node.label)}
+                  data-testid={`node-type-${node.id}`}
+                  title={`Click to add or drag to canvas`}
+                >
+                  <div className="flex items-start gap-2">
+                    <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{node.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {node.description}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {node.cost} tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="end" className="flex-1 min-h-0 mt-4">
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-2">
+              {nodeTypes.END_MESSAGE.map((node) => (
+                <div
+                  key={node.id}
+                  className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                  onClick={() => addNodeToCanvas(node.id, node.label)}
+                  data-testid={`node-type-${node.id}`}
+                  title={`Click to add or drag to canvas`}
+                >
+                  <div className="flex items-start gap-2">
+                    <node.icon className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{node.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {node.description}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {node.cost} tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="trigger" className="flex-1 min-h-0 mt-4">
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-2">
+              {nodeTypes.TRIGGER.map((node) => (
+                <div
+                  key={node.id}
+                  className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                  onClick={() => addNodeToCanvas(node.id, node.label)}
+                  data-testid={`node-type-${node.id}`}
+                  title={`Click to add or drag to canvas`}
+                >
+                  <div className="flex items-start gap-2">
+                    <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{node.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {node.description}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {node.cost} tokens
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </TabsContent>
+    </Tabs>
+  );
+
   return (
-    <div className="flex h-full w-full gap-4">
-      {/* Node Palette Sidebar */}
-      {!isFullscreen && (
-        <Card className="w-64 p-4 flex-shrink-0">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <List className="h-4 w-4" />
-          Node Palette
-        </h3>
-        <Tabs defaultValue="message">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="message" data-testid="tab-message">MESSAGE</TabsTrigger>
-            <TabsTrigger value="end" data-testid="tab-end">END</TabsTrigger>
-            <TabsTrigger value="trigger" data-testid="tab-trigger">TRIGGER</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="message" className="mt-4">
-            <ScrollArea className="h-[calc(100vh-20rem)]">
-              <div className="space-y-2">
-                {nodeTypes.MESSAGE.map((node) => (
-                  <div
-                    key={node.id}
-                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                    draggable
-                    onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                    onClick={() => addNodeToCanvas(node.id, node.label)}
-                    data-testid={`node-type-${node.id}`}
-                    title={`Click to add or drag to canvas`}
+    <>
+      <ResizablePanelGroup 
+        direction="horizontal" 
+        className="h-full w-full"
+        onLayout={(sizes) => {
+          localStorage.setItem('workflow-builder-panel-sizes', JSON.stringify(sizes));
+        }}
+      >
+        {/* Left Panel - Node Palette */}
+        {!leftPanelCollapsed && !isFullscreen && (
+          <>
+            <ResizablePanel defaultSize={20} minSize={15} maxSize={30} collapsible>
+              <Card className="w-full h-full p-4 flex-shrink-0 max-h-full overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <List className="h-4 w-4" />
+                    Node Palette
+                  </h3>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setLeftPanelCollapsed(true)}
+                    title="Collapse panel"
+                    data-testid="button-collapse-left-panel"
                   >
-                    <div className="flex items-start gap-2">
-                      <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm">{node.label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {node.description}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {node.cost} tokens
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </div>
+                {renderNodePalette()}
+              </Card>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+          </>
+        )}
 
-          <TabsContent value="end" className="mt-4">
-            <ScrollArea className="h-[calc(100vh-20rem)]">
-              <div className="space-y-2">
-                {nodeTypes.END_MESSAGE.map((node) => (
-                  <div
-                    key={node.id}
-                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                    draggable
-                    onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                    onClick={() => addNodeToCanvas(node.id, node.label)}
-                    data-testid={`node-type-${node.id}`}
-                    title={`Click to add or drag to canvas`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <node.icon className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm">{node.label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {node.description}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {node.cost} tokens
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
+        {/* Expand button when left panel is collapsed */}
+        {leftPanelCollapsed && !isFullscreen && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 z-10">
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => setLeftPanelCollapsed(false)}
+              title="Expand panel"
+              data-testid="button-expand-left-panel"
+              className="h-12 w-6 rounded-r-md rounded-l-none"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
-          <TabsContent value="trigger" className="mt-4">
-            <ScrollArea className="h-[calc(100vh-20rem)]">
-              <div className="space-y-2">
-                {nodeTypes.TRIGGER.map((node) => (
-                  <div
-                    key={node.id}
-                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                    draggable
-                    onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                    onClick={() => addNodeToCanvas(node.id, node.label)}
-                    data-testid={`node-type-${node.id}`}
-                    title={`Click to add or drag to canvas`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm">{node.label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {node.description}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {node.cost} tokens
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
-      </Card>
-      )}
-
-      {/* ReactFlow Canvas */}
-      <div className="flex-1 h-full border rounded-lg" ref={reactFlowWrapper}>
-        <ReactFlow
-          nodes={nodesWithEntryData}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onInit={setReactFlowInstance}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onNodeClick={onNodeClick}
-          nodeTypes={customNodeTypes}
-          fitView
-          minZoom={0.1}
-          maxZoom={2}
-          defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-          data-testid="workflow-canvas"
-        >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable nodeStrokeWidth={3} />
-          <Panel position="top-left" className="bg-card border rounded-md p-2 max-w-[calc(100%-276px)]">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button size="icon" variant="ghost" title="Undo" data-testid="button-undo">
-                <Undo2 className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="ghost" title="Redo" data-testid="button-redo">
-                <Redo2 className="h-4 w-4" />
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={handleExport}
-                title="Export workflow to JSON file"
-                data-testid="button-export-workflow"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={handleImport}
-                title="Import workflow from JSON file"
-                data-testid="button-import-workflow"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Import
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={handleAutoLayout}
-                title="Auto-arrange nodes horizontally"
-                data-testid="button-auto-layout"
-              >
-                <Network className="h-4 w-4 mr-2" />
-                Auto Layout
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={toggleFullscreen}
-                title={isFullscreen ? "Exit fullscreen (Esc or F11)" : "Enter fullscreen (F11)"}
-                data-testid="button-toggle-fullscreen"
-              >
-                {isFullscreen ? (
-                  <>
-                    <Minimize2 className="h-4 w-4 mr-2" />
-                    Exit Fullscreen
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="h-4 w-4 mr-2" />
-                    Fullscreen
-                  </>
-                )}
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
-              {onToggleActive && (
-                <>
+        {/* Center Panel - ReactFlow Canvas */}
+        <ResizablePanel defaultSize={60} className="relative">
+          <div className="h-full border rounded-lg" ref={reactFlowWrapper}>
+            <ReactFlow
+              nodes={nodesWithEntryData}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onInit={setReactFlowInstance}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onNodeClick={onNodeClick}
+              nodeTypes={customNodeTypes}
+              fitView
+              minZoom={0.1}
+              maxZoom={2}
+              defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+              data-testid="workflow-canvas"
+            >
+              <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+              <Controls showInteractive={false} />
+              <MiniMap pannable zoomable nodeStrokeWidth={3} />
+              <Panel position="top-left" className="bg-card border rounded-md p-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button size="icon" variant="ghost" title="Undo" data-testid="button-undo">
+                    <Undo2 className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" title="Redo" data-testid="button-redo">
+                    <Redo2 className="h-4 w-4" />
+                  </Button>
+                  <div className="w-px h-6 bg-border mx-1" />
                   <Button 
                     size="sm" 
-                    variant={isActive ? "default" : "outline"}
-                    onClick={() => onToggleActive(!isActive)}
-                    data-testid="button-toggle-active"
-                    title={isActive ? "Stop chatbot" : "Start chatbot"}
+                    variant="outline" 
+                    onClick={handleExport}
+                    title="Export workflow to JSON file"
+                    data-testid="button-export-workflow"
                   >
-                    {isActive ? (
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={handleImport}
+                    title="Import workflow from JSON file"
+                    data-testid="button-import-workflow"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
+                  </Button>
+                  <div className="w-px h-6 bg-border mx-1" />
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={handleAutoLayout}
+                    title="Auto-arrange nodes horizontally"
+                    data-testid="button-auto-layout"
+                  >
+                    <Network className="h-4 w-4 mr-2" />
+                    Auto Layout
+                  </Button>
+                  <div className="w-px h-6 bg-border mx-1" />
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={toggleFullscreen}
+                    title={isFullscreen ? "Exit fullscreen (Esc or F11)" : "Enter fullscreen (F11)"}
+                    data-testid="button-toggle-fullscreen"
+                  >
+                    {isFullscreen ? (
                       <>
-                        <Pause className="h-4 w-4 mr-2" />
-                        Live
+                        <Minimize2 className="h-4 w-4 mr-2" />
+                        Exit Fullscreen
                       </>
                     ) : (
                       <>
-                        <Play className="h-4 w-4 mr-2" />
-                        Stopped
+                        <Maximize2 className="h-4 w-4 mr-2" />
+                        Fullscreen
                       </>
                     )}
                   </Button>
                   <div className="w-px h-6 bg-border mx-1" />
-                </>
-              )}
-              <Button size="sm" variant="default" onClick={handleSave} data-testid="button-save-workflow">
-                <Save className="h-4 w-4 mr-2" />
-                Save
-              </Button>
-            </div>
-          </Panel>
-        </ReactFlow>
-      </div>
+                  {onToggleActive && (
+                    <>
+                      <Button 
+                        size="sm" 
+                        variant={isActive ? "default" : "outline"}
+                        onClick={() => onToggleActive(!isActive)}
+                        data-testid="button-toggle-active"
+                        title={isActive ? "Stop chatbot" : "Start chatbot"}
+                      >
+                        {isActive ? (
+                          <>
+                            <Pause className="h-4 w-4 mr-2" />
+                            Live
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-2" />
+                            Stopped
+                          </>
+                        )}
+                      </Button>
+                      <div className="w-px h-6 bg-border mx-1" />
+                    </>
+                  )}
+                  <Button size="sm" variant="default" onClick={handleSave} data-testid="button-save-workflow">
+                    <Save className="h-4 w-4 mr-2" />
+                    Save
+                  </Button>
+                </div>
+              </Panel>
 
-      {/* Node Configuration Panel */}
-      {selectedNode && !isFullscreen && (
-        <Card className="w-96 flex flex-col max-h-full flex-shrink-0">
-          <div className="p-4 border-b flex items-center gap-2">
-            <Settings className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold">Node Configuration</h3>
+              {/* Fullscreen Floating Add Node Button */}
+              {isFullscreen && (
+                <Panel position="top-right" className="mt-2 mr-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => setShowNodePaletteSheet(true)}
+                    data-testid="button-add-node-fullscreen"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Node
+                  </Button>
+                </Panel>
+              )}
+            </ReactFlow>
           </div>
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4">
+        </ResizablePanel>
+
+        {/* Right Panel - Node Configuration */}
+        {!rightPanelCollapsed && !isFullscreen && selectedNode && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={20} minSize={15} maxSize={30} collapsible>
+              <Card className="w-full h-full flex flex-col max-h-full overflow-hidden flex-shrink-0">
+                <div className="p-4 border-b flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-primary" />
+                    <h3 className="font-semibold">Node Configuration</h3>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setRightPanelCollapsed(true)}
+                    title="Collapse panel"
+                    data-testid="button-collapse-right-panel"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <Label>Node Type</Label>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {String(selectedNode.data.label || '')}
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="node-label">Display Label</Label>
+                      <Input
+                        id="node-label"
+                        value={String(selectedNode.data.label || '')}
+                        onChange={(e) => {
+                          setNodes((nds) =>
+                            nds.map((node) =>
+                              node.id === selectedNode.id
+                                ? { ...node, data: { ...node.data, label: e.target.value } }
+                                : node
+                            )
+                          );
+                        }}
+                        data-testid="input-node-label"
+                      />
+                    </div>
+                    <div className="border-t pt-4">
+                      <Label className="mb-3 block">Message Settings</Label>
+                      <NodeConfigPanel
+                        node={selectedNode}
+                        onUpdate={(nodeId, config) => {
+                          setNodes((nds) =>
+                            nds.map((node) =>
+                              node.id === nodeId
+                                ? { ...node, data: { ...node.data, config } }
+                                : node
+                            )
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                </ScrollArea>
+              </Card>
+            </ResizablePanel>
+          </>
+        )}
+
+        {/* Expand button when right panel is collapsed */}
+        {rightPanelCollapsed && !isFullscreen && selectedNode && (
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => setRightPanelCollapsed(false)}
+              title="Expand panel"
+              data-testid="button-expand-right-panel"
+              className="h-12 w-6 rounded-l-md rounded-r-none"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </ResizablePanelGroup>
+
+      {/* Fullscreen Node Palette Sheet */}
+      <Sheet open={showNodePaletteSheet} onOpenChange={setShowNodePaletteSheet}>
+        <SheetContent side="left" className="w-[400px] sm:w-[540px]">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <List className="h-5 w-5" />
+              Node Palette
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-6 h-[calc(100vh-8rem)]">
+            {renderNodePalette()}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Fullscreen Config Sheet */}
+      <Sheet open={showConfigSheet} onOpenChange={setShowConfigSheet}>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px]">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Node Configuration
+            </SheetTitle>
+          </SheetHeader>
+          {selectedNode && (
+            <div className="mt-6 space-y-4">
               <div>
                 <Label>Node Type</Label>
                 <div className="text-sm text-muted-foreground mt-1">
@@ -766,9 +987,9 @@ export default function WorkflowBuilder({
                 </div>
               </div>
               <div>
-                <Label htmlFor="node-label">Display Label</Label>
+                <Label htmlFor="node-label-sheet">Display Label</Label>
                 <Input
-                  id="node-label"
+                  id="node-label-sheet"
                   value={String(selectedNode.data.label || '')}
                   onChange={(e) => {
                     setNodes((nds) =>
@@ -779,7 +1000,7 @@ export default function WorkflowBuilder({
                       )
                     );
                   }}
-                  data-testid="input-node-label"
+                  data-testid="input-node-label-sheet"
                 />
               </div>
               <div className="border-t pt-4">
@@ -798,9 +1019,9 @@ export default function WorkflowBuilder({
                 />
               </div>
             </div>
-          </ScrollArea>
-        </Card>
-      )}
-    </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
