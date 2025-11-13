@@ -5,6 +5,8 @@
  * response parsing, and error handling for workflow automation.
  */
 
+import * as ipaddr from 'ipaddr.js';
+
 export interface HttpRequestConfig {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
@@ -96,9 +98,113 @@ export function resolveObject(obj: any, context: HttpExecutionContext): any {
 }
 
 /**
- * Validate URL to prevent SSRF attacks
+ * Check if an IP address is private/reserved using ipaddr.js
+ * This handles all IPv4/IPv6 formats including edge cases like:
+ * - IPv4-mapped IPv6 (::ffff:192.168.1.1)
+ * - Octal notation (0177.0.0.1)
+ * - Integer notation (2130706433)
  */
-function validateUrl(urlString: string): boolean {
+function isPrivateOrReservedIp(ipString: string): boolean {
+  try {
+    // Parse and normalize the IP address
+    const addr = ipaddr.process(ipString);
+    
+    // Check IPv4 ranges
+    if (addr.kind() === 'ipv4') {
+      const range = addr.range();
+      
+      // Block all private, reserved, and special-use ranges
+      const blockedRanges = [
+        'unspecified',    // 0.0.0.0/8
+        'broadcast',      // 255.255.255.255
+        'multicast',      // 224.0.0.0/4
+        'linkLocal',      // 169.254.0.0/16
+        'loopback',       // 127.0.0.0/8
+        'private',        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+        'reserved',       // Reserved ranges
+      ];
+      
+      if (blockedRanges.includes(range)) {
+        return true;
+      }
+      
+      // Additional manual checks for ranges not covered by ipaddr.js
+      const octets = addr.octets;
+      
+      // 100.64.0.0/10 - Shared Address Space (CGN)
+      if (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) {
+        return true;
+      }
+      
+      // 192.0.0.0/24 - IETF Protocol Assignments
+      if (octets[0] === 192 && octets[1] === 0 && octets[2] === 0) {
+        return true;
+      }
+      
+      // 192.0.2.0/24 - TEST-NET-1
+      if (octets[0] === 192 && octets[1] === 0 && octets[2] === 2) {
+        return true;
+      }
+      
+      // 192.88.99.0/24 - IPv6 to IPv4 relay
+      if (octets[0] === 192 && octets[1] === 88 && octets[2] === 99) {
+        return true;
+      }
+      
+      // 198.18.0.0/15 - Benchmark testing
+      if (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) {
+        return true;
+      }
+      
+      // 198.51.100.0/24 - TEST-NET-2
+      if (octets[0] === 198 && octets[1] === 51 && octets[2] === 100) {
+        return true;
+      }
+      
+      // 203.0.113.0/24 - TEST-NET-3
+      if (octets[0] === 203 && octets[1] === 0 && octets[2] === 113) {
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Check IPv6 ranges
+    if (addr.kind() === 'ipv6') {
+      const range = addr.range();
+      
+      // Block all private, reserved, and special-use IPv6 ranges
+      const blockedRanges = [
+        'unspecified',    // ::
+        'linkLocal',      // fe80::/10
+        'loopback',       // ::1
+        'multicast',      // ff00::/8
+        'uniqueLocal',    // fc00::/7
+        'ipv4Mapped',     // ::ffff:0:0/96 (this catches IPv4-mapped IPv6)
+        'reserved',       // Reserved ranges
+      ];
+      
+      if (blockedRanges.includes(range)) {
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Unknown IP kind, block it
+    return true;
+  } catch (error) {
+    // If parsing fails, block it (fail closed)
+    console.error('[SSRF Protection] Failed to parse IP:', ipString, error);
+    return true;
+  }
+}
+
+/**
+ * Validate URL and resolve to safe IP to prevent SSRF and DNS rebinding
+ * Returns the validated IP address to use for the request
+ */
+async function validateAndResolveUrl(urlString: string): Promise<{ ip: string; hostname: string; protocol: string; port: string }> {
   try {
     const url = new URL(urlString);
     
@@ -107,30 +213,65 @@ function validateUrl(urlString: string): boolean {
       throw new Error('Only HTTP and HTTPS protocols are allowed');
     }
     
-    // Block localhost, private IPs, and reserved ranges
     const hostname = url.hostname.toLowerCase();
-    const blockedPatterns = [
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      '::1',
-      /^10\./,          // 10.0.0.0/8
-      /^172\.(1[6-9]|2[0-9]|3[01])\./,  // 172.16.0.0/12
-      /^192\.168\./,    // 192.168.0.0/16
-      /^169\.254\./,    // Link-local
-    ];
+    const protocol = url.protocol;
+    const port = url.port || (protocol === 'https:' ? '443' : '80');
     
-    for (const pattern of blockedPatterns) {
-      if (typeof pattern === 'string') {
-        if (hostname === pattern || hostname.endsWith(`.${pattern}`)) {
-          throw new Error('Access to local/private networks is not allowed');
+    // Block obviously malicious hostnames
+    const blockedHostnames = ['localhost', '0.0.0.0'];
+    if (blockedHostnames.includes(hostname)) {
+      throw new Error('Access to local/private networks is not allowed');
+    }
+    
+    // If hostname is already an IP address, validate it directly
+    if (/^[\d.:]+$/.test(hostname)) {
+      if (isPrivateOrReservedIp(hostname)) {
+        throw new Error('Access to private/reserved IP addresses is not allowed');
+      }
+      return { ip: hostname, hostname, protocol, port };
+    }
+    
+    // Resolve DNS and validate all resulting IP addresses
+    // We'll use the first valid IP for the actual request to prevent DNS rebinding
+    const dns = await import('dns');
+    const dnsPromises = dns.promises;
+    
+    let validIp: string | null = null;
+    
+    // Try IPv4 first
+    try {
+      const ipv4 = await dnsPromises.resolve4(hostname);
+      for (const ip of ipv4) {
+        if (!isPrivateOrReservedIp(ip)) {
+          validIp = ip;
+          break;
         }
-      } else if (pattern.test(hostname)) {
-        throw new Error('Access to local/private networks is not allowed');
+      }
+    } catch {
+      // IPv4 resolution failed or all IPs were private
+    }
+    
+    // If no valid IPv4, try IPv6
+    if (!validIp) {
+      try {
+        const ipv6 = await dnsPromises.resolve6(hostname);
+        for (const ip of ipv6) {
+          if (!isPrivateOrReservedIp(ip)) {
+            validIp = ip;
+            break;
+          }
+        }
+      } catch {
+        // IPv6 resolution failed or all IPs were private
       }
     }
     
-    return true;
+    if (!validIp) {
+      throw new Error('Hostname does not resolve to any public IP address');
+    }
+    
+    // Return the validated IP to use for the request
+    return { ip: validIp, hostname, protocol, port };
   } catch (error: any) {
     throw new Error(`Invalid URL: ${error.message}`);
   }
@@ -147,11 +288,22 @@ export async function performHttpRequest(
     // Resolve URL with variables
     const resolvedUrl = resolveTemplate(config.url, context);
     
-    // Validate URL for security
-    validateUrl(resolvedUrl);
+    // Validate URL and get safe IP to prevent DNS rebinding
+    const { ip, hostname, protocol, port } = await validateAndResolveUrl(resolvedUrl);
     
-    // Build URL with query parameters
-    const url = new URL(resolvedUrl);
+    // Build URL with validated IP instead of hostname to prevent DNS rebinding
+    const originalUrl = new URL(resolvedUrl);
+    const safePath = originalUrl.pathname + originalUrl.search;
+    
+    // Construct URL using the validated IP
+    let url: URL;
+    if (ip.includes(':')) {
+      // IPv6 address - wrap in brackets
+      url = new URL(`${protocol}//[${ip}]:${port}${safePath}`);
+    } else {
+      // IPv4 address
+      url = new URL(`${protocol}//${ip}:${port}${safePath}`);
+    }
     if (config.queryParams) {
       for (const param of config.queryParams) {
         if (param.name && param.value) {
@@ -164,6 +316,9 @@ export async function performHttpRequest(
     // Build headers
     const headers: Record<string, string> = {
       'User-Agent': 'OmniPlus-Workflow/1.0',
+      // CRITICAL: Set Host header to original hostname (not IP)
+      // This ensures servers using virtual hosting work correctly
+      'Host': hostname,
     };
     
     // Add authentication headers
