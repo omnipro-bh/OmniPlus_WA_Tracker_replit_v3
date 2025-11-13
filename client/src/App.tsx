@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { ProtectedRoute } from "@/components/protected-route";
+import { AdminRoute } from "@/components/admin-route";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Login from "@/pages/login";
@@ -47,87 +49,121 @@ function Router() {
       {/* Protected routes */}
       <Route path="/dashboard">
         <DashboardLayout>
-          <Dashboard />
+          <ProtectedRoute requiredKey="dashboard">
+            <Dashboard />
+          </ProtectedRoute>
         </DashboardLayout>
       </Route>
       <Route path="/channels">
         <DashboardLayout>
-          <Channels />
-        </DashboardLayout>
-      </Route>
-      <Route path="/send">
-        <DashboardLayout>
-          <Send />
-        </DashboardLayout>
-      </Route>
-      <Route path="/bulk">
-        <DashboardLayout>
-          <Bulk />
-        </DashboardLayout>
-      </Route>
-      <Route path="/templates">
-        <DashboardLayout>
-          <Templates />
-        </DashboardLayout>
-      </Route>
-      <Route path="/workflows">
-        <DashboardLayout>
-          <Workflows />
-        </DashboardLayout>
-      </Route>
-      <Route path="/phonebooks">
-        <DashboardLayout>
-          <Phonebooks />
-        </DashboardLayout>
-      </Route>
-      <Route path="/phonebooks/:id">
-        <DashboardLayout>
-          <PhonebookDetail />
-        </DashboardLayout>
-      </Route>
-      <Route path="/outbox">
-        <DashboardLayout>
-          <Outbox />
-        </DashboardLayout>
-      </Route>
-      <Route path="/logs">
-        <DashboardLayout>
-          <Logs />
-        </DashboardLayout>
-      </Route>
-      <Route path="/bulk-logs">
-        <DashboardLayout>
-          <BulkLogs />
-        </DashboardLayout>
-      </Route>
-      <Route path="/pricing">
-        <DashboardLayout>
-          <Pricing />
-        </DashboardLayout>
-      </Route>
-      <Route path="/admin">
-        <DashboardLayout>
-          <Admin />
-        </DashboardLayout>
-      </Route>
-      <Route path="/admin/balances">
-        <DashboardLayout>
-          <AdminBalances />
-        </DashboardLayout>
-      </Route>
-      <Route path="/admin/whapi-settings">
-        <DashboardLayout>
-          <WHAPISettings />
-        </DashboardLayout>
-      </Route>
-      <Route path="/settings">
-        <DashboardLayout>
-          <Settings />
+          <ProtectedRoute requiredKey="channels">
+            <Channels />
+          </ProtectedRoute>
         </DashboardLayout>
       </Route>
       <Route path="/safety-meter">
         <DashboardLayout>
-          <SafetyMeter />
+          <ProtectedRoute requiredKey="safetyMeter">
+            <SafetyMeter />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/send">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="send">
+            <Send />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/bulk">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bulk">
+            <Bulk />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/templates">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="templates">
+            <Templates />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/workflows">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="workflows">
+            <Workflows />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/phonebooks">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="phonebooks">
+            <Phonebooks />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/phonebooks/:id">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="phonebooks">
+            <PhonebookDetail />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/outbox">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="outbox">
+            <Outbox />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/logs">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="logs">
+            <Logs />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/bulk-logs">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bulkLogs">
+            <BulkLogs />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/pricing">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="pricing">
+            <Pricing />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/admin">
+        <DashboardLayout>
+          <AdminRoute>
+            <Admin />
+          </AdminRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/admin/balances">
+        <DashboardLayout>
+          <AdminRoute>
+            <AdminBalances />
+          </AdminRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/admin/whapi-settings">
+        <DashboardLayout>
+          <AdminRoute>
+            <WHAPISettings />
+          </AdminRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/settings">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="settings">
+            <Settings />
+          </ProtectedRoute>
         </DashboardLayout>
       </Route>
 
