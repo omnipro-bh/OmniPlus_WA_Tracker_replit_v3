@@ -36,73 +36,94 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
 
-  const mainItems = [
+  const allMainItems = [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
+      pageKey: "dashboard",
     },
     {
       title: "Channels",
       url: "/channels",
       icon: Radio,
+      pageKey: "channels",
     },
     {
       title: "Safety Meter",
       url: "/safety-meter",
       icon: ShieldCheck,
+      pageKey: "safetyMeter",
     },
     {
       title: "Send",
       url: "/send",
       icon: Send,
+      pageKey: "send",
     },
     {
       title: "Bulk",
       url: "/bulk",
       icon: Users,
+      pageKey: "bulk",
     },
     {
       title: "Templates",
       url: "/templates",
       icon: FileText,
+      pageKey: "templates",
     },
     {
       title: "Workflows",
       url: "/workflows",
       icon: GitBranch,
+      pageKey: "workflows",
     },
     {
       title: "Phonebooks",
       url: "/phonebooks",
       icon: Book,
+      pageKey: "phonebooks",
     },
     {
       title: "Outbox",
       url: "/outbox",
       icon: Inbox,
+      pageKey: "outbox",
     },
     {
       title: "Workflow Logs",
       url: "/logs",
       icon: ScrollText,
+      pageKey: "logs",
     },
     {
       title: "Bulk Logs",
       url: "/bulk-logs",
       icon: FileText,
+      pageKey: "bulkLogs",
     },
     {
       title: "Pricing",
       url: "/pricing",
       icon: CreditCard,
+      pageKey: "pricing",
     },
     {
       title: "Settings",
       url: "/settings",
       icon: User,
+      pageKey: "settings",
     },
   ];
+
+  const effectivePageAccess = (user as any)?.effectivePageAccess || {};
+  
+  const mainItems = allMainItems.filter(item => {
+    if (user?.role === "admin") return true;
+    if (!item.pageKey) return true;
+    return effectivePageAccess[item.pageKey] === true;
+  });
 
   const adminItems = user?.role === "admin" ? [
     {

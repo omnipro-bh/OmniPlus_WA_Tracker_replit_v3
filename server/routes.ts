@@ -428,6 +428,7 @@ export function registerRoutes(app: Express) {
           : {
               dashboard: true,
               channels: false,
+              safetyMeter: false,
               send: false,
               bulk: false,
               templates: false,
@@ -436,6 +437,7 @@ export function registerRoutes(app: Express) {
               logs: false,
               bulkLogs: false,
               pricing: true,
+              phonebooks: false,
               settings: false,
               balances: false,
               whapiSettings: false,
@@ -3678,7 +3680,7 @@ export function registerRoutes(app: Express) {
   app.patch("/api/admin/users/:id/overrides", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
       const userId = parseInt(req.params.id);
-      const { dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, pageAccess } = req.body;
+      const { dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, phonebookLimit, pageAccess } = req.body;
 
       const user = await storage.getUser(userId);
       if (!user) {
@@ -3697,6 +3699,7 @@ export function registerRoutes(app: Express) {
       if (bulkMessagesLimit !== undefined) overrides.bulkMessagesLimit = bulkMessagesLimit;
       if (channelsLimit !== undefined) overrides.channelsLimit = channelsLimit;
       if (chatbotsLimit !== undefined) overrides.chatbotsLimit = chatbotsLimit;
+      if (phonebookLimit !== undefined) overrides.phonebookLimit = phonebookLimit;
       if (pageAccess !== undefined) overrides.pageAccess = pageAccess;
 
       // Update subscription with overrides
