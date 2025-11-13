@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,11 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Send as SendIcon, Loader2 } from "lucide-react";
+import { Send as SendIcon, Loader2, Smile } from "lucide-react";
 import type { Channel, Template } from "@shared/schema";
 import { Link } from "wouter";
+import { WhatsAppPreview } from "@/components/whatsapp-preview";
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
 
 type Phonebook = {
   id: number;
@@ -24,10 +28,12 @@ type Phonebook = {
 export default function Send() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [sendMode, setSendMode] = useState<"single" | "bulk">("single");
   const [bulkStrategy, setBulkStrategy] = useState<"phonebook_fields" | "single_message">("phonebook_fields");
   const [phonebookId, setPhonebookId] = useState("");
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     channelId: "",
@@ -198,6 +204,35 @@ export default function Send() {
         button3Id: "",
       });
     }
+  };
+
+  const handleEmojiSelect = (emoji: any) => {
+    // Guard: Check if textarea ref is available
+    const textarea = bodyTextareaRef.current;
+    if (!textarea) {
+      // Fallback: Just append emoji to body if textarea not mounted
+      const currentBody = formData.body || "";
+      setFormData({ ...formData, body: currentBody + emoji.native });
+      setEmojiPickerOpen(false);
+      return;
+    }
+
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const text = formData.body || "";
+    const newText = text.substring(0, start) + emoji.native + text.substring(end);
+
+    setFormData({ ...formData, body: newText });
+    setEmojiPickerOpen(false);
+
+    // Restore cursor position
+    setTimeout(() => {
+      if (textarea) {
+        textarea.focus();
+        const newPosition = start + emoji.native.length;
+        textarea.setSelectionRange(newPosition, newPosition);
+      }
+    }, 0);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -471,8 +506,32 @@ export default function Send() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="body">Body *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="body">Body *</Label>
+                <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm"
+                      data-testid="button-emoji-picker"
+                    >
+                      <Smile className="h-4 w-4 mr-1" />
+                      Add Emoji
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0 border-none" align="end">
+                    <Picker 
+                      data={data} 
+                      onEmojiSelect={handleEmojiSelect}
+                      theme="auto"
+                      previewPosition="none"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
               <Textarea
+                ref={bodyTextareaRef}
                 id="body"
                 placeholder="Message body"
                 rows={6}
@@ -683,39 +742,34 @@ export default function Send() {
         <Card>
           <CardHeader>
             <CardTitle>Preview</CardTitle>
-            <CardDescription>How your message will look</CardDescription>
+            <CardDescription>How your message will look on WhatsApp</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg bg-[#DCF8C6] dark:bg-[#005C4B] p-4 max-w-sm">
-              {formData.header && (
-                <div className="font-semibold mb-2 text-sm">{formData.header}</div>
-              )}
-              <div className="whitespace-pre-wrap text-sm">
-                {formData.body || "Your message will appear here..."}
-              </div>
-              {formData.footer && (
-                <div className="text-xs text-muted-foreground mt-2">{formData.footer}</div>
-              )}
-              {(formData.button1Text.trim() || formData.button2Text.trim() || formData.button3Text.trim()) && (
-                <div className="mt-3 space-y-1">
-                  {formData.button1Text.trim() && (
-                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
-                      {formData.button1Text}
-                    </button>
-                  )}
-                  {formData.button2Text.trim() && (
-                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
-                      {formData.button2Text}
-                    </button>
-                  )}
-                  {formData.button3Text.trim() && (
-                    <button className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm font-medium hover-elevate">
-                      {formData.button3Text}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <WhatsAppPreview
+              header={formData.header}
+              body={formData.body}
+              footer={formData.footer}
+              messageType={formData.messageType}
+              mediaUrl={formData.mediaUrl}
+              buttons={[
+                formData.button1Text.trim() ? {
+                  text: formData.button1Text,
+                  type: formData.button1Type,
+                  value: formData.button1Value,
+                } : null,
+                formData.button2Text.trim() ? {
+                  text: formData.button2Text,
+                  type: formData.button2Type,
+                  value: formData.button2Value,
+                } : null,
+                formData.button3Text.trim() ? {
+                  text: formData.button3Text,
+                  type: formData.button3Type,
+                  value: formData.button3Value,
+                } : null,
+              ].filter(Boolean) as Array<{text: string; type: string; value?: string}>}
+              uploadingFile={uploadingFile}
+            />
           </CardContent>
         </Card>
       </div>

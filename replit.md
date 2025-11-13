@@ -15,7 +15,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Authentication:** JWT-based with distinct user and admin roles.
 - **Dashboard:** Provides key metrics, subscription status, and activity feeds.
 - **Channel Management:** Admin-controlled activation and user QR authorization.
-- **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, respecting plan limits.
+- **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, respecting plan limits. Features realistic WhatsApp-style preview with phone mockup UI, emoji picker integration for message composition, and real-time media preview (images/videos/documents).
 - **Templates:** CRUD operations for message templates with preview functionality.
 - **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections.
 - **Outbox:** Tracks the status of message sending jobs with pagination for large lists.
@@ -48,6 +48,8 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job.
 - **Error Handling:** User-facing error messages are sanitized of vendor branding.
 - **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types (e.g., `image_buttons`, `video_buttons`).
+- **WhatsApp Preview:** Custom-built phone mockup UI with WhatsApp-style message bubbles, interactive buttons (Quick Reply, URL, Call), and real-time media preview for uploaded files.
+- **Emoji Support:** Integrated emoji-mart picker with Popover component for seamless emoji insertion in message body.
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** Used for channel management.
@@ -55,3 +57,4 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **PayPal Web SDK:** Integrated for subscription payments.
 - **PostgreSQL (Neon):** Serves as the primary database.
 - **node-cron:** Utilized for scheduling daily tasks and background processes.
+- **emoji-mart:** Emoji picker library (@emoji-mart/react, @emoji-mart/data) for message composition.

@@ -1,4 +1,5 @@
-import { FileText, Phone, Globe } from "lucide-react";
+import { FileText, Phone, Globe, User } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface WhatsAppPreviewProps {
   header?: string;
@@ -41,9 +42,11 @@ export function WhatsAppPreview({
           <div className="bg-[#E5DDD5] dark:bg-[#0D1418] h-[600px] overflow-hidden">
             {/* WhatsApp Header */}
             <div className="bg-[#075E54] dark:bg-[#1F2C34] px-4 py-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-sm font-semibold">
-                👤
-              </div>
+              <Avatar className="w-10 h-10">
+                <AvatarFallback className="bg-gray-300 dark:bg-gray-600">
+                  <User className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </AvatarFallback>
+              </Avatar>
               <div className="flex-1">
                 <div className="text-white font-medium text-sm">Preview</div>
                 <div className="text-white/70 text-xs">online</div>
