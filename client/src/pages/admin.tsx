@@ -3956,13 +3956,13 @@ export default function Admin() {
                       </Button>
                     </div>
                   </div>
-                  {/* Display up to 2 workflows */}
+                  {/* Display up to 5 workflows */}
                   {userWorkflows && userWorkflows.length > 0 ? (
                     <>
-                      {userWorkflows.slice(0, 2).map((workflow, index) => (
+                      {userWorkflows.slice(0, 5).map((workflow, index) => (
                         <div key={workflow.id}>
                           <p className="text-xs font-medium text-muted-foreground mb-1">
-                            Workflow Webhook {userWorkflows.length > 1 ? `(${index === 0 ? 'First' : 'Second'} Workflow)` : ''}
+                            Workflow Webhook {workflow.name}
                           </p>
                           <div className="flex items-center gap-2">
                             <code className="flex-1 text-xs bg-muted p-2 rounded font-mono break-all" data-testid={`text-workflow-webhook-${workflow.id}`}>
@@ -3987,9 +3987,9 @@ export default function Admin() {
                           </p>
                         </div>
                       ))}
-                      {userWorkflows.length > 2 && (
+                      {userWorkflows.length > 5 && (
                         <p className="text-xs text-muted-foreground">
-                          Note: User has {userWorkflows.length} workflows. Only showing first 2 here.
+                          Note: User has {userWorkflows.length} workflows. Only showing first 5 here.
                         </p>
                       )}
                     </>
@@ -4080,6 +4080,7 @@ export default function Admin() {
                     { key: "dashboard", label: "Dashboard" },
                     { key: "pricing", label: "Pricing" },
                     { key: "channels", label: "Channels" },
+                    { key: "safetyMeter", label: "Safety Meter" },
                     { key: "send", label: "Send" },
                     { key: "templates", label: "Templates" },
                     { key: "workflows", label: "Workflows" },
