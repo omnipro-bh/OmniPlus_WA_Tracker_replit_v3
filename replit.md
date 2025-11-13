@@ -23,7 +23,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Safety Meter:** Real-time WhatsApp channel health monitoring with plan-based access control. Displays 4 color-coded metrics (lifetime, coverage, response rate, overall rating) from WHAPI Tools API. Features channel selector, manual refresh, and plan-gating. No database caching - metrics fetched on-demand with WHAPI's daily refresh limit.
 - **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
 - **Admin Dashboard:** Manages users, billing, offline payments, channel activation, and dynamic homepage content.
-- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access, and theme.
+- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), and theme.
 - **Homepage Content Management:** Admin controls for 'Use Cases' and 'Homepage Features'.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 - **Phonebook Management:** CRUD for phonebooks and contacts, including CSV import with validation, partial imports, and plan-based contact limits.
@@ -42,6 +42,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **Payment Methods:** Supports PayPal and offline payments.
 - **PayPal Integration:** Requires `paypalPlanId` for subscription integration.
 - **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
+- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Bulk, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
 
 **Technical Implementations:**
 - **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job.

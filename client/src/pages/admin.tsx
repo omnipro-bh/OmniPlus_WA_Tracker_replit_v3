@@ -131,6 +131,7 @@ function DefaultPageAccessSettings() {
     balances: false,
     whapiSettings: false,
     phonebooks: false,
+    safetyMeter: false,
   });
 
   const { data: settings, isLoading } = useQuery<{pageAccess: typeof pageAccess}>({
@@ -180,6 +181,7 @@ function DefaultPageAccessSettings() {
   const pages = [
     { key: "dashboard", label: "Dashboard", description: "Main dashboard page" },
     { key: "channels", label: "Channels", description: "Manage WhatsApp channels" },
+    { key: "safetyMeter", label: "Safety Meter", description: "Channel health monitoring" },
     { key: "send", label: "Send", description: "Send individual messages" },
     { key: "bulk", label: "Bulk", description: "Send bulk messages" },
     { key: "templates", label: "Templates", description: "Message templates" },
@@ -1453,6 +1455,7 @@ export default function Admin() {
       dashboard: true,
       pricing: true,
       channels: false,
+      safetyMeter: false,
       send: false,
       bulk: false,
       templates: false,
@@ -1882,6 +1885,7 @@ export default function Admin() {
         dashboard: true,
         pricing: true,
         channels: false,
+        safetyMeter: false,
         send: false,
         bulk: false,
         templates: false,
@@ -1908,6 +1912,7 @@ export default function Admin() {
       dashboard: true,
       pricing: true,
       channels: false,
+      safetyMeter: false,
       send: false,
       bulk: false,
       templates: false,
@@ -3634,6 +3639,22 @@ export default function Admin() {
                   />
                   <Label htmlFor="page-channels" className="text-sm font-normal cursor-pointer">
                     Channels
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-safety-meter"
+                    checked={planForm.pageAccess.safetyMeter}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, safetyMeter: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-safety-meter"
+                  />
+                  <Label htmlFor="page-safety-meter" className="text-sm font-normal cursor-pointer">
+                    Safety Meter
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
