@@ -1002,14 +1002,14 @@ export default function WorkflowBuilder({
 
       {/* Fullscreen Node Palette Sheet */}
       <Sheet open={showNodePaletteSheet} onOpenChange={setShowNodePaletteSheet}>
-        <SheetContent side="left" className="w-[400px] sm:w-[540px]">
-          <SheetHeader>
+        <SheetContent side="left" className="w-[400px] sm:w-[540px] flex flex-col">
+          <SheetHeader className="flex-shrink-0">
             <SheetTitle className="flex items-center gap-2">
               <List className="h-5 w-5" />
               Node Palette
             </SheetTitle>
           </SheetHeader>
-          <div className="mt-6 h-[calc(100vh-8rem)]">
+          <div className="flex-1 min-h-0 mt-6">
             {renderNodePalette()}
           </div>
         </SheetContent>
@@ -1017,53 +1017,57 @@ export default function WorkflowBuilder({
 
       {/* Fullscreen Config Sheet */}
       <Sheet open={showConfigSheet} onOpenChange={setShowConfigSheet}>
-        <SheetContent side="right" className="w-[400px] sm:w-[540px]">
-          <SheetHeader>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px] flex flex-col">
+          <SheetHeader className="flex-shrink-0">
             <SheetTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
               Node Configuration
             </SheetTitle>
           </SheetHeader>
           {selectedNode && (
-            <div className="mt-6 space-y-4">
-              <div>
-                <Label>Node Type</Label>
-                <div className="text-sm text-muted-foreground mt-1">
-                  {String(selectedNode.data.label || '')}
+            <div className="flex-1 min-h-0 mt-6">
+              <ScrollArea className="h-full">
+                <div className="space-y-4 pr-4">
+                  <div>
+                    <Label>Node Type</Label>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {String(selectedNode.data.label || '')}
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="node-label-sheet">Display Label</Label>
+                    <Input
+                      id="node-label-sheet"
+                      value={String(selectedNode.data.label || '')}
+                      onChange={(e) => {
+                        setNodes((nds) =>
+                          nds.map((node) =>
+                            node.id === selectedNode.id
+                              ? { ...node, data: { ...node.data, label: e.target.value } }
+                              : node
+                          )
+                        );
+                      }}
+                      data-testid="input-node-label-sheet"
+                    />
+                  </div>
+                  <div className="border-t pt-4">
+                    <Label className="mb-3 block">Message Settings</Label>
+                    <NodeConfigPanel
+                      node={selectedNode}
+                      onUpdate={(nodeId, config) => {
+                        setNodes((nds) =>
+                          nds.map((node) =>
+                            node.id === nodeId
+                              ? { ...node, data: { ...node.data, config } }
+                              : node
+                          )
+                        );
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="node-label-sheet">Display Label</Label>
-                <Input
-                  id="node-label-sheet"
-                  value={String(selectedNode.data.label || '')}
-                  onChange={(e) => {
-                    setNodes((nds) =>
-                      nds.map((node) =>
-                        node.id === selectedNode.id
-                          ? { ...node, data: { ...node.data, label: e.target.value } }
-                          : node
-                      )
-                    );
-                  }}
-                  data-testid="input-node-label-sheet"
-                />
-              </div>
-              <div className="border-t pt-4">
-                <Label className="mb-3 block">Message Settings</Label>
-                <NodeConfigPanel
-                  node={selectedNode}
-                  onUpdate={(nodeId, config) => {
-                    setNodes((nds) =>
-                      nds.map((node) =>
-                        node.id === nodeId
-                          ? { ...node, data: { ...node.data, config } }
-                          : node
-                      )
-                    );
-                  }}
-                />
-              </div>
+              </ScrollArea>
             </div>
           )}
         </SheetContent>
