@@ -28,6 +28,7 @@ export const bulkLogCategoryEnum = pgEnum("bulk_log_category", ["send", "webhook
 export const planTypeEnum = pgEnum("plan_type", ["PUBLIC", "CUSTOM"]);
 export const couponStatusEnum = pgEnum("coupon_status", ["ACTIVE", "EXPIRED", "DISABLED"]);
 export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAYMENT_IN", "PAYMENT_IN_OFFLINE", "DAYS_GRANTED", "DAYS_REFUND", "ADJUSTMENT"]);
+export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -355,10 +356,12 @@ export const templates = pgTable("templates", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
+  messageType: outgoingMessageTypeEnum("message_type").notNull().default("text_buttons"),
   header: text("header"),
   body: text("body").notNull(),
   footer: text("footer"),
-  buttons: text("buttons").array().notNull().default([]), // Array of button texts
+  buttons: jsonb("buttons").notNull().default([]), // Array of button objects: [{ text, type, value, id }]
+  mediaUploadId: integer("media_upload_id").references(() => mediaUploads.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -367,6 +370,10 @@ export const templatesRelations = relations(templates, ({ one }) => ({
   user: one(users, {
     fields: [templates.userId],
     references: [users.id],
+  }),
+  mediaUpload: one(mediaUploads, {
+    fields: [templates.mediaUploadId],
+    references: [mediaUploads.id],
   }),
 }));
 
@@ -753,9 +760,31 @@ export const insertChannelSchema = createInsertSchema(channels, {
   phone: z.string().min(1),
 });
 
+// Button schema for templates and messages
+export const buttonSchema = z.object({
+  text: z.string().min(1),
+  type: z.enum(["quick_reply", "url", "call"]),
+  value: z.string().nullable().optional(), // URL or phone number for url/call buttons
+  id: z.string().optional(), // ID for quick_reply buttons
+}).refine((data) => {
+  // quick_reply buttons should have an id
+  if (data.type === "quick_reply" && !data.id) {
+    return false;
+  }
+  // url and call buttons should have a value
+  if ((data.type === "url" || data.type === "call") && !data.value) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Button validation failed: quick_reply requires id, url/call requires value"
+});
+
 export const insertTemplateSchema = createInsertSchema(templates, {
   title: z.string().min(1),
   body: z.string().min(1),
+  buttons: z.array(buttonSchema).default([]),
+  messageType: z.enum(["text", "text_buttons", "image_buttons", "video_buttons", "document"]).optional(),
 });
 
 export const insertJobSchema = createInsertSchema(jobs);

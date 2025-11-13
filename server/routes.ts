@@ -1976,7 +1976,22 @@ export function registerRoutes(app: Express) {
   app.get("/api/templates", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const templates = await storage.getTemplatesForUser(req.userId!);
-      res.json(templates);
+      
+      // Resolve media URLs for templates with media uploads
+      const templatesWithMedia = await Promise.all(
+        templates.map(async (template) => {
+          if (template.mediaUploadId) {
+            const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
+            return {
+              ...template,
+              mediaUrl: mediaUpload?.whapiMediaId || null,
+            };
+          }
+          return { ...template, mediaUrl: null };
+        })
+      );
+      
+      res.json(templatesWithMedia);
     } catch (error: any) {
       console.error("Get templates error:", error);
       res.status(500).json({ error: "Failed to fetch templates" });
@@ -1999,7 +2014,15 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { title, header, body, footer, buttons } = validationResult.data;
+      const { title, header, body, footer, buttons, messageType, mediaUploadId } = validationResult.data;
+
+      // Validate media upload ownership if provided
+      if (mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(mediaUploadId);
+        if (!mediaUpload || mediaUpload.userId !== req.userId!) {
+          return res.status(404).json({ error: "Media upload not found or access denied" });
+        }
+      }
 
       const template = await storage.createTemplate({
         userId: req.userId!,
@@ -2008,6 +2031,8 @@ export function registerRoutes(app: Express) {
         body,
         footer,
         buttons: buttons || [],
+        messageType: messageType || "text_buttons",
+        mediaUploadId: mediaUploadId || null,
       });
 
       await storage.createAuditLog({
@@ -2020,7 +2045,14 @@ export function registerRoutes(app: Express) {
         },
       });
 
-      res.json(template);
+      // Resolve media URL if present
+      let responseTemplate = { ...template, mediaUrl: null as string | null };
+      if (template.mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
+        responseTemplate.mediaUrl = mediaUpload?.whapiMediaId || null;
+      }
+
+      res.json(responseTemplate);
     } catch (error: any) {
       console.error("Create template error:", error);
       res.status(500).json({ error: "Failed to create template" });
@@ -2037,13 +2069,24 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Template not found" });
       }
 
-      const { title, header, body, footer, buttons } = req.body;
+      const { title, header, body, footer, buttons, messageType, mediaUploadId } = req.body;
+      
+      // Validate media upload ownership if provided
+      if (mediaUploadId !== undefined && mediaUploadId !== null) {
+        const mediaUpload = await storage.getMediaUpload(mediaUploadId);
+        if (!mediaUpload || mediaUpload.userId !== req.userId!) {
+          return res.status(404).json({ error: "Media upload not found or access denied" });
+        }
+      }
+      
       const updated = await storage.updateTemplate(templateId, {
         title,
         header,
         body,
         footer,
         buttons,
+        messageType,
+        mediaUploadId,
       });
 
       await storage.createAuditLog({
@@ -2056,7 +2099,14 @@ export function registerRoutes(app: Express) {
         },
       });
 
-      res.json(updated);
+      // Resolve media URL if present
+      let responseTemplate = { ...updated, mediaUrl: null as string | null };
+      if (updated?.mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(updated.mediaUploadId);
+        responseTemplate.mediaUrl = mediaUpload?.whapiMediaId || null;
+      }
+
+      res.json(responseTemplate);
     } catch (error: any) {
       console.error("Update template error:", error);
       res.status(500).json({ error: "Failed to update template" });
