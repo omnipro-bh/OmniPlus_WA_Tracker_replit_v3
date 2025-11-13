@@ -3,7 +3,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, serveStatic } from "./vite";
+import { log } from "./utils";
 import { seedDatabase } from "./seed";
 import { backgroundWorker } from "./worker";
 
