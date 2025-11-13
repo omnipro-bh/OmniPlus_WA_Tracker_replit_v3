@@ -132,8 +132,8 @@ export function WhatsAppPreview({
                       </div>
                     </div>
 
-                    {/* Buttons Section */}
-                    {buttons.length > 0 && (
+                    {/* Buttons Section - Only show for message types that support buttons */}
+                    {buttons.length > 0 && !["image", "document"].includes(messageType) && (
                       <div className="border-t border-gray-300 dark:border-gray-600">
                         {buttons.map((button, index) => (
                           <button
