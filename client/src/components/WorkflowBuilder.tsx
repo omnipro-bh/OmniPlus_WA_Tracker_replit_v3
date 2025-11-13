@@ -252,6 +252,20 @@ export default function WorkflowBuilder({
     }
   }, [isFullscreen, selectedNodeId]);
   
+  // Restore panel sizes from localStorage on mount
+  const [savedPanelSizes, setSavedPanelSizes] = useState<number[]>([]);
+  
+  useEffect(() => {
+    const saved = localStorage.getItem('workflow-builder-panel-sizes');
+    if (saved) {
+      try {
+        setSavedPanelSizes(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse saved panel sizes:', e);
+      }
+    }
+  }, []);
+  
   // Derive selectedNode from nodes array to always have latest data
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -572,7 +586,10 @@ export default function WorkflowBuilder({
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
-  }, []);
+    if (isFullscreen) {
+      setShowConfigSheet(true);
+    }
+  }, [isFullscreen]);
 
   // Node Palette Content (reusable)
   const renderNodePalette = () => (
@@ -692,12 +709,22 @@ export default function WorkflowBuilder({
         onLayout={(sizes) => {
           localStorage.setItem('workflow-builder-panel-sizes', JSON.stringify(sizes));
         }}
+        {...(savedPanelSizes.length > 0 && { defaultLayout: savedPanelSizes })}
       >
         {/* Left Panel - Node Palette */}
-        {!leftPanelCollapsed && !isFullscreen && (
+        {!isFullscreen && (
           <>
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={30} collapsible>
-              <Card className="w-full h-full p-4 flex-shrink-0 max-h-full overflow-hidden flex flex-col">
+            <ResizablePanel 
+              defaultSize={20} 
+              minSize={15} 
+              maxSize={30} 
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => setLeftPanelCollapsed(true)}
+              onExpand={() => setLeftPanelCollapsed(false)}
+            >
+              {!leftPanelCollapsed && (
+                <Card className="w-full h-full p-4 flex-shrink-0 max-h-full overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between mb-4 flex-shrink-0">
                   <h3 className="font-semibold flex items-center gap-2">
                     <List className="h-4 w-4" />
@@ -715,6 +742,7 @@ export default function WorkflowBuilder({
                 </div>
                 {renderNodePalette()}
               </Card>
+              )}
             </ResizablePanel>
             <ResizableHandle withHandle />
           </>
@@ -738,7 +766,7 @@ export default function WorkflowBuilder({
 
         {/* Center Panel - ReactFlow Canvas */}
         <ResizablePanel defaultSize={60} className="relative">
-          <div className="h-full border rounded-lg" ref={reactFlowWrapper}>
+          <div className="h-full w-full border rounded-lg" ref={reactFlowWrapper}>
             <ReactFlow
               nodes={nodesWithEntryData}
               edges={edges}
@@ -870,28 +898,39 @@ export default function WorkflowBuilder({
         </ResizablePanel>
 
         {/* Right Panel - Node Configuration */}
-        {!rightPanelCollapsed && !isFullscreen && selectedNode && (
+        {!isFullscreen && (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={30} collapsible>
-              <Card className="w-full h-full flex flex-col max-h-full overflow-hidden flex-shrink-0">
-                <div className="p-4 border-b flex items-center justify-between flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Settings className="h-5 w-5 text-primary" />
-                    <h3 className="font-semibold">Node Configuration</h3>
+            <ResizablePanel 
+              defaultSize={20} 
+              minSize={15} 
+              maxSize={30} 
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => setRightPanelCollapsed(true)}
+              onExpand={() => setRightPanelCollapsed(false)}
+            >
+              {!rightPanelCollapsed && (
+                <Card className="w-full h-full flex flex-col max-h-full overflow-hidden flex-shrink-0">
+                  <div className="p-4 border-b flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Settings className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Node Configuration</h3>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setRightPanelCollapsed(true)}
+                      title="Collapse panel"
+                      data-testid="button-collapse-right-panel"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => setRightPanelCollapsed(true)}
-                    title="Collapse panel"
-                    data-testid="button-collapse-right-panel"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <ScrollArea className="flex-1">
-                  <div className="p-4 space-y-4">
+                  {selectedNode ? (
+                    <div className="flex-1 min-h-0">
+                      <ScrollArea className="h-full">
+                        <div className="p-4 space-y-4">
                     <div>
                       <Label>Node Type</Label>
                       <div className="text-sm text-muted-foreground mt-1">
@@ -929,16 +968,27 @@ export default function WorkflowBuilder({
                           );
                         }}
                       />
-                    </div>
+                        </div>
+                      </div>
+                    </ScrollArea>
                   </div>
-                </ScrollArea>
-              </Card>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center p-8">
+                      <div className="text-center text-muted-foreground">
+                        <Settings className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                        <p className="font-medium">No Node Selected</p>
+                        <p className="text-sm mt-2">Click a node on the canvas to configure it</p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              )}
             </ResizablePanel>
           </>
         )}
 
         {/* Expand button when right panel is collapsed */}
-        {rightPanelCollapsed && !isFullscreen && selectedNode && (
+        {rightPanelCollapsed && !isFullscreen && (
           <div className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
             <Button
               size="icon"
