@@ -15,6 +15,9 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   // Check if this is an end node (terminal node with no outputs)
   const isEndNode = nodeType.startsWith('message.');
   
+  // Check if this is an HTTP Request node (has success and error outputs)
+  const isHttpNode = nodeType === 'httpRequest';
+  
   // For list messages, collect all row IDs from all sections
   const listRowIds: { id: string; title: string; sectionTitle?: string }[] = [];
   if (sections.length > 0) {
@@ -252,8 +255,58 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
           
-          {/* Default single output handle if no buttons/options */}
-          {!hasMultipleOutputs && (
+          {/* HTTP Request Node - success and error outputs */}
+          {isHttpNode && (
+            <div className="space-y-1 mt-3">
+              {/* Success path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20"
+                  title="Success (2xx responses)"
+                >
+                  Success
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="success"
+                  className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+              {/* Error path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20"
+                  title="Error (non-2xx or network errors)"
+                >
+                  Error
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="error"
+                  className="!w-3 !h-3 !bg-red-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* Default single output handle if no buttons/options and not HTTP node */}
+          {!hasMultipleOutputs && !isHttpNode && (
             <Handle
               type="source"
               position={Position.Right}

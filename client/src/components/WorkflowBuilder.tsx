@@ -144,6 +144,15 @@ export const nodeTypes = {
       description: 'Triggers on first incoming message of the day (resets at 00:00 Asia/Bahrain)' 
     },
   ],
+  ACTION: [
+    {
+      id: 'httpRequest',
+      label: 'HTTP Request',
+      icon: Network,
+      cost: 0,
+      description: 'Call external APIs with custom HTTP requests'
+    },
+  ],
 };
 
 // Auto-layout function using dagre for horizontal left-to-right arrangement

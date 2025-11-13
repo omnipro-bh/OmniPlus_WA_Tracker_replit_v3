@@ -1576,6 +1576,333 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     );
   }
 
+  // HTTP Request Node Configuration
+  if (nodeType === 'httpRequest') {
+    const headers = config.headers || [];
+    const queryParams = config.queryParams || [];
+    const responseMapping = config.responseMapping || [];
+
+    const addHeader = () => {
+      updateConfig('headers', [...headers, { name: '', value: '' }]);
+    };
+
+    const removeHeader = (index: number) => {
+      updateConfig('headers', headers.filter((_: any, i: number) => i !== index));
+    };
+
+    const updateHeader = (index: number, field: string, value: string) => {
+      const newHeaders = [...headers];
+      newHeaders[index] = { ...newHeaders[index], [field]: value };
+      updateConfig('headers', newHeaders);
+    };
+
+    const addQueryParam = () => {
+      updateConfig('queryParams', [...queryParams, { name: '', value: '' }]);
+    };
+
+    const removeQueryParam = (index: number) => {
+      updateConfig('queryParams', queryParams.filter((_: any, i: number) => i !== index));
+    };
+
+    const updateQueryParam = (index: number, field: string, value: string) => {
+      const newParams = [...queryParams];
+      newParams[index] = { ...newParams[index], [field]: value };
+      updateConfig('queryParams', newParams);
+    };
+
+    const addResponseMapping = () => {
+      updateConfig('responseMapping', [...responseMapping, { jsonPath: '', variableName: '' }]);
+    };
+
+    const removeResponseMapping = (index: number) => {
+      updateConfig('responseMapping', responseMapping.filter((_: any, i: number) => i !== index));
+    };
+
+    const updateResponseMapping = (index: number, field: string, value: string) => {
+      const newMapping = [...responseMapping];
+      newMapping[index] = { ...newMapping[index], [field]: value };
+      updateConfig('responseMapping', newMapping);
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* HTTP Method */}
+        <div>
+          <Label htmlFor="method">HTTP Method *</Label>
+          <Select
+            value={config.method || 'GET'}
+            onValueChange={(value) => updateConfig('method', value)}
+          >
+            <SelectTrigger id="method" data-testid="select-http-method">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="GET">GET</SelectItem>
+              <SelectItem value="POST">POST</SelectItem>
+              <SelectItem value="PUT">PUT</SelectItem>
+              <SelectItem value="PATCH">PATCH</SelectItem>
+              <SelectItem value="DELETE">DELETE</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* URL */}
+        <div>
+          <Label htmlFor="url">URL *</Label>
+          <Input
+            id="url"
+            placeholder="https://api.example.com/endpoint"
+            value={config.url || ''}
+            onChange={(e) => updateConfig('url', e.target.value)}
+            data-testid="input-http-url"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Use {`{{variableName}}`} for variable substitution
+          </p>
+        </div>
+
+        {/* Authentication */}
+        <Separator />
+        <div>
+          <Label htmlFor="auth-type">Authentication</Label>
+          <Select
+            value={config.authType || 'none'}
+            onValueChange={(value) => updateConfig('authType', value)}
+          >
+            <SelectTrigger id="auth-type" data-testid="select-auth-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="bearer">Bearer Token</SelectItem>
+              <SelectItem value="basic">Basic Auth</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {config.authType === 'bearer' && (
+          <div>
+            <Label htmlFor="bearer-token">Bearer Token *</Label>
+            <Input
+              id="bearer-token"
+              type="password"
+              placeholder="your_bearer_token"
+              value={config.bearerToken || ''}
+              onChange={(e) => updateConfig('bearerToken', e.target.value)}
+              data-testid="input-bearer-token"
+            />
+          </div>
+        )}
+
+        {config.authType === 'basic' && (
+          <>
+            <div>
+              <Label htmlFor="basic-username">Username *</Label>
+              <Input
+                id="basic-username"
+                placeholder="username"
+                value={config.basicUsername || ''}
+                onChange={(e) => updateConfig('basicUsername', e.target.value)}
+                data-testid="input-basic-username"
+              />
+            </div>
+            <div>
+              <Label htmlFor="basic-password">Password *</Label>
+              <Input
+                id="basic-password"
+                type="password"
+                placeholder="password"
+                value={config.basicPassword || ''}
+                onChange={(e) => updateConfig('basicPassword', e.target.value)}
+                data-testid="input-basic-password"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Query Parameters */}
+        <Separator />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Query Parameters</Label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addQueryParam}
+              data-testid="button-add-query-param"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Parameter
+            </Button>
+          </div>
+          {queryParams.map((param: any, index: number) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                placeholder="Parameter Name"
+                value={param.name || ''}
+                onChange={(e) => updateQueryParam(index, 'name', e.target.value)}
+                data-testid={`input-query-param-${index}-name`}
+              />
+              <Input
+                placeholder="Value"
+                value={param.value || ''}
+                onChange={(e) => updateQueryParam(index, 'value', e.target.value)}
+                data-testid={`input-query-param-${index}-value`}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => removeQueryParam(index)}
+                data-testid={`button-remove-query-param-${index}`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Headers */}
+        <Separator />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Headers</Label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addHeader}
+              data-testid="button-add-header"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Header
+            </Button>
+          </div>
+          {headers.map((header: any, index: number) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                placeholder="Header Name"
+                value={header.name || ''}
+                onChange={(e) => updateHeader(index, 'name', e.target.value)}
+                data-testid={`input-header-${index}-name`}
+              />
+              <Input
+                placeholder="Value"
+                value={header.value || ''}
+                onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                data-testid={`input-header-${index}-value`}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => removeHeader(index)}
+                data-testid={`button-remove-header-${index}`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Request Body (for POST/PUT/PATCH) */}
+        {['POST', 'PUT', 'PATCH'].includes(config.method) && (
+          <>
+            <Separator />
+            <div>
+              <Label htmlFor="body-content-type">Body Content Type</Label>
+              <Select
+                value={config.bodyContentType || 'json'}
+                onValueChange={(value) => updateConfig('bodyContentType', value)}
+              >
+                <SelectTrigger id="body-content-type" data-testid="select-body-content-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="json">JSON</SelectItem>
+                  <SelectItem value="form">Form Data</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="body">Request Body</Label>
+              <Textarea
+                id="body"
+                placeholder={config.bodyContentType === 'json' ? '{"key": "value"}' : 'key1=value1&key2=value2'}
+                value={config.body || ''}
+                onChange={(e) => updateConfig('body', e.target.value)}
+                rows={5}
+                data-testid="input-body"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use {`{{variableName}}`} for variable substitution
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Response Mapping */}
+        <Separator />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Response Mapping</Label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addResponseMapping}
+              data-testid="button-add-response-mapping"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Mapping
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Map JSON response fields to variables for use in next nodes
+          </p>
+          {responseMapping.map((mapping: any, index: number) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                placeholder="JSON Path (e.g., data.user.id)"
+                value={mapping.jsonPath || ''}
+                onChange={(e) => updateResponseMapping(index, 'jsonPath', e.target.value)}
+                data-testid={`input-mapping-${index}-jsonpath`}
+              />
+              <Input
+                placeholder="Variable Name"
+                value={mapping.variableName || ''}
+                onChange={(e) => updateResponseMapping(index, 'variableName', e.target.value)}
+                data-testid={`input-mapping-${index}-variable`}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => removeResponseMapping(index)}
+                data-testid={`button-remove-mapping-${index}`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Timeout */}
+        <Separator />
+        <div>
+          <Label htmlFor="timeout">Timeout (seconds)</Label>
+          <Input
+            id="timeout"
+            type="number"
+            placeholder="30"
+            value={config.timeout || '30'}
+            onChange={(e) => updateConfig('timeout', e.target.value)}
+            data-testid="input-timeout"
+          />
+        </div>
+
+        <p className="text-xs text-amber-600 mt-4">
+          Note: HTTP requests will have a success path (2xx responses) and an error path (non-2xx or network errors). Connect both paths to handle all scenarios.
+        </p>
+      </div>
+    );
+  }
+
   // Default fallback
   return (
     <div className="space-y-4">
