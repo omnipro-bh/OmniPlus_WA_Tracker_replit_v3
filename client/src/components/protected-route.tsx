@@ -38,7 +38,6 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
         channels: "/channels",
         safetyMeter: "/safety-meter",
         send: "/send",
-        bulk: "/bulk",
         templates: "/templates",
         workflows: "/workflows",
         phonebooks: "/phonebooks",

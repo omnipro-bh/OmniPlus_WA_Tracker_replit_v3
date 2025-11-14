@@ -88,7 +88,6 @@ export const plans = pgTable("plans", {
     dashboard: true,
     channels: false,
     send: false,
-    bulk: false,
     templates: false,
     workflows: false,
     chatbot: false,

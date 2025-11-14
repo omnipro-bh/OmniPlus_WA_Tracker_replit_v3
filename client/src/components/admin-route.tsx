@@ -31,7 +31,6 @@ export function AdminRoute({ children }: AdminRouteProps) {
         channels: "/channels",
         safetyMeter: "/safety-meter",
         send: "/send",
-        bulk: "/bulk",
         templates: "/templates",
         workflows: "/workflows",
         phonebooks: "/phonebooks",
