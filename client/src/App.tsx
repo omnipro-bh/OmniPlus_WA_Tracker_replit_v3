@@ -19,7 +19,6 @@ import About from "@/pages/about";
 import Dashboard from "@/pages/dashboard";
 import Channels from "@/pages/channels";
 import Send from "@/pages/send";
-import Bulk from "@/pages/bulk";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import Phonebooks from "@/pages/phonebooks";
@@ -72,13 +71,6 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="send">
             <Send />
-          </ProtectedRoute>
-        </DashboardLayout>
-      </Route>
-      <Route path="/bulk">
-        <DashboardLayout>
-          <ProtectedRoute requiredKey="bulk">
-            <Bulk />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>
