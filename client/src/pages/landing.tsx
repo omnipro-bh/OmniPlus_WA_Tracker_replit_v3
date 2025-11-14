@@ -76,12 +76,13 @@ export default function Landing() {
   const { toast } = useToast();
   
   // Fetch auth settings
-  const { data: authSettings } = useQuery<{enableSignin: boolean; enableSignup: boolean}>({
+  const { data: authSettings } = useQuery<{enableSignin: boolean; enableSignup: boolean; signupButtonText: string}>({
     queryKey: ["/api/settings/auth"],
   });
 
   const enableSignin = authSettings?.enableSignin ?? true; // Default to true
   const enableSignup = authSettings?.enableSignup ?? true; // Default to true
+  const signupButtonText = authSettings?.signupButtonText ?? "Start Free Trial"; // Default text
   
   // Fetch plans published on homepage
   const { data: allPlans = [] } = useQuery<Plan[]>({
@@ -298,7 +299,7 @@ export default function Landing() {
                 {enableSignup && (
                   <Link href="/signup">
                     <Button size="lg" className="w-full sm:w-auto" data-testid="button-start-trial">
-                      Start Free Trial
+                      {signupButtonText}
                     </Button>
                   </Link>
                 )}

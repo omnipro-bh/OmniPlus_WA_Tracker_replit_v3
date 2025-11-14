@@ -26,8 +26,9 @@ function AuthSettings() {
   const { toast } = useToast();
   const [enableSignin, setEnableSignin] = useState(true);
   const [enableSignup, setEnableSignup] = useState(true);
+  const [signupButtonText, setSignupButtonText] = useState("Start Free Trial");
 
-  const { data: settings, isLoading } = useQuery<{enableSignin: boolean; enableSignup: boolean}>({
+  const { data: settings, isLoading } = useQuery<{enableSignin: boolean; enableSignup: boolean; signupButtonText: string}>({
     queryKey: ["/api/settings/auth"],
     refetchOnMount: true,
     refetchOnWindowFocus: true,
@@ -38,11 +39,12 @@ function AuthSettings() {
     if (settings) {
       setEnableSignin(settings.enableSignin);
       setEnableSignup(settings.enableSignup);
+      setSignupButtonText(settings.signupButtonText || "Start Free Trial");
     }
   }, [settings]);
 
   const updateSettingsMutation = useMutation({
-    mutationFn: async (data: { enableSignin: boolean; enableSignup: boolean }) => {
+    mutationFn: async (data: { enableSignin: boolean; enableSignup: boolean; signupButtonText: string }) => {
       return await apiRequest("PUT", "/api/admin/settings/auth", data);
     },
     onSuccess: () => {
@@ -62,7 +64,7 @@ function AuthSettings() {
   });
 
   const handleSave = () => {
-    updateSettingsMutation.mutate({ enableSignin, enableSignup });
+    updateSettingsMutation.mutate({ enableSignin, enableSignup, signupButtonText });
   };
 
   if (isLoading) {
@@ -100,6 +102,22 @@ function AuthSettings() {
             onCheckedChange={setEnableSignup}
             data-testid="switch-enable-signup"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signup-button-text">Sign Up Button Text</Label>
+          <Input
+            id="signup-button-text"
+            type="text"
+            value={signupButtonText}
+            onChange={(e) => setSignupButtonText(e.target.value)}
+            placeholder="Start Free Trial"
+            disabled={!enableSignup}
+            data-testid="input-signup-button-text"
+          />
+          <p className="text-xs text-muted-foreground">
+            Customize the text shown on the sign up button on the homepage
+          </p>
         </div>
       </div>
 

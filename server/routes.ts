@@ -5680,10 +5680,12 @@ export function registerRoutes(app: Express) {
     try {
       const enableSignin = await storage.getSetting("enable_signin");
       const enableSignup = await storage.getSetting("enable_signup");
+      const signupButtonText = await storage.getSetting("signup_button_text");
       
       res.json({
         enableSignin: enableSignin?.value !== "false", // Default true
         enableSignup: enableSignup?.value !== "false", // Default true
+        signupButtonText: signupButtonText?.value || "Start Free Trial", // Default text
       });
     } catch (error: any) {
       console.error("Get auth settings error:", error);
@@ -5694,7 +5696,7 @@ export function registerRoutes(app: Express) {
   // Update auth settings (admin only)
   app.put("/api/admin/settings/auth", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
-      const { enableSignin, enableSignup } = req.body;
+      const { enableSignin, enableSignup, signupButtonText } = req.body;
       
       if (typeof enableSignin === "boolean") {
         await storage.setSetting("enable_signin", enableSignin.toString());
@@ -5702,13 +5704,16 @@ export function registerRoutes(app: Express) {
       if (typeof enableSignup === "boolean") {
         await storage.setSetting("enable_signup", enableSignup.toString());
       }
+      if (typeof signupButtonText === "string") {
+        await storage.setSetting("signup_button_text", signupButtonText.trim() || "Start Free Trial");
+      }
 
       await storage.createAuditLog({
         actorUserId: req.userId!,
         action: "UPDATE_SETTINGS",
         meta: {
           entity: "auth_settings",
-          updates: { enableSignin, enableSignup },
+          updates: { enableSignin, enableSignup, signupButtonText },
           adminId: req.userId
         },
       });
