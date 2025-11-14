@@ -42,7 +42,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **Payment Methods:** Supports PayPal and offline payments.
 - **PayPal Integration:** Requires `paypalPlanId` for subscription integration.
 - **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
-- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Bulk, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
+- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
 
 **Technical Implementations:**
 - **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job.
