@@ -27,6 +27,7 @@ import timezone from "dayjs/plugin/timezone.js";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -4856,24 +4857,128 @@ export function registerRoutes(app: Express) {
             const targetNode = definition.nodes?.find((n: any) => n.id === targetNodeId);
             
             if (targetNode) {
-              // Send the target node's message
-              const response = await sendNodeMessage(phone, targetNode, activeWorkflow.userId);
-              executionLog.responsesSent.push(response);
-
-              // Update conversation state
-              await db
-                .update(conversationStates)
-                .set({
-                  lastMessageAt: new Date(),
-                  currentNodeId: targetNodeId,
-                  updatedAt: new Date(),
-                })
+              const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
+              
+              // Execute node chain starting from targetNode
+              // HTTP nodes execute automatically and continue, message nodes stop and wait for user
+              let currentNode = targetNode;
+              let currentNodeId = targetNodeId;
+              
+              // Get or create conversation state once
+              let conversationState = await db
+                .select()
+                .from(conversationStates)
                 .where(
                   and(
                     eq(conversationStates.workflowId, activeWorkflow.id),
                     eq(conversationStates.phone, phone)
                   )
-                );
+                )
+                .limit(1);
+              
+              if (!conversationState || conversationState.length === 0) {
+                const now = new Date();
+                await db.insert(conversationStates).values({
+                  workflowId: activeWorkflow.id,
+                  phone,
+                  lastMessageAt: now,
+                  lastMessageDate: now,
+                  currentNodeId: currentNodeId,
+                  context: {},
+                });
+                
+                conversationState = await db
+                  .select()
+                  .from(conversationStates)
+                  .where(
+                    and(
+                      eq(conversationStates.workflowId, activeWorkflow.id),
+                      eq(conversationStates.phone, phone)
+                    )
+                  )
+                  .limit(1);
+              }
+              
+              let state = conversationState[0];
+              
+              // Execute nodes in sequence until we hit a message node or end of workflow
+              while (currentNode) {
+                const currentNodeType = currentNode.data?.type || currentNode.data?.nodeType;
+                
+                // HTTP Request node - execute and continue
+                if (currentNodeType === 'action.http_request') {
+                  const httpResult = await executeHttpNode(
+                    currentNode,
+                    state,
+                    incomingMessage,
+                    { phone, userId: activeWorkflow.userId }
+                  );
+                  
+                  // Update conversation state with HTTP result
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      lastMessageAt: new Date(),
+                      currentNodeId: currentNodeId,
+                      context: httpResult.stateUpdate,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(conversationStates.id, state.id));
+                  
+                  // Refresh state for next iteration
+                  state = { ...state, context: httpResult.stateUpdate };
+                  
+                  // Log HTTP execution
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: 'action.http_request',
+                    success: httpResult.success,
+                    handle: httpResult.nextHandle,
+                    result: httpResult.result,
+                  });
+                  
+                  // Find next node based on success/error handle
+                  const nextNodeId = getNextNodeByHandle(currentNodeId, httpResult.nextHandle, definition.edges);
+                  
+                  if (!nextNodeId) {
+                    console.log(`HTTP node ${currentNodeId} has no ${httpResult.nextHandle} handle connected - workflow ends here`);
+                    break;
+                  }
+                  
+                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                  if (!nextNode) {
+                    console.log(`Next node ${nextNodeId} not found in workflow definition after HTTP node`);
+                    break;
+                  }
+                  
+                  // Continue to next node - UPDATE BOTH!
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+                  
+                } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
+                           ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'callButton', 'urlButton', 'copyButton', 'carousel'].includes(currentNodeType))) {
+                  // Message node - send and stop
+                  const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId);
+                  executionLog.responsesSent.push(response);
+                  
+                  // Update current node
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      lastMessageAt: new Date(),
+                      currentNodeId: currentNodeId,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(conversationStates.id, state.id));
+                  
+                  // Stop execution - wait for user response
+                  break;
+                  
+                } else {
+                  console.log(`Unknown node type: ${currentNodeType} - stopping execution`);
+                  break;
+                }
+              }
             }
           } else {
             console.log(`No target node found for button_id: ${buttonId}`);
@@ -5499,6 +5604,55 @@ export function registerRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Update settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Get HTTP allowlist settings
+  app.get("/api/admin/settings/http-allowlist", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const setting = await storage.getSetting("http_allowed_domains");
+      const allowedDomains = setting?.value ? JSON.parse(setting.value) : [];
+      
+      res.json({ allowedDomains });
+    } catch (error: any) {
+      console.error("Get HTTP allowlist settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update HTTP allowlist settings
+  app.put("/api/admin/settings/http-allowlist", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { allowedDomains } = req.body;
+      
+      if (!Array.isArray(allowedDomains)) {
+        return res.status(400).json({ error: "allowedDomains must be an array" });
+      }
+
+      // Validate all domains
+      const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+      for (const domain of allowedDomains) {
+        if (typeof domain !== 'string' || !domainPattern.test(domain.toLowerCase().trim())) {
+          return res.status(400).json({ error: `Invalid domain: ${domain}` });
+        }
+      }
+
+      await storage.setSetting("http_allowed_domains", JSON.stringify(allowedDomains));
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "http_allowlist",
+          domainCount: allowedDomains.length,
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true, allowedDomains });
+    } catch (error: any) {
+      console.error("Update HTTP allowlist settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });
     }
   });

@@ -474,6 +474,7 @@ export const conversationStates = pgTable("conversation_states", {
   lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
   lastMessageDate: timestamp("last_message_date").notNull().defaultNow(), // For "first message of day" check
   currentNodeId: text("current_node_id"), // Track where in the flow
+  context: jsonb("context").notNull().default({}), // Stores all workflow variables including HTTP node results
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

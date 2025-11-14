@@ -1,11 +1,14 @@
 /**
- * HTTP Executor for Workflow HTTP Request Nodes
+ * Simplified Secure HTTP Executor for Workflow HTTP Request Nodes
  * 
- * Handles HTTP requests with variable substitution, authentication,
- * response parsing, and error handling for workflow automation.
+ * Security Model:
+ * - HTTPS-only (no HTTP)
+ * - Domain allowlist validation
+ * - No redirect following
+ * - 5MB response size limit
+ * - 10s default timeout
+ * - For trusted APIs only
  */
-
-import * as ipaddr from 'ipaddr.js';
 
 export interface HttpRequestConfig {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -78,232 +81,129 @@ function getNestedValue(obj: any, path: string): any {
 }
 
 /**
- * Resolve all variables in an object recursively
+ * Apply template resolution to all values in an object
  */
-export function resolveObject(obj: any, context: HttpExecutionContext): any {
+function resolveObject(obj: any, context: HttpExecutionContext): any {
   if (typeof obj === 'string') {
     return resolveTemplate(obj, context);
   }
   if (Array.isArray(obj)) {
     return obj.map(item => resolveObject(item, context));
   }
-  if (obj && typeof obj === 'object') {
-    const resolved: any = {};
-    for (const [key, value] of Object.entries(obj)) {
-      resolved[key] = resolveObject(value, context);
+  if (typeof obj === 'object' && obj !== null) {
+    const result: any = {};
+    for (const key in obj) {
+      result[key] = resolveObject(obj[key], context);
     }
-    return resolved;
+    return result;
   }
   return obj;
 }
 
 /**
- * Check if an IP address is private/reserved using ipaddr.js
- * This handles all IPv4/IPv6 formats including edge cases like:
- * - IPv4-mapped IPv6 (::ffff:192.168.1.1)
- * - Octal notation (0177.0.0.1)
- * - Integer notation (2130706433)
+ * Validate URL against security requirements
  */
-function isPrivateOrReservedIp(ipString: string): boolean {
-  try {
-    // Parse and normalize the IP address
-    const addr = ipaddr.process(ipString);
-    
-    // Check IPv4 ranges
-    if (addr.kind() === 'ipv4') {
-      const range = addr.range();
-      
-      // Block all private, reserved, and special-use ranges
-      const blockedRanges = [
-        'unspecified',    // 0.0.0.0/8
-        'broadcast',      // 255.255.255.255
-        'multicast',      // 224.0.0.0/4
-        'linkLocal',      // 169.254.0.0/16
-        'loopback',       // 127.0.0.0/8
-        'private',        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-        'reserved',       // Reserved ranges
-      ];
-      
-      if (blockedRanges.includes(range)) {
-        return true;
-      }
-      
-      // Additional manual checks for ranges not covered by ipaddr.js
-      const octets = addr.octets;
-      
-      // 100.64.0.0/10 - Shared Address Space (CGN)
-      if (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) {
-        return true;
-      }
-      
-      // 192.0.0.0/24 - IETF Protocol Assignments
-      if (octets[0] === 192 && octets[1] === 0 && octets[2] === 0) {
-        return true;
-      }
-      
-      // 192.0.2.0/24 - TEST-NET-1
-      if (octets[0] === 192 && octets[1] === 0 && octets[2] === 2) {
-        return true;
-      }
-      
-      // 192.88.99.0/24 - IPv6 to IPv4 relay
-      if (octets[0] === 192 && octets[1] === 88 && octets[2] === 99) {
-        return true;
-      }
-      
-      // 198.18.0.0/15 - Benchmark testing
-      if (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) {
-        return true;
-      }
-      
-      // 198.51.100.0/24 - TEST-NET-2
-      if (octets[0] === 198 && octets[1] === 51 && octets[2] === 100) {
-        return true;
-      }
-      
-      // 203.0.113.0/24 - TEST-NET-3
-      if (octets[0] === 203 && octets[1] === 0 && octets[2] === 113) {
-        return true;
-      }
-      
-      return false;
-    }
-    
-    // Check IPv6 ranges
-    if (addr.kind() === 'ipv6') {
-      const range = addr.range();
-      
-      // Block all private, reserved, and special-use IPv6 ranges
-      const blockedRanges = [
-        'unspecified',    // ::
-        'linkLocal',      // fe80::/10
-        'loopback',       // ::1
-        'multicast',      // ff00::/8
-        'uniqueLocal',    // fc00::/7
-        'ipv4Mapped',     // ::ffff:0:0/96 (this catches IPv4-mapped IPv6)
-        'reserved',       // Reserved ranges
-      ];
-      
-      if (blockedRanges.includes(range)) {
-        return true;
-      }
-      
-      return false;
-    }
-    
-    // Unknown IP kind, block it
-    return true;
-  } catch (error) {
-    // If parsing fails, block it (fail closed)
-    console.error('[SSRF Protection] Failed to parse IP:', ipString, error);
-    return true;
-  }
-}
-
-/**
- * Validate URL and resolve to safe IP to prevent SSRF and DNS rebinding
- * Returns the validated IP address to use for the request
- */
-async function validateAndResolveUrl(urlString: string): Promise<{ ip: string; hostname: string; protocol: string; port: string }> {
+function validateUrl(urlString: string, allowedDomains: string[]): void {
   try {
     const url = new URL(urlString);
     
-    // Only allow http and https
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new Error('Only HTTP and HTTPS protocols are allowed');
+    // HTTPS-only enforcement
+    if (url.protocol !== 'https:') {
+      throw new Error('Only HTTPS URLs are allowed for security. Please use https:// instead of http://');
+    }
+    
+    // Domain allowlist validation - REQUIRED
+    if (allowedDomains.length === 0) {
+      throw new Error('HTTP Request nodes are disabled. Admin must configure allowed domains in Admin → Settings → HTTP Request Allowlist before using this feature.');
     }
     
     const hostname = url.hostname.toLowerCase();
-    const protocol = url.protocol;
-    const port = url.port || (protocol === 'https:' ? '443' : '80');
     
-    // Block obviously malicious hostnames
-    const blockedHostnames = ['localhost', '0.0.0.0'];
-    if (blockedHostnames.includes(hostname)) {
-      throw new Error('Access to local/private networks is not allowed');
+    // Check if hostname matches any allowed domain
+    const isAllowed = allowedDomains.some(domain => {
+      const normalizedDomain = domain.toLowerCase().trim();
+      // Exact match or subdomain match
+      return hostname === normalizedDomain || hostname.endsWith('.' + normalizedDomain);
+    });
+    
+    if (!isAllowed) {
+      throw new Error(`Domain "${hostname}" is not in the allowlist. Allowed domains: ${allowedDomains.join(', ')}`);
     }
-    
-    // If hostname is already an IP address, validate it directly
-    if (/^[\d.:]+$/.test(hostname)) {
-      if (isPrivateOrReservedIp(hostname)) {
-        throw new Error('Access to private/reserved IP addresses is not allowed');
-      }
-      return { ip: hostname, hostname, protocol, port };
-    }
-    
-    // Resolve DNS and validate all resulting IP addresses
-    // We'll use the first valid IP for the actual request to prevent DNS rebinding
-    const dns = await import('dns');
-    const dnsPromises = dns.promises;
-    
-    let validIp: string | null = null;
-    
-    // Try IPv4 first
-    try {
-      const ipv4 = await dnsPromises.resolve4(hostname);
-      for (const ip of ipv4) {
-        if (!isPrivateOrReservedIp(ip)) {
-          validIp = ip;
-          break;
-        }
-      }
-    } catch {
-      // IPv4 resolution failed or all IPs were private
-    }
-    
-    // If no valid IPv4, try IPv6
-    if (!validIp) {
-      try {
-        const ipv6 = await dnsPromises.resolve6(hostname);
-        for (const ip of ipv6) {
-          if (!isPrivateOrReservedIp(ip)) {
-            validIp = ip;
-            break;
-          }
-        }
-      } catch {
-        // IPv6 resolution failed or all IPs were private
-      }
-    }
-    
-    if (!validIp) {
-      throw new Error('Hostname does not resolve to any public IP address');
-    }
-    
-    // Return the validated IP to use for the request
-    return { ip: validIp, hostname, protocol, port };
   } catch (error: any) {
-    throw new Error(`Invalid URL: ${error.message}`);
+    if (error.message.includes('Invalid URL')) {
+      throw new Error('Invalid URL format. Please check the URL syntax.');
+    }
+    throw error;
   }
 }
 
 /**
- * Perform HTTP request with configuration
+ * Extract mapped variables from response data
+ */
+function extractMappedVariables(
+  data: any,
+  responseMapping?: Array<{ jsonPath: string; variableName: string }>
+): Record<string, any> {
+  const variables: Record<string, any> = {};
+  
+  if (!responseMapping || responseMapping.length === 0) {
+    return variables;
+  }
+  
+  for (const mapping of responseMapping) {
+    if (!mapping.jsonPath || !mapping.variableName) continue;
+    
+    try {
+      // Simple JSON path resolution (supports dot notation)
+      const value = getNestedValue(data, mapping.jsonPath);
+      if (value !== undefined && value !== null) {
+        variables[mapping.variableName] = value;
+      }
+    } catch {
+      // Silently skip invalid paths
+    }
+  }
+  
+  return variables;
+}
+
+/**
+ * Load allowed domains from settings
+ */
+async function loadAllowedDomains(): Promise<string[]> {
+  try {
+    // Dynamic import to avoid circular dependencies
+    const { storage } = await import('../storage');
+    const setting = await storage.getSetting("http_allowed_domains");
+    return setting?.value ? JSON.parse(setting.value) : [];
+  } catch (error) {
+    console.error('[HTTP Executor] Failed to load allowed domains:', error);
+    return [];
+  }
+}
+
+/**
+ * Perform HTTP request with simplified security controls
  */
 export async function performHttpRequest(
   config: HttpRequestConfig,
   context: HttpExecutionContext
 ): Promise<HttpExecutionResult> {
+  const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB limit
+  const DEFAULT_TIMEOUT = 10000; // 10 seconds
+  
   try {
+    // Load allowed domains from settings
+    const allowedDomains = await loadAllowedDomains();
+    
     // Resolve URL with variables
     const resolvedUrl = resolveTemplate(config.url, context);
     
-    // Validate URL and get safe IP to prevent DNS rebinding
-    const { ip, hostname, protocol, port } = await validateAndResolveUrl(resolvedUrl);
+    // Validate URL against security requirements
+    validateUrl(resolvedUrl, allowedDomains);
     
-    // Build URL with validated IP instead of hostname to prevent DNS rebinding
-    const originalUrl = new URL(resolvedUrl);
-    const safePath = originalUrl.pathname + originalUrl.search;
-    
-    // Construct URL using the validated IP
-    let url: URL;
-    if (ip.includes(':')) {
-      // IPv6 address - wrap in brackets
-      url = new URL(`${protocol}//[${ip}]:${port}${safePath}`);
-    } else {
-      // IPv4 address
-      url = new URL(`${protocol}//${ip}:${port}${safePath}`);
-    }
+    // Build URL with query parameters
+    const url = new URL(resolvedUrl);
     if (config.queryParams) {
       for (const param of config.queryParams) {
         if (param.name && param.value) {
@@ -316,9 +216,6 @@ export async function performHttpRequest(
     // Build headers
     const headers: Record<string, string> = {
       'User-Agent': 'OmniPlus-Workflow/1.0',
-      // CRITICAL: Set Host header to original hostname (not IP)
-      // This ensures servers using virtual hosting work correctly
-      'Host': hostname,
     };
     
     // Add authentication headers
@@ -326,9 +223,9 @@ export async function performHttpRequest(
       const resolvedToken = resolveTemplate(config.bearerToken, context);
       headers['Authorization'] = `Bearer ${resolvedToken}`;
     } else if (config.authType === 'basic' && config.basicUsername && config.basicPassword) {
-      const username = resolveTemplate(config.basicUsername, context);
-      const password = resolveTemplate(config.basicPassword, context);
-      const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+      const resolvedUsername = resolveTemplate(config.basicUsername, context);
+      const resolvedPassword = resolveTemplate(config.basicPassword, context);
+      const credentials = Buffer.from(`${resolvedUsername}:${resolvedPassword}`).toString('base64');
       headers['Authorization'] = `Basic ${credentials}`;
     }
     
@@ -342,9 +239,9 @@ export async function performHttpRequest(
       }
     }
     
-    // Build request body for POST/PUT/PATCH
+    // Build request body
     let body: string | undefined;
-    if (['POST', 'PUT', 'PATCH'].includes(config.method) && config.body) {
+    if (config.body && ['POST', 'PUT', 'PATCH'].includes(config.method)) {
       const resolvedBody = resolveTemplate(config.body, context);
       
       if (config.bodyContentType === 'json') {
@@ -354,92 +251,115 @@ export async function performHttpRequest(
           JSON.parse(resolvedBody);
           body = resolvedBody;
         } catch {
-          throw new Error('Invalid JSON in request body');
+          throw new Error('Request body is not valid JSON');
         }
-      } else if (config.bodyContentType === 'form') {
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        body = resolvedBody;
       } else {
-        headers['Content-Type'] = 'application/json';
+        headers['Content-Type'] = 'application/x-www-form-urlencoded';
         body = resolvedBody;
       }
     }
     
-    // Set timeout (default 30 seconds)
-    const timeoutMs = typeof config.timeout === 'string' 
-      ? parseInt(config.timeout) * 1000 
-      : (config.timeout || 30) * 1000;
+    // Parse timeout
+    const timeout = typeof config.timeout === 'string' 
+      ? parseInt(config.timeout) 
+      : (config.timeout || DEFAULT_TIMEOUT);
     
+    // Create abort controller for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     try {
-      // Perform HTTP request
-      console.log(`[HTTP Executor] ${config.method} ${url.toString()}`);
+      // Perform HTTP request with security controls
       const response = await fetch(url.toString(), {
         method: config.method,
         headers,
         body,
+        redirect: 'manual', // CRITICAL: Disable redirects for security
         signal: controller.signal,
       });
       
       clearTimeout(timeoutId);
       
-      const status = response.status;
-      const statusText = response.statusText;
-      const contentType = response.headers.get('content-type') || '';
+      // Check for redirect response (should never follow)
+      if (response.status >= 300 && response.status < 400) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: 'HTTP redirects are not supported for security reasons. Please use the final URL directly.',
+        };
+      }
+      
+      // Read response with size limit
+      const contentLength = response.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: `Response size (${contentLength} bytes) exceeds 5MB limit`,
+        };
+      }
       
       // Read response body
       const rawResponse = await response.text();
       
-      // Parse JSON if content-type is JSON
-      let data: any = rawResponse;
-      if (contentType.includes('application/json') && rawResponse) {
+      // Check size after reading
+      if (rawResponse.length > MAX_RESPONSE_SIZE) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: `Response size (${rawResponse.length} bytes) exceeds 5MB limit`,
+        };
+      }
+      
+      // Parse response data
+      let data: any;
+      const contentType = response.headers.get('content-type') || '';
+      
+      if (contentType.includes('application/json')) {
         try {
           data = JSON.parse(rawResponse);
         } catch {
-          console.warn('[HTTP Executor] Failed to parse JSON response, using raw text');
+          data = rawResponse;
         }
+      } else {
+        data = rawResponse;
       }
       
-      // Check if response is successful (2xx)
-      const success = status >= 200 && status < 300;
+      // Extract mapped variables
+      const mappedVariables = extractMappedVariables(data, config.responseMapping);
       
-      // Apply response mapping if provided and successful
-      const mappedVariables: Record<string, any> = {};
-      if (success && config.responseMapping && typeof data === 'object') {
-        for (const mapping of config.responseMapping) {
-          if (mapping.jsonPath && mapping.variableName) {
-            const value = getNestedValue(data, mapping.jsonPath);
-            if (value !== undefined) {
-              mappedVariables[mapping.variableName] = value;
-            }
-          }
-        }
-      }
+      // Determine success based on status code
+      const success = response.status >= 200 && response.status < 300;
       
       return {
         success,
-        status,
-        statusText,
+        status: response.status,
+        statusText: response.statusText,
         data,
         mappedVariables,
         rawResponse,
-        error: success ? undefined : `HTTP ${status}: ${statusText}`,
       };
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       
       if (fetchError.name === 'AbortError') {
-        throw new Error(`Request timeout after ${timeoutMs / 1000}s`);
+        return {
+          success: false,
+          error: `Request timeout after ${timeout}ms`,
+        };
       }
+      
       throw fetchError;
     }
   } catch (error: any) {
-    console.error('[HTTP Executor] Error:', error);
+    console.error('[HTTP Executor] Request failed:', error);
+    
     return {
       success: false,
-      error: error.message || String(error),
+      error: error.message || 'HTTP request failed',
     };
   }
 }

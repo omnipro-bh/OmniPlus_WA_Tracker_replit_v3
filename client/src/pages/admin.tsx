@@ -329,6 +329,171 @@ function DefaultThemeSettings() {
   );
 }
 
+function HttpAllowlistSettings() {
+  const { toast } = useToast();
+  const [domains, setDomains] = useState<string[]>([]);
+  const [newDomain, setNewDomain] = useState("");
+
+  const { data: settings, isLoading } = useQuery<{allowedDomains: string[]}>({
+    queryKey: ["/api/admin/settings/http-allowlist"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (settings?.allowedDomains) {
+      setDomains(settings.allowedDomains);
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { allowedDomains: string[] }) => {
+      return await apiRequest("PUT", "/api/admin/settings/http-allowlist", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/http-allowlist"] });
+      toast({
+        title: "Settings updated",
+        description: "HTTP allowlist has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddDomain = () => {
+    const trimmed = newDomain.trim().toLowerCase();
+    if (!trimmed) {
+      toast({
+        title: "Invalid domain",
+        description: "Please enter a valid domain",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Basic domain validation
+    const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+    if (!domainPattern.test(trimmed)) {
+      toast({
+        title: "Invalid domain",
+        description: "Please enter a valid domain (e.g., example.com, api.example.com)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (domains.includes(trimmed)) {
+      toast({
+        title: "Domain already exists",
+        description: "This domain is already in the allowlist",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const updatedDomains = [...domains, trimmed];
+    setDomains(updatedDomains);
+    setNewDomain("");
+    updateSettingsMutation.mutate({ allowedDomains: updatedDomains });
+  };
+
+  const handleRemoveDomain = (domain: string) => {
+    const updatedDomains = domains.filter(d => d !== domain);
+    setDomains(updatedDomains);
+    updateSettingsMutation.mutate({ allowedDomains: updatedDomains });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-md">
+        <div className="flex items-start gap-2">
+          <Shield className="w-4 h-4 text-amber-500 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-500">Security Notice</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              HTTP Request nodes in workflows can only call HTTPS URLs from domains in this allowlist.
+              Add trusted domains like your own backend, whapi.cloud, or webhooks you need to call.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Add Domain</Label>
+        <div className="flex gap-2">
+          <Input
+            placeholder="example.com"
+            value={newDomain}
+            onChange={(e) => setNewDomain(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
+            data-testid="input-new-domain"
+          />
+          <Button 
+            onClick={handleAddDomain}
+            disabled={updateSettingsMutation.isPending}
+            data-testid="button-add-domain"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Examples: api.mybackend.com, gate.whapi.cloud, hooks.zapier.com
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Allowed Domains ({domains.length})</Label>
+        {domains.length === 0 ? (
+          <div className="text-sm text-muted-foreground bg-muted/30 p-4 rounded-md text-center">
+            No domains configured. HTTP Request nodes will not work until you add allowed domains.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {domains.map((domain) => (
+              <div
+                key={domain}
+                className="flex items-center justify-between p-3 bg-muted/30 rounded-md"
+              >
+                <span className="text-sm font-mono">{domain}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemoveDomain(domain)}
+                  disabled={updateSettingsMutation.isPending}
+                  data-testid={`button-remove-domain-${domain}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-muted/30 p-4 rounded-md space-y-2">
+        <p className="text-sm font-medium">How it works:</p>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li>Subdomains are automatically allowed (adding example.com allows api.example.com)</li>
+          <li>Only HTTPS URLs are permitted (HTTP is blocked for security)</li>
+          <li>Redirects are blocked to prevent security bypasses</li>
+          <li>Responses are limited to 5MB</li>
+          <li>Requests timeout after 10 seconds</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function BulkSpeedSettings() {
   const { toast } = useToast();
   const [minDelay, setMinDelay] = useState("");
@@ -2827,6 +2992,18 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <DefaultThemeSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>HTTP Request Allowlist</CardTitle>
+              <CardDescription>
+                Configure which domains can be called from HTTP Request workflow nodes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <HttpAllowlistSettings />
             </CardContent>
           </Card>
         </TabsContent>
