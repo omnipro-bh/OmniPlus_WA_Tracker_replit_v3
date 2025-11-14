@@ -5838,6 +5838,68 @@ export function registerRoutes(app: Express) {
   // USE CASES ROUTES
   // ============================================================================
 
+  // Admin: Upload use case image
+  app.post("/api/admin/use-cases/upload-image", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { file } = req.body;
+
+      if (!file) {
+        return res.status(400).json({ error: "File data is required" });
+      }
+
+      // Parse base64 file
+      const base64Data = file.split(',')[1] || file;
+      const buffer = Buffer.from(base64Data, 'base64');
+      const fileSizeMB = buffer.length / (1024 * 1024);
+
+      // Check max 5MB for use case images
+      if (fileSizeMB > 5) {
+        return res.status(400).json({ 
+          error: `File size (${fileSizeMB.toFixed(2)}MB) exceeds 5MB limit` 
+        });
+      }
+
+      // Determine file extension from MIME type
+      const mimeMatch = file.match(/^data:([^;]+);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      
+      const extensionMap: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+      };
+
+      const extension = extensionMap[mimeType] || 'jpg';
+      const uniqueId = crypto.randomBytes(8).toString('hex');
+      const timestamp = Date.now();
+      const fileName = `${timestamp}-${uniqueId}.${extension}`;
+      
+      // Create use-cases subdirectory
+      const useCasesDir = path.join(process.cwd(), 'uploads', 'use-cases');
+      if (!fs.existsSync(useCasesDir)) {
+        fs.mkdirSync(useCasesDir, { recursive: true });
+      }
+
+      const filePath = path.join(useCasesDir, fileName);
+      fs.writeFileSync(filePath, buffer);
+
+      console.log(`[Use Case Upload] Saved ${fileName} (${fileSizeMB.toFixed(2)}MB)`);
+
+      // Return relative URL path for storage in database
+      const relativeUrl = `/uploads/use-cases/${fileName}`;
+      res.json({ 
+        path: relativeUrl,
+        fileName: fileName,
+        fileSizeMB: fileSizeMB.toFixed(2)
+      });
+    } catch (error: any) {
+      console.error("Use case image upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to upload image" });
+    }
+  });
+
   // Public: Get all published use cases
   app.get("/api/use-cases", async (req: Request, res: Response) => {
     try {
