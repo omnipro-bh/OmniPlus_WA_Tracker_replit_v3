@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { TestTube, Plus, X, RefreshCw } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -1802,41 +1803,66 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           ))}
         </div>
 
-        {/* Request Body (for POST/PUT/PATCH) */}
-        {['POST', 'PUT', 'PATCH'].includes(config.method) && (
-          <>
-            <Separator />
-            <div>
-              <Label htmlFor="body-content-type">Body Content Type</Label>
-              <Select
-                value={config.bodyContentType || 'json'}
-                onValueChange={(value) => updateConfig('bodyContentType', value)}
-              >
-                <SelectTrigger id="body-content-type" data-testid="select-body-content-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="json">JSON</SelectItem>
-                  <SelectItem value="form">Form Data</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="body">Request Body</Label>
-              <Textarea
-                id="body"
-                placeholder={config.bodyContentType === 'json' ? '{"key": "value"}' : 'key1=value1&key2=value2'}
-                value={config.body || ''}
-                onChange={(e) => updateConfig('body', e.target.value)}
-                rows={5}
-                data-testid="input-body"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Use {`{{variableName}}`} for variable substitution
+        {/* Request Body */}
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="enable-body">Request Body</Label>
+              <p className="text-xs text-muted-foreground">
+                Send data in the request body (for POST/PUT/PATCH)
               </p>
             </div>
-          </>
-        )}
+            <Switch
+              id="enable-body"
+              checked={config.enableBody || false}
+              onCheckedChange={(checked) => updateConfig('enableBody', checked)}
+              data-testid="switch-enable-body"
+            />
+          </div>
+
+          {config.enableBody && (
+            <>
+              <div>
+                <Label htmlFor="body-content-type">Body Type</Label>
+                <Select
+                  value={config.bodyContentType || 'json'}
+                  onValueChange={(value) => updateConfig('bodyContentType', value)}
+                >
+                  <SelectTrigger id="body-content-type" data-testid="select-body-content-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="json">JSON</SelectItem>
+                    <SelectItem value="raw">Raw</SelectItem>
+                    <SelectItem value="form-data">Multipart/form-data</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="body">Body Content</Label>
+                <Textarea
+                  id="body"
+                  placeholder={
+                    config.bodyContentType === 'json' 
+                      ? '{\n  "key": "value",\n  "name": "{{userName}}"\n}' 
+                      : config.bodyContentType === 'raw'
+                      ? 'Raw text content with {{variables}}'
+                      : 'field1=value1&field2={{variable2}}'
+                  }
+                  value={config.body || ''}
+                  onChange={(e) => updateConfig('body', e.target.value)}
+                  rows={8}
+                  className="font-mono text-sm"
+                  data-testid="input-body"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use <code className="bg-muted px-1 py-0.5 rounded">{'{{variableName}}'}</code> for variable substitution
+                </p>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Response Mapping */}
         <Separator />
