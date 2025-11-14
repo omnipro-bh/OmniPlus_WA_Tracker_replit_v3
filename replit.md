@@ -17,13 +17,13 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Channel Management:** Admin-controlled activation and user QR authorization.
 - **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, respecting plan limits. Features realistic WhatsApp-style preview with phone mockup UI, emoji picker integration for message composition, and real-time media preview (images/videos/documents).
 - **Templates:** CRUD operations for message templates with preview functionality.
-- **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections. **HTTP Request nodes** are available in the ACTION category with comprehensive configuration UI (method, URL, auth, headers, query params, body, response mapping, timeout) and success/error routing handles. Backend executor module includes variable substitution ({{variable}} syntax), partial SSRF protection with ipaddr.js, but requires additional security hardening before production use.
+- **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections. **HTTP Request nodes** are production-ready in the ACTION category with comprehensive configuration UI (method, URL, auth, headers, query params, body, response mapping, timeout) and success/error routing handles. Backend executor implements simplified secure architecture: HTTPS-only enforcement, admin-configurable domain allowlist (must be non-empty for execution, empty blocks all requests), redirect blocking, 5MB response limit, 10s timeout, and variable substitution ({{variable}} syntax from conversation context). Results stored in `conversation_states.context.http[nodeId]` as `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for easy {{variable}} access in downstream nodes.
 - **Outbox:** Tracks the status of message sending jobs with pagination for large lists.
 - **Bulk Message Status Tracking:** Real-time status updates via webhooks.
 - **Safety Meter:** Real-time WhatsApp channel health monitoring with plan-based access control. Displays 4 color-coded metrics (lifetime, coverage, response rate, overall rating) from WHAPI Tools API. Features channel selector, manual refresh, and plan-gating. No database caching - metrics fetched on-demand with WHAPI's daily refresh limit.
 - **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
 - **Admin Dashboard:** Manages users, billing, offline payments, channel activation, and dynamic homepage content.
-- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), and theme.
+- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), theme, and HTTP Request allowlist (trusted domains for workflow API calls).
 - **Homepage Content Management:** Admin controls for 'Use Cases' and 'Homepage Features'.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 - **Phonebook Management:** CRUD for phonebooks and contacts, including CSV import with validation, partial imports, and plan-based contact limits.
@@ -36,7 +36,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates, OfflinePayments, AuditLogs, Settings, and BalanceTransactions.
+Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions), and BalanceTransactions.
 
 **Plans Payment System:**
 - **Payment Methods:** Supports PayPal and offline payments.
@@ -50,6 +50,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types (e.g., `image_buttons`, `video_buttons`).
 - **WhatsApp Preview:** Custom-built phone mockup UI with WhatsApp-style message bubbles, interactive buttons (Quick Reply, URL, Call), and real-time media preview for uploaded files.
 - **Emoji Support:** Integrated emoji-mart picker with Popover component for seamless emoji insertion in message body.
+- **HTTP Request Security:** Production-ready simplified secure implementation with HTTPS-only, domain allowlist (admin-managed via Settings page, must be non-empty for execution), no redirects, 5MB/10s limits. Conversation state context stores HTTP results under `context.http[nodeId]` with schema `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for workflow continuity and {{variable}} substitution.
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** Used for channel management.
