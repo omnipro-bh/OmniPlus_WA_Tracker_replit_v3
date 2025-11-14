@@ -867,7 +867,7 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
 export const insertUseCaseSchema = createInsertSchema(useCases, {
   title: z.string().min(1),
   description: z.string().min(1),
-  images: z.array(z.string().url()).default([]),
+  images: z.array(z.string()).default([""]),
 });
 
 export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {

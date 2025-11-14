@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { User, OfflinePayment, Channel, Plan, Coupon, UseCase, HomepageFeature } from "@shared/schema";
 import { insertUseCaseSchema, insertHomepageFeatureSchema } from "@shared/schema";
@@ -1055,10 +1055,15 @@ function UseCasesManagement() {
     defaultValues: {
       title: "",
       description: "",
-      image: "",
+      images: [""],
       sortOrder: 0,
       published: true,
     },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "images",
   });
 
   const { data: useCases = [], isLoading } = useQuery<UseCase[]>({
@@ -1072,7 +1077,14 @@ function UseCasesManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
       setIsDialogOpen(false);
-      form.reset();
+      setEditingUseCase(null);
+      form.reset({
+        title: "",
+        description: "",
+        images: [""],
+        sortOrder: 0,
+        published: true,
+      });
       toast({ title: "Use case created successfully" });
     },
     onError: (error: any) => {
@@ -1087,7 +1099,14 @@ function UseCasesManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/use-cases"] });
       setIsDialogOpen(false);
-      form.reset();
+      setEditingUseCase(null);
+      form.reset({
+        title: "",
+        description: "",
+        images: [""],
+        sortOrder: 0,
+        published: true,
+      });
       toast({ title: "Use case updated successfully" });
     },
     onError: (error: any) => {
@@ -1117,24 +1136,72 @@ function UseCasesManagement() {
     },
   });
 
+  const handleCreate = () => {
+    setEditingUseCase(null);
+    form.reset({
+      title: "",
+      description: "",
+      images: [""],
+      sortOrder: 0,
+      published: true,
+    });
+    // Explicitly set the images value to ensure it's initialized
+    setTimeout(() => {
+      form.setValue("images", [""], { shouldValidate: false });
+    }, 0);
+    setIsDialogOpen(true);
+  };
+
   const handleEdit = (useCase: UseCase) => {
     setEditingUseCase(useCase);
+    const initialImages = useCase.images?.length ? useCase.images : [""];
     form.reset({
       title: useCase.title,
       description: useCase.description,
-      image: useCase.image || "",
+      images: initialImages,
       sortOrder: useCase.sortOrder,
       published: useCase.published,
     });
+    // Explicitly set the images value to ensure it's initialized
+    setTimeout(() => {
+      form.setValue("images", initialImages, { shouldValidate: false });
+    }, 0);
     setIsDialogOpen(true);
   };
 
   const handleSubmit = (data: UseCaseForm) => {
+    // Filter out empty strings from images array before submitting
+    const filteredData = {
+      ...data,
+      images: data.images.filter((url) => url.trim() !== ""),
+    };
+
     if (editingUseCase) {
-      updateMutation.mutate({ id: editingUseCase.id, data });
+      updateMutation.mutate({ id: editingUseCase.id, data: filteredData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(filteredData);
     }
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      // Only reset if we're closing without saving
+      // Don't reset here to prevent accidental data loss on cancel
+      setEditingUseCase(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setIsDialogOpen(false);
+    setEditingUseCase(null);
+    form.reset({
+      title: "",
+      description: "",
+      images: [""],
+      sortOrder: 0,
+      published: true,
+    });
   };
 
   if (isLoading) {
@@ -1148,7 +1215,7 @@ function UseCasesManagement() {
           <CardTitle>Use Cases Management</CardTitle>
           <CardDescription>Manage articles displayed on the homepage</CardDescription>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-use-case">
+        <Button onClick={handleCreate} data-testid="button-add-use-case">
           <Plus className="h-4 w-4 mr-2" />
           Add Use Case
         </Button>
@@ -1170,8 +1237,12 @@ function UseCasesManagement() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">{useCase.description}</p>
-                {useCase.image && (
-                  <p className="text-xs text-muted-foreground mt-1">Image: {useCase.image}</p>
+                {useCase.images && useCase.images.length > 0 && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="secondary" className="text-xs">
+                      {useCase.images.length} {useCase.images.length === 1 ? "image" : "images"}
+                    </Badge>
+                  </div>
                 )}
                 <p className="text-xs text-muted-foreground mt-1">Sort Order: {useCase.sortOrder}</p>
               </div>
@@ -1207,7 +1278,7 @@ function UseCasesManagement() {
         </div>
       </CardContent>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingUseCase ? "Edit Use Case" : "Create Use Case"}</DialogTitle>
@@ -1243,19 +1314,55 @@ function UseCasesManagement() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="image"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Image URL (optional)</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} placeholder="https://example.com/image.jpg" data-testid="input-usecase-image" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2">
+                <FormLabel>Image URLs (for carousel)</FormLabel>
+                {fields.map((field, index) => (
+                  <FormField
+                    key={field.id}
+                    control={form.control}
+                    name={`images.${index}`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="https://example.com/image.jpg"
+                              data-testid={`input-usecase-image-${index}`}
+                            />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => remove(index)}
+                            disabled={fields.length === 1}
+                            data-testid={`button-remove-image-${index}`}
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log("Before append, fields length:", fields.length);
+                    append("");
+                    console.log("After append, fields length:", fields.length);
+                    console.log("Form values:", form.getValues("images"));
+                  }}
+                  data-testid="button-add-image"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Image
+                </Button>
+              </div>
               <FormField
                 control={form.control}
                 name="sortOrder"
@@ -1282,7 +1389,7 @@ function UseCasesManagement() {
                 )}
               />
               <DialogFooter>
-                <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingUseCase(null); form.reset(); }} data-testid="button-cancel-usecase">
+                <Button variant="outline" type="button" onClick={handleCancel} data-testid="button-cancel-usecase">
                   Cancel
                 </Button>
                 <Button

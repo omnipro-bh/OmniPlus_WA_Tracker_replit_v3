@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -489,25 +490,49 @@ export default function Landing() {
             </div>
 
             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-              {useCases.map((useCase: any) => (
-                <Card key={useCase.id} className="overflow-hidden hover-elevate transition-all" data-testid={`usecase-${useCase.id}`}>
-                  {useCase.image && (
-                    <div className="aspect-video w-full overflow-hidden bg-muted">
-                      <img
-                        src={useCase.image}
-                        alt={useCase.title}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <CardHeader>
-                    <CardTitle>{useCase.title}</CardTitle>
-                    <CardDescription>
-                      {useCase.description}
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              ))}
+              {useCases.map((useCase: any) => {
+                // Filter out empty strings from images array
+                const validImages = useCase.images?.filter((url: string) => url && url.trim() !== "") || [];
+                
+                return (
+                  <Card key={useCase.id} className="overflow-hidden hover-elevate transition-all" data-testid={`usecase-${useCase.id}`}>
+                    {validImages.length > 0 && (
+                      <div className="aspect-video w-full overflow-hidden bg-muted">
+                        {validImages.length === 1 ? (
+                          <img
+                            src={validImages[0]}
+                            alt={useCase.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Carousel className="w-full h-full">
+                            <CarouselContent>
+                              {validImages.map((imageUrl: string, index: number) => (
+                                <CarouselItem key={index}>
+                                  <img
+                                    src={imageUrl}
+                                    alt={`${useCase.title} - Image ${index + 1}`}
+                                    className="h-full w-full object-cover"
+                                    data-testid={`usecase-image-${useCase.id}-${index}`}
+                                  />
+                                </CarouselItem>
+                              ))}
+                            </CarouselContent>
+                            <CarouselPrevious className="left-2" />
+                            <CarouselNext className="right-2" />
+                          </Carousel>
+                        )}
+                      </div>
+                    )}
+                    <CardHeader>
+                      <CardTitle>{useCase.title}</CardTitle>
+                      <CardDescription>
+                        {useCase.description}
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         </section>
