@@ -1577,7 +1577,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   }
 
   // HTTP Request Node Configuration
-  if (nodeType === 'httpRequest') {
+  if (nodeType === 'action.http_request') {
     const headers = config.headers || [];
     const queryParams = config.queryParams || [];
     const responseMapping = config.responseMapping || [];

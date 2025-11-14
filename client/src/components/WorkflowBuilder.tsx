@@ -606,11 +606,11 @@ export default function WorkflowBuilder({
   // Node Palette Content (reusable)
   const renderNodePalette = () => (
     <Tabs defaultValue="message" className="flex flex-col h-full">
-      <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
-        <TabsTrigger value="message" data-testid="tab-message">MESSAGE</TabsTrigger>
-        <TabsTrigger value="end" data-testid="tab-end">END</TabsTrigger>
-        <TabsTrigger value="trigger" data-testid="tab-trigger">TRIGGER</TabsTrigger>
-        <TabsTrigger value="action" data-testid="tab-action">ACTION</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-4 flex-shrink-0 gap-1">
+        <TabsTrigger value="message" data-testid="tab-message" className="text-xs sm:text-sm px-2">MESSAGE</TabsTrigger>
+        <TabsTrigger value="end" data-testid="tab-end" className="text-xs sm:text-sm px-2">END</TabsTrigger>
+        <TabsTrigger value="trigger" data-testid="tab-trigger" className="text-xs sm:text-sm px-2">TRIGGER</TabsTrigger>
+        <TabsTrigger value="action" data-testid="tab-action" className="text-xs sm:text-sm px-2">ACTION</TabsTrigger>
       </TabsList>
       
       <TabsContent value="message" className="flex-1 min-h-0 mt-4">
