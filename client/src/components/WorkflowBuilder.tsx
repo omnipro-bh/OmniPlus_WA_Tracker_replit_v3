@@ -606,11 +606,19 @@ export default function WorkflowBuilder({
   // Node Palette Content (reusable)
   const renderNodePalette = () => (
     <Tabs defaultValue="message" className="flex flex-col h-full">
-      <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
-        <TabsTrigger value="message" data-testid="tab-message" className="text-[10px] sm:text-xs px-1 sm:px-2">MESSAGE</TabsTrigger>
-        <TabsTrigger value="end" data-testid="tab-end" className="text-[10px] sm:text-xs px-1 sm:px-2">END</TabsTrigger>
-        <TabsTrigger value="trigger" data-testid="tab-trigger" className="text-[10px] sm:text-xs px-1 sm:px-2">TRIGGER</TabsTrigger>
-        <TabsTrigger value="action" data-testid="tab-action" className="text-[10px] sm:text-xs px-1 sm:px-2">ACTION</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-4 flex-shrink-0 h-auto p-0.5">
+        <TabsTrigger value="message" data-testid="tab-message" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">MSG</span>
+        </TabsTrigger>
+        <TabsTrigger value="end" data-testid="tab-end" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">END</span>
+        </TabsTrigger>
+        <TabsTrigger value="trigger" data-testid="tab-trigger" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">TRIG</span>
+        </TabsTrigger>
+        <TabsTrigger value="action" data-testid="tab-action" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">ACT</span>
+        </TabsTrigger>
       </TabsList>
       
       <TabsContent value="message" className="flex-1 min-h-0 mt-4">
