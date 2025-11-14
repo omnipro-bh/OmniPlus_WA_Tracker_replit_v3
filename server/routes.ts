@@ -4681,6 +4681,24 @@ export function registerRoutes(app: Express) {
         return res.json({ success: true, message: "Outbound message ignored" });
       }
 
+      // CRITICAL BUG FIX: Ignore system events, status updates, and non-message webhooks
+      // Only process genuine inbound messages with content
+      const hasTextContent = incomingMessage.text?.body && incomingMessage.text.body.trim().length > 0;
+      const hasButtonReply = incomingMessage.reply?.type === "buttons_reply" || 
+                            incomingMessage.reply?.type === "list_reply" || 
+                            incomingMessage.button?.id;
+      
+      // If no text content AND no button reply, this is likely a system event/status update
+      if (!hasTextContent && !hasButtonReply) {
+        console.log("Ignoring system event/status update (no text content or button reply):", {
+          type: incomingMessage.type,
+          hasText: !!incomingMessage.text,
+          hasReply: !!incomingMessage.reply,
+          hasButton: !!incomingMessage.button
+        });
+        return res.json({ success: true, message: "System event ignored" });
+      }
+
       // Extract phone from chat_id (format: "PHONE@s.whatsapp.net")
       // Example: "97339116526@s.whatsapp.net" -> "97339116526"
       const chatId = incomingMessage.chat_id || "";

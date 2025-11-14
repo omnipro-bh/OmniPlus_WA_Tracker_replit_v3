@@ -51,6 +51,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **WhatsApp Preview:** Custom-built phone mockup UI with WhatsApp-style message bubbles, interactive buttons (Quick Reply, URL, Call), and real-time media preview for uploaded files.
 - **Emoji Support:** Integrated emoji-mart picker with Popover component for seamless emoji insertion in message body.
 - **HTTP Request Security:** Production-ready simplified secure implementation with HTTPS-only, domain allowlist (admin-managed via Settings page, must be non-empty for execution), no redirects, 5MB/10s limits. Conversation state context stores HTTP results under `context.http[nodeId]` with schema `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for workflow continuity and {{variable}} substitution.
+- **Webhook Message Validation (Nov 2025):** Critical fix implemented to prevent entry node triggers from system events. Webhook handler now strictly validates inbound messages by checking for actual text content or button replies before processing. This prevents WHAPI status updates, delivery receipts, and other system events from incorrectly triggering first-message-of-day logic and sending unwanted entry node messages.
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** Used for channel management.
