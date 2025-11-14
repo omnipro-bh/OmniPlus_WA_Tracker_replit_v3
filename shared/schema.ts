@@ -628,7 +628,7 @@ export const useCases = pgTable("use_cases", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  image: text("image"), // URL or path to image
+  images: text("images").array().notNull().default(sql`'{}'`), // Array of image URLs for carousel
   sortOrder: integer("sort_order").notNull().default(0),
   published: boolean("published").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -867,6 +867,7 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
 export const insertUseCaseSchema = createInsertSchema(useCases, {
   title: z.string().min(1),
   description: z.string().min(1),
+  images: z.array(z.string().url()).default([]),
 });
 
 export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {
