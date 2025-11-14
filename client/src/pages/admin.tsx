@@ -1059,6 +1059,9 @@ function UseCasesManagement() {
       sortOrder: 0,
       published: true,
     },
+    mode: "onSubmit",
+    reValidateMode: "onSubmit",
+    shouldUnregister: false,
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -1145,10 +1148,6 @@ function UseCasesManagement() {
       sortOrder: 0,
       published: true,
     });
-    // Explicitly set the images value to ensure it's initialized
-    setTimeout(() => {
-      form.setValue("images", [""], { shouldValidate: false });
-    }, 0);
     setIsDialogOpen(true);
   };
 
@@ -1162,10 +1161,6 @@ function UseCasesManagement() {
       sortOrder: useCase.sortOrder,
       published: useCase.published,
     });
-    // Explicitly set the images value to ensure it's initialized
-    setTimeout(() => {
-      form.setValue("images", initialImages, { shouldValidate: false });
-    }, 0);
     setIsDialogOpen(true);
   };
 
@@ -1321,12 +1316,12 @@ function UseCasesManagement() {
                     key={field.id}
                     control={form.control}
                     name={`images.${index}`}
-                    render={({ field }) => (
+                    render={({ field: inputField }) => (
                       <FormItem>
                         <div className="flex gap-2">
                           <FormControl>
                             <Input
-                              {...field}
+                              {...inputField}
                               placeholder="https://example.com/image.jpg"
                               data-testid={`input-usecase-image-${index}`}
                             />
@@ -1352,10 +1347,15 @@ function UseCasesManagement() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    console.log("Before append, fields length:", fields.length);
+                    console.log("Before append:");
+                    console.log("  - fields.length:", fields.length);
+                    console.log("  - form values:", form.getValues());
+                    console.log("  - images value:", form.getValues("images"));
                     append("");
-                    console.log("After append, fields length:", fields.length);
-                    console.log("Form values:", form.getValues("images"));
+                    console.log("After append:");
+                    console.log("  - fields.length:", fields.length);
+                    console.log("  - form values:", form.getValues());
+                    console.log("  - images value:", form.getValues("images"));
                   }}
                   data-testid="button-add-image"
                 >

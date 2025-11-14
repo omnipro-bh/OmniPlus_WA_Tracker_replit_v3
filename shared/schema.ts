@@ -867,8 +867,11 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
 export const insertUseCaseSchema = createInsertSchema(useCases, {
   title: z.string().min(1),
   description: z.string().min(1),
-  images: z.array(z.string()).default([""]),
-});
+  images: z.array(z.string().url().or(z.literal(""))).min(1, "At least one image URL is required"),
+}).refine(
+  (data) => data.images.some((url) => url !== "" && z.string().url().safeParse(url).success),
+  { message: "At least one valid image URL is required", path: ["images"] }
+);
 
 export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {
   title: z.string().min(1),
