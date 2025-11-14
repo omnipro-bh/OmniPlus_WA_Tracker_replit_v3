@@ -62,12 +62,6 @@ export function AppSidebar() {
       pageKey: "send",
     },
     {
-      title: "Bulk",
-      url: "/bulk",
-      icon: Users,
-      pageKey: "bulk",
-    },
-    {
       title: "Templates",
       url: "/templates",
       icon: FileText,
