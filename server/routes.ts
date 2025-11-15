@@ -707,6 +707,7 @@ export function registerRoutes(app: Express) {
 
       const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode } = validationResult.data;
       const submittedDurationType = (validationResult.data as any).durationType;
+      const paymentType = (validationResult.data as any).type || "OFFLINE_PAYMENT"; // FREE_TRIAL or OFFLINE_PAYMENT
 
       // Validate terms acceptance
       if (!termsVersion) {
@@ -775,6 +776,7 @@ export function registerRoutes(app: Express) {
       const payment = await storage.createOfflinePayment({
         userId: req.userId!,
         planId,
+        type: paymentType,
         amount,
         currency: currency || "USD",
         reference,

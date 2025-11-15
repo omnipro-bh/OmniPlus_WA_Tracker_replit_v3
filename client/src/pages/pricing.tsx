@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Check, Upload, MessageSquare, Calendar, FileText } from "lucide-react";
+import { Check, Upload, MessageSquare, Calendar, FileText, Gift } from "lucide-react";
 import type { Plan } from "@shared/schema";
 import PayPalSubscribeButton from "@/components/PayPalSubscribeButton";
 
@@ -213,6 +213,38 @@ export default function Pricing() {
     setIsOfflineDialogOpen(true);
   };
 
+  const handleFreeTrial = async (plan: Plan) => {
+    try {
+      // Create a free trial request (similar to offline payment but with type FREE_TRIAL)
+      await apiRequest("/api/offline-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planId: plan.id,
+          type: "FREE_TRIAL",
+          amount: 0, // Free trial has no cost
+          currency: plan.currency,
+          reference: `Free Trial - ${(plan as any).freeTrialDays || 7} days`,
+          proofUrl: null,
+        }),
+      });
+      
+      toast({
+        title: "Free trial request submitted",
+        description: `Your ${(plan as any).freeTrialDays || 7}-day free trial request has been submitted. Please wait for admin approval.`,
+      });
+      
+      // Refresh offline payments
+      await queryClient.invalidateQueries({ queryKey: ["/api/offline-payments"] });
+    } catch (error: any) {
+      toast({
+        title: "Request failed",
+        description: error.message || "Failed to submit free trial request",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handlePayPalClick = (plan: Plan) => {
     setSelectedPlan(plan);
     setPayPalTermsAccepted(false);
@@ -398,6 +430,18 @@ export default function Pricing() {
                           >
                             <Upload className="h-4 w-4 mr-2" />
                             Offline Payment
+                          </Button>
+                        )}
+                        {/* Only show Free Trial button if free trial is enabled for this plan */}
+                        {(plan as any).freeTrialEnabled && (
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => handleFreeTrial(plan)}
+                            data-testid={`button-freetrial-${plan.name.toLowerCase()}`}
+                          >
+                            <Gift className="h-4 w-4 mr-2" />
+                            Free Trial ({(plan as any).freeTrialDays || 7} days)
                           </Button>
                         )}
                       </>

@@ -2755,9 +2755,16 @@ export default function Admin() {
                                 <td className="px-4 py-3 text-sm">{payment.user?.email}</td>
                                 <td className="px-4 py-3 text-sm">{payment.plan?.name}</td>
                                 <td className="px-4 py-3">
-                                  <Badge variant={payment.requestType === "PAID" ? "default" : "outline"}>
-                                    {payment.requestType || "PAID"}
-                                  </Badge>
+                                  <div className="flex flex-col gap-1">
+                                    <Badge variant={payment.requestType === "PAID" ? "default" : "outline"}>
+                                      {payment.requestType || "PAID"}
+                                    </Badge>
+                                    {(payment as any).type === "FREE_TRIAL" && (
+                                      <Badge variant="secondary" className="bg-green-500/10 text-green-700 dark:text-green-400">
+                                        FREE TRIAL
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm font-mono">
                                   {payment.requestType === "PAID" 
