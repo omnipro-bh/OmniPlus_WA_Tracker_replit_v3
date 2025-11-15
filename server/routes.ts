@@ -5580,6 +5580,40 @@ export function registerRoutes(app: Express) {
     return { success: false, message: "Unsupported node type" };
   }
 
+  // Test HTTP Request Node
+  app.post("/api/workflows/test-http-request", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { config, testContext } = req.body;
+
+      if (!config || !config.url) {
+        return res.status(400).json({ error: "HTTP request configuration with URL is required" });
+      }
+
+      // Build minimal execution context for testing
+      const executionContext = testContext || {};
+
+      // Use the HTTP executor to perform the request
+      const { performHttpRequest } = await import("./workflows/httpExecutor");
+      const result = await performHttpRequest(config, executionContext);
+
+      // Return test results
+      res.json({
+        success: result.success,
+        status: result.status,
+        statusText: result.statusText,
+        data: result.data,
+        mappedVariables: result.mappedVariables,
+        error: result.error,
+      });
+    } catch (error: any) {
+      console.error("Test HTTP request error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message || "Failed to test HTTP request" 
+      });
+    }
+  });
+
   // ============================================================================
   // ADMIN SETTINGS ROUTES
   // ============================================================================

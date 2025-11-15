@@ -31,6 +31,11 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const [testChannelId, setTestChannelId] = useState<number | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  
+  // HTTP Request test states
+  const [httpTestDialogOpen, setHttpTestDialogOpen] = useState(false);
+  const [isTestingHttp, setIsTestingHttp] = useState(false);
+  const [httpTestResult, setHttpTestResult] = useState<any>(null);
 
   // Fetch active channels for test functionality
   const { data: channels = [] } = useQuery<any[]>({
@@ -45,6 +50,69 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
   const updateConfig = (key: string, value: any) => {
     onUpdate(node.id, { ...config, [key]: value });
+  };
+
+  const handleTestHttpRequest = async () => {
+    if (!config.url) {
+      toast({
+        title: 'URL required',
+        description: 'Please enter a URL to test',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsTestingHttp(true);
+    setHttpTestResult(null);
+
+    try {
+      const result: any = await apiRequest('POST', '/api/workflows/test-http-request', {
+        config: {
+          method: config.method || 'GET',
+          url: config.url,
+          authType: config.authType || 'none',
+          bearerToken: config.bearerToken,
+          basicUsername: config.basicUsername,
+          basicPassword: config.basicPassword,
+          headers: config.headers || [],
+          queryParams: config.queryParams || [],
+          bodyContentType: config.bodyContentType || 'json',
+          body: config.body,
+          responseMapping: config.responseMapping || [],
+          timeout: (parseInt(config.timeout) || 30) * 1000, // Convert UI seconds to backend milliseconds
+        },
+        testContext: {}, // Empty context for testing
+      });
+
+      setHttpTestResult(result);
+      setHttpTestDialogOpen(true);
+
+      if (result.success) {
+        toast({
+          title: 'Test successful',
+          description: `HTTP ${config.method || 'GET'} request completed with status ${result.status}`,
+        });
+      } else {
+        toast({
+          title: 'Test failed',
+          description: result.error || 'HTTP request failed',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      setHttpTestResult({
+        success: false,
+        error: error.message || 'Failed to test HTTP request',
+      });
+      setHttpTestDialogOpen(true);
+      toast({
+        title: 'Test error',
+        description: error.message || 'Failed to test HTTP request',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTestingHttp(false);
+    }
   };
 
   const handleTestSend = async () => {
@@ -1921,6 +1989,92 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             data-testid="input-timeout"
           />
         </div>
+
+        {/* Test Button */}
+        <Separator />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleTestHttpRequest}
+            disabled={isTestingHttp || !config.url}
+            data-testid="button-test-http-request"
+            className="w-full"
+          >
+            {isTestingHttp ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <TestTube className="h-4 w-4 mr-2" />
+                Test Request
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Test Results Dialog */}
+        <Dialog open={httpTestDialogOpen} onOpenChange={setHttpTestDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>HTTP Test Results</DialogTitle>
+              <DialogDescription>
+                {httpTestResult?.success ? 'Request completed successfully' : 'Request failed'}
+              </DialogDescription>
+            </DialogHeader>
+            
+            {httpTestResult && (
+              <div className="space-y-4">
+                {/* Status */}
+                <div>
+                  <Label className="text-sm font-medium">Status</Label>
+                  <div className={`text-sm p-2 rounded border ${
+                    httpTestResult.success 
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300' 
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                  }`}>
+                    {httpTestResult.success ? (
+                      <>✓ Success - {httpTestResult.status} {httpTestResult.statusText}</>
+                    ) : (
+                      <>✗ Failed - {httpTestResult.error}</>
+                    )}
+                  </div>
+                </div>
+
+                {/* Response Data */}
+                {httpTestResult.data && (
+                  <div>
+                    <Label className="text-sm font-medium">Response Data</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(httpTestResult.data, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Mapped Variables */}
+                {httpTestResult.mappedVariables && Object.keys(httpTestResult.mappedVariables).length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Mapped Variables</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(httpTestResult.mappedVariables, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Error Details */}
+                {httpTestResult.error && (
+                  <div>
+                    <Label className="text-sm font-medium text-destructive">Error</Label>
+                    <div className="text-sm p-3 bg-destructive/10 rounded border border-destructive/20 text-destructive">
+                      {httpTestResult.error}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <p className="text-xs text-amber-600 mt-4">
           Note: HTTP requests will have a success path (2xx responses) and an error path (non-2xx or network errors). Connect both paths to handle all scenarios.

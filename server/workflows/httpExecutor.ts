@@ -259,7 +259,7 @@ export async function performHttpRequest(
       }
     }
     
-    // Parse timeout
+    // Parse timeout (expected in milliseconds)
     const timeout = typeof config.timeout === 'string' 
       ? parseInt(config.timeout) 
       : (config.timeout || DEFAULT_TIMEOUT);
