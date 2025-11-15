@@ -40,9 +40,13 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 
 **Plans Payment System:**
 - **Payment Methods:** Supports PayPal, offline payments, and free trials.
-- **PayPal Integration:** Requires `paypalPlanId` for subscription integration.
+- **Admin Balance Pool:** Central `mainDaysBalance` tracks available days for allocation. All PayPal payments automatically deduct from this pool.
+- **PayPal Integration:** 
+  - Requires `paypalPlanId` for subscription integration.
+  - Automated workflow: User pays → System verifies payment → **Deducts from admin balance pool** → Adds days to user → Creates subscription.
+  - Protection: Prevents subscription if admin pool has insufficient days.
 - **Free Trial System:** Plans can offer free trials with configurable duration (days). Admin enables/disables trials and sets duration per plan. Free trial requests are processed identically to offline payments.
-- **Offline Payment & Free Trial Workflow:** User submits request (offline payment or free trial) → Admin reviews in Offline Payments tab (dual badges for free trials: PAID + FREE TRIAL) → Admin approves → Channel becomes ACTIVE and subscription created → Admin manually adds days to balance later. No automatic day allocation on approval.
+- **Offline Payment & Free Trial Workflow:** User submits request (offline payment or free trial) → Admin reviews in Offline Payments tab (dual badges for free trials: PAID + FREE TRIAL) → Admin approves → Channel becomes ACTIVE and subscription created → **No automatic days added** → Admin manually adds days to balance pool later using "Add Days to Pool" feature.
 - **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
 - **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
 

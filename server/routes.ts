@@ -642,6 +642,18 @@ export function registerRoutes(app: Express) {
         });
       }
 
+      // Check if admin balance pool has enough days
+      const mainBalance = await storage.getMainDaysBalance();
+      if (mainBalance < days) {
+        return res.status(400).json({ 
+          error: "Insufficient admin balance", 
+          details: `Admin pool has ${mainBalance} days, but ${days} days are needed for this subscription. Please contact support.` 
+        });
+      }
+
+      // Deduct from admin balance pool FIRST (atomic operation)
+      await storage.updateMainDaysBalance(-days);
+
       // Create subscription with PayPal details
       const subscription = await storage.createSubscription({
         userId: req.userId!,
@@ -663,6 +675,15 @@ export function registerRoutes(app: Express) {
         });
       }
 
+      // Create balance transaction for audit trail
+      await storage.createBalanceTransaction({
+        type: "topup",
+        days,
+        channelId: null,
+        userId: req.userId!,
+        note: `PayPal subscription - ${plan.name} (${durationType}, ${days} days)`,
+      });
+
       await storage.createAuditLog({
         actorUserId: req.userId!,
         action: "SUBSCRIBE",
@@ -677,7 +698,9 @@ export function registerRoutes(app: Express) {
           verified: true,
           amount: verification.amount,
           currency: verification.currency,
-          payerEmail: verification.payerEmail 
+          payerEmail: verification.payerEmail,
+          mainBalanceBefore: mainBalance,
+          mainBalanceAfter: mainBalance - days
         },
       });
 
