@@ -871,10 +871,16 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents, {
 export const insertUseCaseSchema = createInsertSchema(useCases, {
   title: z.string().min(1),
   description: z.string().min(1),
-  images: z.array(z.string().url().or(z.literal(""))).min(1, "At least one image URL is required"),
+  images: z.array(
+    z.string().refine((val) => {
+      if (val === "") return true;
+      if (val.startsWith("/uploads/")) return true;
+      return z.string().url().safeParse(val).success;
+    }, { message: "Must be a valid URL or file path" })
+  ).min(1, "At least one image is required"),
 }).refine(
-  (data) => data.images.some((url) => url !== "" && z.string().url().safeParse(url).success),
-  { message: "At least one valid image URL is required", path: ["images"] }
+  (data) => data.images.some((url) => url !== ""),
+  { message: "At least one image is required", path: ["images"] }
 );
 
 export const insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {
