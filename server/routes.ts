@@ -799,7 +799,10 @@ export function registerRoutes(app: Express) {
       const validationResult = insertOfflinePaymentSchema.extend({ 
         userId: z.number(),
         type: z.enum(["OFFLINE_PAYMENT", "FREE_TRIAL"]).optional(),
-        termsVersion: z.union([z.string(), z.number()]).transform(val => String(val)).optional()
+        termsVersion: z.preprocess(
+          val => val == null ? undefined : String(val),
+          z.string().optional()
+        )
       }).safeParse({
         ...req.body,
         userId: req.userId!,
