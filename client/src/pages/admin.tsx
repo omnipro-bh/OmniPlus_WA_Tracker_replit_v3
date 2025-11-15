@@ -1334,16 +1334,27 @@ function UseCasesManagement() {
                                   // Mark this image as uploading using field.id
                                   setUploadingImages(prev => new Map(prev).set(field.id, true));
 
-                                  const formData = new FormData();
-                                  formData.append('image', file);
-
                                   try {
-                                    const response = await fetch('/api/admin/use-cases/upload-image', {
-                                      method: 'POST',
-                                      body: formData,
+                                    // Convert file to base64
+                                    const reader = new FileReader();
+                                    const base64Promise = new Promise<string>((resolve, reject) => {
+                                      reader.onload = () => resolve(reader.result as string);
+                                      reader.onerror = reject;
+                                      reader.readAsDataURL(file);
                                     });
 
-                                    if (!response.ok) throw new Error('Upload failed');
+                                    const base64File = await base64Promise;
+
+                                    const response = await fetch('/api/admin/use-cases/upload-image', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ file: base64File }),
+                                    });
+
+                                    if (!response.ok) {
+                                      const errorData = await response.json();
+                                      throw new Error(errorData.error || 'Upload failed');
+                                    }
 
                                     const data = await response.json();
                                     inputField.onChange(data.path);
