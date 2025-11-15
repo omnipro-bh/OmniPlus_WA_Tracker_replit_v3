@@ -520,13 +520,13 @@ export default function Landing() {
                           />
                         ) : (
                           <Carousel className="w-full h-full">
-                            <CarouselContent>
+                            <CarouselContent className="h-full">
                               {validImages.map((imageUrl: string, index: number) => (
-                                <CarouselItem key={index}>
+                                <CarouselItem key={index} className="h-full flex items-center justify-center">
                                   <img
                                     src={imageUrl}
                                     alt={`${useCase.title} - Image ${index + 1}`}
-                                    className="h-full w-full object-contain"
+                                    className="max-h-full max-w-full object-contain"
                                     data-testid={`usecase-image-${useCase.id}-${index}`}
                                   />
                                 </CarouselItem>
