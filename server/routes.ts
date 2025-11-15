@@ -3970,6 +3970,13 @@ export function registerRoutes(app: Express) {
         ? ((plan as any).freeTrialDays || 0)
         : getDaysFromBillingPeriod(plan.billingPeriod);
 
+      // Prevent approving free trials with zero days
+      if (paymentType === "FREE_TRIAL" && days === 0) {
+        return res.status(400).json({ 
+          error: "Cannot approve free trial: Plan has no trial days configured" 
+        });
+      }
+
       // Add days to main balance pool
       await storage.updateMainDaysBalance(days);
       
