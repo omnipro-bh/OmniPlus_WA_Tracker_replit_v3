@@ -250,6 +250,74 @@ const CarouselNext = React.forwardRef<
 })
 CarouselNext.displayName = "CarouselNext"
 
+const CarouselDots = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { count: number }
+>(({ className, count, ...props }, ref) => {
+  const { api } = useCarousel()
+  const [selectedIndex, setSelectedIndex] = React.useState(0)
+
+  React.useEffect(() => {
+    if (!api || count === 0) {
+      setSelectedIndex(0)
+      return
+    }
+
+    const onSelect = () => {
+      if (!api) return
+      
+      const index = api.selectedScrollSnap()
+      // Always clamp to count prop for consistency
+      setSelectedIndex(Math.min(index, count - 1))
+    }
+
+    onSelect()
+    api.on("select", onSelect)
+    
+    return () => {
+      api.off("select", onSelect)
+    }
+  }, [api, count])
+  
+  // Handle zero slides or missing API
+  if (count === 0 || !api) return null
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10",
+        className
+      )}
+      {...props}
+    >
+      {Array.from({ length: count }).map((_, index) => (
+        <button
+          key={index}
+          type="button"
+          className={cn(
+            "h-2 w-2 rounded-full transition-all",
+            index === selectedIndex
+              ? "bg-primary w-6"
+              : "bg-muted-foreground/50"
+          )}
+          onClick={() => {
+            if (!api) return
+            // Check live snap count before scrolling
+            const snapCount = api.scrollSnapList().length
+            if (index < snapCount) {
+              api.scrollTo(index)
+            }
+          }}
+          aria-label={`Go to slide ${index + 1}`}
+          data-testid={`button-carousel-dot-${index}`}
+        />
+      ))}
+    </div>
+  )
+})
+CarouselDots.displayName = "CarouselDots"
+
 export {
   type CarouselApi,
   Carousel,
@@ -257,4 +325,5 @@ export {
   CarouselItem,
   CarouselPrevious,
   CarouselNext,
+  CarouselDots,
 }

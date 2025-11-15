@@ -755,7 +755,6 @@ export default function WorkflowBuilder({
         onLayout={(sizes) => {
           localStorage.setItem('workflow-builder-panel-sizes', JSON.stringify(sizes));
         }}
-        {...(savedPanelSizes.length > 0 && { defaultLayout: savedPanelSizes })}
       >
         {/* Left Panel - Node Palette */}
         {!isFullscreen && (

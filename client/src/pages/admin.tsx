@@ -1047,6 +1047,7 @@ function UseCasesManagement() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUseCase, setEditingUseCase] = useState<UseCase | null>(null);
+  const [uploadingImages, setUploadingImages] = useState<Map<string, boolean>>(new Map());
 
   type UseCaseForm = z.infer<typeof insertUseCaseSchema>;
 
@@ -1066,7 +1067,7 @@ function UseCasesManagement() {
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: "images",
+    name: "images" as const,
   });
 
   const { data: useCases = [], isLoading } = useQuery<UseCase[]>({
@@ -1190,6 +1191,7 @@ function UseCasesManagement() {
   const handleCancel = () => {
     setIsDialogOpen(false);
     setEditingUseCase(null);
+    setUploadingImages(new Map());
     form.reset({
       title: "",
       description: "",
@@ -1310,7 +1312,7 @@ function UseCasesManagement() {
                 )}
               />
               <div className="space-y-2">
-                <FormLabel>Image URLs (for carousel)</FormLabel>
+                <FormLabel>Images (for carousel)</FormLabel>
                 {fields.map((field, index) => (
                   <FormField
                     key={field.id}
@@ -1318,14 +1320,68 @@ function UseCasesManagement() {
                     name={`images.${index}`}
                     render={({ field: inputField }) => (
                       <FormItem>
-                        <div className="flex gap-2">
-                          <FormControl>
-                            <Input
-                              {...inputField}
-                              placeholder="https://example.com/image.jpg"
-                              data-testid={`input-usecase-image-${index}`}
-                            />
-                          </FormControl>
+                        <div className="flex gap-2 items-start">
+                          <div className="flex-1 space-y-2">
+                            <FormControl>
+                              <Input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingImages.get(field.id) || false}
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+
+                                  // Mark this image as uploading using field.id
+                                  setUploadingImages(prev => new Map(prev).set(field.id, true));
+
+                                  const formData = new FormData();
+                                  formData.append('image', file);
+
+                                  try {
+                                    const response = await fetch('/api/admin/use-cases/upload-image', {
+                                      method: 'POST',
+                                      body: formData,
+                                    });
+
+                                    if (!response.ok) throw new Error('Upload failed');
+
+                                    const data = await response.json();
+                                    inputField.onChange(data.path);
+                                    toast({ title: "Image uploaded successfully" });
+                                  } catch (error: any) {
+                                    // Clear the field, preview, and file input on error
+                                    inputField.onChange("");
+                                    e.target.value = '';
+                                    toast({
+                                      title: "Image upload failed",
+                                      description: error.message,
+                                      variant: "destructive",
+                                    });
+                                  } finally {
+                                    // Mark upload as complete
+                                    setUploadingImages(prev => {
+                                      const next = new Map(prev);
+                                      next.delete(field.id);
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                data-testid={`input-usecase-image-${index}`}
+                              />
+                            </FormControl>
+                            {uploadingImages.get(field.id) && (
+                              <p className="text-xs text-muted-foreground">Uploading...</p>
+                            )}
+                            {inputField.value && (
+                              <div className="relative w-full h-32 border rounded-md overflow-hidden">
+                                <img
+                                  src={inputField.value}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                          </div>
                           <Button
                             type="button"
                             variant="ghost"
@@ -1346,17 +1402,7 @@ function UseCasesManagement() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    console.log("Before append:");
-                    console.log("  - fields.length:", fields.length);
-                    console.log("  - form values:", form.getValues());
-                    console.log("  - images value:", form.getValues("images"));
-                    append("");
-                    console.log("After append:");
-                    console.log("  - fields.length:", fields.length);
-                    console.log("  - form values:", form.getValues());
-                    console.log("  - images value:", form.getValues("images"));
-                  }}
+                  onClick={() => append("")}
                   data-testid="button-add-image"
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -1394,10 +1440,14 @@ function UseCasesManagement() {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
+                  disabled={createMutation.isPending || updateMutation.isPending || uploadingImages.size > 0}
                   data-testid="button-submit-usecase"
                 >
-                  {editingUseCase ? "Update" : "Create"}
+                  {uploadingImages.size > 0 
+                    ? "Uploading images..." 
+                    : editingUseCase 
+                    ? "Update" 
+                    : "Create"}
                 </Button>
               </DialogFooter>
             </form>
