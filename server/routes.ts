@@ -696,7 +696,8 @@ export function registerRoutes(app: Express) {
       // Validate request body with type field explicitly allowed
       const validationResult = insertOfflinePaymentSchema.extend({ 
         userId: z.number(),
-        type: z.enum(["OFFLINE_PAYMENT", "FREE_TRIAL"]).optional()
+        type: z.enum(["OFFLINE_PAYMENT", "FREE_TRIAL"]).optional(),
+        termsVersion: z.union([z.string(), z.number()]).transform(val => String(val)).optional()
       }).safeParse({
         ...req.body,
         userId: req.userId!,
@@ -3968,41 +3969,11 @@ export function registerRoutes(app: Express) {
       // Update payment status
       await storage.updateOfflinePayment(paymentId, { status: "APPROVED" });
 
-      // Get plan and calculate days
+      // Get plan
       const plan = await storage.getPlan(payment.planId);
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
       }
-
-      // For free trials, use the freeTrialDays from the plan
-      // For regular payments, use the billing period
-      const paymentType = (payment as any).type || "OFFLINE_PAYMENT";
-      const days = paymentType === "FREE_TRIAL" 
-        ? ((plan as any).freeTrialDays || 0)
-        : getDaysFromBillingPeriod(plan.billingPeriod);
-
-      // Prevent approving free trials with zero days
-      if (paymentType === "FREE_TRIAL" && days === 0) {
-        return res.status(400).json({ 
-          error: "Cannot approve free trial: Plan has no trial days configured" 
-        });
-      }
-
-      // Add days to main balance pool
-      await storage.updateMainDaysBalance(days);
-      
-      // Create balance transaction for audit trail
-      const transactionNote = paymentType === "FREE_TRIAL"
-        ? `Free trial approved for ${plan.name} (${days} days)`
-        : `Offline payment approved for ${plan.name} (${days} days)`;
-      
-      await storage.createBalanceTransaction({
-        type: "topup",
-        days,
-        channelId: null,
-        userId: payment.userId,
-        note: transactionNote,
-      });
 
       // Update user status to active
       await storage.updateUser(payment.userId, { status: "active" });
@@ -4033,18 +4004,21 @@ export function registerRoutes(app: Express) {
         agreedAt: payment.createdAt, // Use payment creation time as terms agreement time
       });
 
+      // Get payment type for audit log
+      const paymentType = (payment as any).type || "OFFLINE_PAYMENT";
+      
       await storage.createAuditLog({
         actorUserId: req.userId!,
         action: "APPROVE_PAYMENT",
         meta: {
           entity: "offline_payment",
           entityId: paymentId,
-          days,
+          paymentType,
           adminId: req.userId
         },
       });
 
-      res.json({ success: true, daysAdded: days });
+      res.json({ success: true, message: "Payment approved. Channel is now active. Admin can add days manually." });
     } catch (error: any) {
       console.error("Approve payment error:", error);
       res.status(500).json({ error: "Failed to approve payment" });

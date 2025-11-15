@@ -39,8 +39,10 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions), and BalanceTransactions.
 
 **Plans Payment System:**
-- **Payment Methods:** Supports PayPal and offline payments.
+- **Payment Methods:** Supports PayPal, offline payments, and free trials.
 - **PayPal Integration:** Requires `paypalPlanId` for subscription integration.
+- **Free Trial System:** Plans can offer free trials with configurable duration (days). Admin enables/disables trials and sets duration per plan. Free trial requests are processed identically to offline payments.
+- **Offline Payment & Free Trial Workflow:** User submits request (offline payment or free trial) → Admin reviews in Offline Payments tab (dual badges for free trials: PAID + FREE TRIAL) → Admin approves → Channel becomes ACTIVE and subscription created → Admin manually adds days to balance later. No automatic day allocation on approval.
 - **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
 - **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
 
