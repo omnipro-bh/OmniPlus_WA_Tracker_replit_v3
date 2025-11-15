@@ -215,18 +215,21 @@ export default function Pricing() {
 
   const handleFreeTrial = async (plan: Plan) => {
     try {
+      // Get the latest terms version
+      const termsResponse = await fetch("/api/terms");
+      const terms = await termsResponse.json();
+      const latestTermsVersion = Math.max(...terms.map((t: any) => t.version));
+
       // Create a free trial request (similar to offline payment but with type FREE_TRIAL)
-      await apiRequest("/api/offline-payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          planId: plan.id,
-          type: "FREE_TRIAL",
-          amount: 0, // Free trial has no cost
-          currency: plan.currency,
-          reference: `Free Trial - ${(plan as any).freeTrialDays || 7} days`,
-          proofUrl: null,
-        }),
+      await apiRequest("POST", "/api/subscribe/offline", {
+        planId: plan.id,
+        type: "FREE_TRIAL",
+        requestType: "PAID",
+        amount: 0, // Free trial has no cost
+        currency: plan.currency,
+        reference: `Free Trial - ${(plan as any).freeTrialDays || 7} days`,
+        proofUrl: null,
+        termsVersion: latestTermsVersion,
       });
       
       toast({

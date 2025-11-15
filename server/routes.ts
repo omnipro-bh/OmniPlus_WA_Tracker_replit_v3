@@ -691,19 +691,27 @@ export function registerRoutes(app: Express) {
   // Submit offline payment (including quote requests and demo bookings)
   app.post("/api/subscribe/offline", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      // Validate request body
-      const validationResult = insertOfflinePaymentSchema.extend({ userId: z.number() }).safeParse({
+      console.log("[OfflinePayment] Received request body:", JSON.stringify(req.body, null, 2));
+      
+      // Validate request body with type field explicitly allowed
+      const validationResult = insertOfflinePaymentSchema.extend({ 
+        userId: z.number(),
+        type: z.enum(["OFFLINE_PAYMENT", "FREE_TRIAL"]).optional()
+      }).safeParse({
         ...req.body,
         userId: req.userId!,
         status: "PENDING"
       });
 
       if (!validationResult.success) {
+        console.log("[OfflinePayment] Validation failed:", JSON.stringify(validationResult.error.flatten(), null, 2));
         return res.status(400).json({ 
           error: "Validation failed", 
           details: validationResult.error.flatten() 
         });
       }
+      
+      console.log("[OfflinePayment] Validation successful, data:", JSON.stringify(validationResult.data, null, 2));
 
       const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode } = validationResult.data;
       const submittedDurationType = (validationResult.data as any).durationType;
@@ -743,33 +751,36 @@ export function registerRoutes(app: Express) {
       }
       // MONTHLY uses base price as-is
 
-      // Validate coupon if provided and verify amount calculation
-      if (couponCode) {
-        const couponValidation = await storage.validateCoupon(couponCode, req.userId!, planId);
-        if (!couponValidation.valid) {
-          return res.status(400).json({ error: couponValidation.message });
-        }
+      // Skip amount validation for free trials
+      if (paymentType !== "FREE_TRIAL") {
+        // Validate coupon if provided and verify amount calculation
+        if (couponCode) {
+          const couponValidation = await storage.validateCoupon(couponCode, req.userId!, planId);
+          if (!couponValidation.valid) {
+            return res.status(400).json({ error: couponValidation.message });
+          }
 
-        // Calculate expected amount with coupon discount applied to duration-adjusted price
-        const discountPercent = couponValidation.coupon?.discountPercent || 0;
-        const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
+          // Calculate expected amount with coupon discount applied to duration-adjusted price
+          const discountPercent = couponValidation.coupon?.discountPercent || 0;
+          const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
 
-        // Verify the submitted amount matches the expected discounted amount
-        // Allow for small rounding differences (within 1 cent)
-        if (Math.abs(amount - expectedAmount) > 1) {
-          return res.status(400).json({ 
-            error: "Amount mismatch",
-            details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
-          });
-        }
-      } else {
-        // No coupon - verify amount matches duration-adjusted plan price
-        const expectedAmount = Math.round(expectedBasePrice);
-        if (Math.abs(amount - expectedAmount) > 1) {
-          return res.status(400).json({ 
-            error: "Amount mismatch",
-            details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
-          });
+          // Verify the submitted amount matches the expected discounted amount
+          // Allow for small rounding differences (within 1 cent)
+          if (Math.abs(amount - expectedAmount) > 1) {
+            return res.status(400).json({ 
+              error: "Amount mismatch",
+              details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
+            });
+          }
+        } else {
+          // No coupon - verify amount matches duration-adjusted plan price
+          const expectedAmount = Math.round(expectedBasePrice);
+          if (Math.abs(amount - expectedAmount) > 1) {
+            return res.status(400).json({ 
+              error: "Amount mismatch",
+              details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
+            });
+          }
         }
       }
 
