@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield, icons } from "lucide-react";
+import { Check, MessageSquare, Users, Zap, Bot, BarChart3, Shield, ChevronLeft, ChevronRight, icons } from "lucide-react";
 import heroImage from "@assets/aiease_1762244695579_1762244824751.png";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
@@ -109,6 +109,12 @@ export default function Landing() {
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const [showDemoDialog, setShowDemoDialog] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+
+  // Image modal state
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [currentImages, setCurrentImages] = useState<string[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [currentImageTitle, setCurrentImageTitle] = useState("");
 
   // Form state for quote request
   const [quoteName, setQuoteName] = useState("");
@@ -497,12 +503,20 @@ export default function Landing() {
                 return (
                   <Card key={useCase.id} className="overflow-hidden hover-elevate transition-all" data-testid={`usecase-${useCase.id}`}>
                     {validImages.length > 0 && (
-                      <div className="aspect-video w-full overflow-hidden bg-muted">
+                      <div 
+                        className="aspect-video w-full overflow-hidden bg-muted cursor-pointer" 
+                        onClick={() => {
+                          setImageModalOpen(true);
+                          setCurrentImages(validImages);
+                          setCurrentImageIndex(0);
+                          setCurrentImageTitle(useCase.title);
+                        }}
+                      >
                         {validImages.length === 1 ? (
                           <img
                             src={validImages[0]}
                             alt={useCase.title}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                           />
                         ) : (
                           <Carousel className="w-full h-full">
@@ -512,7 +526,7 @@ export default function Landing() {
                                   <img
                                     src={imageUrl}
                                     alt={`${useCase.title} - Image ${index + 1}`}
-                                    className="h-full w-full object-cover"
+                                    className="h-full w-full object-contain"
                                     data-testid={`usecase-image-${useCase.id}-${index}`}
                                   />
                                 </CarouselItem>
@@ -897,6 +911,49 @@ export default function Landing() {
               {submitDemoMutation.isPending ? "Booking..." : "Book Demo"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Modal */}
+      <Dialog open={imageModalOpen} onOpenChange={setImageModalOpen}>
+        <DialogContent className="max-w-4xl p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>{currentImageTitle}</DialogTitle>
+            <DialogDescription>
+              {currentImages.length > 1 && `Image ${currentImageIndex + 1} of ${currentImages.length}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative bg-muted/10 min-h-[400px] flex items-center justify-center p-6">
+            {currentImages.length > 0 && (
+              <img
+                src={currentImages[currentImageIndex]}
+                alt={`${currentImageTitle} - ${currentImageIndex + 1}`}
+                className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
+              />
+            )}
+            {currentImages.length > 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute left-4 top-1/2 -translate-y-1/2"
+                  onClick={() => setCurrentImageIndex((prev) => (prev === 0 ? currentImages.length - 1 : prev - 1))}
+                  data-testid="button-prev-image"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute right-4 top-1/2 -translate-y-1/2"
+                  onClick={() => setCurrentImageIndex((prev) => (prev === currentImages.length - 1 ? 0 : prev + 1))}
+                  data-testid="button-next-image"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
