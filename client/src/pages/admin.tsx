@@ -1776,6 +1776,8 @@ export default function Admin() {
     enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"] as string[],
     isPopular: false,
     safetyMeterEnabled: false,
+    freeTrialEnabled: false,
+    freeTrialDays: "7",
     // Individual checkboxes for each limit
     enableDailyMessages: true,
     enableBulkMessages: true,
@@ -2206,6 +2208,8 @@ export default function Admin() {
       enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"],
       isPopular: false,
       safetyMeterEnabled: false,
+      freeTrialEnabled: false,
+      freeTrialDays: "7",
       enableDailyMessages: true,
       enableBulkMessages: true,
       enableChannels: true,
@@ -2293,6 +2297,8 @@ export default function Admin() {
       enabledBillingPeriods: enabledBillingPeriods,
       isPopular: (plan as any).isPopular || false,
       safetyMeterEnabled: (plan as any).safetyMeterEnabled || false,
+      freeTrialEnabled: (plan as any).freeTrialEnabled || false,
+      freeTrialDays: String((plan as any).freeTrialDays ?? 7),
       enableDailyMessages,
       enableBulkMessages,
       enableChannels,
@@ -2449,6 +2455,8 @@ export default function Admin() {
       enabledBillingPeriods: planForm.enabledBillingPeriods,
       isPopular: planForm.isPopular,
       safetyMeterEnabled: planForm.safetyMeterEnabled,
+      freeTrialEnabled: planForm.freeTrialEnabled,
+      freeTrialDays: parseInt(planForm.freeTrialDays) || 7,
       dailyMessagesLimit,
       bulkMessagesLimit,
       channelsLimit,
@@ -3547,10 +3555,45 @@ export default function Admin() {
                           Offline
                         </Label>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="payment-freetrial"
+                          checked={planForm.freeTrialEnabled}
+                          onCheckedChange={(checked) => {
+                            setPlanForm({ 
+                              ...planForm, 
+                              freeTrialEnabled: !!checked
+                            });
+                          }}
+                          data-testid="checkbox-payment-freetrial"
+                        />
+                        <Label htmlFor="payment-freetrial" className="text-sm font-normal cursor-pointer">
+                          Free Trial
+                        </Label>
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Select at least one payment method
                     </p>
+
+                    {/* Free Trial Days - Only show when Free Trial is enabled */}
+                    {planForm.freeTrialEnabled && (
+                      <div className="space-y-2">
+                        <Label htmlFor="free-trial-days">Free Trial Days *</Label>
+                        <Input
+                          id="free-trial-days"
+                          type="number"
+                          min="1"
+                          placeholder="7"
+                          value={planForm.freeTrialDays}
+                          onChange={(e) => setPlanForm({ ...planForm, freeTrialDays: e.target.value })}
+                          data-testid="input-free-trial-days"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Number of days for the free trial period
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -14,6 +14,7 @@ export const durationTypeEnum = pgEnum("duration_type", ["MONTHLY", "QUARTERLY",
 export const billingPeriodEnum = pgEnum("billing_period", ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
 export const requestTypeEnum = pgEnum("request_type", ["PAID", "REQUEST_QUOTE", "BOOK_DEMO"]);
 export const offlinePaymentStatusEnum = pgEnum("offline_payment_status", ["PENDING", "APPROVED", "REJECTED"]);
+export const offlinePaymentTypeEnum = pgEnum("offline_payment_type", ["OFFLINE_PAYMENT", "FREE_TRIAL"]);
 export const jobTypeEnum = pgEnum("job_type", ["SINGLE", "BULK"]);
 export const jobStatusEnum = pgEnum("job_status", ["QUEUED", "PROCESSING", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "PARTIAL", "COMPLETED"]);
 export const messageStatusEnum = pgEnum("message_status", ["QUEUED", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "REPLIED"]);
@@ -107,6 +108,8 @@ export const plans = pgTable("plans", {
   enabledBillingPeriods: jsonb("enabled_billing_periods").notNull().default(["MONTHLY", "SEMI_ANNUAL", "ANNUAL"]), // Which billing periods to show
   isPopular: boolean("is_popular").notNull().default(false), // Show POPULAR badge
   safetyMeterEnabled: boolean("safety_meter_enabled").notNull().default(false), // Enable WhatsApp Safety Meter feature
+  freeTrialEnabled: boolean("free_trial_enabled").notNull().default(false), // Enable free trial option
+  freeTrialDays: integer("free_trial_days").notNull().default(7), // Number of days for free trial
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -184,6 +187,7 @@ export const offlinePayments = pgTable("offline_payments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planId: integer("plan_id").notNull().references(() => plans.id, { onDelete: "restrict" }),
+  type: offlinePaymentTypeEnum("type").notNull().default("OFFLINE_PAYMENT"), // OFFLINE_PAYMENT or FREE_TRIAL
   amount: integer("amount").notNull(), // Amount in cents
   currency: text("currency").notNull().default("USD"),
   reference: text("reference"),
