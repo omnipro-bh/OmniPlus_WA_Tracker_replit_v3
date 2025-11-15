@@ -200,7 +200,6 @@ function DefaultPageAccessSettings() {
     { key: "channels", label: "Channels", description: "Manage WhatsApp channels" },
     { key: "safetyMeter", label: "Safety Meter", description: "Channel health monitoring" },
     { key: "send", label: "Send", description: "Send individual messages" },
-    { key: "bulk", label: "Bulk", description: "Send bulk messages" },
     { key: "templates", label: "Templates", description: "Message templates" },
     { key: "workflows", label: "Workflows", description: "Workflow builder" },
     { key: "outbox", label: "Outbox", description: "Message outbox" },
