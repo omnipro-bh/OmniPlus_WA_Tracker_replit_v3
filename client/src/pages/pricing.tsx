@@ -237,8 +237,9 @@ export default function Pricing() {
         description: `Your ${(plan as any).freeTrialDays || 7}-day free trial request has been submitted. Please wait for admin approval.`,
       });
       
-      // Refresh offline payments
+      // Refresh both user and admin offline payments
       await queryClient.invalidateQueries({ queryKey: ["/api/offline-payments"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/offline-payments"] });
     } catch (error: any) {
       toast({
         title: "Request failed",
