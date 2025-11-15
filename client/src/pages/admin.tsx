@@ -1384,11 +1384,11 @@ function UseCasesManagement() {
                               <p className="text-xs text-muted-foreground">Uploading...</p>
                             )}
                             {inputField.value && (
-                              <div className="relative w-full h-48 border rounded-md overflow-hidden bg-muted/10">
+                              <div className="relative w-full border rounded-md overflow-hidden bg-muted/10">
                                 <img
                                   src={inputField.value}
                                   alt={`Preview ${index + 1}`}
-                                  className="w-full h-full object-contain"
+                                  className="w-full h-auto"
                                 />
                               </div>
                             )}
