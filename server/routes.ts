@@ -3963,18 +3963,27 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      const days = getDaysFromBillingPeriod(plan.billingPeriod);
+      // For free trials, use the freeTrialDays from the plan
+      // For regular payments, use the billing period
+      const paymentType = (payment as any).type || "OFFLINE_PAYMENT";
+      const days = paymentType === "FREE_TRIAL" 
+        ? ((plan as any).freeTrialDays || 0)
+        : getDaysFromBillingPeriod(plan.billingPeriod);
 
       // Add days to main balance pool
       await storage.updateMainDaysBalance(days);
       
       // Create balance transaction for audit trail
+      const transactionNote = paymentType === "FREE_TRIAL"
+        ? `Free trial approved for ${plan.name} (${days} days)`
+        : `Offline payment approved for ${plan.name} (${days} days)`;
+      
       await storage.createBalanceTransaction({
         type: "topup",
         days,
         channelId: null,
         userId: payment.userId,
-        note: `Offline payment approved for ${plan.name} (${days} days)`,
+        note: transactionNote,
       });
 
       // Update user status to active
