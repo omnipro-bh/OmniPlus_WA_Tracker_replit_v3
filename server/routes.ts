@@ -820,8 +820,8 @@ export function registerRoutes(app: Express) {
       const submittedDurationType = (validationResult.data as any).durationType;
       const paymentType = (validationResult.data as any).type || "OFFLINE_PAYMENT"; // FREE_TRIAL or OFFLINE_PAYMENT
 
-      // Validate terms acceptance
-      if (!termsVersion) {
+      // Validate terms acceptance (not required for FREE_TRIAL)
+      if (paymentType !== "FREE_TRIAL" && !termsVersion) {
         return res.status(400).json({ error: "Terms acceptance is required" });
       }
 
