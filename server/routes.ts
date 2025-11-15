@@ -651,8 +651,34 @@ export function registerRoutes(app: Express) {
         });
       }
 
+      // Get user and their channels
+      const user = await storage.getUser(req.userId!);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const userChannels = await storage.getChannelsForUser(req.userId!);
+      if (userChannels.length === 0) {
+        return res.status(400).json({ 
+          error: "No channels found", 
+          details: "Please create a channel before subscribing." 
+        });
+      }
+
+      // Get the first active or pending channel
+      const targetChannel = userChannels.find(c => c.status === "ACTIVE" || c.status === "PENDING") || userChannels[0];
+
       // Deduct from admin balance pool FIRST (atomic operation)
-      await storage.updateMainDaysBalance(-days);
+      const newMainBalance = await storage.updateMainDaysBalance(-days);
+
+      // Create balance transaction for audit trail
+      const balanceTransaction = await storage.createBalanceTransaction({
+        type: "allocate",
+        days,
+        channelId: targetChannel.id,
+        userId: req.userId!,
+        note: `PayPal subscription - ${plan.name} (${durationType}, ${days} days)`,
+      });
 
       // Create subscription with PayPal details
       const subscription = await storage.createSubscription({
@@ -666,22 +692,73 @@ export function registerRoutes(app: Express) {
         agreedAt: new Date(),
       });
 
-      // Add days to user balance
-      const user = await storage.getUser(req.userId!);
-      if (user) {
-        await storage.updateUser(req.userId!, {
-          daysBalance: (user.daysBalance || 0) + days,
-          status: "active",
+      // Call WHAPI API to extend the channel
+      let whapiResponse = null;
+      try {
+        if (!targetChannel.whapiChannelId && targetChannel.status === "PENDING") {
+          // PENDING channel - create new WHAPI channel
+          console.log("Creating new WHAPI channel for PayPal subscription:", targetChannel.label);
+          whapiResponse = await whapi.createWhapiChannel(targetChannel.label, targetChannel.phone);
+          
+          // Store WHAPI metadata
+          await storage.updateChannel(targetChannel.id, {
+            whapiChannelId: whapiResponse.id,
+            whapiChannelToken: whapiResponse.token,
+            phone: whapiResponse.phone || targetChannel.phone,
+            whapiStatus: whapiResponse.status,
+            stopped: whapiResponse.stopped || false,
+            creationTS: whapiResponse.creationTS ? new Date(whapiResponse.creationTS) : null,
+            activeTill: whapiResponse.activeTill ? new Date(whapiResponse.activeTill) : null,
+          });
+        } else if (targetChannel.whapiChannelId) {
+          // Existing channel - extend days via WHAPI API
+          console.log("Extending WHAPI channel via PayPal:", targetChannel.whapiChannelId);
+          whapiResponse = await whapi.extendWhapiChannel(
+            targetChannel.whapiChannelId, 
+            days, 
+            `PayPal subscription for ${user.email}`
+          );
+        }
+      } catch (whapiError: any) {
+        console.error("WHAPI API failed during PayPal subscription:", whapiError.message);
+        
+        // Rollback: refund to main balance, delete transaction, and cancel subscription
+        await storage.updateMainDaysBalance(days);
+        await storage.deleteBalanceTransaction(balanceTransaction.id);
+        await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
+        
+        return res.status(500).json({ 
+          error: "Failed to activate channel", 
+          details: whapiError.message 
         });
       }
 
-      // Create balance transaction for audit trail
-      await storage.createBalanceTransaction({
-        type: "topup",
+      // Add days to channel ledger (this updates channel status and expiry)
+      await storage.addDaysToChannel({
+        channelId: targetChannel.id,
         days,
-        channelId: null,
-        userId: req.userId!,
-        note: `PayPal subscription - ${plan.name} (${durationType}, ${days} days)`,
+        source: "PAYPAL",
+        balanceTransactionId: balanceTransaction.id,
+        subscriptionId: subscription.id,
+        metadata: {
+          orderId,
+          planId,
+          durationType,
+        },
+      });
+
+      // Update WHAPI status if we got a response
+      if (whapiResponse) {
+        await storage.updateChannel(targetChannel.id, {
+          whapiStatus: whapiResponse.status,
+          activeTill: whapiResponse.activeTill ? new Date(whapiResponse.activeTill) : null,
+        });
+      }
+
+      // Update user status to active
+      await storage.updateUser(req.userId!, {
+        daysBalance: (user.daysBalance || 0) + days,
+        status: "active",
       });
 
       await storage.createAuditLog({
@@ -700,11 +777,13 @@ export function registerRoutes(app: Express) {
           currency: verification.currency,
           payerEmail: verification.payerEmail,
           mainBalanceBefore: mainBalance,
-          mainBalanceAfter: mainBalance - days
+          mainBalanceAfter: newMainBalance,
+          channelId: targetChannel.id,
+          whapiExtended: !!whapiResponse
         },
       });
 
-      res.json({ subscription, daysAdded: days });
+      res.json({ subscription, daysAdded: days, channelExtended: true });
     } catch (error: any) {
       console.error("PayPal subscription error:", error);
       res.status(500).json({ error: "PayPal subscription failed" });
