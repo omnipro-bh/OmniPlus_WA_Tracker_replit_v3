@@ -214,7 +214,7 @@ export default function SubscribersPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-semibold mb-2" data-testid="text-page-title">Subscribers</h1>
-              <p className="text-sm text-secondary">
+              <p className="text-sm text-muted-foreground">
                 Manage users who subscribed or unsubscribed via button interactions
               </p>
             </div>
@@ -246,7 +246,7 @@ export default function SubscribersPage() {
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-primary" />
                   <div>
-                    <div className="text-xs text-secondary">Total {statusFilter !== "all" && `(${statusFilter})`}</div>
+                    <div className="text-xs text-muted-foreground">Total {statusFilter !== "all" && `(${statusFilter})`}</div>
                     <div className="text-lg font-semibold" data-testid="text-total-count">{total}</div>
                   </div>
                 </div>
@@ -254,7 +254,7 @@ export default function SubscribersPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-secondary" />
+              <Filter className="w-4 h-4 text-muted-foreground" />
               <Select value={statusFilter} onValueChange={handleFilterChange}>
                 <SelectTrigger className="w-[180px]" data-testid="select-status-filter">
                   <SelectValue placeholder="Filter by status" />
@@ -283,10 +283,10 @@ export default function SubscribersPage() {
               <Users className="w-16 h-16 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-semibold mb-2">No subscribers yet</h3>
-            <p className="text-sm text-secondary mb-2">
+            <p className="text-sm text-muted-foreground mb-2">
               Subscribers will appear here when users interact with subscription buttons
             </p>
-            <p className="text-xs text-tertiary">
+            <p className="text-xs text-muted-foreground/70">
               Configure subscription keywords in Admin Settings
             </p>
           </Card>
@@ -306,10 +306,10 @@ export default function SubscribersPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Phone</th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Subscribed</th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Last Updated</th>
-                      <th className="text-right py-3 px-4 text-sm font-medium text-secondary">Actions</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Phone</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Subscribed</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Last Updated</th>
+                      <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -323,11 +323,11 @@ export default function SubscribersPage() {
                           {subscriber.phone}
                         </td>
                         <td className="py-3 px-4" data-testid={`text-subscriber-status-${subscriber.id}`}>
-                          <span className={subscriber.status === "subscribed" ? "text-green-500 font-medium" : "text-secondary"}>
+                          <span className={subscriber.status === "subscribed" ? "text-green-500 font-medium" : "text-muted-foreground"}>
                             {subscriber.status === "subscribed" ? "Yes" : "No"}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm text-secondary" data-testid={`text-subscriber-updated-${subscriber.id}`}>
+                        <td className="py-3 px-4 text-sm text-muted-foreground" data-testid={`text-subscriber-updated-${subscriber.id}`}>
                           {new Date(subscriber.lastUpdated).toLocaleString()}
                         </td>
                         <td className="py-3 px-4">
@@ -364,7 +364,7 @@ export default function SubscribersPage() {
           <Card className="mt-6">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-secondary" data-testid="text-page-info">
+                <div className="text-sm text-muted-foreground" data-testid="text-page-info">
                   Page {data?.page ?? currentPage} of {Math.max(totalPages, 1)} ({total} {total === 1 ? 'subscriber' : 'subscribers'})
                 </div>
                 {totalPages > 1 && (
