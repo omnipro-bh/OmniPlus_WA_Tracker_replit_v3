@@ -5539,6 +5539,63 @@ export function registerRoutes(app: Express) {
             console.warn("[Bulk Webhook] Failed to log other reply:", logError);
           }
         }
+
+        // ============================================================================
+        // SUBSCRIBER TRACKING: Check if button/list title matches subscribe/unsubscribe keywords
+        // ============================================================================
+        if ((messageEvent.reply?.type === 'buttons_reply' || messageEvent.reply?.type === 'list_reply') && messageEvent.chat_id) {
+          try {
+            // Extract button/list title
+            let buttonTitle = "";
+            if (messageEvent.reply?.type === 'buttons_reply') {
+              buttonTitle = messageEvent.reply.buttons_reply?.title || "";
+            } else if (messageEvent.reply?.type === 'list_reply') {
+              buttonTitle = messageEvent.reply.list_reply?.title || "";
+            }
+            
+            // Extract phone from chat_id (format: "PHONE@s.whatsapp.net")
+            const chatId = messageEvent.chat_id || "";
+            const phone = chatId.split('@')[0];
+            
+            // If we have both button title and phone, check against keywords
+            if (buttonTitle && buttonTitle.trim().length > 0 && phone) {
+              const buttonTitleNormalized = buttonTitle.trim();
+              
+              // Load subscriber keywords from settings
+              const keywordsSetting = await storage.getSetting("subscriber_keywords");
+              const keywords = keywordsSetting?.value 
+                ? JSON.parse(keywordsSetting.value) 
+                : { subscribe: ["Subscribe"], unsubscribe: ["Unsubscribe"] };
+              
+              // Check if button title matches any subscribe keyword (case-insensitive)
+              const matchesSubscribe = keywords.subscribe.some((kw: string) => 
+                kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+              );
+              
+              // Check if button title matches any unsubscribe keyword (case-insensitive)
+              const matchesUnsubscribe = keywords.unsubscribe.some((kw: string) => 
+                kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+              );
+              
+              // If keyword matches, upsert subscriber
+              if (matchesSubscribe || matchesUnsubscribe) {
+                const status = matchesSubscribe ? 'subscribed' : 'unsubscribed';
+                
+                await storage.upsertSubscriber({
+                  userId: numericUserId,
+                  phone: phone,
+                  name: "", // Default empty name, can be edited later
+                  status: status
+                });
+                
+                console.log(`[Subscriber] ${phone} ${status} via button: "${buttonTitle}"`);
+              }
+            }
+          } catch (subscriberError: any) {
+            // Log error but don't fail the webhook - subscriber tracking is non-critical
+            console.error(`[Subscriber] Error processing subscriber: ${subscriberError.message}`);
+          }
+        }
       }
 
       // Update the message record
