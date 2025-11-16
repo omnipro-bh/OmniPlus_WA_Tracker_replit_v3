@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType, Upload, X, Download, FileUp } from "lucide-react";
+import { ArrowLeft, Plus, Send, Trash2, Edit, FileText, Image, Video, FileType, Upload, X, Download, FileUp, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -88,6 +88,7 @@ export default function PhonebookDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // CSV Import state
   const [csvImportDialogOpen, setCsvImportDialogOpen] = useState(false);
@@ -140,6 +141,12 @@ export default function PhonebookDetailPage() {
   });
 
   const activeChannels = channels.filter((ch: any) => ch.status === "ACTIVE");
+
+  // Filter contacts by search query
+  const filteredContacts = phonebook?.contacts.filter((contact) => 
+    contact.phone.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
 
   // Delete contact mutation
   const deleteContact = useMutation({
@@ -610,10 +617,26 @@ export default function PhonebookDetailPage() {
         {/* Contacts Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Contacts</CardTitle>
-            <CardDescription>
-              Manage contacts and their personalized messages
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Contacts</CardTitle>
+                <CardDescription>
+                  Manage contacts and their personalized messages
+                </CardDescription>
+              </div>
+              {phonebook.contacts.length > 0 && (
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by phone or name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-search-contacts"
+                  />
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {phonebook.contacts.length === 0 ? (
@@ -623,6 +646,10 @@ export default function PhonebookDetailPage() {
                   <Plus className="w-4 h-4 mr-2" />
                   Add First Contact
                 </Button>
+              </div>
+            ) : filteredContacts.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-muted-foreground">No contacts found matching "{searchQuery}"</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -638,7 +665,7 @@ export default function PhonebookDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {phonebook.contacts.map((contact) => (
+                    {filteredContacts.map((contact) => (
                       <TableRow key={contact.id} data-testid={`row-contact-${contact.id}`}>
                         <TableCell className="font-mono text-sm" data-testid={`text-phone-${contact.id}`}>
                           {contact.phone}
