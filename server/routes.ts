@@ -6028,6 +6028,82 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get subscriber keywords setting (admin only)
+  app.get("/api/admin/settings/subscriber-keywords", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const keywordsSetting = await storage.getSetting("subscriber_keywords");
+      
+      // Default keywords
+      const defaultKeywords = {
+        subscribe: ["Subscribe"],
+        unsubscribe: ["Unsubscribe"]
+      };
+      
+      const keywords = keywordsSetting?.value 
+        ? JSON.parse(keywordsSetting.value) 
+        : defaultKeywords;
+      
+      res.json(keywords);
+    } catch (error: any) {
+      console.error("Get subscriber keywords error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update subscriber keywords setting (admin only)
+  app.put("/api/admin/settings/subscriber-keywords", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { subscribe, unsubscribe } = req.body;
+      
+      // Validate that both are arrays of non-empty strings
+      if (!Array.isArray(subscribe) || !Array.isArray(unsubscribe)) {
+        return res.status(400).json({ error: "Subscribe and unsubscribe must be arrays" });
+      }
+      
+      // Filter out empty strings, trim, and ensure uniqueness (case-insensitive)
+      const subscribeKeywords = Array.from(new Set(
+        subscribe
+          .filter((k: any) => typeof k === 'string' && k.trim().length > 0)
+          .map((k: string) => k.trim())
+      ));
+      
+      const unsubscribeKeywords = Array.from(new Set(
+        unsubscribe
+          .filter((k: any) => typeof k === 'string' && k.trim().length > 0)
+          .map((k: string) => k.trim())
+      ));
+      
+      // Ensure at least one keyword per type
+      if (subscribeKeywords.length === 0 || unsubscribeKeywords.length === 0) {
+        return res.status(400).json({ 
+          error: "At least one subscribe and one unsubscribe keyword is required" 
+        });
+      }
+      
+      const keywordsData = {
+        subscribe: subscribeKeywords,
+        unsubscribe: unsubscribeKeywords
+      };
+      
+      await storage.setSetting("subscriber_keywords", JSON.stringify(keywordsData));
+      
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "subscriber_keywords",
+          keywords: keywordsData,
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update subscriber keywords error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
   // ============================================================================
   // USE CASES ROUTES
   // ============================================================================

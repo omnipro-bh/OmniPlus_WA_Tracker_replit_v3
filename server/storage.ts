@@ -180,6 +180,13 @@ export interface IStorage {
   createMediaUpload(upload: schema.InsertMediaUpload): Promise<schema.MediaUpload>;
   getMediaUploadsForUser(userId: number, limit?: number): Promise<schema.MediaUpload[]>;
   getMediaUpload(id: number): Promise<schema.MediaUpload | undefined>;
+
+  // Subscribers
+  getSubscribersForUser(userId: number, status?: 'subscribed' | 'unsubscribed'): Promise<schema.Subscriber[]>;
+  getSubscriber(id: number): Promise<schema.Subscriber | undefined>;
+  upsertSubscriber(data: { userId: number; phone: string; name?: string; status: 'subscribed' | 'unsubscribed' }): Promise<schema.Subscriber>;
+  updateSubscriber(id: number, data: Partial<schema.Subscriber>): Promise<schema.Subscriber | undefined>;
+  deleteSubscriber(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -991,6 +998,112 @@ export class DatabaseStorage implements IStorage {
       .from(schema.mediaUploads)
       .where(eq(schema.mediaUploads.id, id));
     return upload || undefined;
+  }
+
+  // Subscribers
+  async getSubscribersForUser(userId: number, status?: 'subscribed' | 'unsubscribed'): Promise<schema.Subscriber[]> {
+    const conditions = [eq(schema.subscribers.userId, userId)];
+    
+    if (status) {
+      conditions.push(eq(schema.subscribers.status, status));
+    }
+
+    return await db
+      .select()
+      .from(schema.subscribers)
+      .where(and(...conditions))
+      .orderBy(desc(schema.subscribers.lastUpdated));
+  }
+
+  async getSubscriber(id: number): Promise<schema.Subscriber | undefined> {
+    const [subscriber] = await db
+      .select()
+      .from(schema.subscribers)
+      .where(eq(schema.subscribers.id, id));
+    return subscriber || undefined;
+  }
+
+  async upsertSubscriber(data: { 
+    userId: number; 
+    phone: string; 
+    name?: string; 
+    status: 'subscribed' | 'unsubscribed' 
+  }): Promise<schema.Subscriber> {
+    // Check if subscriber exists
+    const [existing] = await db
+      .select()
+      .from(schema.subscribers)
+      .where(
+        and(
+          eq(schema.subscribers.userId, data.userId),
+          eq(schema.subscribers.phone, data.phone)
+        )
+      );
+
+    const now = new Date();
+    
+    if (existing) {
+      // Update existing subscriber
+      const updateData: any = {
+        status: data.status,
+        lastUpdated: now,
+      };
+
+      if (data.name !== undefined) {
+        updateData.name = data.name;
+      }
+
+      // Update timestamps based on status
+      if (data.status === 'subscribed') {
+        updateData.subscribedAt = now;
+        updateData.unsubscribedAt = null;
+      } else if (data.status === 'unsubscribed') {
+        updateData.unsubscribedAt = now;
+      }
+
+      const [updated] = await db
+        .update(schema.subscribers)
+        .set(updateData)
+        .where(eq(schema.subscribers.id, existing.id))
+        .returning();
+      
+      return updated;
+    } else {
+      // Create new subscriber
+      const insertData: any = {
+        userId: data.userId,
+        phone: data.phone,
+        name: data.name || "",
+        status: data.status,
+        lastUpdated: now,
+      };
+
+      if (data.status === 'subscribed') {
+        insertData.subscribedAt = now;
+      } else if (data.status === 'unsubscribed') {
+        insertData.unsubscribedAt = now;
+      }
+
+      const [created] = await db
+        .insert(schema.subscribers)
+        .values(insertData)
+        .returning();
+      
+      return created;
+    }
+  }
+
+  async updateSubscriber(id: number, data: Partial<schema.Subscriber>): Promise<schema.Subscriber | undefined> {
+    const [subscriber] = await db
+      .update(schema.subscribers)
+      .set({ ...data, lastUpdated: new Date() })
+      .where(eq(schema.subscribers.id, id))
+      .returning();
+    return subscriber || undefined;
+  }
+
+  async deleteSubscriber(id: number): Promise<void> {
+    await db.delete(schema.subscribers).where(eq(schema.subscribers.id, id));
   }
 }
 

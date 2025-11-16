@@ -30,6 +30,7 @@ export const planTypeEnum = pgEnum("plan_type", ["PUBLIC", "CUSTOM"]);
 export const couponStatusEnum = pgEnum("coupon_status", ["ACTIVE", "EXPIRED", "DISABLED"]);
 export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAYMENT_IN", "PAYMENT_IN_OFFLINE", "DAYS_GRANTED", "DAYS_REFUND", "ADJUSTMENT"]);
 export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
+export const subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -57,6 +58,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   auditLogs: many(auditLogs),
   phonebooks: many(phonebooks),
   mediaUploads: many(mediaUploads),
+  subscribers: many(subscribers),
 }));
 
 // Plans table
@@ -99,6 +101,7 @@ export const plans = pgTable("plans", {
     balances: false,
     whapiSettings: false,
     phonebooks: false,
+    subscribers: false,
   }),
   features: jsonb("features").notNull().default([]), // Array of feature strings
   // Pricing Controls
@@ -734,6 +737,35 @@ export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
   }),
 }));
 
+// Subscribers table - Track WhatsApp subscribers (opt-in/opt-out)
+export const subscribers = pgTable("subscribers", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Subscriber Info
+  phone: varchar("phone", { length: 50 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull().default(""), // Subscriber name (can be edited)
+  
+  // Status
+  status: subscriberStatusEnum("status").notNull().default("subscribed"),
+  
+  // Timestamps
+  subscribedAt: timestamp("subscribed_at"),
+  unsubscribedAt: timestamp("unsubscribed_at"),
+  lastUpdated: timestamp("last_updated").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Unique constraint: one subscriber record per user per phone
+  uniqueUserPhone: uniqueIndex("unique_user_phone_subscribers").on(table.userId, table.phone),
+}));
+
+export const subscribersRelations = relations(subscribers, ({ one }) => ({
+  user: one(users, {
+    fields: [subscribers.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -903,6 +935,12 @@ export const insertMediaUploadSchema = createInsertSchema(mediaUploads, {
   fileType: z.enum(["image", "video", "document"]),
 });
 
+export const insertSubscriberSchema = createInsertSchema(subscribers, {
+  phone: z.string().min(1, "Phone number is required"),
+  name: z.string().default(""),
+  status: z.enum(["subscribed", "unsubscribed"]).optional(),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -960,3 +998,5 @@ export type PhonebookContact = typeof phonebookContacts.$inferSelect;
 export type InsertPhonebookContact = z.infer<typeof insertPhonebookContactSchema>;
 export type MediaUpload = typeof mediaUploads.$inferSelect;
 export type InsertMediaUpload = z.infer<typeof insertMediaUploadSchema>;
+export type Subscriber = typeof subscribers.$inferSelect;
+export type InsertSubscriber = z.infer<typeof insertSubscriberSchema>;
