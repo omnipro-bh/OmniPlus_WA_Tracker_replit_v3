@@ -132,7 +132,7 @@ export default function PhonebooksPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-semibold mb-2" data-testid="text-page-title">Phonebooks</h1>
-            <p className="text-sm text-secondary">Manage your contact phonebooks and send messages to groups</p>
+            <p className="text-sm text-muted-foreground">Manage your contact phonebooks and send messages to groups</p>
           </div>
           <Button
             onClick={() => setCreateDialogOpen(true)}
@@ -157,7 +157,7 @@ export default function PhonebooksPage() {
               <Book className="w-16 h-16 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-semibold mb-2">No phonebooks yet</h3>
-            <p className="text-sm text-secondary mb-6">
+            <p className="text-sm text-muted-foreground mb-6">
               Create your first phonebook to organize contacts and send group messages
             </p>
             <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-phonebook">
@@ -182,7 +182,7 @@ export default function PhonebooksPage() {
                         <CardTitle className="text-lg" data-testid={`text-phonebook-name-${phonebook.id}`}>
                           {phonebook.name}
                         </CardTitle>
-                        <div className="flex items-center gap-1 mt-1 text-xs text-secondary">
+                        <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                           <Users className="w-3 h-3" />
                           <span data-testid={`text-contact-count-${phonebook.id}`}>
                             {phonebook.contactCount || 0} contacts
