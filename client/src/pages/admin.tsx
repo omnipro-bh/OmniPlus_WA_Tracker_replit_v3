@@ -345,6 +345,102 @@ function DefaultThemeSettings() {
   );
 }
 
+function ChatWidgetLocationSettings() {
+  const { toast } = useToast();
+  const [chatWidgetLocation, setChatWidgetLocation] = useState("all-pages");
+
+  const { data: settings, isLoading } = useQuery<{chatWidgetLocation: string}>({
+    queryKey: ["/api/admin/settings/chat-widget-location"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (settings?.chatWidgetLocation) {
+      setChatWidgetLocation(settings.chatWidgetLocation);
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { chatWidgetLocation: string }) => {
+      return await apiRequest("PUT", "/api/admin/settings/chat-widget-location", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/chat-widget-location"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/chat-widget-location"] });
+      toast({
+        title: "Settings updated",
+        description: "Chat widget location setting has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    updateSettingsMutation.mutate({ chatWidgetLocation });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-muted/30 rounded-md">
+          <div className="space-y-0.5">
+            <Label htmlFor="widget-all-pages" className="cursor-pointer">Show on All Pages</Label>
+            <p className="text-xs text-muted-foreground">
+              Display chat widget on both homepage and dashboard
+            </p>
+          </div>
+          <Checkbox
+            id="widget-all-pages"
+            checked={chatWidgetLocation === "all-pages"}
+            onCheckedChange={() => setChatWidgetLocation("all-pages")}
+            data-testid="checkbox-widget-all-pages"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-muted/30 rounded-md">
+          <div className="space-y-0.5">
+            <Label htmlFor="widget-homepage-only" className="cursor-pointer">Show on Homepage Only</Label>
+            <p className="text-xs text-muted-foreground">
+              Display chat widget only on the homepage (not in dashboard)
+            </p>
+          </div>
+          <Checkbox
+            id="widget-homepage-only"
+            checked={chatWidgetLocation === "homepage-only"}
+            onCheckedChange={() => setChatWidgetLocation("homepage-only")}
+            data-testid="checkbox-widget-homepage-only"
+          />
+        </div>
+      </div>
+
+      <div className="bg-muted/30 p-4 rounded-md">
+        <p className="text-sm text-muted-foreground">
+          Control where the chat widget appears. "All Pages" shows it everywhere including the user dashboard. "Homepage Only" restricts it to the landing page for visitors only.
+        </p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-chat-widget-location"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
+
 function HttpAllowlistSettings() {
   const { toast } = useToast();
   const [domains, setDomains] = useState<string[]>([]);
@@ -3184,6 +3280,18 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <DefaultThemeSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Chat Widget Location</CardTitle>
+              <CardDescription>
+                Control where the chat widget appears on your site
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChatWidgetLocationSettings />
             </CardContent>
           </Card>
 

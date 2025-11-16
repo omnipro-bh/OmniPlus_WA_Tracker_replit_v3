@@ -23,7 +23,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Safety Meter:** Real-time WhatsApp channel health monitoring with plan-based access control. Displays 4 color-coded metrics (lifetime, coverage, response rate, overall rating) from WHAPI Tools API. Features channel selector, manual refresh, and plan-gating. No database caching - metrics fetched on-demand with WHAPI's daily refresh limit.
 - **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
 - **Admin Dashboard:** Manages users, billing, offline payments, channel activation, and dynamic homepage content.
-- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), theme, and HTTP Request allowlist (trusted domains for workflow API calls).
+- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), theme, chat widget location, and HTTP Request allowlist (trusted domains for workflow API calls).
 - **Homepage Content Management:** Admin controls for 'Use Cases' and 'Homepage Features'.
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 - **Phonebook Management:** CRUD for phonebooks and contacts, including CSV import with validation, partial imports, and plan-based contact limits.
@@ -36,7 +36,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions), and BalanceTransactions.
+Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions and chatWidgetLocation for Tawk.to visibility control), and BalanceTransactions.
 
 **Plans Payment System:**
 - **Payment Methods:** Supports PayPal, offline payments, and free trials.
@@ -61,6 +61,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **HTTP Request Security:** Production-ready simplified secure implementation with HTTPS-only, domain allowlist (admin-managed via Settings page, must be non-empty for execution), no redirects, 5MB/10s limits. Conversation state context stores HTTP results under `context.http[nodeId]` with schema `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for workflow continuity and {{variable}} substitution.
 - **Webhook Message Validation (Nov 2025):** Critical fix implemented to prevent entry node triggers from system events. Webhook handler now strictly validates inbound messages by checking for actual text content or button replies before processing. This prevents WHAPI status updates, delivery receipts, and other system events from incorrectly triggering first-message-of-day logic and sending unwanted entry node messages.
 - **HTTP Request Node Test Button (Nov 2025):** Added test functionality to HTTP Request nodes allowing users to test their API configuration before saving workflows. Test button executes the HTTP request with current configuration and displays results including status, response data, mapped variables, and errors. Note: Timeout conversion between UI (seconds) and execution (milliseconds) is handled in test endpoint only.
+- **Chat Widget Location Control (Nov 2025):** Admins can now control where the Tawk.to chat widget appears via Settings tab. Two options: "Show on All Pages" (homepage + dashboard) or "Show on Homepage Only" (landing page only, excludes dashboard). ChatWidget component dynamically loads/unloads Tawk.to script based on setting and current route. Proper cleanup removes all Tawk DOM elements and resets window state when widget should be hidden.
 
 ## External Dependencies
 - **WHAPI Partner API (https://manager.whapi.cloud):** Used for channel management.

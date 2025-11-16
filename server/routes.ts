@@ -5976,6 +5976,58 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get chat widget location setting
+  app.get("/api/admin/settings/chat-widget-location", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const widgetLocationSetting = await storage.getSetting("chat_widget_location");
+      const chatWidgetLocation = widgetLocationSetting?.value || "all-pages"; // Default to all pages
+      
+      res.json({ chatWidgetLocation });
+    } catch (error: any) {
+      console.error("Get chat widget location error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update chat widget location setting (admin only)
+  app.put("/api/admin/settings/chat-widget-location", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { chatWidgetLocation } = req.body;
+      
+      if (chatWidgetLocation && (chatWidgetLocation === "homepage-only" || chatWidgetLocation === "all-pages")) {
+        await storage.setSetting("chat_widget_location", chatWidgetLocation);
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "chat_widget_location",
+          chatWidgetLocation,
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update chat widget location error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Get chat widget location (public endpoint for widget loading)
+  app.get("/api/settings/chat-widget-location", async (req: Request, res: Response) => {
+    try {
+      const widgetLocationSetting = await storage.getSetting("chat_widget_location");
+      const chatWidgetLocation = widgetLocationSetting?.value || "all-pages"; // Default to all pages
+      
+      res.json({ chatWidgetLocation });
+    } catch (error: any) {
+      console.error("Get chat widget location error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
   // ============================================================================
   // USE CASES ROUTES
   // ============================================================================

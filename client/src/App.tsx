@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { ProtectedRoute } from "@/components/protected-route";
 import { AdminRoute } from "@/components/admin-route";
+import { ChatWidget } from "@/components/chat-widget";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Login from "@/pages/login";
@@ -173,6 +174,7 @@ export default function App() {
           <AuthProvider>
             <Router />
             <Toaster />
+            <ChatWidget />
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
