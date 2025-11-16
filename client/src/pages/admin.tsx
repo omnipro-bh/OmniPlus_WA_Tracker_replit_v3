@@ -132,6 +132,117 @@ function AuthSettings() {
   );
 }
 
+function SubscriberKeywordsSettings() {
+  const { toast } = useToast();
+  const [subscribeKeywords, setSubscribeKeywords] = useState("");
+  const [unsubscribeKeywords, setUnsubscribeKeywords] = useState("");
+
+  const { data: keywords, isLoading } = useQuery<{subscribe: string[]; unsubscribe: string[]}>({
+    queryKey: ["/api/admin/settings/subscriber-keywords"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (keywords) {
+      setSubscribeKeywords(keywords.subscribe.join(", "));
+      setUnsubscribeKeywords(keywords.unsubscribe.join(", "));
+    }
+  }, [keywords]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { subscribe: string[]; unsubscribe: string[] }) => {
+      return await apiRequest("PUT", "/api/admin/settings/subscriber-keywords", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/subscriber-keywords"] });
+      toast({
+        title: "Settings updated",
+        description: "Subscriber keywords have been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    // Parse comma-separated strings into arrays
+    const subscribe = subscribeKeywords
+      .split(",")
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    
+    const unsubscribe = unsubscribeKeywords
+      .split(",")
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+
+    if (subscribe.length === 0 || unsubscribe.length === 0) {
+      toast({
+        title: "Invalid input",
+        description: "Please provide at least one keyword for both subscribe and unsubscribe.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateSettingsMutation.mutate({ subscribe, unsubscribe });
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="subscribe-keywords">Subscribe Keywords</Label>
+          <Input
+            id="subscribe-keywords"
+            type="text"
+            value={subscribeKeywords}
+            onChange={(e) => setSubscribeKeywords(e.target.value)}
+            placeholder="Subscribe, Join, Sign Up"
+            data-testid="input-subscribe-keywords"
+          />
+          <p className="text-xs text-muted-foreground">
+            Comma-separated keywords that trigger subscription (case-insensitive)
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="unsubscribe-keywords">Unsubscribe Keywords</Label>
+          <Input
+            id="unsubscribe-keywords"
+            type="text"
+            value={unsubscribeKeywords}
+            onChange={(e) => setUnsubscribeKeywords(e.target.value)}
+            placeholder="Unsubscribe, Leave, Stop"
+            data-testid="input-unsubscribe-keywords"
+          />
+          <p className="text-xs text-muted-foreground">
+            Comma-separated keywords that trigger unsubscription (case-insensitive)
+          </p>
+        </div>
+      </div>
+
+      <Button 
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-subscriber-keywords"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
+  );
+}
+
 function DefaultPageAccessSettings() {
   const { toast } = useToast();
   const [pageAccess, setPageAccess] = useState({
@@ -3294,6 +3405,18 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <ChatWidgetLocationSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Subscriber Tracking</CardTitle>
+              <CardDescription>
+                Configure keywords that trigger subscription and unsubscription
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SubscriberKeywordsSettings />
             </CardContent>
           </Card>
 

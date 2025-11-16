@@ -3063,7 +3063,7 @@ export function registerRoutes(app: Express) {
 
       // Validate request body with Zod
       const updateSchema = z.object({
-        name: z.string().min(1, "Name cannot be empty").max(255, "Name too long"),
+        name: z.string().min(0).max(255, "Name too long"),
       });
 
       const validationResult = updateSchema.safeParse(req.body);
@@ -5002,7 +5002,7 @@ export function registerRoutes(app: Express) {
               const status = matchesSubscribe ? 'subscribed' : 'unsubscribed';
               
               await storage.upsertSubscriber({
-                userId: user!.id,
+                userId: activeWorkflow.userId,
                 phone: phone,
                 name: "", // Default empty name, can be edited later
                 status: status

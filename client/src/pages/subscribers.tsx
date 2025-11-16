@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
-import { Download, Users, Edit, Trash2, Filter, UserCheck, UserMinus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Users, Edit, Trash2, Filter, UserCheck, UserMinus, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -86,7 +86,7 @@ export default function SubscribersPage() {
 
   const subscribers = data?.subscribers || [];
   const total = data?.total || 0;
-  const totalPages = data?.totalPages || 1;
+  const totalPages = data?.totalPages ?? 1;
 
   // Update subscriber mutation
   const updateSubscriber = useMutation({
@@ -152,7 +152,7 @@ export default function SubscribersPage() {
     if (subscriberToEdit) {
       updateSubscriber.mutate({
         id: subscriberToEdit.id,
-        name: editedName.trim() || subscriberToEdit.phone,
+        name: editedName.trim(),
       });
     }
   };
@@ -199,6 +199,14 @@ export default function SubscribersPage() {
     setCurrentPage(1); // Reset to first page on filter change
   };
 
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/subscribers"] });
+    toast({
+      title: "Refreshed",
+      description: "Subscribers list updated successfully",
+    });
+  };
+
   return (
     <div className="min-h-screen p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
@@ -211,15 +219,25 @@ export default function SubscribersPage() {
                 Manage users who subscribed or unsubscribed via button interactions
               </p>
             </div>
-            <Button
-              onClick={handleExport}
-              variant="outline"
-              disabled={total === 0}
-              data-testid="button-export-subscribers"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleRefresh}
+                variant="outline"
+                data-testid="button-refresh-subscribers"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+              <Button
+                onClick={handleExport}
+                variant="outline"
+                disabled={total === 0}
+                data-testid="button-export-subscribers"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export CSV
+              </Button>
+            </div>
           </div>
 
           {/* Stats and Filters */}
@@ -348,13 +366,19 @@ export default function SubscribersPage() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        )}
 
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                  <div className="text-sm text-secondary" data-testid="text-page-info">
-                    Page {currentPage} of {totalPages} ({total} total)
-                  </div>
+        {/* Pagination Footer - Always visible for transparency */}
+        {!isLoading && (
+          <Card className="mt-6">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-secondary" data-testid="text-page-info">
+                  Page {data?.page ?? currentPage} of {Math.max(totalPages, 1)} ({total} {total === 1 ? 'subscriber' : 'subscribers'})
+                </div>
+                {totalPages > 1 && (
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -377,8 +401,8 @@ export default function SubscribersPage() {
                       <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </CardContent>
           </Card>
         )}
