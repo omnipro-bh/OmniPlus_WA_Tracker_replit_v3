@@ -589,6 +589,13 @@ export default function Send() {
             {!["image", "document"].includes(formData.messageType) && (
               <div className="space-y-3">
                 <Label>Buttons (Optional - up to 3)</Label>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    <strong>💡 Subscriber Tracking:</strong> Allow recipients to opt in/out of future campaigns! 
+                    Create a button with type "Quick Reply" and use text like <strong>"Subscribe"</strong> or <strong>"Unsubscribe"</strong>. 
+                    Button clicks matching your configured keywords (set in Admin Settings → Subscribers Keywords) will automatically track subscriber status.
+                  </p>
+                </div>
                 
                 {/* Button 1 */}
                 <div className="border rounded-lg p-3 space-y-2">

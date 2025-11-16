@@ -3046,7 +3046,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Update subscriber (edit name)
+  // Update subscriber (edit status)
   app.put("/api/subscribers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const subscriberId = parseInt(req.params.id);
@@ -3063,7 +3063,7 @@ export function registerRoutes(app: Express) {
 
       // Validate request body with Zod
       const updateSchema = z.object({
-        name: z.string().min(0).max(255, "Name too long"),
+        status: z.enum(["subscribed", "unsubscribed"]),
       });
 
       const validationResult = updateSchema.safeParse(req.body);
@@ -3074,8 +3074,8 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { name } = validationResult.data;
-      const updated = await storage.updateSubscriber(subscriberId, { name });
+      const { status } = validationResult.data;
+      const updated = await storage.updateSubscriber(subscriberId, { status });
       res.json(updated);
     } catch (error: any) {
       console.error("Update subscriber error:", error);

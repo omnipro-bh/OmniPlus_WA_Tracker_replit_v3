@@ -58,7 +58,7 @@ export default function SubscribersPage() {
   const [pageSize] = useState(20);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [subscriberToEdit, setSubscriberToEdit] = useState<Subscriber | null>(null);
-  const [editedName, setEditedName] = useState("");
+  const [editedStatus, setEditedStatus] = useState<"subscribed" | "unsubscribed">("subscribed");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [subscriberToDelete, setSubscriberToDelete] = useState<Subscriber | null>(null);
 
@@ -90,15 +90,14 @@ export default function SubscribersPage() {
 
   // Update subscriber mutation
   const updateSubscriber = useMutation({
-    mutationFn: async (data: { id: number; name: string }) => {
-      const res = await apiRequest("PUT", `/api/subscribers/${data.id}`, { name: data.name });
+    mutationFn: async (data: { id: number; status: "subscribed" | "unsubscribed" }) => {
+      const res = await apiRequest("PUT", `/api/subscribers/${data.id}`, { status: data.status });
       return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/subscribers"] });
       setEditDialogOpen(false);
       setSubscriberToEdit(null);
-      setEditedName("");
       toast({
         title: "Success",
         description: "Subscriber updated successfully",
@@ -139,7 +138,7 @@ export default function SubscribersPage() {
 
   const handleEditClick = (subscriber: Subscriber) => {
     setSubscriberToEdit(subscriber);
-    setEditedName(subscriber.name || "");
+    setEditedStatus(subscriber.status);
     setEditDialogOpen(true);
   };
 
@@ -152,7 +151,7 @@ export default function SubscribersPage() {
     if (subscriberToEdit) {
       updateSubscriber.mutate({
         id: subscriberToEdit.id,
-        name: editedName.trim(),
+        status: editedStatus,
       });
     }
   };
@@ -307,9 +306,8 @@ export default function SubscribersPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Name</th>
                       <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Phone</th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Status</th>
+                      <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Subscribed</th>
                       <th className="text-left py-3 px-4 text-sm font-medium text-secondary">Last Updated</th>
                       <th className="text-right py-3 px-4 text-sm font-medium text-secondary">Actions</th>
                     </tr>
@@ -321,22 +319,13 @@ export default function SubscribersPage() {
                         className="border-b hover-elevate"
                         data-testid={`row-subscriber-${subscriber.id}`}
                       >
-                        <td className="py-3 px-4" data-testid={`text-subscriber-name-${subscriber.id}`}>
-                          {subscriber.name || <span className="text-tertiary italic">Unknown</span>}
-                        </td>
                         <td className="py-3 px-4 font-mono text-sm" data-testid={`text-subscriber-phone-${subscriber.id}`}>
                           {subscriber.phone}
                         </td>
-                        <td className="py-3 px-4" data-testid={`badge-subscriber-status-${subscriber.id}`}>
-                          {subscriber.status === "subscribed" ? (
-                            <Badge variant="default" className="bg-green-500/10 text-green-500 border-green-500/20">
-                              Subscribed
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
-                              Unsubscribed
-                            </Badge>
-                          )}
+                        <td className="py-3 px-4" data-testid={`text-subscriber-status-${subscriber.id}`}>
+                          <span className={subscriber.status === "subscribed" ? "text-green-500 font-medium" : "text-secondary"}>
+                            {subscriber.status === "subscribed" ? "Yes" : "No"}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-secondary" data-testid={`text-subscriber-updated-${subscriber.id}`}>
                           {new Date(subscriber.lastUpdated).toLocaleString()}
@@ -413,7 +402,7 @@ export default function SubscribersPage() {
             <DialogHeader>
               <DialogTitle>Edit Subscriber</DialogTitle>
               <DialogDescription>
-                Update the display name for this subscriber
+                Update the subscription status for this subscriber
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -427,14 +416,19 @@ export default function SubscribersPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-name">Name</Label>
-                <Input
-                  id="edit-name"
-                  value={editedName}
-                  onChange={(e) => setEditedName(e.target.value)}
-                  placeholder="Enter subscriber name"
-                  data-testid="input-edit-subscriber-name"
-                />
+                <Label htmlFor="edit-status">Subscribed</Label>
+                <Select
+                  value={editedStatus}
+                  onValueChange={(value: "subscribed" | "unsubscribed") => setEditedStatus(value)}
+                >
+                  <SelectTrigger id="edit-status" data-testid="select-edit-subscriber-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="subscribed">Yes</SelectItem>
+                    <SelectItem value="unsubscribed">No</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>
