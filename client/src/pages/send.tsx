@@ -627,7 +627,7 @@ export default function Send() {
                       <TooltipContent className="max-w-xs">
                         <p className="text-xs">
                           By enabling this feature, you can easily allow recipients to opt in/out of campaign messages in the future. 
-                          Button clicks matching your configured keywords (set in Admin Settings → Subscriber Keywords) will automatically track subscriber status.
+                          Button clicks matching your configured keywords will automatically track subscriber status. Reach out to support team if you need to use different opt out words.
                         </p>
                       </TooltipContent>
                     </Tooltip>
