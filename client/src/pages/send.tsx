@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Send as SendIcon, Loader2, Smile } from "lucide-react";
+import { Send as SendIcon, Loader2, Smile, Info } from "lucide-react";
 import type { Channel, Template } from "@shared/schema";
 import { Link } from "wouter";
 import { WhatsAppPreview } from "@/components/whatsapp-preview";
@@ -34,6 +36,7 @@ export default function Send() {
   const [bulkStrategy, setBulkStrategy] = useState<"phonebook_fields" | "single_message">("phonebook_fields");
   const [phonebookId, setPhonebookId] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [enableSubscriberTracking, setEnableSubscriberTracking] = useState(false);
 
   const [formData, setFormData] = useState({
     channelId: "",
@@ -76,6 +79,21 @@ export default function Send() {
     queryKey: ["/api/phonebooks"],
     enabled: !!user && sendMode === "bulk",
   });
+
+  // Handler for subscriber tracking checkbox
+  const handleSubscriberTrackingToggle = (checked: boolean) => {
+    setEnableSubscriberTracking(checked);
+    if (checked) {
+      // Automatically populate button 1 and 2 with Subscribe/Unsubscribe
+      setFormData({
+        ...formData,
+        button1Text: "Subscribe",
+        button1Type: "quick_reply",
+        button2Text: "Unsubscribe",
+        button2Type: "quick_reply",
+      });
+    }
+  };
 
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -589,12 +607,31 @@ export default function Send() {
             {!["image", "document"].includes(formData.messageType) && (
               <div className="space-y-3">
                 <Label>Buttons (Optional - up to 3)</Label>
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
-                  <p className="text-xs text-blue-600 dark:text-blue-400">
-                    <strong>💡 Subscriber Tracking:</strong> Allow recipients to opt in/out of future campaigns! 
-                    Create a button with type "Quick Reply" and use text like <strong>"Subscribe"</strong> or <strong>"Unsubscribe"</strong>. 
-                    Button clicks matching your configured keywords (set in Admin Settings → Subscribers Keywords) will automatically track subscriber status.
-                  </p>
+                
+                {/* Subscriber Tracking Checkbox */}
+                <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/20 rounded-md p-3">
+                  <Checkbox
+                    id="enable-subscriber-tracking"
+                    checked={enableSubscriberTracking}
+                    onCheckedChange={handleSubscriberTrackingToggle}
+                    data-testid="checkbox-subscriber-tracking"
+                  />
+                  <div className="flex-1 flex items-start gap-1">
+                    <Label htmlFor="enable-subscriber-tracking" className="text-sm font-normal cursor-pointer leading-relaxed">
+                      Allow recipients to opt out of future campaigns
+                    </Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 cursor-help flex-shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p className="text-xs">
+                          By enabling this feature, you can easily allow recipients to opt in/out of campaign messages in the future. 
+                          Button clicks matching your configured keywords (set in Admin Settings → Subscriber Keywords) will automatically track subscriber status.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
                 
                 {/* Button 1 */}
