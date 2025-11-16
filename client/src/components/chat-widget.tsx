@@ -58,6 +58,10 @@ export function ChatWidget() {
 
     // Check if script already exists
     if (document.getElementById("tawk-script")) {
+      // Widget should be shown and script exists, show the widget if it was hidden
+      if ((window as any).Tawk_API && typeof (window as any).Tawk_API.showWidget === 'function') {
+        (window as any).Tawk_API.showWidget();
+      }
       return;
     }
 
@@ -76,10 +80,7 @@ export function ChatWidget() {
 
     document.body.appendChild(script);
 
-    // Cleanup function
-    return () => {
-      cleanupTawkWidget();
-    };
+    // Cleanup only runs on component unmount, not on every effect re-run
   }, [chatWidgetLocation, isHomepage, isLoading]);
 
   return null; // This component doesn't render anything
