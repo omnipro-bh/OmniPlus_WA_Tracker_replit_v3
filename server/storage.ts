@@ -182,7 +182,14 @@ export interface IStorage {
   getMediaUpload(id: number): Promise<schema.MediaUpload | undefined>;
 
   // Subscribers
-  getSubscribersForUser(userId: number, status?: 'subscribed' | 'unsubscribed'): Promise<schema.Subscriber[]>;
+  getSubscribersForUser(
+    userId: number, 
+    filters?: { 
+      status?: 'subscribed' | 'unsubscribed'; 
+      page?: number; 
+      pageSize?: number; 
+    }
+  ): Promise<{ subscribers: schema.Subscriber[]; total: number }>;
   getSubscriber(id: number): Promise<schema.Subscriber | undefined>;
   upsertSubscriber(data: { userId: number; phone: string; name?: string; status: 'subscribed' | 'unsubscribed' }): Promise<schema.Subscriber>;
   updateSubscriber(id: number, data: Partial<schema.Subscriber>): Promise<schema.Subscriber | undefined>;
@@ -1001,18 +1008,42 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Subscribers
-  async getSubscribersForUser(userId: number, status?: 'subscribed' | 'unsubscribed'): Promise<schema.Subscriber[]> {
+  async getSubscribersForUser(
+    userId: number, 
+    filters?: { 
+      status?: 'subscribed' | 'unsubscribed'; 
+      page?: number; 
+      pageSize?: number; 
+    }
+  ): Promise<{ subscribers: schema.Subscriber[]; total: number }> {
     const conditions = [eq(schema.subscribers.userId, userId)];
     
-    if (status) {
-      conditions.push(eq(schema.subscribers.status, status));
+    if (filters?.status) {
+      conditions.push(eq(schema.subscribers.status, filters.status));
     }
 
-    return await db
+    // Get total count
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.subscribers)
+      .where(and(...conditions));
+    
+    const total = count || 0;
+
+    // Get paginated data
+    const page = filters?.page || 1;
+    const pageSize = Math.min(filters?.pageSize || 20, 100); // Max 100 per page
+    const offset = (page - 1) * pageSize;
+
+    const subscribers = await db
       .select()
       .from(schema.subscribers)
       .where(and(...conditions))
-      .orderBy(desc(schema.subscribers.lastUpdated));
+      .orderBy(desc(schema.subscribers.lastUpdated))
+      .limit(pageSize)
+      .offset(offset);
+
+    return { subscribers, total };
   }
 
   async getSubscriber(id: number): Promise<schema.Subscriber | undefined> {

@@ -28,6 +28,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
 - **Phonebook Management:** CRUD for phonebooks and contacts, including CSV import with validation, partial imports, and plan-based contact limits.
 - **Bulk Sending:** Supports personalized or uniform messages to phonebook contacts.
+- **Subscriber Tracking:** Automatic subscriber list management via keyword-based button interactions. Admins configure subscribe/unsubscribe keywords (e.g., "Subscribe"/"Unsubscribe" in any language). Webhook automatically tracks user button clicks matching these keywords and maintains subscriber status (subscribed/unsubscribed). Features include: status filtering, name editing, CSV export, and page access control. Supports case-insensitive keyword matching and user isolation.
 
 **Design System:**
 - **Color Palette:** Dark mode with vibrant accents (blue, green, amber, red, cyan).
@@ -36,7 +37,7 @@ The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Q
 - **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions and chatWidgetLocation for Tawk.to visibility control), and BalanceTransactions.
+Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, Subscribers (with phone, name, status, lastUpdated fields for keyword-based tracking), MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions, chatWidgetLocation for Tawk.to visibility control, and subscribeKeyword/unsubscribeKeyword for subscriber tracking), and BalanceTransactions.
 
 **Plans Payment System:**
 - **Payment Methods:** Supports PayPal, offline payments, and free trials.
@@ -50,7 +51,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **Free Trial System:** Plans can offer free trials with configurable duration (days). Admin enables/disables trials and sets duration per plan. Free trial requests are processed identically to offline payments.
 - **Offline Payment & Free Trial Workflow:** User submits request (offline payment or free trial) → Admin reviews in Offline Payments tab (dual badges for free trials: PAID + FREE TRIAL) → Admin approves → Channel becomes ACTIVE and subscription created → **No automatic days added** → Admin manually adds days to balance pool later using "Add Days to Pool" feature.
 - **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
-- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, and Phonebooks. Default page access for new users is configurable in admin settings.
+- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, Phonebooks, and Subscribers. Default page access for new users is configurable in admin settings.
 
 **Technical Implementations:**
 - **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job.

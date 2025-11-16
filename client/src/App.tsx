@@ -24,6 +24,7 @@ import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import Phonebooks from "@/pages/phonebooks";
 import PhonebookDetail from "@/pages/phonebook-detail";
+import Subscribers from "@/pages/subscribers";
 import Outbox from "@/pages/outbox";
 import Logs from "@/pages/logs";
 import BulkLogs from "@/pages/bulk-logs";
@@ -100,6 +101,13 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="phonebooks">
             <PhonebookDetail />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/subscribers">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="subscribers">
+            <Subscribers />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>

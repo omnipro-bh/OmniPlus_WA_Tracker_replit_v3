@@ -148,6 +148,7 @@ function DefaultPageAccessSettings() {
     balances: false,
     whapiSettings: false,
     phonebooks: false,
+    subscribers: false,
     safetyMeter: false,
   });
 
@@ -206,6 +207,7 @@ function DefaultPageAccessSettings() {
     { key: "logs", label: "Workflow Logs", description: "Workflow execution logs" },
     { key: "bulkLogs", label: "Bulk Logs", description: "Bulk sending logs" },
     { key: "phonebooks", label: "Phonebooks", description: "Manage contact phonebooks" },
+    { key: "subscribers", label: "Subscribers", description: "Manage subscribers list" },
     { key: "pricing", label: "Pricing", description: "View pricing plans" },
     { key: "settings", label: "Settings", description: "User account settings" },
     { key: "balances", label: "Balances", description: "View balance information" },

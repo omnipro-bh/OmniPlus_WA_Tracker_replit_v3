@@ -3012,6 +3012,129 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // SUBSCRIBERS
+  // ============================================================================
+
+  // Get subscribers for user (paginated)
+  app.get("/api/subscribers", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const status = req.query.status as 'subscribed' | 'unsubscribed' | undefined;
+      const page = parseInt(req.query.page as string) || 1;
+      const pageSize = parseInt(req.query.pageSize as string) || 20;
+      
+      // Validate status filter if provided
+      if (status && status !== 'subscribed' && status !== 'unsubscribed') {
+        return res.status(400).json({ error: "Invalid status filter" });
+      }
+
+      // Validate pagination parameters
+      if (page < 1 || pageSize < 1 || pageSize > 100) {
+        return res.status(400).json({ error: "Invalid pagination parameters" });
+      }
+
+      const result = await storage.getSubscribersForUser(req.userId!, { status, page, pageSize });
+      res.json({
+        subscribers: result.subscribers,
+        total: result.total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(result.total / pageSize),
+      });
+    } catch (error: any) {
+      console.error("Get subscribers error:", error);
+      res.status(500).json({ error: "Failed to fetch subscribers" });
+    }
+  });
+
+  // Update subscriber (edit name)
+  app.put("/api/subscribers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const subscriberId = parseInt(req.params.id);
+      
+      if (isNaN(subscriberId)) {
+        return res.status(400).json({ error: "Invalid subscriber ID" });
+      }
+
+      const subscriber = await storage.getSubscriber(subscriberId);
+
+      if (!subscriber || subscriber.userId !== req.userId!) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+
+      // Validate request body with Zod
+      const updateSchema = z.object({
+        name: z.string().min(1, "Name cannot be empty").max(255, "Name too long"),
+      });
+
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationResult.error.flatten() 
+        });
+      }
+
+      const { name } = validationResult.data;
+      const updated = await storage.updateSubscriber(subscriberId, { name });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update subscriber error:", error);
+      res.status(500).json({ error: "Failed to update subscriber" });
+    }
+  });
+
+  // Delete subscriber
+  app.delete("/api/subscribers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const subscriberId = parseInt(req.params.id);
+      
+      if (isNaN(subscriberId)) {
+        return res.status(400).json({ error: "Invalid subscriber ID" });
+      }
+
+      const subscriber = await storage.getSubscriber(subscriberId);
+
+      if (!subscriber || subscriber.userId !== req.userId!) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+
+      await storage.deleteSubscriber(subscriberId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete subscriber error:", error);
+      res.status(500).json({ error: "Failed to delete subscriber" });
+    }
+  });
+
+  // Export subscribers as CSV
+  app.get("/api/subscribers/export", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      // Get all subscribers (no pagination for export)
+      const result = await storage.getSubscribersForUser(req.userId!, { pageSize: 100000 });
+      
+      // Generate CSV
+      const csvLines = [
+        "Name,Phone,Status,Last Updated" // Header
+      ];
+
+      for (const sub of result.subscribers) {
+        const lastUpdated = sub.lastUpdated ? new Date(sub.lastUpdated).toLocaleString() : "";
+        csvLines.push(`"${sub.name}","${sub.phone}","${sub.status}","${lastUpdated}"`);
+      }
+
+      const csv = csvLines.join("\n");
+
+      // Set headers for CSV download
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="subscribers-${Date.now()}.csv"`);
+      res.send(csv);
+    } catch (error: any) {
+      console.error("Export subscribers error:", error);
+      res.status(500).json({ error: "Failed to export subscribers" });
+    }
+  });
+
+  // ============================================================================
   // WORKFLOWS
   // ============================================================================
 
@@ -4837,6 +4960,62 @@ export function registerRoutes(app: Express) {
       const textBody = incomingMessage.text?.body || "";
       
       console.log(`Message type: ${messageType}, Raw ID: ${rawButtonId}, Extracted ID: ${buttonId}`);
+
+      // ============================================================================
+      // SUBSCRIBER TRACKING: Check if button title matches subscribe/unsubscribe keywords
+      // ============================================================================
+      if (messageType === "button_reply" && phone) {
+        try {
+          // Extract button title from various WHAPI formats
+          let buttonTitle = "";
+          
+          if (incomingMessage.reply?.type === "buttons_reply") {
+            buttonTitle = incomingMessage.reply.buttons_reply?.title || "";
+          } else if (incomingMessage.reply?.type === "list_reply") {
+            buttonTitle = incomingMessage.reply.list_reply?.title || "";
+          } else if (incomingMessage.button?.text) {
+            buttonTitle = incomingMessage.button.text;
+          }
+          
+          // If we extracted a button title, check against keywords
+          if (buttonTitle && buttonTitle.trim().length > 0) {
+            const buttonTitleNormalized = buttonTitle.trim();
+            
+            // Load subscriber keywords from settings
+            const keywordsSetting = await storage.getSetting("subscriber_keywords");
+            const keywords = keywordsSetting?.value 
+              ? JSON.parse(keywordsSetting.value) 
+              : { subscribe: ["Subscribe"], unsubscribe: ["Unsubscribe"] };
+            
+            // Check if button title matches any subscribe keyword (case-insensitive)
+            const matchesSubscribe = keywords.subscribe.some((kw: string) => 
+              kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+            );
+            
+            // Check if button title matches any unsubscribe keyword (case-insensitive)
+            const matchesUnsubscribe = keywords.unsubscribe.some((kw: string) => 
+              kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+            );
+            
+            // If keyword matches, upsert subscriber
+            if (matchesSubscribe || matchesUnsubscribe) {
+              const status = matchesSubscribe ? 'subscribed' : 'unsubscribed';
+              
+              await storage.upsertSubscriber({
+                userId: user!.id,
+                phone: phone,
+                name: "", // Default empty name, can be edited later
+                status: status
+              });
+              
+              console.log(`[Subscriber] ${phone} ${status} via button: "${buttonTitle}"`);
+            }
+          }
+        } catch (subscriberError: any) {
+          // Log error but don't fail the webhook - subscriber tracking is non-critical
+          console.error(`[Subscriber] Error processing subscriber: ${subscriberError.message}`);
+        }
+      }
 
       // Log execution start
       const executionLog = {

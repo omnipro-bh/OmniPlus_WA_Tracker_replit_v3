@@ -80,6 +80,12 @@ export function AppSidebar() {
       pageKey: "phonebooks",
     },
     {
+      title: "Subscribers",
+      url: "/subscribers",
+      icon: Users,
+      pageKey: "subscribers",
+    },
+    {
       title: "Outbox",
       url: "/outbox",
       icon: Inbox,
