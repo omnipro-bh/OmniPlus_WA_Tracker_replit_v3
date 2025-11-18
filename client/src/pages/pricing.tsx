@@ -202,10 +202,11 @@ export default function Pricing() {
 
   const handleOfflinePayment = (plan: Plan) => {
     setSelectedPlan(plan);
+    // Always use PayPal price for actual payment, even if display price is different
     setOfflinePayment({
       ...offlinePayment,
       amount: (getDiscountedPrice(plan.price || 0, plan) / 100).toFixed(2),
-      currency: plan.currency,
+      currency: plan.currency, // Always USD for PayPal
       couponCode: "",
     });
     setAppliedCoupon(null);
@@ -314,7 +315,10 @@ export default function Pricing() {
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
         {plans.filter(plan => plan.published).sort((a, b) => a.sortOrder - b.sortOrder).map((plan, index) => {
           const isPopular = (plan as any).isPopular || false;
-          const discountedPrice = getDiscountedPrice(plan.price || 0, plan);
+          // Use display price if available, otherwise use PayPal price
+          const displayPrice = (plan as any).displayPrice || plan.price || 0;
+          const displayCurrency = (plan as any).displayCurrency || plan.currency;
+          const discountedPrice = getDiscountedPrice(displayPrice, plan);
           const features = Array.isArray(plan.features) ? plan.features : [];
           
           // Check if this plan supports the currently selected billing period
@@ -337,15 +341,15 @@ export default function Pricing() {
               <CardHeader>
                 <CardTitle>{plan.name}</CardTitle>
                 <div className="mt-4">
-                  {plan.requestType === "PAID" && plan.price ? (
+                  {plan.requestType === "PAID" && (displayPrice > 0) ? (
                     <>
-                      <span className="text-4xl font-bold">{getCurrencySymbol(plan.currency)}{(discountedPrice / 100).toFixed(0)}</span>
+                      <span className="text-4xl font-bold">{getCurrencySymbol(displayCurrency)}{(discountedPrice / 100).toFixed(0)}</span>
                       <span className="text-muted-foreground">/
                         {durationType === "MONTHLY" ? "month" : durationType === "QUARTERLY" ? "3 months" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
                         <div className="text-sm text-muted-foreground line-through">
-                          {getCurrencySymbol(plan.currency)}{(plan.price / 100).toFixed(0)}
+                          {getCurrencySymbol(displayCurrency)}{(displayPrice / 100).toFixed(0)}
                         </div>
                       )}
                     </>
