@@ -1978,6 +1978,8 @@ export default function Admin() {
     name: "",
     currency: "USD",
     price: "",
+    displayCurrency: "",
+    displayPrice: "",
     billingPeriod: "MONTHLY" as "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL",
     requestType: "PAID" as "PAID" | "REQUEST_QUOTE" | "BOOK_DEMO",
     paymentMethods: [] as string[], // ["paypal", "offline"]
@@ -2411,6 +2413,8 @@ export default function Admin() {
       name: "",
       currency: "USD",
       price: "",
+      displayCurrency: "",
+      displayPrice: "",
       billingPeriod: "MONTHLY",
       requestType: "PAID",
       paymentMethods: [],
@@ -2501,6 +2505,8 @@ export default function Admin() {
       name: plan.name,
       currency: plan.currency,
       price: plan.price ? String(plan.price / 100) : "",
+      displayCurrency: (plan as any).displayCurrency || "",
+      displayPrice: (plan as any).displayPrice ? String((plan as any).displayPrice / 100) : "",
       billingPeriod: plan.billingPeriod,
       requestType: plan.requestType,
       paymentMethods: paymentMethods,
@@ -2547,6 +2553,7 @@ export default function Admin() {
     
     // Validate required numeric fields
     const price = planForm.price ? parseFloat(planForm.price) : null;
+    const displayPrice = planForm.displayPrice ? parseFloat(planForm.displayPrice) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
     
     // Each limit: if checkbox unchecked, force -1 (unlimited/disabled), otherwise parse value
@@ -2659,6 +2666,8 @@ export default function Admin() {
       name: planForm.name.trim(),
       currency: planForm.currency,
       price: price ? Math.round(price * 100) : null,
+      displayCurrency: planForm.displayCurrency.trim() || null,
+      displayPrice: displayPrice ? Math.round(displayPrice * 100) : null,
       billingPeriod: planForm.billingPeriod,
       requestType: planForm.requestType,
       paymentMethods: planForm.requestType === "PAID" ? planForm.paymentMethods : [],
@@ -3686,7 +3695,7 @@ export default function Admin() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="plan-currency">Currency</Label>
+                  <Label htmlFor="plan-currency">PayPal Currency</Label>
                   <Select
                     value={planForm.currency}
                     onValueChange={(value) => setPlanForm({ ...planForm, currency: value })}
@@ -3696,23 +3705,22 @@ export default function Admin() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="GBP">GBP</SelectItem>
-                      <SelectItem value="BHD">BHD</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">Currency for PayPal payments</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="plan-price">Price</Label>
+                  <Label htmlFor="plan-price">PayPal Price (USD)</Label>
                   <Input
                     id="plan-price"
                     type="number"
                     step="0.01"
-                    placeholder="99.00"
+                    placeholder="25.00"
                     value={planForm.price}
                     onChange={(e) => setPlanForm({ ...planForm, price: e.target.value })}
                     data-testid="input-plan-price"
                   />
+                  <p className="text-xs text-muted-foreground">Actual amount charged via PayPal</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="plan-billing-period">Billing Period</Label>
@@ -3730,6 +3738,44 @@ export default function Admin() {
                       <SelectItem value="ANNUAL">Annual</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Dual Pricing Section */}
+              <div className="border-t pt-4 mt-4">
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-sm font-semibold">Display Pricing (Optional)</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Show a different price to users on the pricing page. Leave empty to show PayPal price.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="plan-display-currency">Display Currency</Label>
+                      <Input
+                        id="plan-display-currency"
+                        placeholder="e.g., BHD"
+                        value={planForm.displayCurrency}
+                        onChange={(e) => setPlanForm({ ...planForm, displayCurrency: e.target.value })}
+                        data-testid="input-plan-display-currency"
+                      />
+                      <p className="text-xs text-muted-foreground">Currency code shown to users</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="plan-display-price">Display Price</Label>
+                      <Input
+                        id="plan-display-price"
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g., 9.50"
+                        value={planForm.displayPrice}
+                        onChange={(e) => setPlanForm({ ...planForm, displayPrice: e.target.value })}
+                        data-testid="input-plan-display-price"
+                      />
+                      <p className="text-xs text-muted-foreground">Price shown on pricing page</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
