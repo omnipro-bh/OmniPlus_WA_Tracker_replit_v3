@@ -384,7 +384,7 @@ export default function Pricing() {
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">
-                        {plan.bulkMessagesLimit === -1 ? "Unlimited" : plan.bulkMessagesLimit.toLocaleString()} bulk messages
+                        {plan.bulkMessagesLimit === -1 ? "Unlimited" : plan.bulkMessagesLimit.toLocaleString()} daily bulk messages
                       </span>
                     </li>
                   )}
