@@ -2022,6 +2022,7 @@ export default function Admin() {
       bulkLogs: false,
       phonebooks: false,
       subscribers: false,
+      settings: false,
     },
     features: [] as string[],
   });
@@ -2456,6 +2457,7 @@ export default function Admin() {
         bulkLogs: false,
         phonebooks: false,
         subscribers: false,
+        settings: false,
       },
       features: [],
     });
@@ -2481,6 +2483,7 @@ export default function Admin() {
       outbox: false,
       logs: false,
       bulkLogs: false,
+      settings: false,
       ...(plan.pageAccess || {}),
     };
     
@@ -4470,6 +4473,22 @@ export default function Admin() {
                     Subscribers
                   </Label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-settings"
+                    checked={planForm.pageAccess.settings}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, settings: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-settings"
+                  />
+                  <Label htmlFor="page-settings" className="text-sm font-normal cursor-pointer">
+                    Settings
+                  </Label>
+                </div>
               </div>
             </div>
 
@@ -4790,6 +4809,7 @@ export default function Admin() {
                     { key: "bulkLogs", label: "Bulk Logs" },
                     { key: "phonebooks", label: "Phonebooks" },
                     { key: "subscribers", label: "Subscribers" },
+                    { key: "settings", label: "Settings" },
                   ].map(({ key, label }) => (
                     <div key={key} className="flex items-center gap-2">
                       <Checkbox
