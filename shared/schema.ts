@@ -66,8 +66,10 @@ export const plans = pgTable("plans", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   type: planTypeEnum("type").notNull().default("PUBLIC"), // PUBLIC or CUSTOM
   name: text("name").notNull(),
-  currency: text("currency").notNull().default("USD"),
-  price: integer("price"), // Price in cents, nullable for Quote/Demo/Custom
+  currency: text("currency").notNull().default("USD"), // PayPal currency (always USD)
+  price: integer("price"), // PayPal price in cents (USD), nullable for Quote/Demo/Custom
+  displayCurrency: text("display_currency"), // Currency to display on pricing page (e.g., "BHD")
+  displayPrice: integer("display_price"), // Price to display on pricing page in cents (e.g., BHD)
   billingPeriod: billingPeriodEnum("billing_period").notNull().default("MONTHLY"),
   requestType: requestTypeEnum("request_type").notNull().default("PAID"),
   paypalPlanId: text("paypal_plan_id"), // Optional PayPal plan ID for subscriptions
