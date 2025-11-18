@@ -111,6 +111,17 @@ export function registerRoutes(app: Express) {
   // PAYPAL INTEGRATION
   // ============================================================================
 
+  // PayPal configuration endpoint - returns environment setting
+  app.get("/api/paypal/config", async (req, res) => {
+    try {
+      const environment = process.env.PAYPAL_ENVIRONMENT || "sandbox";
+      res.json({ environment });
+    } catch (e) {
+      console.error("Failed to get PayPal config", e);
+      res.status(500).json({ error: "Failed to get PayPal config" });
+    }
+  });
+
   app.get("/paypal/setup", async (req, res) => {
     try {
       await loadPaypalDefault(req, res);

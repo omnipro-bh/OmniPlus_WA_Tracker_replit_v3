@@ -75,12 +75,18 @@ export default function PayPalButton({
     const loadPayPalSDK = async () => {
       try {
         if (!(window as any).paypal) {
+          // Fetch PayPal environment configuration from backend
+          const configResponse = await fetch("/api/paypal/config");
+          const config = await configResponse.json();
+          const paypalEnv = config.environment || "sandbox";
+          
+          console.log("[PayPal] Environment from backend:", paypalEnv);
+          
           const script = document.createElement("script");
-          const paypalEnv = import.meta.env.VITE_PAYPAL_ENVIRONMENT;
-          console.log("[PayPal] Environment:", paypalEnv);
           const sdkUrl = paypalEnv === "production"
             ? "https://www.paypal.com/web-sdk/v6/core"
             : "https://www.sandbox.paypal.com/web-sdk/v6/core";
+          
           console.log("[PayPal] Loading SDK from:", sdkUrl);
           script.src = sdkUrl;
           script.async = true;
