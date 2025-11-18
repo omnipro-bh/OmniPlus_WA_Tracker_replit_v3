@@ -101,5 +101,76 @@ export async function seedDatabase() {
     console.log("✓ Main admin balance initialized (1000 days)");
   }
 
+  // Check if terms documents exist
+  const existingTerms = await storage.getActiveTermsDocuments();
+  if (existingTerms.length === 0) {
+    // Create Button Functionality Terms
+    await storage.createTermsDocument({
+      type: "BUTTON_FUNCTIONALITY",
+      version: "1.0",
+      title: "OMNI PLUS – Terms of Use for Button Functionality on WhatsApp API",
+      content: `OMNI PLUS – Terms of Use for Button Functionality on WhatsApp API
+
+Last Updated: November 2025
+
+By activating the button functionality in WhatsApp through OMNI PLUS, you agree to the terms outlined in this document.
+
+1. Functionality Description
+
+The endpoint for sending interactive button messages via OMNI PLUS API is used to send messages with buttons that allow users to engage, reply, or open URLs within WhatsApp.
+
+2. Disclaimer
+
+OMNI PLUS is not responsible for any changes, suspension, or removal of button features by Meta Platforms Inc. Meta may modify or discontinue such functionality at any time without prior notice.
+
+3. Risk Notice
+
+Users acknowledge that Meta may, at its discretion, modify, limit, or terminate button features without notice. OMNI PLUS assumes no liability for resulting data interruptions or business losses.
+
+4. Limitation of Liability
+
+OMNI PLUS shall not be liable for direct, indirect, incidental, or consequential damages arising from the use or inability to use button functionalities, including but not limited to business disruptions or data loss.
+
+5. User Responsibility
+
+Users are solely responsible for the content and compliance of messages sent using button features. OMNI PLUS does not monitor, control, or assume liability for user-generated content.
+
+6. Amendments
+
+OMNI PLUS reserves the right to update these terms at any time. Continued use of button functionality constitutes acceptance of revised terms.
+
+For questions, contact: support@omniplus.ai`,
+      isActive: true,
+    });
+
+    // Create PayPal Payment Terms
+    await storage.createTermsDocument({
+      type: "PAYPAL_PAYMENT",
+      version: "1.0",
+      title: "Payment Terms & Conditions",
+      content: `Payment Terms & Conditions
+
+By subscribing to OMNI PLUS services via PayPal, you agree to the following terms:
+
+1. Payment Processing
+All payments are processed securely through PayPal. OMNI PLUS does not store your payment information.
+
+2. Subscription Billing
+Subscriptions are billed on a recurring basis according to your selected plan duration (monthly, quarterly, semi-annual, or annual).
+
+3. Refund Policy
+Refunds are handled on a case-by-case basis. Please contact support@omniplus.ai for refund requests.
+
+4. Service Availability
+OMNI PLUS reserves the right to modify service features and pricing with advance notice to subscribers.
+
+5. Cancellation
+You may cancel your subscription at any time through your account settings. Access continues until the end of your billing period.`,
+      isActive: true,
+    });
+
+    console.log("✓ Terms & Conditions documents created");
+  }
+
   console.log("Database seeded successfully!");
 }
