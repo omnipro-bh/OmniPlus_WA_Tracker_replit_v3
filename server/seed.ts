@@ -82,8 +82,6 @@ export async function seedDatabase() {
       dailyMessagesLimit: 999999,
       bulkMessagesLimit: 999999,
       features: [
-        "Unlimited channels",
-        "Unlimited messages",
         "Custom integrations",
         "SLA guarantee",
         "Account manager",

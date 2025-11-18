@@ -1594,20 +1594,23 @@ export function registerRoutes(app: Express) {
         return res.status(500).json({ error: "Plan not found" });
       }
 
-      // Check daily message limit
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const todaysJobs = await storage.getJobsForUser(req.userId!);
-      const todaysMessages = todaysJobs
-        .filter(job => new Date(job.createdAt) >= today)
-        .reduce((sum, job) => sum + job.total, 0);
+      // Check daily single message limit (independent of bulk messages)
+      // -1 means unlimited
+      if (plan.dailyMessagesLimit !== -1) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const todaysJobs = await storage.getJobsForUser(req.userId!);
+        const todaysSingleMessages = todaysJobs
+          .filter(job => new Date(job.createdAt) >= today && job.type === "SINGLE")
+          .reduce((sum, job) => sum + job.total, 0);
 
-      if (todaysMessages >= plan.dailyMessagesLimit) {
-        return res.status(400).json({ 
-          error: `Daily message limit reached (${plan.dailyMessagesLimit}). Upgrade plan to send more.`,
-          limitReached: true
-        });
+        if (todaysSingleMessages >= plan.dailyMessagesLimit) {
+          return res.status(400).json({ 
+            error: `Daily single message limit reached (${plan.dailyMessagesLimit}). Upgrade plan to send more.`,
+            limitReached: true
+          });
+        }
       }
 
       // Create job
@@ -1836,25 +1839,28 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      // Check bulk message limit
-      if (rows.length > plan.bulkMessagesLimit) {
+      // Check bulk batch size limit (-1 means unlimited)
+      if (plan.bulkMessagesLimit !== -1 && rows.length > plan.bulkMessagesLimit) {
         return res.status(403).json({ 
           error: `Bulk message limit is ${plan.bulkMessagesLimit} messages per batch` 
         });
       }
 
-      // Count messages sent today (including this batch)
-      const jobs = await storage.getJobsForUser(req.userId!);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const messagesToday = jobs
-        .filter(j => new Date(j.createdAt) >= today)
-        .reduce((sum, j) => sum + j.total, 0);
+      // Check daily bulk message limit (independent of single messages)
+      // -1 means unlimited
+      if (plan.bulkMessagesLimit !== -1) {
+        const jobs = await storage.getJobsForUser(req.userId!);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const bulkMessagesToday = jobs
+          .filter(j => new Date(j.createdAt) >= today && j.type === "BULK")
+          .reduce((sum, j) => sum + j.total, 0);
 
-      if (messagesToday + rows.length > plan.dailyMessagesLimit) {
-        return res.status(403).json({ 
-          error: `Daily message limit would be exceeded. Today: ${messagesToday}/${plan.dailyMessagesLimit}` 
-        });
+        if (bulkMessagesToday + rows.length > plan.bulkMessagesLimit) {
+          return res.status(403).json({ 
+            error: `Daily bulk message limit would be exceeded. Today: ${bulkMessagesToday}/${plan.bulkMessagesLimit}` 
+          });
+        }
       }
 
       // Create job

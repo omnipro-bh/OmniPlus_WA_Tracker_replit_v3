@@ -377,15 +377,15 @@ export default function Pricing() {
                       </span>
                     </li>
                   )}
-                  {plan.dailyMessagesLimit !== -1 && (
+                  {plan.dailyMessagesLimit !== 0 && (
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">
-                        {plan.dailyMessagesLimit === -1 ? "Unlimited" : plan.dailyMessagesLimit.toLocaleString()} messages/day
+                        {plan.dailyMessagesLimit === -1 ? "Unlimited" : plan.dailyMessagesLimit.toLocaleString()} daily single messages
                       </span>
                     </li>
                   )}
-                  {plan.bulkMessagesLimit !== -1 && (
+                  {plan.bulkMessagesLimit !== 0 && (
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">
