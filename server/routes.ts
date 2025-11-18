@@ -857,7 +857,16 @@ export function registerRoutes(app: Express) {
 
       // Calculate expected amount based on duration type (matching frontend logic)
       const durationType = submittedDurationType || "MONTHLY";
-      const basePlanPrice = plan.price || 0;
+      
+      // Support dual pricing: check both PayPal price (USD) and display price (BHD)
+      const planData = plan as any;
+      const hasDisplayPricing = planData.displayPrice && planData.displayCurrency;
+      
+      // Determine which price to use based on submitted currency
+      const basePlanPrice = (currency === planData.displayCurrency && hasDisplayPricing) 
+        ? planData.displayPrice 
+        : (plan.price || 0);
+      
       let expectedBasePrice = basePlanPrice;
       
       // Apply duration-based pricing (matching frontend getDiscountedPrice function)
