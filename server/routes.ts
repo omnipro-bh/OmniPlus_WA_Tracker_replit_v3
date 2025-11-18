@@ -4611,6 +4611,8 @@ export function registerRoutes(app: Express) {
         name: `${original.name} (Copy)`,
         currency: original.currency,
         price: original.price,
+        displayCurrency: (original as any).displayCurrency,
+        displayPrice: (original as any).displayPrice,
         billingPeriod: original.billingPeriod,
         requestType: original.requestType,
         paymentMethods: duplicatePaymentMethods as any, // Remove PayPal - admin must add with new Plan ID

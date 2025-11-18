@@ -3266,7 +3266,7 @@ export default function Admin() {
                             )}
                           </td>
                           <td className="px-4 py-3 font-mono text-sm">
-                            {plan.currency} {plan.price ? (plan.price / 100).toFixed(2) : "0.00"}
+                            {(plan as any).displayCurrency || plan.currency} {((plan as any).displayPrice || plan.price) ? (((plan as any).displayPrice || plan.price) / 100).toFixed(2) : "0.00"}
                           </td>
                           <td className="px-4 py-3 text-sm">
                             {plan.billingPeriod === "MONTHLY" && "Monthly"}

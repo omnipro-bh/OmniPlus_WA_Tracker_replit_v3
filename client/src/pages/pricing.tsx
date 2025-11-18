@@ -343,13 +343,13 @@ export default function Pricing() {
                 <div className="mt-4">
                   {plan.requestType === "PAID" && (displayPrice > 0) ? (
                     <>
-                      <span className="text-4xl font-bold">{getCurrencySymbol(displayCurrency)}{(discountedPrice / 100).toFixed(0)}</span>
+                      <span className="text-4xl font-bold">{getCurrencySymbol(displayCurrency)}{(discountedPrice / 100).toFixed(2)}</span>
                       <span className="text-muted-foreground">/
                         {durationType === "MONTHLY" ? "month" : durationType === "QUARTERLY" ? "3 months" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
                         <div className="text-sm text-muted-foreground line-through">
-                          {getCurrencySymbol(displayCurrency)}{(displayPrice / 100).toFixed(0)}
+                          {getCurrencySymbol(displayCurrency)}{(displayPrice / 100).toFixed(2)}
                         </div>
                       )}
                     </>
