@@ -76,9 +76,13 @@ export default function PayPalButton({
       try {
         if (!(window as any).paypal) {
           const script = document.createElement("script");
-          script.src = import.meta.env.VITE_PAYPAL_ENVIRONMENT === "production"
+          const paypalEnv = import.meta.env.VITE_PAYPAL_ENVIRONMENT;
+          console.log("[PayPal] Environment:", paypalEnv);
+          const sdkUrl = paypalEnv === "production"
             ? "https://www.paypal.com/web-sdk/v6/core"
             : "https://www.sandbox.paypal.com/web-sdk/v6/core";
+          console.log("[PayPal] Loading SDK from:", sdkUrl);
+          script.src = sdkUrl;
           script.async = true;
           script.onload = () => initPayPal();
           document.body.appendChild(script);
