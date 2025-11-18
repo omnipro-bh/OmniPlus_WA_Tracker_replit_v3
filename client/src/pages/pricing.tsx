@@ -202,11 +202,16 @@ export default function Pricing() {
 
   const handleOfflinePayment = (plan: Plan) => {
     setSelectedPlan(plan);
-    // Always use PayPal price for actual payment, even if display price is different
+    const planData = plan as any;
+    
+    // Use display price if available (BHD), otherwise fall back to PayPal price (USD)
+    const priceToShow = planData.displayPrice || plan.price || 0;
+    const currencyToShow = planData.displayCurrency || plan.currency;
+    
     setOfflinePayment({
       ...offlinePayment,
-      amount: (getDiscountedPrice(plan.price || 0, plan) / 100).toFixed(2),
-      currency: plan.currency, // Always USD for PayPal
+      amount: (getDiscountedPrice(priceToShow, plan) / 100).toFixed(2),
+      currency: currencyToShow,
       couponCode: "",
     });
     setAppliedCoupon(null);
