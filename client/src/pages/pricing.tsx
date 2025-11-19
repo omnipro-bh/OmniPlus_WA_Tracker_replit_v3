@@ -368,8 +368,8 @@ export default function Pricing() {
               </CardHeader>
               <CardContent className="flex-1">
                 <ul className="space-y-3">
-                  {/* Only show enabled limits (not -1) */}
-                  {plan.channelsLimit !== -1 && (
+                  {/* Only show limits that are enabled (not 0). 0 = disabled, -1 = unlimited, >0 = specific limit */}
+                  {plan.channelsLimit !== 0 && (
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">
@@ -393,7 +393,7 @@ export default function Pricing() {
                       </span>
                     </li>
                   )}
-                  {(plan as any).chatbotsLimit !== undefined && (plan as any).chatbotsLimit !== -1 && (
+                  {(plan as any).chatbotsLimit !== undefined && (plan as any).chatbotsLimit !== 0 && (
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">
@@ -401,7 +401,7 @@ export default function Pricing() {
                       </span>
                     </li>
                   )}
-                  {(plan as any).phonebookLimit !== undefined && (plan as any).phonebookLimit !== -1 && (
+                  {(plan as any).phonebookLimit !== undefined && (plan as any).phonebookLimit !== 0 && (
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">

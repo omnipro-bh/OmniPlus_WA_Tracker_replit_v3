@@ -2559,12 +2559,12 @@ export default function Admin() {
     const displayPrice = planForm.displayPrice ? parseFloat(planForm.displayPrice) : null;
     const sortOrder = parseInt(planForm.sortOrder) || 0;
     
-    // Each limit: if checkbox unchecked, force -1 (unlimited/disabled), otherwise parse value
-    const dailyMessagesLimit = planForm.enableDailyMessages ? parseInt(planForm.dailyMessagesLimit) : -1;
-    const bulkMessagesLimit = planForm.enableBulkMessages ? parseInt(planForm.bulkMessagesLimit) : -1;
-    const channelsLimit = planForm.enableChannels ? parseInt(planForm.channelsLimit) : -1;
-    const chatbotsLimit = planForm.enableWorkflows ? parseInt(planForm.chatbotsLimit) : -1;
-    const phonebookLimit = planForm.enablePhonebooks ? parseInt(planForm.phonebookLimit) : -1;
+    // Each limit: if checkbox unchecked, set to 0 (disabled/not included), otherwise parse value
+    const dailyMessagesLimit = planForm.enableDailyMessages ? parseInt(planForm.dailyMessagesLimit) : 0;
+    const bulkMessagesLimit = planForm.enableBulkMessages ? parseInt(planForm.bulkMessagesLimit) : 0;
+    const channelsLimit = planForm.enableChannels ? parseInt(planForm.channelsLimit) : 0;
+    const chatbotsLimit = planForm.enableWorkflows ? parseInt(planForm.chatbotsLimit) : 0;
+    const phonebookLimit = planForm.enablePhonebooks ? parseInt(planForm.phonebookLimit) : 0;
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
