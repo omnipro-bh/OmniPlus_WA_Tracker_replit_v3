@@ -2117,6 +2117,19 @@ export function registerRoutes(app: Express) {
   // TEMPLATES
   // ============================================================================
 
+  // Helper function to convert media upload to URL
+  const getMediaUrl = (mediaUpload: any): string | null => {
+    if (!mediaUpload) return null;
+    
+    // For locally stored files, return the file path
+    if (mediaUpload.whapiMediaId?.startsWith('local-') && mediaUpload.fileName) {
+      return `/uploads/${mediaUpload.fileName}`;
+    }
+    
+    // For WHAPI-hosted media, return the media ID
+    return mediaUpload.whapiMediaId || null;
+  };
+
   // Get templates
   app.get("/api/templates", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -2129,7 +2142,8 @@ export function registerRoutes(app: Express) {
             const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
             return {
               ...template,
-              mediaUrl: mediaUpload?.whapiMediaId || null,
+              mediaUrl: getMediaUrl(mediaUpload),
+              mediaUploadId: template.mediaUploadId, // Keep the ID for editing
             };
           }
           return { ...template, mediaUrl: null };
@@ -2194,7 +2208,7 @@ export function registerRoutes(app: Express) {
       let responseTemplate = { ...template, mediaUrl: null as string | null };
       if (template.mediaUploadId) {
         const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
-        responseTemplate.mediaUrl = mediaUpload?.whapiMediaId || null;
+        responseTemplate.mediaUrl = getMediaUrl(mediaUpload);
       }
 
       res.json(responseTemplate);
@@ -2248,7 +2262,7 @@ export function registerRoutes(app: Express) {
       let responseTemplate = { ...updated, mediaUrl: null as string | null };
       if (updated?.mediaUploadId) {
         const mediaUpload = await storage.getMediaUpload(updated.mediaUploadId);
-        responseTemplate.mediaUrl = mediaUpload?.whapiMediaId || null;
+        responseTemplate.mediaUrl = getMediaUrl(mediaUpload);
       }
 
       res.json(responseTemplate);
@@ -2669,7 +2683,7 @@ export function registerRoutes(app: Express) {
 
       // Store upload record
       const mediaId = `local-${uniqueId}`;
-      await storage.createMediaUpload({
+      const mediaUpload = await storage.createMediaUpload({
         userId: req.userId!,
         whapiMediaId: mediaId,
         fileName: fileName || generatedFileName,
@@ -2680,8 +2694,9 @@ export function registerRoutes(app: Express) {
 
       console.log(`[Media Upload] Saved ${generatedFileName} (${fileSizeMB.toFixed(2)}MB) for user ${req.userId}`);
 
-      // Return the original base64 data URL for inline sending
+      // Return the database ID and original base64 data URL for inline sending
       res.json({ 
+        id: mediaUpload.id, // Database record ID for mediaUploadId
         mediaId: mediaId,
         url: file, // Return original base64 data URL for inline sending
         fileName: generatedFileName,
