@@ -1646,6 +1646,9 @@ export function registerRoutes(app: Express) {
       try {
         let whapiResponse;
         const currentMessageType = messageType || "text_buttons";
+        
+        // Resolve media URL (convert local paths to base64)
+        const resolvedMediaUrl = await resolveMediaForWhapi(mediaUrl);
 
         // Handle different message types
         if (currentMessageType === "text_buttons") {
@@ -1672,7 +1675,7 @@ export function registerRoutes(app: Express) {
           // Image only (no buttons)
           whapiResponse = await whapi.sendMediaMessage(channel.whapiChannelToken!, {
             to,
-            media: mediaUrl || "",
+            media: resolvedMediaUrl || "",
             caption: body,
             mediaType: "Image",
           });
@@ -1682,7 +1685,7 @@ export function registerRoutes(app: Express) {
           const imageButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { media: mediaUrl }), // Media at root level!
+            ...(resolvedMediaUrl && { media: resolvedMediaUrl }), // Media at root level!
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1703,7 +1706,7 @@ export function registerRoutes(app: Express) {
           const videoButtonPayload = {
             to,
             type: "button",
-            ...(mediaUrl && { media: mediaUrl }), // Media at root level!
+            ...(resolvedMediaUrl && { media: resolvedMediaUrl }), // Media at root level!
             body: { text: body },
             ...(footer && { footer: { text: footer } }),
             action: {
@@ -1723,7 +1726,7 @@ export function registerRoutes(app: Express) {
           // Document (no buttons)
           whapiResponse = await whapi.sendMediaMessage(channel.whapiChannelToken!, {
             to,
-            media: mediaUrl || "",
+            media: resolvedMediaUrl || "",
             caption: body,
             mediaType: "Document",
           });
@@ -1965,6 +1968,9 @@ export function registerRoutes(app: Express) {
           // Get message type and buttons
           const messageType = message.messageType || "text_buttons";
           const buttons = Array.isArray(message.buttons) ? message.buttons : [];
+          
+          // Resolve media URL (convert local paths to base64)
+          const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);
 
           // Send message via WHAPI based on message type
           let result;
@@ -1974,7 +1980,7 @@ export function registerRoutes(app: Express) {
               // Send image without buttons
               result = await whapi.sendMediaMessage(channel.whapiChannelToken, {
                 to: message.to,
-                media: message.mediaUrl || "",
+                media: resolvedMediaUrl || "",
                 caption: message.body || "",
                 mediaType: "Image",
               });
@@ -1985,7 +1991,7 @@ export function registerRoutes(app: Express) {
               const imgPayload = {
                 to: message.to,
                 type: "button",
-                ...(message.mediaUrl && { media: message.mediaUrl }), // Media at root level!
+                ...(resolvedMediaUrl && { media: resolvedMediaUrl }), // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
@@ -2000,7 +2006,7 @@ export function registerRoutes(app: Express) {
               const vidPayload = {
                 to: message.to,
                 type: "button",
-                ...(message.mediaUrl && { media: message.mediaUrl }), // Media at root level!
+                ...(resolvedMediaUrl && { media: resolvedMediaUrl }), // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
@@ -2014,7 +2020,7 @@ export function registerRoutes(app: Express) {
               // Send document file
               result = await whapi.sendMediaMessage(channel.whapiChannelToken, {
                 to: message.to,
-                media: message.mediaUrl || "",
+                media: resolvedMediaUrl || "",
                 caption: message.body || "",
                 mediaType: "Document",
               });
@@ -2128,6 +2134,66 @@ export function registerRoutes(app: Express) {
     
     // For WHAPI-hosted media, return the media ID
     return mediaUpload.whapiMediaId || null;
+  };
+
+  // Helper function to resolve media URL for WHAPI
+  // Converts local file paths to base64 data that WHAPI can use
+  const resolveMediaForWhapi = async (mediaUrl: string | null): Promise<string | null> => {
+    if (!mediaUrl) return null;
+    
+    // If it's already base64 data, return as-is
+    if (mediaUrl.startsWith('data:')) {
+      return mediaUrl;
+    }
+    
+    // If it's a local file path (starts with /uploads/), read and convert to base64
+    if (mediaUrl.startsWith('/uploads/')) {
+      try {
+        const fileName = mediaUrl.replace('/uploads/', '');
+        const filePath = path.join(process.cwd(), 'uploads', fileName);
+        
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+          console.error(`[Media Resolver] File not found: ${filePath}`);
+          return null;
+        }
+        
+        // Read file and convert to base64
+        const fileBuffer = fs.readFileSync(filePath);
+        const base64Data = fileBuffer.toString('base64');
+        
+        // Detect MIME type from file extension
+        const ext = path.extname(fileName).toLowerCase();
+        const mimeTypes: Record<string, string> = {
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.png': 'image/png',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.mp4': 'video/mp4',
+          '.mpeg': 'video/mpeg',
+          '.mov': 'video/quicktime',
+          '.avi': 'video/x-msvideo',
+          '.pdf': 'application/pdf',
+          '.doc': 'application/msword',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.xls': 'application/vnd.ms-excel',
+          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        };
+        
+        const mimeType = mimeTypes[ext] || 'application/octet-stream';
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
+        
+        console.log(`[Media Resolver] Converted local file ${fileName} to base64 (${(base64Data.length / 1024).toFixed(2)}KB)`);
+        return dataUrl;
+      } catch (error) {
+        console.error(`[Media Resolver] Error reading file:`, error);
+        return null;
+      }
+    }
+    
+    // Otherwise, assume it's a URL or WHAPI media ID
+    return mediaUrl;
   };
 
   // Get templates

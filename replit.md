@@ -54,7 +54,7 @@ Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, 
 - **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, Phonebooks, Subscribers, and Settings. Default page access for new users is configurable in admin settings. Users can have individual page access overrides applied by admins.
 
 **Technical Implementations:**
-- **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job.
+- **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job. Template media URLs are automatically resolved - when loading templates with saved media, local file paths (`/uploads/filename.jpg`) are converted to base64 data before sending to WHAPI, ensuring templates work seamlessly without re-uploading files. This applies to all message types (images, videos, documents) in both single and bulk sending.
 - **Error Handling:** User-facing error messages are sanitized of vendor branding.
 - **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types (e.g., `image_buttons`, `video_buttons`).
 - **WhatsApp Preview:** Custom-built phone mockup UI with WhatsApp-style message bubbles, interactive buttons (Quick Reply, URL, Call), and real-time media preview for uploaded files.
