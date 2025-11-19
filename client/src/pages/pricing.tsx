@@ -272,7 +272,7 @@ export default function Pricing() {
 
       {/* Duration Toggle */}
       <div className="flex flex-col items-center gap-2">
-        <div className="inline-flex rounded-lg border border-border p-1">
+        <div className="inline-flex rounded-lg border border-border p-1 gap-1">
           {enabledPeriods.has("MONTHLY") && (
             <Button
               variant={durationType === "MONTHLY" ? "default" : "ghost"}
@@ -284,34 +284,49 @@ export default function Pricing() {
             </Button>
           )}
           {enabledPeriods.has("QUARTERLY") && (
-            <Button
-              variant={durationType === "QUARTERLY" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setDurationType("QUARTERLY")}
-              data-testid="button-quarterly"
-            >
-              Quarterly
-            </Button>
+            <div className="relative">
+              <Button
+                variant={durationType === "QUARTERLY" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setDurationType("QUARTERLY")}
+                data-testid="button-quarterly"
+              >
+                Quarterly
+              </Button>
+              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                5%
+              </span>
+            </div>
           )}
           {enabledPeriods.has("SEMI_ANNUAL") && (
-            <Button
-              variant={durationType === "SEMI_ANNUAL" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setDurationType("SEMI_ANNUAL")}
-              data-testid="button-semi-annual"
-            >
-              Semi-Annual
-            </Button>
+            <div className="relative">
+              <Button
+                variant={durationType === "SEMI_ANNUAL" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setDurationType("SEMI_ANNUAL")}
+                data-testid="button-semi-annual"
+              >
+                Semi-Annual
+              </Button>
+              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                10%
+              </span>
+            </div>
           )}
           {enabledPeriods.has("ANNUAL") && (
-            <Button
-              variant={durationType === "ANNUAL" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setDurationType("ANNUAL")}
-              data-testid="button-annual"
-            >
-              Annual
-            </Button>
+            <div className="relative">
+              <Button
+                variant={durationType === "ANNUAL" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setDurationType("ANNUAL")}
+                data-testid="button-annual"
+              >
+                Annual
+              </Button>
+              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                15%
+              </span>
+            </div>
           )}
         </div>
         {/* Show discount percentage for non-monthly periods */}
@@ -369,19 +384,14 @@ export default function Pricing() {
                         {durationType === "MONTHLY" ? "month" : durationType === "QUARTERLY" ? "3 months" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
-                        <div className="text-sm text-muted-foreground">
-                          <span className="line-through">
-                            {getCurrencySymbol(displayCurrency)}{
-                              durationType === "QUARTERLY" 
-                                ? ((displayPrice * 3) / 100).toFixed(2)
-                                : durationType === "SEMI_ANNUAL"
-                                ? ((displayPrice * 6) / 100).toFixed(2)
-                                : ((displayPrice * 12) / 100).toFixed(2)
-                            }
-                          </span>
-                          <span className="ml-2 text-success font-medium">
-                            Save {getCurrencySymbol(displayCurrency)}{(((displayPrice * (durationType === "QUARTERLY" ? 3 : durationType === "SEMI_ANNUAL" ? 6 : 12)) - discountedPrice) / 100).toFixed(2)}
-                          </span>
+                        <div className="text-sm text-muted-foreground line-through">
+                          {getCurrencySymbol(displayCurrency)}{
+                            durationType === "QUARTERLY" 
+                              ? ((displayPrice * 3) / 100).toFixed(2)
+                              : durationType === "SEMI_ANNUAL"
+                              ? ((displayPrice * 6) / 100).toFixed(2)
+                              : ((displayPrice * 12) / 100).toFixed(2)
+                          }
                         </div>
                       )}
                     </>
