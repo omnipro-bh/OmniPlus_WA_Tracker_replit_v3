@@ -271,7 +271,7 @@ export default function Pricing() {
       </div>
 
       {/* Duration Toggle */}
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <div className="inline-flex rounded-lg border border-border p-1">
           {enabledPeriods.has("MONTHLY") && (
             <Button
@@ -314,6 +314,22 @@ export default function Pricing() {
             </Button>
           )}
         </div>
+        {/* Show discount percentage for non-monthly periods */}
+        {durationType === "QUARTERLY" && (
+          <div className="text-sm text-success font-medium">
+            Save up to 5% on quarterly billing
+          </div>
+        )}
+        {durationType === "SEMI_ANNUAL" && (
+          <div className="text-sm text-success font-medium">
+            Save up to 10% on semi-annual billing
+          </div>
+        )}
+        {durationType === "ANNUAL" && (
+          <div className="text-sm text-success font-medium">
+            Save up to 15% on annual billing
+          </div>
+        )}
       </div>
 
       {/* Plans Grid */}
@@ -353,8 +369,19 @@ export default function Pricing() {
                         {durationType === "MONTHLY" ? "month" : durationType === "QUARTERLY" ? "3 months" : durationType === "SEMI_ANNUAL" ? "6 months" : "year"}
                       </span>
                       {durationType !== "MONTHLY" && (
-                        <div className="text-sm text-muted-foreground line-through">
-                          {getCurrencySymbol(displayCurrency)}{(displayPrice / 100).toFixed(2)}
+                        <div className="text-sm text-muted-foreground">
+                          <span className="line-through">
+                            {getCurrencySymbol(displayCurrency)}{
+                              durationType === "QUARTERLY" 
+                                ? ((displayPrice * 3) / 100).toFixed(2)
+                                : durationType === "SEMI_ANNUAL"
+                                ? ((displayPrice * 6) / 100).toFixed(2)
+                                : ((displayPrice * 12) / 100).toFixed(2)
+                            }
+                          </span>
+                          <span className="ml-2 text-success font-medium">
+                            Save {getCurrencySymbol(displayCurrency)}{(((displayPrice * (durationType === "QUARTERLY" ? 3 : durationType === "SEMI_ANNUAL" ? 6 : 12)) - discountedPrice) / 100).toFixed(2)}
+                          </span>
                         </div>
                       )}
                     </>
