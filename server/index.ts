@@ -17,12 +17,12 @@ declare module 'http' {
 }
 
 app.use(express.json({
-  limit: '10mb', // Allow larger payloads for base64 file uploads
+  limit: '50mb', // Allow larger payloads for base64 file uploads
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express.urlencoded({ limit: '10mb', extended: false }));
+app.use(express.urlencoded({ limit: '50mb', extended: false }));
 app.use(cookieParser());
 
 // Serve uploaded media files statically
