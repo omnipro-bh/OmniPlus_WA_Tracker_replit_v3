@@ -1956,14 +1956,20 @@ export function registerRoutes(app: Express) {
       // Update job status to processing
       await storage.updateJob(jobId, { status: "PROCESSING" });
 
+      // Track accurate counters instead of filtering stale array
+      let queuedCount = queuedMessages.length;
+      let pendingCount = 0;
+      let sentCount = messages.filter(m => m.status === "SENT").length;
+      let failedCount = messages.filter(m => m.status === "FAILED").length;
+
       // Process messages one by one with random delays
       for (const message of queuedMessages) {
         try {
           // Update message to pending
           await storage.updateMessage(message.id, { status: "PENDING" });
-          const queued = messages.filter(m => m.status === "QUEUED").length - 1;
-          const pending = messages.filter(m => m.status === "PENDING").length + 1;
-          await storage.updateJob(jobId, { queued, pending });
+          queuedCount--;
+          pendingCount++;
+          await storage.updateJob(jobId, { queued: queuedCount, pending: pendingCount });
 
           // Get message type and buttons
           const messageType = message.messageType || "text_buttons";
@@ -2071,9 +2077,9 @@ export function registerRoutes(app: Express) {
               providerMessageId,
               sentAt: new Date(),
             });
-            const newPending = messages.filter(m => m.status === "PENDING").length;
-            const sent = messages.filter(m => m.status === "SENT").length + 1;
-            await storage.updateJob(jobId, { pending: newPending, sent });
+            pendingCount--;
+            sentCount++;
+            await storage.updateJob(jobId, { pending: pendingCount, sent: sentCount });
           } else {
             throw new Error(result?.message || "Failed to send");
           }
@@ -2089,9 +2095,9 @@ export function registerRoutes(app: Express) {
             status: "FAILED",
             error: msgError.message || "Unknown error",
           });
-          const newPending = messages.filter(m => m.status === "PENDING").length;
-          const failed = messages.filter(m => m.status === "FAILED").length + 1;
-          await storage.updateJob(jobId, { pending: newPending, failed });
+          pendingCount--;
+          failedCount++;
+          await storage.updateJob(jobId, { pending: pendingCount, failed: failedCount });
         }
       }
 
