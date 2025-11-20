@@ -1756,8 +1756,9 @@ export function registerRoutes(app: Express) {
         
         console.log(`[Send] Updated message ${message.id} with providerMessageId: ${providerMessageId}`);
 
-        // Update job counters
+        // Update job counters and status
         await storage.updateJob(job.id, {
+          status: "COMPLETED",
           pending: 0,
           sent: 1,
         });
@@ -1785,8 +1786,9 @@ export function registerRoutes(app: Express) {
           error: whapiError.message || "Failed to send message"
         });
 
-        // Update job counters
+        // Update job counters and status
         await storage.updateJob(job.id, {
+          status: "FAILED",
           pending: 0,
           failed: 1,
         });

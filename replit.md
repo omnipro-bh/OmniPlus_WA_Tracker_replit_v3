@@ -1,7 +1,7 @@
 # OmniPlus WA Tracker
 
 ## Overview
-OmniPlus WA Tracker is a SaaS platform designed for WhatsApp automation. Its primary purpose is to empower businesses with tools for managing multiple WhatsApp channels, facilitating bulk and individual messaging, and building interactive chatbots with workflow automation. The platform integrates with WHAPI Partner for billing and aims to significantly enhance customer engagement and operational efficiency through streamlined WhatsApp communication.
+OmniPlus WA Tracker is a SaaS platform for WhatsApp automation, enabling businesses to manage multiple WhatsApp channels, perform bulk and individual messaging, and build interactive chatbots with workflow automation. The platform aims to enhance customer engagement and operational efficiency through streamlined WhatsApp communication and integrates with WHAPI Partner for billing.
 
 ## User Preferences
 - Dark mode by default (matches design guidelines)
@@ -9,73 +9,58 @@ OmniPlus WA Tracker is a SaaS platform designed for WhatsApp automation. Its pri
 - Responsive sidebar collapsible on mobile
 
 ## System Architecture
-The platform is built with a React TypeScript frontend (Vite, Wouter, TanStack Query, Tailwind CSS, shadcn/ui) and an Express.js backend (TypeScript, Drizzle ORM, PostgreSQL). It employs a days-based billing system with daily cron jobs and plan-specific messaging limits. Channel management is tightly integrated with WHAPI for authentication and lifecycle events.
+The platform features a React TypeScript frontend (Vite, Wouter, TanStack Query, Tailwind CSS, shadcn/ui) and an Express.js backend (TypeScript, Drizzle ORM, PostgreSQL). It employs a days-based billing system with daily cron jobs and plan-specific messaging limits.
 
 **Core Features:**
-- **Authentication:** JWT-based with distinct user and admin roles.
-- **Dashboard:** Provides key metrics, subscription status, and activity feeds.
-- **Channel Management:** Admin-controlled activation and user QR authorization.
-- **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, respecting plan limits. Features realistic WhatsApp-style preview with phone mockup UI, emoji picker integration for message composition, and real-time media preview (images/videos/documents).
-- **Templates:** CRUD operations for message templates with preview functionality.
-- **Workflows:** A visual drag-and-drop builder (using ReactFlow) for chatbots and automation, supporting WHAPI message types, configurable nodes, testing, and automated routing. Fullscreen mode is available for an expanded canvas view. Carousel nodes support dynamic output handles for each Quick Reply button, enabling different workflow paths based on user selections. **HTTP Request nodes** are production-ready in the ACTION category with comprehensive configuration UI (method, URL, auth, headers, query params, body, response mapping, timeout) and success/error routing handles. Backend executor implements simplified secure architecture: HTTPS-only enforcement, admin-configurable domain allowlist (must be non-empty for execution, empty blocks all requests), redirect blocking, 5MB response limit, 10s timeout, and variable substitution ({{variable}} syntax from conversation context). Results stored in `conversation_states.context.http[nodeId]` as `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for easy {{variable}} access in downstream nodes.
-- **Outbox:** Tracks the status of message sending jobs with pagination for large lists.
-- **Bulk Message Status Tracking:** Real-time status updates via webhooks.
-- **Safety Meter:** Real-time WhatsApp channel health monitoring with plan-based access control. Displays 4 color-coded metrics (lifetime, coverage, response rate, overall rating) from WHAPI Tools API. Features channel selector, manual refresh, and plan-gating. No database caching - metrics fetched on-demand with WHAPI's daily refresh limit.
-- **Pricing:** Displays various plans with duration toggles and integrates PayPal for payments, supporting offline payments with coupons. Admins have comprehensive control over pricing page configuration, including quarterly billing, dynamic discounts, popular plan badges, and per-plan billing period enforcement.
-- **Admin Dashboard:** Manages users, billing, offline payments, channel activation, and dynamic homepage content.
-- **Admin Settings:** Global configurations for authentication, bulk sending speed, default page access (including Safety Meter), theme, chat widget location, and HTTP Request allowlist (trusted domains for workflow API calls).
-- **Homepage Content Management:** Admin controls for 'Use Cases' and 'Homepage Features'.
-- **WHAPI Settings:** Global configuration for WHAPI Partner token and base URL.
-- **Phonebook Management:** CRUD for phonebooks and contacts, including CSV import with validation, partial imports, and plan-based contact limits.
-- **Bulk Sending:** Supports personalized or uniform messages to phonebook contacts.
-- **Subscriber Tracking:** Automatic subscriber list management via keyword-based button interactions. Admins configure subscribe/unsubscribe keywords (e.g., "Subscribe"/"Unsubscribe" in any language). Webhook automatically tracks user button clicks matching these keywords and maintains subscriber status (subscribed/unsubscribed). Features include: status filtering, name editing, CSV export, and page access control. Supports case-insensitive keyword matching and user isolation.
+-   **Authentication:** JWT-based with distinct user and admin roles.
+-   **Dashboard:** Provides key metrics, subscription status, and activity feeds.
+-   **Channel Management:** Admin-controlled activation and user QR authorization via WHAPI.
+-   **Messaging:** Supports interactive message sending (text, image, video, document types with configurable buttons) via WHAPI Gate API, including a realistic WhatsApp-style preview with emoji picker.
+-   **Templates:** CRUD operations for message templates with preview functionality.
+-   **Workflows:** A visual drag-and-drop builder (ReactFlow) for chatbots, supporting WHAPI message types, configurable nodes (including HTTP Request nodes with comprehensive configuration and secure execution), testing, and automated routing.
+-   **Outbox & Bulk Message Status Tracking:** Tracks message sending jobs and provides real-time status updates via webhooks.
+-   **Safety Meter:** Real-time WhatsApp channel health monitoring from WHAPI Tools API, with plan-based access control.
+-   **Pricing:** Displays plans with duration toggles, supports PayPal, offline payments, and free trials. Admins control pricing page configuration, including dual pricing (display price vs. PayPal price), discounts, and billing periods.
+-   **Admin Dashboard & Settings:** Manages users, billing, payments, channel activation, dynamic homepage content, and global configurations like authentication, bulk sending speed, page access, theme, chat widget location, and HTTP Request allowlist.
+-   **Phonebook Management:** CRUD for contacts, including CSV import and plan-based limits.
+-   **Bulk Sending:** Personalized or uniform messages to phonebook contacts.
+-   **Subscriber Tracking:** Automatic subscriber list management via keyword-based button interactions with configurable subscribe/unsubscribe keywords.
+-   **Page Access Control:** Plans and admins can restrict user access to specific platform pages.
 
 **Design System:**
-- **Color Palette:** Dark mode with vibrant accents (blue, green, amber, red, cyan).
-- **Typography:** Inter (primary), JetBrains Mono (code/numbers).
-- **Components:** shadcn/ui supplemented with custom elements.
-- **Responsiveness:** Mobile-first design with a collapsible sidebar.
+-   **Color Palette:** Dark mode with vibrant accents (blue, green, amber, red, cyan).
+-   **Typography:** Inter (primary), JetBrains Mono (code/numbers).
+-   **Components:** shadcn/ui supplemented with custom elements.
+-   **Responsiveness:** Mobile-first design with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans, Subscriptions, Coupons, Channels, Templates, Jobs, Messages, Workflows, Phonebooks, PhonebookContacts, Subscribers (with phone, name, status, lastUpdated fields for keyword-based tracking), MediaUploads, ConversationStates (with context jsonb field for HTTP results and workflow variables), OfflinePayments, AuditLogs, Settings (with httpAllowlist for domain restrictions, chatWidgetLocation for Tawk.to visibility control, and subscribeKeyword/unsubscribeKeyword for subscriber tracking), and BalanceTransactions.
+Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows, Phonebooks, Subscribers, and ConversationStates.
 
 **Plans Payment System:**
-- **Payment Methods:** Supports PayPal, offline payments, and free trials.
-- **Admin Balance Pool:** Central `mainDaysBalance` tracks available days for allocation. All PayPal payments automatically deduct from this pool.
-- **PayPal Integration:** 
-  - Requires `paypalPlanId` for subscription integration.
-  - Automated workflow: User pays → System verifies payment → **Deducts from admin balance pool** → Adds days to user → **Calls WHAPI API to extend channel** → Creates subscription.
-  - Protection: Prevents subscription if admin pool has insufficient days.
-  - WHAPI Integration: Automatically calls `extendWhapiChannel` or `createWhapiChannel` to actually activate/extend the channel on WHAPI platform.
-  - Rollback: If WHAPI API fails, automatically refunds admin balance and cancels subscription.
-- **Free Trial System:** Plans can offer free trials with configurable duration (days). Admin enables/disables trials and sets duration per plan. Free trial requests are processed identically to offline payments.
-- **Offline Payment & Free Trial Workflow:** User submits request (offline payment or free trial) → Admin reviews in Offline Payments tab (dual badges for free trials: PAID + FREE TRIAL) → Admin approves → Channel becomes ACTIVE and subscription created → **No automatic days added** → Admin manually adds days to balance pool later using "Add Days to Pool" feature.
-- **Plan Limits:** Defines daily limits for single/bulk messages, channels, workflows, and media file sizes.
-- **Page Access Control:** Plans can restrict access to specific pages including Dashboard, Channels, Safety Meter, Send Messages, Templates, Workflows, Outbox, Workflow Logs, Bulk Logs, Phonebooks, Subscribers, and Settings. Default page access for new users is configurable in admin settings. Users can have individual page access overrides applied by admins.
+-   Supports PayPal, offline payments, and free trials.
+-   **Admin Balance Pool:** Central `mainDaysBalance` manages days for allocation. PayPal payments deduct from this pool.
+-   **PayPal Integration:** Automated workflow for payment verification, days allocation, and WHAPI channel extension/creation, with rollback on WHAPI API failure.
+-   **Offline Payment & Free Trial Workflow:** Admin-reviewed requests, requiring manual day allocation.
+-   **Message Limit System:** Independent daily limits for single and bulk messages, with explicit support for "unlimited" (-1) quotas.
 
 **Technical Implementations:**
-- **Local Media Upload:** Files are saved locally to `/uploads` and sent as inline base64, with a 30-day automatic cleanup cron job. Template media URLs are automatically resolved - when loading templates with saved media, local file paths (`/uploads/filename.jpg`) are converted to base64 data before sending to WHAPI, ensuring templates work seamlessly without re-uploading files. This applies to all message types (images, videos, documents) in both single and bulk sending.
-- **Error Handling:** User-facing error messages are sanitized of vendor branding.
-- **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types (e.g., `image_buttons`, `video_buttons`).
-- **WhatsApp Preview:** Custom-built phone mockup UI with WhatsApp-style message bubbles, interactive buttons (Quick Reply, URL, Call), and real-time media preview for uploaded files.
-- **Emoji Support:** Integrated emoji-mart picker with Popover component for seamless emoji insertion in message body.
-- **HTTP Request Security:** Production-ready simplified secure implementation with HTTPS-only, domain allowlist (admin-managed via Settings page, must be non-empty for execution), no redirects, 5MB/10s limits. Conversation state context stores HTTP results under `context.http[nodeId]` with schema `{ status, statusText, data, mappedVariables, error, executedAt }`. Mapped variables are also merged into root context for workflow continuity and {{variable}} substitution.
-- **Webhook Message Validation (Nov 2025):** Critical fix implemented to prevent entry node triggers from system events. Webhook handler now strictly validates inbound messages by checking for actual text content or button replies before processing. This prevents WHAPI status updates, delivery receipts, and other system events from incorrectly triggering first-message-of-day logic and sending unwanted entry node messages.
-- **HTTP Request Node Test Button (Nov 2025):** Added test functionality to HTTP Request nodes allowing users to test their API configuration before saving workflows. Test button executes the HTTP request with current configuration and displays results including status, response data, mapped variables, and errors. Note: Timeout conversion between UI (seconds) and execution (milliseconds) is handled in test endpoint only.
-- **Chat Widget Location Control (Nov 2025):** Admins can now control where the Tawk.to chat widget appears via Settings tab. Two options: "Show on All Pages" (homepage + dashboard) or "Show on Homepage Only" (landing page only, excludes dashboard). ChatWidget component dynamically loads/unloads Tawk.to script based on setting and current route. Proper cleanup removes all Tawk DOM elements and resets window state when widget should be hidden.
-- **PayPal Environment Configuration (Nov 2025):** PayPal environment (production/sandbox) is managed centrally via backend configuration. Frontend fetches environment setting from `GET /api/paypal/config` endpoint before loading PayPal SDK. This approach works seamlessly across all environments: Replit (using secrets), VPS (using .env file), and CI/CD pipelines. Only `PAYPAL_ENVIRONMENT` secret is required - no VITE_ prefixed variables needed. This ensures consistent behavior regardless of deployment method.
-- **Dual Pricing System (Nov 2025):** Critical feature for BHD market compliance. Plans now support separate display pricing (BHD for users) and PayPal pricing (USD for payment processing) since PayPal production doesn't support BHD currency. Schema includes `displayPrice` (integer, cents) and `displayCurrency` (text) fields. Admin Plan form provides dedicated inputs for Display Price and Display Currency. When set, pricing page shows display price to users (e.g., "BD9.50/month") while PayPal charges the USD price field. Admin Plans table shows display pricing when available. Fully tested with end-to-end database persistence verification. This enables showing competitive BHD prices to local users while maintaining USD-based PayPal integration.
-  - **Offline Payment Dual Pricing (Nov 2025):** Backend validation updated to support both BHD display pricing and USD PayPal pricing. When users submit offline payments, the system checks the submitted currency against the plan's `displayCurrency`. If matched and display pricing is configured, validates against `displayPrice`; otherwise falls back to PayPal `price`. Frontend offline payment dialog automatically shows display price (BHD) when available, ensuring users see and submit the correct localized amount. Maintains backward compatibility with USD-only plans.
-- **Message Limit System Overhaul (Nov 2025):** Complete redesign of message limits to support independent single and bulk message quotas with proper unlimited handling.
-  - **Independent Counters:** Single message limit (`dailyMessagesLimit`) now exclusively checks SINGLE job types, while bulk message limit (`bulkMessagesLimit`) exclusively checks BULK job types. These are completely independent - reaching single limit doesn't block bulk sending, and vice versa.
-  - **Unlimited (-1) Logic:** Value of -1 now correctly means "unlimited" (not 0). Backend skips limit enforcement when limit is -1, allowing unrestricted sending without daily quota checks.
-  - **Pricing Page Terminology:** Updated from generic "messages/day" to clear "daily single messages" and "daily bulk messages" terminology. Plans with -1 display as "Unlimited daily single messages" and "Unlimited daily bulk messages".
-  - **Backend Enforcement:** Single message API checks only today's SINGLE jobs count against `dailyMessagesLimit`. Bulk sending API checks batch size and today's BULK jobs count against `bulkMessagesLimit`. Both paths provide explicit upgrade messaging when limits are exceeded.
+-   **Local Media Upload:** Files saved locally and sent as inline base64, with automatic cleanup. Template media URLs are automatically resolved and converted to base64.
+-   **Error Handling:** User-facing error messages are sanitized.
+-   **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types.
+-   **WhatsApp Preview:** Custom phone mockup UI with interactive elements and real-time media preview.
+-   **Emoji Support:** Integrated emoji-mart picker.
+-   **HTTP Request Security:** Enforces HTTPS-only, admin-managed domain allowlist, no redirects, and limits on response size/timeout. Stores results in `conversation_states.context`.
+-   **Webhook Message Validation:** Strictly validates inbound messages to prevent system events from triggering entry nodes.
+-   **HTTP Request Node Test Button:** Allows testing API configurations within the workflow builder.
+-   **Chat Widget Location Control:** Admins control Tawk.to chat widget visibility.
+-   **PayPal Environment Configuration:** Managed centrally via backend configuration.
+-   **Dual Pricing System:** Supports separate display pricing (e.g., BHD) for users and PayPal pricing (USD) for payment processing.
+-   **Outbox Job Status Updates:** Ensures real-time status updates for single and bulk message jobs.
 
 ## External Dependencies
-- **WHAPI Partner API (https://manager.whapi.cloud):** Used for channel management.
-- **WHAPI Gate API (https://gate.whapi.cloud):** Used for QR code generation and sending messages.
-- **PayPal Web SDK:** Integrated for subscription payments.
-- **PostgreSQL (Neon):** Serves as the primary database.
-- **node-cron:** Utilized for scheduling daily tasks and background processes.
-- **emoji-mart:** Emoji picker library (@emoji-mart/react, @emoji-mart/data) for message composition.
+-   **WHAPI Partner API (https://manager.whapi.cloud):** For channel management.
+-   **WHAPI Gate API (https://gate.whapi.cloud):** For QR code generation and sending messages.
+-   **PayPal Web SDK:** For subscription payments.
+-   **PostgreSQL (Neon):** Primary database.
+-   **node-cron:** For scheduling daily tasks.
+-   **emoji-mart:** For emoji picker functionality.
