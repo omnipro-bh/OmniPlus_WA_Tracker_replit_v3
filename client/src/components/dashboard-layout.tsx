@@ -92,7 +92,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </Button>
             </div>
           </header>
-          {impersonation?.isImpersonating && impersonation?.impersonatedUser && (
+          {impersonation?.isImpersonating && (
             <Alert 
               className="rounded-none border-0 border-b bg-amber-500/15 border-amber-500/50 text-amber-900 dark:text-amber-100"
               data-testid="impersonation-banner"
@@ -100,7 +100,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <AlertDescription className="flex items-center justify-between w-full gap-4">
                 <span className="text-sm font-medium">
-                  You are viewing as <span className="font-bold">{impersonation.impersonatedUser.name || impersonation.impersonatedUser.email}</span>
+                  You are viewing as <span className="font-bold">{user.name || user.email}</span>
                   {impersonation.admin?.name && (
                     <span className="text-xs ml-2 opacity-80">
                       (Admin: {impersonation.admin.name})
