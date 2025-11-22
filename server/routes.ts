@@ -32,6 +32,11 @@ import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecut
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+// Helper function to get the effective user ID (handles impersonation)
+function getEffectiveUserId(req: AuthRequest): number {
+  return req.impersonatedUser?.id || req.userId!;
+}
+
 // Helper function to calculate days from billing period
 function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"): number {
   switch (billingPeriod) {
@@ -974,7 +979,8 @@ export function registerRoutes(app: Express) {
   // Get user channels
   app.get("/api/channels", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const channels = await storage.getChannelsForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const channels = await storage.getChannelsForUser(effectiveUserId);
       
       // Check for expired channels in real-time and update status if needed
       const now = new Date();
@@ -1032,10 +1038,11 @@ export function registerRoutes(app: Express) {
   // Create channel
   app.post("/api/channels", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       // Validate request body
       const validationResult = insertChannelSchema.extend({ userId: z.number() }).safeParse({
         ...req.body,
-        userId: req.userId!
+        userId: effectiveUserId
       });
 
       if (!validationResult.success) {
@@ -1048,8 +1055,8 @@ export function registerRoutes(app: Express) {
       const { label, phone } = validationResult.data;
 
       // Check subscription and limits
-      const user = await storage.getUser(req.userId!);
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      const user = await storage.getUser(effectiveUserId);
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
 
       if (!subscription) {
         return res.status(403).json({ error: "Active subscription required" });
@@ -1060,7 +1067,7 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      const existingChannels = await storage.getChannelsForUser(req.userId!);
+      const existingChannels = await storage.getChannelsForUser(effectiveUserId);
       if (existingChannels.length >= plan.channelsLimit) {
         return res.status(403).json({ error: "Channel limit reached for your plan" });
       }
@@ -1082,7 +1089,7 @@ export function registerRoutes(app: Express) {
       // Store channel with all WHAPI response data
       // Status is PENDING until extended/activated with days
       const channel = await storage.createChannel({
-        userId: req.userId!,
+        userId: effectiveUserId,
         label,
         phone: whapiResponse.phone || phone, // Use WHAPI-confirmed phone
         status: "PENDING", // Always create as PENDING - activation requires days via /extend endpoint
@@ -2187,7 +2194,8 @@ export function registerRoutes(app: Express) {
   // Get user jobs
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const jobs = await storage.getJobsForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobs = await storage.getJobsForUser(effectiveUserId);
       res.json(jobs);
     } catch (error: any) {
       console.error("Get jobs error:", error);
@@ -2276,7 +2284,8 @@ export function registerRoutes(app: Express) {
   // Get templates
   app.get("/api/templates", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const templates = await storage.getTemplatesForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const templates = await storage.getTemplatesForUser(effectiveUserId);
       
       // Resolve media URLs for templates with media uploads
       const templatesWithMedia = await Promise.all(
@@ -2303,10 +2312,11 @@ export function registerRoutes(app: Express) {
   // Create template
   app.post("/api/templates", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       // Validate request body
       const validationResult = insertTemplateSchema.extend({ userId: z.number() }).safeParse({
         ...req.body,
-        userId: req.userId!
+        userId: effectiveUserId
       });
 
       if (!validationResult.success) {
@@ -2321,13 +2331,13 @@ export function registerRoutes(app: Express) {
       // Validate media upload ownership if provided
       if (mediaUploadId) {
         const mediaUpload = await storage.getMediaUpload(mediaUploadId);
-        if (!mediaUpload || mediaUpload.userId !== req.userId!) {
+        if (!mediaUpload || mediaUpload.userId !== effectiveUserId) {
           return res.status(404).json({ error: "Media upload not found or access denied" });
         }
       }
 
       const template = await storage.createTemplate({
-        userId: req.userId!,
+        userId: effectiveUserId,
         title,
         header,
         body,
@@ -2451,7 +2461,8 @@ export function registerRoutes(app: Express) {
   // Get phonebooks
   app.get("/api/phonebooks", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const phonebooks = await storage.getPhonebooksForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const phonebooks = await storage.getPhonebooksForUser(effectiveUserId);
       
       // Include contact count for each phonebook
       const phonebooksWithCount = await Promise.all(
@@ -2507,6 +2518,7 @@ export function registerRoutes(app: Express) {
   // Create phonebook
   app.post("/api/phonebooks", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const { name, description } = req.body;
 
       if (!name || name.trim() === "") {
@@ -2514,7 +2526,7 @@ export function registerRoutes(app: Express) {
       }
 
       const phonebook = await storage.createPhonebook({
-        userId: req.userId!,
+        userId: effectiveUserId,
         name: name.trim(),
         description: description || null,
       });
@@ -2605,10 +2617,11 @@ export function registerRoutes(app: Express) {
   // Get contacts for a phonebook
   app.get("/api/phonebooks/:id/contacts", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
 
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
@@ -3210,6 +3223,7 @@ export function registerRoutes(app: Express) {
   // Get subscribers for user (paginated)
   app.get("/api/subscribers", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const status = req.query.status as 'subscribed' | 'unsubscribed' | undefined;
       const page = parseInt(req.query.page as string) || 1;
       const pageSize = parseInt(req.query.pageSize as string) || 20;
@@ -3224,7 +3238,7 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid pagination parameters" });
       }
 
-      const result = await storage.getSubscribersForUser(req.userId!, { status, page, pageSize });
+      const result = await storage.getSubscribersForUser(effectiveUserId, { status, page, pageSize });
       res.json({
         subscribers: result.subscribers,
         total: result.total,
@@ -3333,7 +3347,8 @@ export function registerRoutes(app: Express) {
   // Get workflows
   app.get("/api/workflows", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const workflows = await storage.getWorkflowsForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflows = await storage.getWorkflowsForUser(effectiveUserId);
       res.json(workflows);
     } catch (error: any) {
       console.error("Get workflows error:", error);
@@ -3344,10 +3359,11 @@ export function registerRoutes(app: Express) {
   // Create workflow
   app.post("/api/workflows", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       // Validate request body
       const validationResult = insertWorkflowSchema.extend({ userId: z.number() }).safeParse({
         ...req.body,
-        userId: req.userId!,
+        userId: effectiveUserId,
       });
 
       if (!validationResult.success) {
@@ -3360,7 +3376,7 @@ export function registerRoutes(app: Express) {
       const { name, definitionJson } = validationResult.data;
 
       const workflow = await storage.createWorkflow({
-        userId: req.userId!,
+        userId: effectiveUserId,
         name,
         definitionJson: definitionJson || {},
       });
@@ -3485,8 +3501,9 @@ export function registerRoutes(app: Express) {
   // Get workflow execution logs
   app.get("/api/workflow-logs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       // Get user's workflows
-      const userWorkflows = await storage.getWorkflowsForUser(req.userId!);
+      const userWorkflows = await storage.getWorkflowsForUser(effectiveUserId);
       const workflowIds = userWorkflows.map(w => w.id);
 
       if (workflowIds.length === 0) {
@@ -3523,7 +3540,8 @@ export function registerRoutes(app: Express) {
   // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const jobs = await storage.getJobsForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobs = await storage.getJobsForUser(effectiveUserId);
       res.json(jobs);
     } catch (error: any) {
       console.error("Get jobs error:", error);
