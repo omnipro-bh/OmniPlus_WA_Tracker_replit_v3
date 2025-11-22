@@ -56,6 +56,7 @@ Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows
 -   **PayPal Environment Configuration:** Managed centrally via backend configuration.
 -   **Dual Pricing System:** Supports separate display pricing (e.g., BHD) for users and PayPal pricing (USD) for payment processing.
 -   **Outbox Job Status Updates:** Ensures real-time status updates for single and bulk message jobs.
+-   **Workflow Builder Persistence (Nov 2025):** Fixed critical bug where workflow saves would fail after the first save, requiring users to close and reopen the builder for each change. The mutation now properly parses the JSON response instead of corrupting the workflow state with a raw Response object. This ensures webhook URLs display correctly and multiple sequential saves work reliably.
 
 ## External Dependencies
 -   **WHAPI Partner API (https://manager.whapi.cloud):** For channel management.

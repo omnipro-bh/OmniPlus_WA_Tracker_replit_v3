@@ -50,7 +50,9 @@ export default function Workflows() {
         entryNodeId,
       };
       console.log('[workflows mutation] Sending PUT with payload:', JSON.stringify(payload, null, 2));
-      return apiRequest("PUT", `/api/workflows/${id}`, payload) as Promise<Workflow>;
+      const response = await apiRequest("PUT", `/api/workflows/${id}`, payload);
+      const updatedWorkflow = await response.json() as Workflow;
+      return updatedWorkflow;
     },
     onSuccess: (updatedWorkflow) => {
       // Update the selectedWorkflow state with the fresh data from the server
@@ -60,7 +62,8 @@ export default function Workflows() {
       queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
       toast({ title: "Workflow saved successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('[workflows updateWorkflow] Error:', error);
       toast({ title: "Failed to save workflow", variant: "destructive" });
     },
   });
