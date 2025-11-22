@@ -1559,6 +1559,14 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Missing required fields: channelId, to, body" });
       }
 
+      // Validate media for media message types
+      const mediaRequiredTypes = ["image", "image_buttons", "video_buttons", "document"];
+      if (mediaRequiredTypes.includes(messageType) && !mediaUrl) {
+        return res.status(400).json({ 
+          error: `Media file is required for ${messageType} messages. Please upload a file before sending.` 
+        });
+      }
+
       // Verify channel belongs to user and is active
       const channel = await storage.getChannel(channelId);
       if (!channel || channel.userId !== req.userId!) {
@@ -1780,10 +1788,24 @@ export function registerRoutes(app: Express) {
       } catch (whapiError: any) {
         console.error("Message send error:", whapiError);
         
+        // Extract error message - handle both string errors and complex objects
+        let errorMessage = "Failed to send message";
+        if (whapiError.message) {
+          errorMessage = typeof whapiError.message === "string" 
+            ? whapiError.message 
+            : JSON.stringify(whapiError.message);
+        } else if (whapiError.error) {
+          errorMessage = typeof whapiError.error === "string" 
+            ? whapiError.error 
+            : JSON.stringify(whapiError.error);
+        } else if (typeof whapiError === "string") {
+          errorMessage = whapiError;
+        }
+        
         // Update message status to failed
         await storage.updateMessage(message.id, {
           status: "FAILED",
-          error: whapiError.message || "Failed to send message"
+          error: errorMessage
         });
 
         // Update job counters and status
@@ -1795,7 +1817,7 @@ export function registerRoutes(app: Express) {
 
         return res.status(500).json({ 
           error: "Failed to send message. Please try again later.",
-          details: whapiError.message 
+          details: errorMessage 
         });
       }
 
@@ -2083,7 +2105,18 @@ export function registerRoutes(app: Express) {
             sentCount++;
             await storage.updateJob(jobId, { pending: pendingCount, sent: sentCount });
           } else {
-            throw new Error(result?.message || "Failed to send");
+            // Properly extract error message from WHAPI response
+            let errorMessage = "Failed to send";
+            if (result?.message) {
+              errorMessage = typeof result.message === "string" 
+                ? result.message 
+                : JSON.stringify(result.message);
+            } else if (result?.error) {
+              errorMessage = typeof result.error === "string" 
+                ? result.error 
+                : JSON.stringify(result.error);
+            }
+            throw new Error(errorMessage);
           }
 
           // Random delay before next message (unless it's the last one)
@@ -2093,9 +2126,24 @@ export function registerRoutes(app: Express) {
           }
         } catch (msgError: any) {
           console.error(`Failed to send message ${message.id}:`, msgError);
+          
+          // Extract error message - handle both string errors and complex objects
+          let errorMessage = "Unknown error";
+          if (msgError.message) {
+            errorMessage = typeof msgError.message === "string" 
+              ? msgError.message 
+              : JSON.stringify(msgError.message);
+          } else if (msgError.error) {
+            errorMessage = typeof msgError.error === "string" 
+              ? msgError.error 
+              : JSON.stringify(msgError.error);
+          } else if (typeof msgError === "string") {
+            errorMessage = msgError;
+          }
+          
           await storage.updateMessage(message.id, { 
             status: "FAILED",
-            error: msgError.message || "Unknown error",
+            error: errorMessage,
           });
           pendingCount--;
           failedCount++;
@@ -2918,6 +2966,14 @@ export function registerRoutes(app: Express) {
 
       if (!channelId || !body) {
         return res.status(400).json({ error: "Channel ID and message body are required" });
+      }
+
+      // Validate media for media message types
+      const mediaRequiredTypes = ["image", "image_buttons", "video_buttons", "document"];
+      if (mediaRequiredTypes.includes(messageType) && !mediaUrl) {
+        return res.status(400).json({ 
+          error: `Media file is required for ${messageType} messages. Please upload a file before sending.` 
+        });
       }
 
       // Verify phonebook ownership
