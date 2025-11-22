@@ -2837,6 +2837,33 @@ export default function Admin() {
                                   <Eye className="h-3 w-3 mr-1" />
                                   Details
                                 </Button>
+                                {user.role !== "admin" && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        await apiRequest("POST", `/api/admin/impersonate/${user.id}`);
+                                        toast({
+                                          title: "Logged in as user",
+                                          description: `You are now viewing the platform as ${user.name || user.email}`,
+                                        });
+                                        // Reload to apply impersonation
+                                        window.location.href = "/dashboard";
+                                      } catch (error: any) {
+                                        toast({
+                                          title: "Failed to impersonate user",
+                                          description: error.error || "Could not log in as user",
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    }}
+                                    data-testid={`button-impersonate-${user.id}`}
+                                  >
+                                    <Shield className="h-3 w-3 mr-1" />
+                                    Login as User
+                                  </Button>
+                                )}
                                 <Button
                                   variant="outline"
                                   size="sm"
