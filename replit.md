@@ -57,6 +57,7 @@ Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows
 -   **Dual Pricing System:** Supports separate display pricing (e.g., BHD) for users and PayPal pricing (USD) for payment processing.
 -   **Outbox Job Status Updates:** Ensures real-time status updates for single and bulk message jobs.
 -   **Workflow Builder Persistence (Nov 2025):** Fixed critical bug where workflow saves would fail after the first save, requiring users to close and reopen the builder for each change. The mutation now properly parses the JSON response instead of corrupting the workflow state with a raw Response object. This ensures webhook URLs display correctly and multiple sequential saves work reliably.
+-   **Multi-Workflow Entry Node Triggering (Nov 2025):** Fixed "First Message of Day" logic to trigger entry nodes for ALL active workflows with entry nodes configured, not just the one that received the webhook. When a user sends their first message of the day, all active workflows with entry nodes now execute independently, enabling parallel workflow automation.
 
 ## External Dependencies
 -   **WHAPI Partner API (https://manager.whapi.cloud):** For channel management.

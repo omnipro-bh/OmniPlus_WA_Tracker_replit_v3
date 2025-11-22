@@ -5186,69 +5186,151 @@ export function registerRoutes(app: Express) {
           }
 
           if (isFirstMessageToday) {
-            // Send welcome message from entry node (if configured)
-            const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
-            const entryNodeId = activeWorkflow.entryNodeId;
-            
-            console.log(`Entry node ID: ${entryNodeId}, Total nodes: ${definition.nodes?.length || 0}`);
-            
-            if (entryNodeId) {
-              const entryNode = definition.nodes?.find((n: any) => n.id === entryNodeId);
-              
-              if (entryNode) {
-                console.log(`Found entry node, sending message...`);
-                try {
-                  // Send the entry node's message
-                  const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
-                  executionLog.responsesSent.push(response);
-                  console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
-                } catch (sendError: any) {
-                  // Log the error but don't fail the whole workflow execution
-                  const errorMsg = sendError.message || String(sendError);
-                  console.error(`Failed to send entry node message: ${errorMsg}`);
-                  executionLog.errorMessage = `Failed to send welcome message: ${errorMsg}`;
-                  executionLog.status = "ERROR";
-                }
-              } else {
-                console.log(`Entry node ${entryNodeId} not found in workflow definition`);
-                executionLog.errorMessage = `Entry node ${entryNodeId} not found in workflow definition`;
-              }
-            } else {
-              // No entry node configured - workflow will only respond to button/list interactions
-              console.log(`No entry node configured for workflow ${activeWorkflow.id} - skipping welcome message`);
-            }
-
-            // Update conversation state for tracking
-            const conversationState = await db
+            // CRITICAL FIX: Trigger entry nodes for ALL active workflows with entry nodes configured
+            // Find all active workflows for this user that have entry nodes
+            const allActiveWorkflows = await db
               .select()
-              .from(conversationStates)
+              .from(workflows)
               .where(
                 and(
-                  eq(conversationStates.workflowId, activeWorkflow.id),
-                  eq(conversationStates.phone, phone)
+                  eq(workflows.userId, activeWorkflow.userId),
+                  eq(workflows.isActive, true)
                 )
-              )
-              .limit(1);
+              );
+            
+            const workflowsWithEntryNodes = allActiveWorkflows.filter(wf => wf.entryNodeId !== null);
+            
+            console.log(`[First Message of Day] Found ${workflowsWithEntryNodes.length} active workflows with entry nodes for user ${activeWorkflow.userId}`);
+            
+            // Send welcome message from entry node for ALL workflows that have it configured
+            // Each workflow executes independently - one failure won't affect others
+            for (const workflow of workflowsWithEntryNodes) {
+              try {
+                const definition = workflow.definitionJson as { nodes: any[], edges: any[] };
+                const entryNodeId = workflow.entryNodeId;
+                
+                console.log(`[Workflow ${workflow.id}: ${workflow.name}] Entry node ID: ${entryNodeId}, Total nodes: ${definition.nodes?.length || 0}`);
+                
+                if (!entryNodeId) {
+                  console.log(`[Workflow ${workflow.id}: ${workflow.name}] No entry node configured - skipping`);
+                  continue;
+                }
+                
+                const entryNode = definition.nodes?.find((n: any) => n.id === entryNodeId);
+                
+                if (!entryNode) {
+                  console.log(`[Workflow ${workflow.id}: ${workflow.name}] Entry node ${entryNodeId} not found in workflow definition`);
+                  continue;
+                }
+                
+                console.log(`[Workflow ${workflow.id}: ${workflow.name}] Found entry node, sending message...`);
+                
+                try {
+                  // Send the entry node's message
+                  const response = await sendNodeMessage(phone, entryNode, workflow.userId);
+                  
+                  // Only add to execution log if this is the current workflow
+                  if (workflow.id === activeWorkflow.id) {
+                    executionLog.responsesSent.push(response);
+                  }
+                  
+                  console.log(`[Workflow ${workflow.id}: ${workflow.name}] Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                  
+                  // Log execution for this workflow
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [response],
+                    status: "SUCCESS",
+                    errorMessage: null,
+                  });
+                } catch (sendError: any) {
+                  // Log the error but don't fail the whole process
+                  const errorMsg = sendError.message || String(sendError);
+                  console.error(`[Workflow ${workflow.id}: ${workflow.name}] Failed to send entry node message: ${errorMsg}`);
+                  
+                  // Log failed execution
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [],
+                    status: "ERROR",
+                    errorMessage: `Failed to send welcome message: ${errorMsg}`,
+                  });
+                  
+                  // Only set execution log error if this is the current workflow
+                  if (workflow.id === activeWorkflow.id) {
+                    executionLog.errorMessage = `Failed to send welcome message: ${errorMsg}`;
+                    executionLog.status = "ERROR";
+                  }
+                }
+                
+                // Update conversation state for tracking
+                const conversationState = await db
+                  .select()
+                  .from(conversationStates)
+                  .where(
+                    and(
+                      eq(conversationStates.workflowId, workflow.id),
+                      eq(conversationStates.phone, phone)
+                    )
+                  )
+                  .limit(1);
 
-            const now = new Date();
-            if (conversationState.length) {
-              await db
-                .update(conversationStates)
-                .set({
-                  lastMessageAt: now,
-                  lastMessageDate: now,
-                  currentNodeId: entryNodeId,
-                  updatedAt: now,
-                })
-                .where(eq(conversationStates.id, conversationState[0].id));
-            } else {
-              await db.insert(conversationStates).values({
-                workflowId: activeWorkflow.id,
-                phone,
-                lastMessageAt: now,
-                lastMessageDate: now,
-                currentNodeId: entryNodeId,
-              });
+                const now = new Date();
+                if (conversationState.length) {
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      lastMessageAt: now,
+                      lastMessageDate: now,
+                      currentNodeId: entryNodeId,
+                      updatedAt: now,
+                    })
+                    .where(eq(conversationStates.id, conversationState[0].id));
+                } else {
+                  await db.insert(conversationStates).values({
+                    workflowId: workflow.id,
+                    phone,
+                    lastMessageAt: now,
+                    lastMessageDate: now,
+                    currentNodeId: entryNodeId,
+                  });
+                }
+              } catch (workflowError: any) {
+                // Isolated error handling - one workflow's failure won't break the others
+                const errorMsg = workflowError.message || String(workflowError);
+                console.error(`[Workflow ${workflow.id}: ${workflow.name}] Critical error during first message processing: ${errorMsg}`);
+                
+                // Try to log the error, but don't let logging failures break the loop
+                try {
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [],
+                    status: "ERROR",
+                    errorMessage: `Critical workflow error: ${errorMsg}`,
+                  });
+                } catch (logError) {
+                  console.error(`[Workflow ${workflow.id}: ${workflow.name}] Failed to log error: ${logError}`);
+                }
+                
+                // Only set execution log error if this is the current workflow
+                if (workflow.id === activeWorkflow.id) {
+                  executionLog.errorMessage = `Critical workflow error: ${errorMsg}`;
+                  executionLog.status = "ERROR";
+                }
+              }
+            }
+            
+            if (workflowsWithEntryNodes.length === 0) {
+              console.log(`[First Message of Day] No active workflows with entry nodes found for user ${activeWorkflow.userId}`);
             }
           } else {
             // Not first message of day - do nothing (as per spec)
