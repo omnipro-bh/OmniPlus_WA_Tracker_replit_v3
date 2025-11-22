@@ -8,7 +8,7 @@ const JWT_SECRET = process.env.SESSION_SECRET || "change_me_in_production";
 export interface AuthRequest extends Request {
   userId?: number;
   user?: any;
-  originalUserId?: number; // The actual logged-in admin's ID when impersonating
+  impersonatedUser?: any; // The user being impersonated (when impersonating)
   isImpersonating?: boolean;
 }
 
@@ -48,16 +48,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 
-  // If impersonating, load the impersonated user but track the original admin
-  const targetUserId = payload.impersonatedUserId || payload.userId;
-  const user = await storage.getUser(targetUserId);
+  // Always load the actual authenticated user (admin when impersonating)
+  const authenticatedUser = await storage.getUser(payload.userId);
   
-  if (!user) {
+  if (!authenticatedUser) {
     return res.status(401).json({ error: "User not found" });
   }
 
-  // Check if user is banned
-  if (user.status === "banned") {
+  // Check if authenticated user is banned
+  if (authenticatedUser.status === "banned") {
     res.clearCookie("token"); // Clear the authentication cookie
     return res.status(403).json({ 
       error: "Account suspended", 
@@ -65,13 +64,36 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     });
   }
 
-  req.userId = user.id;
-  req.user = user;
-  
-  // Track impersonation state
+  // If impersonating, load the impersonated user separately
   if (payload.impersonatedUserId) {
-    req.originalUserId = payload.userId;
+    const impersonatedUser = await storage.getUser(payload.impersonatedUserId);
+    
+    if (!impersonatedUser) {
+      // Impersonated user no longer exists - clear cookie and exit impersonation
+      res.clearCookie("token");
+      return res.status(401).json({ 
+        error: "Impersonated user not found. Please log in again.",
+      });
+    }
+
+    // Check if impersonated user is banned or deleted
+    if (impersonatedUser.status === "banned") {
+      // Impersonated user banned - clear cookie and exit impersonation
+      res.clearCookie("token");
+      return res.status(403).json({ 
+        error: "Impersonated user account has been suspended. Please log in again.",
+      });
+    }
+
+    // Set up impersonation context
+    req.user = authenticatedUser; // Admin user (for authorization)
+    req.userId = authenticatedUser.id; // Admin ID
+    req.impersonatedUser = impersonatedUser; // User being impersonated
     req.isImpersonating = true;
+  } else {
+    // Normal authentication (not impersonating)
+    req.user = authenticatedUser;
+    req.userId = authenticatedUser.id;
   }
   
   next();

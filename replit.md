@@ -45,7 +45,7 @@ Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows
 
 **Technical Implementations:**
 -   **Local Media Upload:** Files saved locally and sent as inline base64, with automatic cleanup. Template media URLs are automatically resolved and converted to base64.
--   **Error Handling:** User-facing error messages are sanitized.
+-   **Error Handling:** User-facing error messages are sanitized and WHAPI errors properly extracted from complex objects.
 -   **WHAPI Media Structure:** Corrected WHAPI payload structure for various media types.
 -   **WhatsApp Preview:** Custom phone mockup UI with interactive elements and real-time media preview.
 -   **Emoji Support:** Integrated emoji-mart picker.
@@ -58,6 +58,8 @@ Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows
 -   **Outbox Job Status Updates:** Ensures real-time status updates for single and bulk message jobs.
 -   **Workflow Builder Persistence (Nov 2025):** Fixed critical bug where workflow saves would fail after the first save, requiring users to close and reopen the builder for each change. The mutation now properly parses the JSON response instead of corrupting the workflow state with a raw Response object. This ensures webhook URLs display correctly and multiple sequential saves work reliably.
 -   **Multi-Workflow Entry Node Triggering (Nov 2025):** Fixed "First Message of Day" logic to trigger entry nodes for ALL active workflows with entry nodes configured, not just the one that received the webhook. When a user sends their first message of the day, all active workflows with entry nodes now execute independently, enabling parallel workflow automation.
+-   **Bulk Send Error Handling (Nov 2025):** Improved error message extraction for all send endpoints (single, bulk, uniform). WHAPI errors are now properly stringified from complex objects instead of displaying `[object Object]`. Added media validation to prevent jobs from being created without required media files for document/image/video message types.
+-   **Admin User Impersonation (Nov 2025):** Admins can "Login as User" to view the platform as any non-admin user for debugging and support. Features: JWT-based impersonation preserving admin privileges, persistent amber banner across all pages, secure exit mechanism, audit logging of all impersonation actions, validation of impersonated user on every request, and prevention of impersonating admins or deleted/banned users. Implementation maintains proper authorization (admin retains admin access during impersonation) with separate request context for impersonated user data.
 
 ## External Dependencies
 -   **WHAPI Partner API (https://manager.whapi.cloud):** For channel management.

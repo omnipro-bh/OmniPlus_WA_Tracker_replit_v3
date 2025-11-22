@@ -504,13 +504,39 @@ export function registerRoutes(app: Express) {
       };
 
       // Include impersonation state
-      if (req.isImpersonating && req.originalUserId) {
-        const originalAdmin = await storage.getUser(req.originalUserId);
+      if (req.isImpersonating && req.impersonatedUser) {
+        // Get impersonated user's subscription data
+        const impersonatedSubscription = await storage.getActiveSubscriptionForUser(req.impersonatedUser.id);
+        let impersonatedPlan = null;
+        let impersonatedPageAccess = null;
+        
+        if (impersonatedSubscription) {
+          impersonatedPlan = await storage.getPlan(impersonatedSubscription.planId);
+          if (impersonatedPlan) {
+            impersonatedPageAccess = {
+              ...(typeof impersonatedPlan.pageAccess === 'object' && impersonatedPlan.pageAccess !== null ? impersonatedPlan.pageAccess : {}),
+              ...(typeof impersonatedSubscription.pageAccess === 'object' && impersonatedSubscription.pageAccess !== null ? impersonatedSubscription.pageAccess : {})
+            };
+          }
+        }
+        
         response.impersonation = {
           isImpersonating: true,
-          originalAdminId: req.originalUserId,
-          originalAdminName: originalAdmin?.name,
-          originalAdminEmail: originalAdmin?.email,
+          admin: {
+            id: req.userId,
+            name: req.user?.name,
+            email: req.user?.email,
+          },
+          impersonatedUser: {
+            id: req.impersonatedUser.id,
+            name: req.impersonatedUser.name,
+            email: req.impersonatedUser.email,
+            role: req.impersonatedUser.role,
+            status: req.impersonatedUser.status,
+            currentSubscription: impersonatedSubscription,
+            currentPlan: impersonatedPlan,
+            effectivePageAccess: impersonatedPageAccess,
+          },
         };
       }
 
@@ -4216,21 +4242,21 @@ export function registerRoutes(app: Express) {
   app.post("/api/admin/exit-impersonation", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       // Only works if currently impersonating
-      if (!req.isImpersonating || !req.originalUserId) {
+      if (!req.isImpersonating || !req.impersonatedUser) {
         return res.status(400).json({ error: "Not currently impersonating" });
       }
 
       // Create audit log
       await storage.createAuditLog({
-        actorUserId: req.originalUserId,
+        actorUserId: req.userId!, // req.userId is the admin ID during impersonation
         targetType: "user",
-        targetId: req.userId!, // The user that was being impersonated
+        targetId: req.impersonatedUser.id, // The user that was being impersonated
         action: "EXIT_IMPERSONATION",
-        meta: { adminId: req.originalUserId },
+        meta: { adminId: req.userId },
       });
 
-      // Generate new token without impersonation
-      const token = generateToken(req.originalUserId);
+      // Generate new token without impersonation (just admin)
+      const token = generateToken(req.userId!);
       
       res.cookie("token", token, {
         httpOnly: true,
