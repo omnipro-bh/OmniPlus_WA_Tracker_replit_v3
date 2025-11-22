@@ -412,12 +412,17 @@ export function registerRoutes(app: Express) {
   // Get current user with enriched data
   app.get("/api/me", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUser(req.userId!);
+      // Determine which user's data to return
+      // When impersonating: return impersonated user's data, with admin context
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      const effectiveUser = req.impersonatedUser || req.user!;
+      
+      const user = await storage.getUser(effectiveUserId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // Get current subscription and plan
+      // Get current subscription and plan for the effective user
       const subscription = await storage.getActiveSubscriptionForUser(user.id);
       let currentPlan = null;
       let effectivePageAccess = null;
@@ -455,7 +460,7 @@ export function registerRoutes(app: Express) {
             };
       }
 
-      // Get channels count
+      // Get channels count for the effective user
       const channels = await storage.getChannelsForUser(user.id);
       const channelsUsed = channels.length;
       const channelsLimit = currentPlan?.channelsLimit || 0;
@@ -465,7 +470,7 @@ export function registerRoutes(app: Express) {
         return sum + (channel.daysRemaining || 0);
       }, 0);
 
-      // Calculate messages sent today
+      // Calculate messages sent today for the effective user
       // Get start and end of today in UTC
       const startOfToday = new Date();
       startOfToday.setUTCHours(0, 0, 0, 0);
@@ -491,10 +496,10 @@ export function registerRoutes(app: Express) {
 
       const { passwordHash: _, ...userWithoutPassword } = user;
       
-      // Build response with impersonation state if applicable
+      // Build response - when impersonating, this contains the impersonated user's data
       const response: any = {
         ...userWithoutPassword,
-        daysBalance: totalDaysRemaining, // Override deprecated field with channel aggregate
+        daysBalance: totalDaysRemaining,
         currentSubscription: subscription,
         currentPlan,
         effectivePageAccess,
@@ -503,39 +508,14 @@ export function registerRoutes(app: Express) {
         messagesSentToday,
       };
 
-      // Include impersonation state
-      if (req.isImpersonating && req.impersonatedUser) {
-        // Get impersonated user's subscription data
-        const impersonatedSubscription = await storage.getActiveSubscriptionForUser(req.impersonatedUser.id);
-        let impersonatedPlan = null;
-        let impersonatedPageAccess = null;
-        
-        if (impersonatedSubscription) {
-          impersonatedPlan = await storage.getPlan(impersonatedSubscription.planId);
-          if (impersonatedPlan) {
-            impersonatedPageAccess = {
-              ...(typeof impersonatedPlan.pageAccess === 'object' && impersonatedPlan.pageAccess !== null ? impersonatedPlan.pageAccess : {}),
-              ...(typeof impersonatedSubscription.pageAccess === 'object' && impersonatedSubscription.pageAccess !== null ? impersonatedSubscription.pageAccess : {})
-            };
-          }
-        }
-        
+      // Add impersonation metadata when impersonating
+      if (req.isImpersonating && req.user) {
         response.impersonation = {
           isImpersonating: true,
           admin: {
             id: req.userId,
-            name: req.user?.name,
-            email: req.user?.email,
-          },
-          impersonatedUser: {
-            id: req.impersonatedUser.id,
-            name: req.impersonatedUser.name,
-            email: req.impersonatedUser.email,
-            role: req.impersonatedUser.role,
-            status: req.impersonatedUser.status,
-            currentSubscription: impersonatedSubscription,
-            currentPlan: impersonatedPlan,
-            effectivePageAccess: impersonatedPageAccess,
+            name: req.user.name,
+            email: req.user.email,
           },
         };
       }
