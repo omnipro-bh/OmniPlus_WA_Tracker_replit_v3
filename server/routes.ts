@@ -490,7 +490,9 @@ export function registerRoutes(app: Express) {
       const messagesSentToday = Number(todayJobs[0]?.totalMessages || 0);
 
       const { passwordHash: _, ...userWithoutPassword } = user;
-      res.json({
+      
+      // Build response with impersonation state if applicable
+      const response: any = {
         ...userWithoutPassword,
         daysBalance: totalDaysRemaining, // Override deprecated field with channel aggregate
         currentSubscription: subscription,
@@ -499,7 +501,20 @@ export function registerRoutes(app: Express) {
         channelsUsed,
         channelsLimit,
         messagesSentToday,
-      });
+      };
+
+      // Include impersonation state
+      if (req.isImpersonating && req.originalUserId) {
+        const originalAdmin = await storage.getUser(req.originalUserId);
+        response.impersonation = {
+          isImpersonating: true,
+          originalAdminId: req.originalUserId,
+          originalAdminName: originalAdmin?.name,
+          originalAdminEmail: originalAdmin?.email,
+        };
+      }
+
+      res.json(response);
     } catch (error: any) {
       console.error("Get user error:", error);
       res.status(500).json({ error: "Failed to get user data" });
@@ -4136,6 +4151,98 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Unban user error:", error);
       res.status(500).json({ error: "Failed to unban user" });
+    }
+  });
+
+  // Impersonate user (admin only)
+  app.post("/api/admin/impersonate/:userId", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const targetUserId = parseInt(req.params.userId);
+      
+      // Prevent impersonating yourself
+      if (targetUserId === req.userId) {
+        return res.status(400).json({ error: "You cannot impersonate yourself" });
+      }
+
+      // Get target user
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Don't allow impersonating other admins
+      if (targetUser.role === "admin") {
+        return res.status(403).json({ error: "Cannot impersonate other administrators" });
+      }
+
+      // Create audit log
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "user",
+        targetId: targetUserId,
+        action: "IMPERSONATE_USER",
+        meta: { 
+          targetUserEmail: targetUser.email,
+          targetUserName: targetUser.name,
+          adminId: req.userId 
+        },
+      });
+
+      // Generate new token with impersonation
+      const token = generateToken(req.userId!, targetUserId);
+      
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      res.json({ 
+        success: true, 
+        impersonatedUser: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email,
+        }
+      });
+    } catch (error: any) {
+      console.error("Impersonate user error:", error);
+      res.status(500).json({ error: "Failed to impersonate user" });
+    }
+  });
+
+  // Exit impersonation (return to admin account)
+  app.post("/api/admin/exit-impersonation", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      // Only works if currently impersonating
+      if (!req.isImpersonating || !req.originalUserId) {
+        return res.status(400).json({ error: "Not currently impersonating" });
+      }
+
+      // Create audit log
+      await storage.createAuditLog({
+        actorUserId: req.originalUserId,
+        targetType: "user",
+        targetId: req.userId!, // The user that was being impersonated
+        action: "EXIT_IMPERSONATION",
+        meta: { adminId: req.originalUserId },
+      });
+
+      // Generate new token without impersonation
+      const token = generateToken(req.originalUserId);
+      
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Exit impersonation error:", error);
+      res.status(500).json({ error: "Failed to exit impersonation" });
     }
   });
 
