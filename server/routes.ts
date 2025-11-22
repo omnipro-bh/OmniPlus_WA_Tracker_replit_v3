@@ -417,11 +417,6 @@ export function registerRoutes(app: Express) {
       const effectiveUserId = req.impersonatedUser?.id || req.userId!;
       const effectiveUser = req.impersonatedUser || req.user!;
       
-      console.log("[/api/me] isImpersonating:", req.isImpersonating);
-      console.log("[/api/me] Admin ID:", req.userId);
-      console.log("[/api/me] Impersonated User ID:", req.impersonatedUser?.id);
-      console.log("[/api/me] Effective User ID:", effectiveUserId);
-      
       const user = await storage.getUser(effectiveUserId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
