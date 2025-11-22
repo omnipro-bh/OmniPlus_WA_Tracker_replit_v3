@@ -1,4 +1,3 @@
-import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Radio, Calendar, CreditCard, Send, AlertTriangle, XCircle } from "lucide-react";
@@ -9,9 +8,10 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useEffectiveUser } from "@/hooks/use-effective-user";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user } = useEffectiveUser();
   const { toast } = useToast();
 
   const { data: recentJobs = [] } = useQuery<Job[]>({

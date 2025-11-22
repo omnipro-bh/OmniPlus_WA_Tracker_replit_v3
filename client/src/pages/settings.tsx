@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/lib/auth-context";
+import { useEffectiveUser } from "@/hooks/use-effective-user";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lock, XCircle, Calendar, Clock } from "lucide-react";
@@ -22,7 +22,7 @@ import { format } from "date-fns";
 
 export default function Settings() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useEffectiveUser();
   const [passwords, setPasswords] = useState({
     newPassword: "",
     confirmPassword: "",

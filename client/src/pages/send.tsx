@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useEffectiveUser } from "@/hooks/use-effective-user";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ type Phonebook = {
 };
 
 export default function Send() {
-  const { user } = useAuth();
+  const { user } = useEffectiveUser();
   const { toast } = useToast();
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
 

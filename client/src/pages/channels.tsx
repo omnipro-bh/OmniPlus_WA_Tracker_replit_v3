@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useEffectiveUser } from "@/hooks/use-effective-user";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import type { Channel } from "@shared/schema";
 import { Link } from "wouter";
 
 export default function Channels() {
-  const { user } = useAuth();
+  const { user } = useEffectiveUser();
   const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newChannel, setNewChannel] = useState({ label: "", phone: "" });

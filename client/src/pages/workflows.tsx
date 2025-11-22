@@ -11,11 +11,11 @@ import type { Workflow } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { Node, Edge } from "@xyflow/react";
-import { useAuth } from "@/lib/auth-context";
+import { useEffectiveUser } from "@/hooks/use-effective-user";
 
 export default function Workflows() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useEffectiveUser();
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
