@@ -50,7 +50,7 @@ Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows
 -   **WhatsApp Preview:** Custom phone mockup UI with interactive elements and real-time media preview.
 -   **Emoji Support:** Integrated emoji-mart picker.
 -   **HTTP Request Security:** Enforces HTTPS-only, admin-managed domain allowlist, no redirects, and limits on response size/timeout. Stores results in `conversation_states.context`.
--   **Webhook Message Validation:** Strictly validates inbound messages to prevent system events from triggering entry nodes.
+-   **Webhook Message Validation:** Strictly validates inbound messages to prevent system events from triggering entry nodes. Additionally filters out group messages (`@g.us`) to ensure workflows only process private chats (`@s.whatsapp.net`), preventing unwanted bot responses in group conversations.
 -   **HTTP Request Node Test Button:** Allows testing API configurations within the workflow builder.
 -   **Chat Widget Location Control:** Admins control Tawk.to chat widget visibility.
 -   **PayPal Environment Configuration:** Managed centrally via backend configuration.

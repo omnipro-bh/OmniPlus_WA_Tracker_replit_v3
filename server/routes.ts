@@ -5051,6 +5051,16 @@ export function registerRoutes(app: Express) {
       const chatId = incomingMessage.chat_id || "";
       const phone = chatId.split('@')[0]; // Extract phone number before @
       
+      // CRITICAL: Detect and filter group messages
+      // Private chats: xxxx@s.whatsapp.net
+      // Group chats: xxxx@g.us
+      const isGroupChat = chatId.endsWith('@g.us');
+      
+      if (isGroupChat) {
+        console.log(`Ignoring group message from chat_id: ${chatId}`);
+        return res.json({ success: true, message: "Group messages are not supported by workflows" });
+      }
+      
       // Determine message type and extract button/list ID
       let messageType: "text" | "button_reply" | "other" = "other";
       let rawButtonId = "";
