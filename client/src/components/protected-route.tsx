@@ -13,6 +13,8 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  
+  const isImpersonating = (user as any)?.impersonation?.isImpersonating;
 
   useEffect(() => {
     if (isLoading) return;
@@ -22,7 +24,8 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
       return;
     }
 
-    if (user.role === "admin") {
+    // Admins bypass page access control unless impersonating
+    if (user.role === "admin" && !isImpersonating) {
       return;
     }
 
@@ -75,7 +78,8 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
     return null;
   }
 
-  if (user.role !== "admin") {
+  // Admins bypass page access control unless impersonating
+  if (user.role !== "admin" || isImpersonating) {
     const effectivePageAccess = (user as any)?.effectivePageAccess || {};
     if (!effectivePageAccess[requiredKey]) {
       return null;
