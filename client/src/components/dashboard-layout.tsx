@@ -6,9 +6,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { LogOut } from "lucide-react";
+import { LogOut, AlertCircle, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { is } from "drizzle-orm";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -37,6 +38,23 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   };
 
+  const handleExitImpersonation = async () => {
+    try {
+      await apiRequest("POST", "/api/admin/exit-impersonation");
+      toast({
+        title: "Returned to admin account",
+        description: "You have exited impersonation mode",
+      });
+      window.location.href = "/admin";
+    } catch (error: any) {
+      toast({
+        title: "Failed to exit impersonation",
+        description: error.error || "Could not exit impersonation mode",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -44,6 +62,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
     );
   }
+
+  const impersonation = (user as any).impersonation;
 
   const style = {
     "--sidebar-width": "16rem",
@@ -72,6 +92,34 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </Button>
             </div>
           </header>
+          {impersonation?.isImpersonating && (
+            <Alert 
+              className="rounded-none border-0 border-b bg-amber-500/15 border-amber-500/50 text-amber-900 dark:text-amber-100"
+              data-testid="impersonation-banner"
+            >
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertDescription className="flex items-center justify-between w-full gap-4">
+                <span className="text-sm font-medium">
+                  You are viewing as <span className="font-bold">{user.name || user.email}</span>
+                  {impersonation.originalAdminName && (
+                    <span className="text-xs ml-2 opacity-80">
+                      (Admin: {impersonation.originalAdminName})
+                    </span>
+                  )}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExitImpersonation}
+                  className="h-7 text-xs bg-background/50 hover:bg-background border-amber-600/30 dark:border-amber-400/30"
+                  data-testid="button-exit-impersonation"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Exit Impersonation
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           <main className="flex-1 overflow-y-auto">
             <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
               {children}
