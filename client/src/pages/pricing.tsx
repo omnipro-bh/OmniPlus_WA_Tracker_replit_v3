@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,36 @@ const getCurrencySymbol = (currency: string) => {
 
 export default function Pricing() {
   const { toast } = useToast();
+  
+  const { data: plans = [] } = useQuery<Plan[]>({
+    queryKey: ["/api/plans"],
+  });
+
+  const { data: termsDocuments = [] } = useQuery<any[]>({
+    queryKey: ["/api/terms"],
+  });
+
+  // Calculate which billing periods are enabled across all plans (union)
+  const enabledPeriods = new Set<string>();
+  plans.forEach((plan) => {
+    const planPeriods = (plan as any).enabledBillingPeriods || ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"];
+    planPeriods.forEach((period: string) => enabledPeriods.add(period));
+  });
+
   const [durationType, setDurationType] = useState<"MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL">("MONTHLY");
+
+  // Update durationType to first enabled period once plans are loaded
+  useEffect(() => {
+    if (plans.length > 0 && enabledPeriods.size > 0) {
+      const periodOrder: Array<"MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"> = ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"];
+      for (const period of periodOrder) {
+        if (enabledPeriods.has(period)) {
+          setDurationType(period);
+          break;
+        }
+      }
+    }
+  }, [plans.length]); // Only run when plans are first loaded
   const [isOfflineDialogOpen, setIsOfflineDialogOpen] = useState(false);
   const [isQuoteDialogOpen, setIsQuoteDialogOpen] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
@@ -61,21 +90,6 @@ export default function Pricing() {
     phone: "",
     message: "",
     requestedDate: "",
-  });
-
-  const { data: plans = [] } = useQuery<Plan[]>({
-    queryKey: ["/api/plans"],
-  });
-
-  const { data: termsDocuments = [] } = useQuery<any[]>({
-    queryKey: ["/api/terms"],
-  });
-
-  // Calculate which billing periods are enabled across all plans (union)
-  const enabledPeriods = new Set<string>();
-  plans.forEach((plan) => {
-    const planPeriods = (plan as any).enabledBillingPeriods || ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"];
-    planPeriods.forEach((period: string) => enabledPeriods.add(period));
   });
 
   // Calculate maximum discount for each billing period across all plans

@@ -3299,9 +3299,20 @@ export default function Admin() {
                             {(plan as any).displayCurrency || plan.currency} {((plan as any).displayPrice || plan.price) ? (((plan as any).displayPrice || plan.price) / 100).toFixed(2) : "0.00"}
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            {plan.billingPeriod === "MONTHLY" && "Monthly"}
-                            {plan.billingPeriod === "SEMI_ANNUAL" && "6 Months"}
-                            {plan.billingPeriod === "ANNUAL" && "Annual"}
+                            {Array.isArray((plan as any).enabledBillingPeriods) && (plan as any).enabledBillingPeriods.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {(plan as any).enabledBillingPeriods.map((period: string) => (
+                                  <span key={period} className="text-xs">
+                                    {period === "MONTHLY" && "Monthly"}
+                                    {period === "QUARTERLY" && "Quarterly"}
+                                    {period === "SEMI_ANNUAL" && "Semi-Annual"}
+                                    {period === "ANNUAL" && "Annual"}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="outline" className="text-xs">
