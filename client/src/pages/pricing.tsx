@@ -78,6 +78,11 @@ export default function Pricing() {
     planPeriods.forEach((period: string) => enabledPeriods.add(period));
   });
 
+  // Calculate maximum discount for each billing period across all plans
+  const maxQuarterlyDiscount = Math.max(0, ...plans.map(p => (p as any).quarterlyDiscountPercent || 0));
+  const maxSemiAnnualDiscount = Math.max(0, ...plans.map(p => (p as any).semiAnnualDiscountPercent || 0));
+  const maxAnnualDiscount = Math.max(0, ...plans.map(p => (p as any).annualDiscountPercent || 0));
+
   const validateCouponMutation = useMutation({
     mutationFn: async (data: { code: string; planId: number }) => {
       const response = await apiRequest("POST", "/api/coupons/validate", data);
@@ -293,9 +298,11 @@ export default function Pricing() {
               >
                 Quarterly
               </Button>
-              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
-                5%
-              </span>
+              {maxQuarterlyDiscount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                  {maxQuarterlyDiscount}%
+                </span>
+              )}
             </div>
           )}
           {enabledPeriods.has("SEMI_ANNUAL") && (
@@ -308,9 +315,11 @@ export default function Pricing() {
               >
                 Semi-Annual
               </Button>
-              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
-                10%
-              </span>
+              {maxSemiAnnualDiscount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                  {maxSemiAnnualDiscount}%
+                </span>
+              )}
             </div>
           )}
           {enabledPeriods.has("ANNUAL") && (
@@ -323,26 +332,28 @@ export default function Pricing() {
               >
                 Annual
               </Button>
-              <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
-                15%
-              </span>
+              {maxAnnualDiscount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                  {maxAnnualDiscount}%
+                </span>
+              )}
             </div>
           )}
         </div>
         {/* Show discount percentage for non-monthly periods */}
-        {durationType === "QUARTERLY" && (
+        {durationType === "QUARTERLY" && maxQuarterlyDiscount > 0 && (
           <div className="text-sm text-success font-medium">
-            Save up to 5% on quarterly billing
+            Save up to {maxQuarterlyDiscount}% on quarterly billing
           </div>
         )}
-        {durationType === "SEMI_ANNUAL" && (
+        {durationType === "SEMI_ANNUAL" && maxSemiAnnualDiscount > 0 && (
           <div className="text-sm text-success font-medium">
-            Save up to 10% on semi-annual billing
+            Save up to {maxSemiAnnualDiscount}% on semi-annual billing
           </div>
         )}
-        {durationType === "ANNUAL" && (
+        {durationType === "ANNUAL" && maxAnnualDiscount > 0 && (
           <div className="text-sm text-success font-medium">
-            Save up to 15% on annual billing
+            Save up to {maxAnnualDiscount}% on annual billing
           </div>
         )}
       </div>
