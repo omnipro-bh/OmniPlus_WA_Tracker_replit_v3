@@ -6277,6 +6277,42 @@ export function registerRoutes(app: Express) {
       return await sendInteractiveMessage(channelToken, payload);
     }
 
+    // Buttons (Call/URL/Copy mixed buttons - up to 3)
+    else if (nodeType === 'buttons') {
+      const payload: any = {
+        to: phone,
+        type: 'button',
+      };
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || 'No message' };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      
+      // Map all buttons with their respective types
+      const buttons = (config.buttons || [])
+        .filter((btn: any) => btn.title && btn.id)
+        .map((btn: any) => {
+          const button: any = {
+            type: btn.type, // 'call', 'url', or 'copy'
+            title: btn.title,
+            id: btn.id,
+          };
+          
+          // Add type-specific properties
+          if (btn.type === 'call' && btn.phone_number) {
+            button.phone_number = btn.phone_number;
+          } else if (btn.type === 'url' && btn.url) {
+            button.url = btn.url;
+          } else if (btn.type === 'copy' && btn.copy_code) {
+            button.copy_code = btn.copy_code;
+          }
+          
+          return button;
+        });
+      
+      payload.action = { buttons };
+      return await sendInteractiveMessage(channelToken, payload);
+    }
+
     // Call Button
     else if (nodeType === 'callButton') {
       const payload: any = {
