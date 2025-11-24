@@ -6288,22 +6288,30 @@ export function registerRoutes(app: Express) {
       if (config.footerText) payload.footer = { text: config.footerText };
       
       // Map all buttons with their respective types
+      // Handle both old format (kind/value) and new format (type/phone_number/url)
       const buttons = (config.buttons || [])
         .filter((btn: any) => btn.title && btn.id)
         .map((btn: any) => {
+          // Normalize button type (handle both "kind" and "type" fields)
+          let buttonType = btn.type || btn.kind;
+          
+          // Map old "kind" values to WHAPI "type" values
+          if (buttonType === 'phone_number') buttonType = 'call';
+          
           const button: any = {
-            type: btn.type, // 'call', 'url', or 'copy'
+            type: buttonType, // 'call', 'url', or 'copy'
             title: btn.title,
             id: btn.id,
           };
           
           // Add type-specific properties
-          if (btn.type === 'call' && btn.phone_number) {
-            button.phone_number = btn.phone_number;
-          } else if (btn.type === 'url' && btn.url) {
-            button.url = btn.url;
-          } else if (btn.type === 'copy' && btn.copy_code) {
-            button.copy_code = btn.copy_code;
+          // Handle both old format (value) and new format (phone_number/url/copy_code)
+          if (buttonType === 'call') {
+            button.phone_number = btn.phone_number || btn.value;
+          } else if (buttonType === 'url') {
+            button.url = btn.url || btn.value;
+          } else if (buttonType === 'copy') {
+            button.copy_code = btn.copy_code || btn.value;
           }
           
           return button;
