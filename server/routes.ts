@@ -5535,13 +5535,22 @@ export function registerRoutes(app: Express) {
           // Find the node linked to this button_id using workflow edges
           const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
           
+          console.log(`[Button Reply Debug] Button ID: "${buttonId}"`);
+          console.log(`[Button Reply Debug] Total edges: ${definition.edges?.length || 0}`);
+          console.log(`[Button Reply Debug] Total nodes: ${definition.nodes?.length || 0}`);
+          
           // Try to find edge by sourceHandle first (new multi-handle workflows)
           // The sourceHandle is automatically set by ReactFlow when connecting from a specific handle
           let targetEdge = definition.edges?.find((edge: any) => edge.sourceHandle === buttonId);
           
+          if (targetEdge) {
+            console.log(`[Button Reply Debug] Found edge by sourceHandle: ${JSON.stringify(targetEdge)}`);
+          }
+          
           // FALLBACK: For legacy workflows without sourceHandle, check node button configs
           // This maintains backward compatibility with existing workflows
           if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by sourceHandle, trying fallback...`);
             targetEdge = definition.edges?.find((edge: any) => {
               const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
               if (!sourceNode) return false;
@@ -5556,16 +5565,29 @@ export function registerRoutes(app: Express) {
                 section.rows?.some((row: any) => row.id === buttonId)
               );
               
-              return hasMatchingButton || hasMatchingRow;
+              const found = hasMatchingButton || hasMatchingRow;
+              if (found) {
+                console.log(`[Button Reply Debug] Found matching button in node ${sourceNode.id}`);
+              }
+              
+              return found;
             });
+            
+            if (targetEdge) {
+              console.log(`[Button Reply Debug] Found edge by fallback: ${JSON.stringify(targetEdge)}`);
+            }
           }
 
           if (targetEdge) {
             const targetNodeId = targetEdge.target;
             const targetNode = definition.nodes?.find((n: any) => n.id === targetNodeId);
             
+            console.log(`[Button Reply Debug] Target node ID: ${targetNodeId}`);
+            console.log(`[Button Reply Debug] Target node found: ${!!targetNode}`);
+            
             if (targetNode) {
               const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
+              console.log(`[Button Reply Debug] Target node type: ${nodeType}`);
               
               // Execute node chain starting from targetNode
               // HTTP nodes execute automatically and continue, message nodes stop and wait for user
@@ -5666,8 +5688,18 @@ export function registerRoutes(app: Express) {
                 } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
                            ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'callButton', 'urlButton', 'copyButton', 'carousel'].includes(currentNodeType))) {
                   // Message node - send and stop
-                  const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId);
-                  executionLog.responsesSent.push(response);
+                  console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
+                  console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
+                  
+                  try {
+                    const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId);
+                    console.log(`[Button Reply Debug] Message sent successfully: ${JSON.stringify(response)}`);
+                    executionLog.responsesSent.push(response);
+                    console.log(`[Button Reply Debug] Responses sent count: ${executionLog.responsesSent.length}`);
+                  } catch (sendError: any) {
+                    console.error(`[Button Reply Debug] Failed to send message: ${sendError.message}`);
+                    throw sendError;
+                  }
                   
                   // Update current node
                   await db
@@ -5680,16 +5712,23 @@ export function registerRoutes(app: Express) {
                     .where(eq(conversationStates.id, state.id));
                   
                   // Stop execution - wait for user response
+                  console.log(`[Button Reply Debug] Stopping execution after message node`);
                   break;
                   
                 } else {
-                  console.log(`Unknown node type: ${currentNodeType} - stopping execution`);
+                  console.log(`[Button Reply Debug] Unknown node type: ${currentNodeType} - stopping execution`);
+                  console.log(`[Button Reply Debug] Node data: ${JSON.stringify(currentNode.data)}`);
                   break;
                 }
               }
+              
+              console.log(`[Button Reply Debug] While loop finished. Total responses sent: ${executionLog.responsesSent.length}`);
+            } else {
+              console.log(`[Button Reply Debug] Target node not found in workflow definition`);
             }
           } else {
-            console.log(`No target node found for button_id: ${buttonId}`);
+            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId}`);
+            console.log(`[Button Reply Debug] Available sourceHandles in edges:`, definition.edges?.map((e: any) => e.sourceHandle));
           }
         }
 
