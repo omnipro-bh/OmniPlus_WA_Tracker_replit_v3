@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
-import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments } from "@shared/schema";
+import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { z } from "zod";
@@ -5422,7 +5422,7 @@ export function registerRoutes(app: Express) {
                 
                 try {
                   // Send the entry node's message
-                  const response = await sendNodeMessage(phone, entryNode, workflow.userId);
+                  const response = await sendNodeMessage(phone, entryNode, workflow.userId, workflow.id);
                   
                   // Only add to execution log if this is the current workflow
                   if (workflow.id === activeWorkflow.id) {
@@ -5532,6 +5532,32 @@ export function registerRoutes(app: Express) {
             console.log("Not first message of day, no action taken");
           }
         } else if (messageType === "button_reply") {
+          // CRITICAL: Check if this button reply belongs to THIS workflow
+          // Multiple workflows may have the same webhook registered in WHAPI, so we need to verify ownership
+          const quotedId = incomingMessage.context?.quoted_id;
+          
+          if (quotedId) {
+            // Check if this message was sent by THIS workflow
+            const messageOwnership = await db
+              .select()
+              .from(sentMessages)
+              .where(
+                and(
+                  eq(sentMessages.messageId, quotedId),
+                  eq(sentMessages.workflowId, activeWorkflow.id)
+                )
+              )
+              .limit(1);
+            
+            if (!messageOwnership || messageOwnership.length === 0) {
+              // This button click is for a DIFFERENT workflow - ignore it
+              console.log(`[Button Reply] Ignoring button click - message ${quotedId} was not sent by workflow ${activeWorkflow.id}`);
+              return res.json({ success: true, message: "Button click belongs to different workflow" });
+            }
+            
+            console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
+          }
+          
           // Find the node linked to this button_id using workflow edges
           const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
           
@@ -5692,7 +5718,7 @@ export function registerRoutes(app: Express) {
                   console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
                   
                   try {
-                    const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId);
+                    const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId, activeWorkflow.id);
                     console.log(`[Button Reply Debug] Message sent successfully: ${JSON.stringify(response)}`);
                     executionLog.responsesSent.push(response);
                     console.log(`[Button Reply Debug] Responses sent count: ${executionLog.responsesSent.length}`);
@@ -6159,8 +6185,26 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Helper function to track sent interactive messages
+  async function trackSentMessage(workflowId: number | undefined, messageId: string, phone: string, messageType: string) {
+    if (!workflowId || !messageId) return;
+    
+    try {
+      await db.insert(sentMessages).values({
+        workflowId,
+        messageId,
+        phone,
+        messageType,
+      });
+      console.log(`[Message Tracking] Recorded ${messageType} message ${messageId} for workflow ${workflowId}`);
+    } catch (trackError) {
+      console.error(`[Message Tracking] Failed to track message: ${trackError}`);
+      // Don't fail the send if tracking fails
+    }
+  }
+
   // Helper function to send node message via WHAPI
-  async function sendNodeMessage(phone: string, node: any, workflowUserId: number): Promise<any> {
+  async function sendNodeMessage(phone: string, node: any, workflowUserId: number, workflowId?: number): Promise<any> {
     const nodeType = node.data?.type || node.data?.nodeType;
     const config = node.data?.config || {};
 
@@ -6227,7 +6271,9 @@ export function registerRoutes(app: Express) {
         }));
       
       payload.action = { buttons };
-      return await sendInteractiveMessage(channelToken, payload);
+      const response = await sendInteractiveMessage(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, 'quickReply');
+      return response;
     }
 
     // Quick Reply with Image
@@ -6249,7 +6295,9 @@ export function registerRoutes(app: Express) {
         }));
       
       payload.action = { buttons };
-      return await sendInteractiveMessage(channelToken, payload);
+      const response = await sendInteractiveMessage(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, 'quickReplyImage');
+      return response;
     }
 
     // Quick Reply with Video
@@ -6272,7 +6320,9 @@ export function registerRoutes(app: Express) {
         }));
       
       payload.action = { buttons };
-      return await sendInteractiveMessage(channelToken, payload);
+      const response = await sendInteractiveMessage(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, 'quickReplyVideo');
+      return response;
     }
 
     // List Message
@@ -6302,7 +6352,9 @@ export function registerRoutes(app: Express) {
           label: config.buttonLabel || 'Choose option',
         },
       };
-      return await sendInteractiveMessage(channelToken, payload);
+      const response = await sendInteractiveMessage(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, 'listMessage');
+      return response;
     }
 
     // Buttons (Call/URL/Copy mixed buttons - up to 3)
@@ -6414,7 +6466,7 @@ export function registerRoutes(app: Express) {
 
     // Carousel
     else if (nodeType === 'carousel') {
-      return await sendCarouselMessage(channelToken, {
+      const response = await sendCarouselMessage(channelToken, {
         to: phone,
         body: { text: config.bodyText || 'Check out our offerings!' },
         cards: (config.cards || []).map((card: any) => ({
@@ -6438,6 +6490,11 @@ export function registerRoutes(app: Express) {
           }),
         })),
       });
+      
+      // Track sent message for button click routing
+      await trackSentMessage(workflowId, response?.id, phone, 'carousel');
+      
+      return response;
     }
 
     console.log(`Unsupported node type: ${nodeType}`);

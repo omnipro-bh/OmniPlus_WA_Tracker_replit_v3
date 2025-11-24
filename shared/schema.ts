@@ -472,6 +472,27 @@ export const workflowsRelations = relations(workflows, ({ one, many }) => ({
     references: [users.id],
   }),
   executions: many(workflowExecutions),
+  sentMessages: many(sentMessages),
+}));
+
+// Sent Messages table - tracks which workflow sent which message (for button click routing)
+export const sentMessages = pgTable("sent_messages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  messageId: text("message_id").notNull(), // WHAPI message ID
+  phone: text("phone").notNull(), // Recipient phone number
+  messageType: text("message_type").notNull(), // "carousel", "buttons", "list", etc.
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull().default(sql`NOW() + INTERVAL '24 hours'`), // Auto-cleanup after 24h
+}, (table) => ({
+  messageIdIdx: uniqueIndex("sent_messages_message_id_idx").on(table.messageId),
+}));
+
+export const sentMessagesRelations = relations(sentMessages, ({ one }) => ({
+  workflow: one(workflows, {
+    fields: [sentMessages.workflowId],
+    references: [workflows.id],
+  }),
 }));
 
 // Conversation States table - tracks last message per phone number
