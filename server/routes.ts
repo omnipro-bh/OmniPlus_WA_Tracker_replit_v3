@@ -5687,7 +5687,7 @@ export function registerRoutes(app: Express) {
                   
                 } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
                            ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType))) {
-                  // Message node - send and stop
+                  // Message node - send message
                   console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
                   console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
                   
@@ -5711,9 +5711,37 @@ export function registerRoutes(app: Express) {
                     })
                     .where(eq(conversationStates.id, state.id));
                   
-                  // Stop execution - wait for user response
-                  console.log(`[Button Reply Debug] Stopping execution after message node`);
-                  break;
+                  // Check if this message node has interactive elements (requires user input)
+                  const hasInteractiveElements = ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType);
+                  
+                  if (hasInteractiveElements) {
+                    // Interactive message (has buttons/lists) - stop and wait for user response
+                    console.log(`[Button Reply Debug] Stopping execution - message node has interactive elements (${currentNodeType})`);
+                    break;
+                  }
+                  
+                  // Simple message (text/media only) - check if there's a next node
+                  const outgoingEdges = definition.edges?.filter((e: any) => e.source === currentNodeId) || [];
+                  
+                  if (outgoingEdges.length === 0) {
+                    // No next node - end workflow
+                    console.log(`[Button Reply Debug] No outgoing edges from message node ${currentNodeId} - workflow ends here`);
+                    break;
+                  }
+                  
+                  // Continue to next node (for simple text/media messages)
+                  const nextEdge = outgoingEdges[0]; // Simple messages have only one edge
+                  const nextNodeId = nextEdge.target;
+                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                  
+                  if (!nextNode) {
+                    console.log(`[Button Reply Debug] Next node ${nextNodeId} not found - workflow ends here`);
+                    break;
+                  }
+                  
+                  console.log(`[Button Reply Debug] Continuing to next node: ${nextNodeId} (simple message, no user input required)`);
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
                   
                 } else {
                   console.log(`[Button Reply Debug] Unknown node type: ${currentNodeType} - stopping execution`);
