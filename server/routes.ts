@@ -2496,10 +2496,11 @@ export function registerRoutes(app: Express) {
   // Get single phonebook with contacts
   app.get("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
 
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
@@ -2551,10 +2552,11 @@ export function registerRoutes(app: Express) {
   // Update phonebook
   app.put("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
 
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
@@ -2584,10 +2586,11 @@ export function registerRoutes(app: Express) {
   // Delete phonebook
   app.delete("/api/phonebooks/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
 
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
@@ -3391,10 +3394,11 @@ export function registerRoutes(app: Express) {
   // Update workflow
   app.put("/api/workflows/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
 
-      if (!workflow || workflow.userId !== req.userId!) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
@@ -3430,10 +3434,11 @@ export function registerRoutes(app: Express) {
   // Delete workflow
   app.delete("/api/workflows/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
 
-      if (!workflow || workflow.userId !== req.userId!) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
@@ -3448,10 +3453,11 @@ export function registerRoutes(app: Express) {
   // Toggle workflow active status
   app.patch("/api/workflows/:id/toggle-active", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
 
-      if (!workflow || workflow.userId !== req.userId!) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
@@ -3478,9 +3484,10 @@ export function registerRoutes(app: Express) {
       }
 
       // Get the specified channel
+      const effectiveUserId = getEffectiveUserId(req);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
