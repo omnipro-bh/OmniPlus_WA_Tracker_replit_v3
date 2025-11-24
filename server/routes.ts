@@ -5686,7 +5686,7 @@ export function registerRoutes(app: Express) {
                   currentNodeId = nextNodeId;
                   
                 } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
-                           ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'callButton', 'urlButton', 'copyButton', 'carousel'].includes(currentNodeType))) {
+                           ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType))) {
                   // Message node - send and stop
                   console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
                   console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
@@ -5732,7 +5732,12 @@ export function registerRoutes(app: Express) {
           }
         }
 
-        // Log successful execution
+        // Log successful execution - add reason if no responses sent
+        if (executionLog.responsesSent.length === 0 && !executionLog.errorMessage) {
+          console.log(`[Webhook] No responses sent - adding reason to log`);
+          executionLog.errorMessage = `No messages sent. Possible reasons: No target node found, node is not a message node, or button triggers native WhatsApp action (call/URL button).`;
+        }
+        
         await db.insert(workflowExecutions).values(executionLog);
 
         res.json({ success: true });
