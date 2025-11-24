@@ -3552,10 +3552,11 @@ export function registerRoutes(app: Express) {
   // Get job details with messages
   app.get("/api/jobs/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const jobId = parseInt(req.params.id);
       const job = await storage.getJob(jobId);
 
-      if (!job || job.userId !== req.userId!) {
+      if (!job || job.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Job not found" });
       }
 
