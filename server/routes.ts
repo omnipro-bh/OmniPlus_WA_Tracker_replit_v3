@@ -5537,25 +5537,30 @@ export function registerRoutes(app: Express) {
           const quotedId = incomingMessage.context?.quoted_id;
           
           if (quotedId) {
-            // First, check if ANY workflow owns this message
-            const anyOwnership = await db
-              .select()
-              .from(sentMessages)
-              .where(eq(sentMessages.messageId, quotedId))
-              .limit(1);
-            
-            if (anyOwnership && anyOwnership.length > 0) {
-              // Message is tracked - check if it belongs to THIS workflow
-              if (anyOwnership[0].workflowId !== activeWorkflow.id) {
-                // This button click is for a DIFFERENT workflow - ignore it
-                console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
-                return res.json({ success: true, message: "Button click belongs to different workflow" });
+            try {
+              // First, check if ANY workflow owns this message
+              const anyOwnership = await db
+                .select()
+                .from(sentMessages)
+                .where(eq(sentMessages.messageId, quotedId))
+                .limit(1);
+              
+              if (anyOwnership && anyOwnership.length > 0) {
+                // Message is tracked - check if it belongs to THIS workflow
+                if (anyOwnership[0].workflowId !== activeWorkflow.id) {
+                  // This button click is for a DIFFERENT workflow - ignore it
+                  console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
+                  return res.json({ success: true, message: "Button click belongs to different workflow" });
+                }
+                console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
+              } else {
+                // Message is NOT tracked (test message, old message before tracking was added)
+                // Allow all workflows to process for backward compatibility
+                console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
               }
-              console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
-            } else {
-              // Message is NOT tracked (test message, old message before tracking was added)
-              // Allow all workflows to process for backward compatibility
-              console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
+            } catch (ownershipError: any) {
+              // If sent_messages table doesn't exist or query fails, allow processing (backward compatible)
+              console.warn(`[Button Reply] Ownership check failed (table may not exist): ${ownershipError.message} - allowing processing for backward compatibility`);
             }
           }
           
