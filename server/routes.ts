@@ -6030,6 +6030,204 @@ export function registerRoutes(app: Express) {
         .limit(1);
 
       if (!user || user.length === 0) {
+        // FALLBACK: Check if this is actually a workflow webhook token
+        // This can happen if WHAPI routes carousel button replies to the bulk endpoint
+        console.log("[Bulk Webhook] Token doesn't match bulkWebhookToken, checking if it's a workflow token...");
+        
+        const workflowWithToken = await db
+          .select()
+          .from(workflows)
+          .where(
+            and(
+              eq(workflows.userId, parseInt(userId)),
+              eq(workflows.webhookToken, bulkWebhookToken)
+            )
+          )
+          .limit(1);
+        
+        if (workflowWithToken && workflowWithToken.length > 0) {
+          console.log(`[Bulk Webhook] Found workflow ${workflowWithToken[0].id} with this token - redirecting to workflow handler`);
+          
+          // Check if this has a button/list reply that should be processed by workflow
+          const messageEvent = webhookPayload.messages?.[0];
+          if (messageEvent && (messageEvent.reply?.type === 'buttons_reply' || messageEvent.reply?.type === 'list_reply')) {
+            console.log(`[Bulk Webhook] Processing button/list reply through workflow logic`);
+            
+            // Manually invoke the workflow webhook logic inline
+            // This handles carousel button clicks that were routed to bulk webhook
+            const workflowRecord = workflowWithToken[0];
+            
+            if (!workflowRecord.isActive) {
+              console.log(`[Bulk Webhook] Workflow ${workflowRecord.id} is inactive`);
+              return res.json({ success: true, message: "Workflow is inactive" });
+            }
+            
+            const incomingMessage = messageEvent;
+            const chatId = incomingMessage.chat_id || "";
+            const phone = chatId.split('@')[0];
+            
+            // Check for group chat
+            if (chatId.endsWith('@g.us')) {
+              console.log(`[Bulk Webhook] Ignoring group message from chat_id: ${chatId}`);
+              return res.json({ success: true, message: "Group messages ignored" });
+            }
+            
+            // Extract button ID
+            let rawButtonId = "";
+            if (incomingMessage.reply?.type === "buttons_reply") {
+              rawButtonId = incomingMessage.reply.buttons_reply?.id || "";
+            } else if (incomingMessage.reply?.type === "list_reply") {
+              rawButtonId = incomingMessage.reply.list_reply?.id || "";
+            }
+            
+            const buttonId = rawButtonId.includes(':') ? rawButtonId.split(':').pop() || "" : rawButtonId;
+            console.log(`[Bulk Webhook] Processing button click: rawId="${rawButtonId}", extracted="${buttonId}"`);
+            
+            // Parse workflow definition
+            let definition: any = {};
+            try {
+              const defJson = workflowRecord.definitionJson;
+              definition = typeof defJson === 'string' 
+                ? JSON.parse(defJson) 
+                : defJson || {};
+            } catch (e) {
+              console.error("[Bulk Webhook] Failed to parse workflow definition:", e);
+              return res.status(500).json({ error: "Invalid workflow definition" });
+            }
+            
+            // Get channel for sending
+            const userChannels = await db
+              .select()
+              .from(schema.channels)
+              .where(
+                and(
+                  eq(schema.channels.userId, workflowRecord.userId),
+                  eq(schema.channels.isActive, true)
+                )
+              )
+              .limit(1);
+            
+            const channel = userChannels[0];
+            
+            if (!channel) {
+              console.error("[Bulk Webhook] No active channel found for user");
+              return res.status(400).json({ error: "No active channel" });
+            }
+            
+            // Find target edge for button click (same logic as workflow webhook)
+            let targetEdge: any = null;
+            
+            // Try exact sourceHandle match
+            targetEdge = definition.edges?.find((e: any) => e.sourceHandle === buttonId);
+            
+            if (!targetEdge) {
+              console.log(`[Bulk Webhook] No exact sourceHandle match, trying fallbacks...`);
+              
+              // Find all interactive nodes
+              const interactiveNodes = definition.nodes?.filter((n: any) => {
+                const nodeType = n.data?.type || n.data?.nodeType;
+                return ['carousel', 'quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons'].includes(nodeType);
+              }) || [];
+              
+              for (const node of interactiveNodes) {
+                const nodeType = node.data?.type || node.data?.nodeType;
+                const config = node.data?.config || {};
+                let hasMatchingButton = false;
+                
+                // Check carousel cards
+                if (nodeType === 'carousel') {
+                  const cards = config.cards || [];
+                  for (const card of cards) {
+                    if ((card.buttons || []).some((btn: any) => btn.id === buttonId)) {
+                      hasMatchingButton = true;
+                      break;
+                    }
+                  }
+                }
+                
+                // Check buttons
+                if (['quickReply', 'quickReplyImage', 'quickReplyVideo', 'buttons'].includes(nodeType)) {
+                  if ((config.buttons || []).some((btn: any) => btn.id === buttonId)) {
+                    hasMatchingButton = true;
+                  }
+                }
+                
+                // Check list message
+                if (nodeType === 'listMessage') {
+                  const sections = config.sections || [];
+                  for (const section of sections) {
+                    if ((section.rows || []).some((row: any) => row.id === buttonId)) {
+                      hasMatchingButton = true;
+                      break;
+                    }
+                  }
+                }
+                
+                if (hasMatchingButton) {
+                  const nodeEdges = definition.edges?.filter((e: any) => e.source === node.id) || [];
+                  targetEdge = nodeEdges.find((e: any) => e.sourceHandle === buttonId) || nodeEdges[0];
+                  if (targetEdge) {
+                    console.log(`[Bulk Webhook] Found edge from ${nodeType} node: ${JSON.stringify(targetEdge)}`);
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (!targetEdge) {
+              console.log(`[Bulk Webhook] No target edge found for button "${buttonId}"`);
+              return res.json({ success: true, message: "No target edge found" });
+            }
+            
+            // Find and execute target node
+            const targetNode = definition.nodes?.find((n: any) => n.id === targetEdge.target);
+            if (!targetNode) {
+              console.log(`[Bulk Webhook] Target node not found: ${targetEdge.target}`);
+              return res.json({ success: true, message: "Target node not found" });
+            }
+            
+            const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
+            const config = targetNode.data?.config || {};
+            
+            console.log(`[Bulk Webhook] Sending ${nodeType} message to ${phone}`);
+            
+            // Send the message using WHAPI
+            const result = await whapi.buildAndSendNodeMessage(channel, phone, nodeType, config);
+            
+            if (result.success) {
+              console.log(`[Bulk Webhook] Successfully sent ${nodeType} to ${phone}`);
+              
+              // Track sent message for ownership
+              if (result.messageId) {
+                try {
+                  await db.insert(sentMessages).values({
+                    workflowId: workflowRecord.id,
+                    messageId: result.messageId,
+                    phone,
+                    messageType: nodeType,
+                  });
+                } catch (e) {
+                  console.warn("[Bulk Webhook] Failed to track sent message:", e);
+                }
+              }
+              
+              // Log workflow execution
+              await db.insert(workflowExecutions).values({
+                workflowId: workflowRecord.id,
+                phone,
+                messageType: "button_reply",
+                triggerData: webhookPayload,
+                responsesSent: [{ nodeId: targetNode.id, nodeType, success: true }],
+                status: "SUCCESS",
+              });
+            } else {
+              console.error(`[Bulk Webhook] Failed to send ${nodeType}:`, result.error);
+            }
+            
+            return res.json({ success: true, message: "Button reply processed via workflow" });
+          }
+        }
+        
         console.error("[Bulk Webhook] Invalid webhook token");
         return res.status(401).json({ error: "Invalid webhook token" });
       }
