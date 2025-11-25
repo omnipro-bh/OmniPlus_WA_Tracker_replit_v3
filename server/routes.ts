@@ -5567,9 +5567,41 @@ export function registerRoutes(app: Express) {
           // Find the node linked to this button_id using workflow edges
           const definition = activeWorkflow.definitionJson as { nodes: any[], edges: any[] };
           
-          console.log(`[Button Reply Debug] Button ID: "${buttonId}"`);
+          console.log(`[Button Reply Debug] =============================================`);
+          console.log(`[Button Reply Debug] Workflow: ${activeWorkflow.name} (ID: ${activeWorkflow.id})`);
+          console.log(`[Button Reply Debug] Button ID received: "${buttonId}"`);
+          console.log(`[Button Reply Debug] Raw Button ID: "${rawButtonId}"`);
           console.log(`[Button Reply Debug] Total edges: ${definition.edges?.length || 0}`);
           console.log(`[Button Reply Debug] Total nodes: ${definition.nodes?.length || 0}`);
+          
+          // Log all edges with their sourceHandles for debugging
+          console.log(`[Button Reply Debug] All edges:`, JSON.stringify(definition.edges?.map((e: any) => ({
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          })), null, 2));
+          
+          // Find carousel nodes and log their button IDs
+          const carouselNodes = definition.nodes?.filter((n: any) => 
+            (n.data?.type === 'carousel' || n.data?.nodeType === 'carousel')
+          ) || [];
+          
+          console.log(`[Button Reply Debug] Carousel nodes found: ${carouselNodes.length}`);
+          carouselNodes.forEach((node: any, idx: number) => {
+            const cards = node.data?.config?.cards || [];
+            console.log(`[Button Reply Debug] Carousel ${idx + 1} (${node.id}):`, JSON.stringify({
+              nodeId: node.id,
+              cards: cards.map((card: any) => ({
+                cardId: card.id,
+                buttons: (card.buttons || []).map((btn: any) => ({
+                  id: btn.id,
+                  title: btn.title,
+                  type: btn.type,
+                }))
+              }))
+            }, null, 2));
+          });
           
           // Try to find edge by sourceHandle first (new multi-handle workflows)
           // The sourceHandle is automatically set by ReactFlow when connecting from a specific handle
@@ -5579,10 +5611,10 @@ export function registerRoutes(app: Express) {
             console.log(`[Button Reply Debug] Found edge by sourceHandle: ${JSON.stringify(targetEdge)}`);
           }
           
-          // FALLBACK: For legacy workflows without sourceHandle, check node button configs
+          // FALLBACK 1: For legacy workflows without sourceHandle, check node button configs
           // This maintains backward compatibility with existing workflows
           if (!targetEdge) {
-            console.log(`[Button Reply Debug] No edge found by sourceHandle, trying fallback...`);
+            console.log(`[Button Reply Debug] No edge found by sourceHandle, trying fallback 1 (buttons/list rows)...`);
             targetEdge = definition.edges?.find((edge: any) => {
               const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
               if (!sourceNode) return false;
@@ -5606,7 +5638,89 @@ export function registerRoutes(app: Express) {
             });
             
             if (targetEdge) {
-              console.log(`[Button Reply Debug] Found edge by fallback: ${JSON.stringify(targetEdge)}`);
+              console.log(`[Button Reply Debug] Found edge by fallback 1: ${JSON.stringify(targetEdge)}`);
+            }
+          }
+          
+          // FALLBACK 2: For carousel buttons - check carousel card buttons
+          if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by fallback 1, trying fallback 2 (carousel cards)...`);
+            
+            // Find carousel node that has a button with matching ID
+            for (const node of (definition.nodes || [])) {
+              const nodeType = node.data?.type || node.data?.nodeType;
+              if (nodeType !== 'carousel') continue;
+              
+              const cards = node.data?.config?.cards || [];
+              for (const card of cards) {
+                const matchingBtn = (card.buttons || []).find((btn: any) => btn.id === buttonId);
+                if (matchingBtn) {
+                  console.log(`[Button Reply Debug] Found matching button "${buttonId}" in carousel card "${card.id}"`);
+                  
+                  // Find edge that originates from this carousel node
+                  // Try matching by button ID in sourceHandle first
+                  targetEdge = definition.edges?.find((e: any) => 
+                    e.source === node.id && e.sourceHandle === buttonId
+                  );
+                  
+                  // If not found, try by card ID (some workflows use card ID as handle)
+                  if (!targetEdge) {
+                    targetEdge = definition.edges?.find((e: any) => 
+                      e.source === node.id && e.sourceHandle === card.id
+                    );
+                    if (targetEdge) {
+                      console.log(`[Button Reply Debug] Found edge by card ID handle: ${JSON.stringify(targetEdge)}`);
+                    }
+                  }
+                  
+                  // If still not found, just get any edge from this carousel node with a matching button title
+                  if (!targetEdge) {
+                    // Check if edge sourceHandle contains button title (some implementations use title)
+                    targetEdge = definition.edges?.find((e: any) => 
+                      e.source === node.id && e.sourceHandle?.includes(matchingBtn.title)
+                    );
+                    if (targetEdge) {
+                      console.log(`[Button Reply Debug] Found edge by button title handle: ${JSON.stringify(targetEdge)}`);
+                    }
+                  }
+                  
+                  // Last resort - if there's only one edge from this carousel, use it
+                  if (!targetEdge) {
+                    const carouselEdges = definition.edges?.filter((e: any) => e.source === node.id) || [];
+                    console.log(`[Button Reply Debug] Carousel edges from node ${node.id}: ${JSON.stringify(carouselEdges)}`);
+                    
+                    // If there are multiple edges, try matching based on edge order and button position
+                    if (carouselEdges.length > 0) {
+                      // Find button index across all cards
+                      let btnIndex = 0;
+                      let found = false;
+                      for (const c of cards) {
+                        for (const b of (c.buttons || [])) {
+                          if (b.id === buttonId) {
+                            found = true;
+                            break;
+                          }
+                          if (b.type === 'quick_reply') btnIndex++;
+                        }
+                        if (found) break;
+                      }
+                      
+                      // Use the button index to select the corresponding edge
+                      if (found && btnIndex < carouselEdges.length) {
+                        targetEdge = carouselEdges[btnIndex];
+                        console.log(`[Button Reply Debug] Using carousel edge by index ${btnIndex}: ${JSON.stringify(targetEdge)}`);
+                      }
+                    }
+                  }
+                  
+                  if (targetEdge) break;
+                }
+              }
+              if (targetEdge) break;
+            }
+            
+            if (targetEdge) {
+              console.log(`[Button Reply Debug] Found edge by fallback 2 (carousel): ${JSON.stringify(targetEdge)}`);
             }
           }
 
