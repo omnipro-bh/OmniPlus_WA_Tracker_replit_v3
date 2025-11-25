@@ -5537,25 +5537,26 @@ export function registerRoutes(app: Express) {
           const quotedId = incomingMessage.context?.quoted_id;
           
           if (quotedId) {
-            // Check if this message was sent by THIS workflow
-            const messageOwnership = await db
+            // First, check if ANY workflow owns this message
+            const anyOwnership = await db
               .select()
               .from(sentMessages)
-              .where(
-                and(
-                  eq(sentMessages.messageId, quotedId),
-                  eq(sentMessages.workflowId, activeWorkflow.id)
-                )
-              )
+              .where(eq(sentMessages.messageId, quotedId))
               .limit(1);
             
-            if (!messageOwnership || messageOwnership.length === 0) {
-              // This button click is for a DIFFERENT workflow - ignore it
-              console.log(`[Button Reply] Ignoring button click - message ${quotedId} was not sent by workflow ${activeWorkflow.id}`);
-              return res.json({ success: true, message: "Button click belongs to different workflow" });
+            if (anyOwnership && anyOwnership.length > 0) {
+              // Message is tracked - check if it belongs to THIS workflow
+              if (anyOwnership[0].workflowId !== activeWorkflow.id) {
+                // This button click is for a DIFFERENT workflow - ignore it
+                console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
+                return res.json({ success: true, message: "Button click belongs to different workflow" });
+              }
+              console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
+            } else {
+              // Message is NOT tracked (test message, old message before tracking was added)
+              // Allow all workflows to process for backward compatibility
+              console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
             }
-            
-            console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
           }
           
           // Find the node linked to this button_id using workflow edges
