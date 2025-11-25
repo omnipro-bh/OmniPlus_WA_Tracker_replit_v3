@@ -5169,10 +5169,31 @@ export function registerRoutes(app: Express) {
 
       // CRITICAL: Log the raw webhook payload for debugging
       console.log(`\n${"=".repeat(80)}`);
-      console.log(`[WEBHOOK] Received for user ${userId} at ${new Date().toISOString()}`);
-      console.log(`[WEBHOOK] Token: ${webhookToken.substring(0, 8)}...`);
-      console.log(`[WEBHOOK] Event type: ${webhookPayload.event?.type || 'unknown'}`);
-      console.log(`[WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
+      console.log(`[WORKFLOW WEBHOOK] Received for user ${userId} at ${new Date().toISOString()}`);
+      console.log(`[WORKFLOW WEBHOOK] Token: ${webhookToken.substring(0, 8)}...`);
+      console.log(`[WORKFLOW WEBHOOK] Full token: ${webhookToken}`);
+      console.log(`[WORKFLOW WEBHOOK] Event type: ${webhookPayload.event?.type || 'unknown'}`);
+      
+      // Log message details if present
+      const msg = webhookPayload.messages?.[0];
+      if (msg) {
+        console.log(`[WORKFLOW WEBHOOK] Message type: ${msg.type}`);
+        console.log(`[WORKFLOW WEBHOOK] Reply type: ${msg.reply?.type || 'none'}`);
+        console.log(`[WORKFLOW WEBHOOK] From: ${msg.from}`);
+        console.log(`[WORKFLOW WEBHOOK] Has context.quoted_id: ${!!msg.context?.quoted_id}`);
+        if (msg.reply?.type === 'buttons_reply') {
+          console.log(`[WORKFLOW WEBHOOK] CAROUSEL/BUTTON CLICK DETECTED!`);
+          console.log(`[WORKFLOW WEBHOOK] Button ID: ${msg.reply.buttons_reply?.id}`);
+          console.log(`[WORKFLOW WEBHOOK] Button title: ${msg.reply.buttons_reply?.title}`);
+        }
+        if (msg.reply?.type === 'list_reply') {
+          console.log(`[WORKFLOW WEBHOOK] LIST CLICK DETECTED!`);
+          console.log(`[WORKFLOW WEBHOOK] List ID: ${msg.reply.list_reply?.id}`);
+          console.log(`[WORKFLOW WEBHOOK] List title: ${msg.reply.list_reply?.title}`);
+        }
+      }
+      
+      console.log(`[WORKFLOW WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
       console.log(`${"=".repeat(80)}\n`);
 
       // Validate user and get workflow (active or inactive)
@@ -5188,7 +5209,21 @@ export function registerRoutes(app: Express) {
         .limit(1);
 
       if (!workflow || workflow.length === 0) {
-        console.error("Invalid webhook token");
+        // Log more details about why the token is invalid
+        console.error(`[WORKFLOW WEBHOOK] INVALID TOKEN!`);
+        console.error(`[WORKFLOW WEBHOOK] User ID: ${userId}, Token: ${webhookToken}`);
+        
+        // Check if user has ANY workflows to help debug
+        const userWorkflows = await db
+          .select({ id: workflows.id, name: workflows.name, token: workflows.webhookToken })
+          .from(workflows)
+          .where(eq(workflows.userId, parseInt(userId)));
+        
+        console.error(`[WORKFLOW WEBHOOK] User ${userId} has ${userWorkflows.length} workflows with tokens:`);
+        userWorkflows.forEach((wf, idx) => {
+          console.error(`  [${idx + 1}] Workflow "${wf.name}" (ID: ${wf.id}): ${wf.token?.substring(0, 8)}...${wf.token?.slice(-4)}`);
+        });
+        
         return res.status(401).json({ error: "Invalid webhook token" });
       }
 
@@ -6015,7 +6050,32 @@ export function registerRoutes(app: Express) {
       const { userId, bulkWebhookToken } = req.params;
       const webhookPayload = req.body;
 
-      console.log(`[Bulk Webhook] Received for user ${userId}:`, JSON.stringify(webhookPayload));
+      console.log(`\n${"=".repeat(80)}`);
+      console.log(`[BULK WEBHOOK] Received for user ${userId} at ${new Date().toISOString()}`);
+      console.log(`[BULK WEBHOOK] Token: ${bulkWebhookToken.substring(0, 8)}...`);
+      console.log(`[BULK WEBHOOK] Event type: ${webhookPayload.event?.type || 'unknown'}`);
+      
+      // Log message details if present
+      const bulkMsg = webhookPayload.messages?.[0];
+      if (bulkMsg) {
+        console.log(`[BULK WEBHOOK] Message type: ${bulkMsg.type}`);
+        console.log(`[BULK WEBHOOK] Reply type: ${bulkMsg.reply?.type || 'none'}`);
+        console.log(`[BULK WEBHOOK] From: ${bulkMsg.from}`);
+        console.log(`[BULK WEBHOOK] Has context.quoted_id: ${!!bulkMsg.context?.quoted_id}`);
+        if (bulkMsg.reply?.type === 'buttons_reply') {
+          console.log(`[BULK WEBHOOK] *** CAROUSEL/BUTTON CLICK DETECTED! ***`);
+          console.log(`[BULK WEBHOOK] Button ID: ${bulkMsg.reply.buttons_reply?.id}`);
+          console.log(`[BULK WEBHOOK] Button title: ${bulkMsg.reply.buttons_reply?.title}`);
+        }
+        if (bulkMsg.reply?.type === 'list_reply') {
+          console.log(`[BULK WEBHOOK] *** LIST CLICK DETECTED! ***`);
+          console.log(`[BULK WEBHOOK] List ID: ${bulkMsg.reply.list_reply?.id}`);
+          console.log(`[BULK WEBHOOK] List title: ${bulkMsg.reply.list_reply?.title}`);
+        }
+      }
+      
+      console.log(`[BULK WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
+      console.log(`${"=".repeat(80)}\n`);
 
       // Validate user and bulk webhook token
       const user = await db
@@ -6102,7 +6162,7 @@ export function registerRoutes(app: Express) {
               .where(
                 and(
                   eq(schema.channels.userId, workflowRecord.userId),
-                  eq(schema.channels.isActive, true)
+                  eq(schema.channels.status, "ACTIVE")
                 )
               )
               .limit(1);

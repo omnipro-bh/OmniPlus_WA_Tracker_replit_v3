@@ -1,0 +1,117 @@
+same, issue, check the below and attached
+
+Incoming Webhook Data
+{
+  "event": {
+    "type": "messages",
+    "event": "post"
+  },
+  "messages": [
+    {
+      "id": "rNjx8CWRDqrqu6B2_5NqRQ-gOUWqd0L7g",
+      "from": "97339116526",
+      "type": "reply",
+      "reply": {
+        "type": "list_reply",
+        "list_reply": {
+          "id": "ListV3:row_pba4eul2j",
+          "title": "Day 1"
+        }
+      },
+      "source": "api",
+      "chat_id": "97339116526@s.whatsapp.net",
+      "context": {
+        "quoted_id": "PsrJNd1bO1kdeSo-wCAWqd0L7g",
+        "quoted_type": "list",
+        "quoted_author": "97313300383",
+        "quoted_content": {
+          "body": "This is test",
+          "label": "Select",
+          "footer": "Bahrain Nissan Lineup",
+          "header": "Omni Plus Auto / أومني بلس للسيارات",
+          "sections": [
+            {
+              "rows": [
+                {
+                  "id": "ListV3:row_pba4eul2j",
+                  "title": "Day 1",
+                  "description": null
+                },
+                {
+                  "id": "ListV3:row_sz6q8ymjc",
+                  "title": "Day 2",
+                  "description": null
+                }
+              ],
+              "title": "Days"
+            }
+          ]
+        }
+      },
+      "from_me": false,
+      "device_id": 58,
+      "from_name": "Soon 🔙",
+      "timestamp": 1764078991
+    }
+  ],
+  "channel_id": "MANTIS-6D23Z"
+}
+
+Automated Responses (1)
+[
+  {
+    "sent": true,
+    "message": {
+      "id": "Pso1bkjJc5AixTI-wOYWqd0L7g",
+      "from": "97313300383",
+      "type": "carousel",
+      "source": "api",
+      "status": "pending",
+      "chat_id": "97339116526@s.whatsapp.net",
+      "from_me": true,
+      "carousel": {
+        "text": "This only test",
+        "cards": [
+          {
+            "image": {
+              "id": "jpeg-3eca356e48c9739022c532-c0e616a9dd0bee",
+              "width": 4608,
+              "height": 3456,
+              "sha256": "xJ8f1DKYo351PyAsxrG1M0wYcSt4wRpXceC9GxgHZRo=",
+              "preview": "data:image/jpeg;base64,/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAYACADASIAAhEBAxEB/8QAGQAAAgMBAAAAAAAAAAAAAAAAAAQCAwUB/8QAJhAAAgICAQIFBQAAAAAAAAAAAQIDEQAhEgQTBRQiMUFxkaHB8P/EABcBAAMBAAAAAAAAAAAAAAAAAAEDBAD/xAAbEQACAgMBAAAAAAAAAAAAAAAAAQIRAxMxIf/aAAwDAQACEQMRAD8Azo+hq44pU5rasbNf2spjgnl4GMhgTTb2M1HaHp+lfkiMyksWWrOKxMIGBUlR8WdHJrKEvTkfRoYHaaXjKQe3GpHqIHzkfKTSQ0qxqsfuTfIki943BPF3bDKhPtQtbPvvJHp3jcP03iBFgel0Dj8bzbEugoVnYMjIqdwla2cXcloUMihWA2OXyNVeGGEZBWyl5Y41LOyRGtWd/bKpfFJY4m7SgigOTts/QD94YYyMULySfD//2Q==",
+              "file_size": 6287777,
+              "mime_type": "image/jpeg"
+            },
+            "buttons": [
+              {
+                "id": "ButtonsV3:btn_hu6nznr7j",
+                "text": "Ask About Fruit Offers",
+                "type": "quick_reply"
+              }
+            ]
+          },
+          {
+            "image": {
+              "id": "jpeg-3eca356e48c9739022c532-c0e616a9dd0bee",
+              "width": 3264,
+              "height": 2252,
+              "sha256": "2yY+VMGdaAiGLl04M6FSR/sMaMlxbFmQDKE8eZy68BM=",
+              "preview": "data:image/jpeg;base64,/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAWACADASIAAhEBAxEB/8QAGQAAAwEBAQAAAAAAAAAAAAAAAAQFAgED/8QAKBAAAgEEAQMEAQUAAAAAAAAAAQIDAAQRIQUSIjEGE0FRFSNSgZHB/8QAGAEAAgMAAAAAAAAAAAAAAAAAAgMAAQT/xAAbEQEAAwADAQAAAAAAAAAAAAABAAISEUKBMf/aAAwDAQACEQMRAD8AY5W0tLyxcxmLQ7QjgFt+CPioScFbzFssY8KNiQaauX3pqFYUNq+yQSzsAOk/AHya8fwNssjhbv8ATCZ6nU9pGM+PqkVKBmqns0U2VTI+SgvDiAqYbyXRXIV9H7pv2b6K8zbchMluGA8Ekduc/wB6qGPTxZysPJAkEYHSw0Ro0zHw4giHvX04Z1AfDEe2f9FRtnswcr1JNfmo8sY+PiXP7nY0u3J3BwYVjgO9xg5P8kmiinxbez9WaN3fjLreSghd9x8GtRWk7JmW4cxMOpwGOTg4ooqleGCBoJ//2Q==",
+              "file_size": 2642234,
+              "mime_type": "image/jpeg"
+            },
+            "buttons": [
+              {
+                "id": "ButtonsV3:btn_f3coorfqy",
+                "text": "Ask About Salad Bar\t",
+                "type": "quick_reply"
+              }
+            ]
+          }
+        ]
+      },
+      "device_id": 65,
+      "timestamp": 1764078994
+    }
+  }
+]
