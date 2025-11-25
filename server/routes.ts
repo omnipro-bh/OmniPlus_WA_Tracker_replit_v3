@@ -5167,7 +5167,13 @@ export function registerRoutes(app: Express) {
       const { userId, webhookToken } = req.params;
       const webhookPayload = req.body;
 
-      console.log(`Webhook received for user ${userId}:`, webhookPayload);
+      // CRITICAL: Log the raw webhook payload for debugging
+      console.log(`\n${"=".repeat(80)}`);
+      console.log(`[WEBHOOK] Received for user ${userId} at ${new Date().toISOString()}`);
+      console.log(`[WEBHOOK] Token: ${webhookToken.substring(0, 8)}...`);
+      console.log(`[WEBHOOK] Event type: ${webhookPayload.event?.type || 'unknown'}`);
+      console.log(`[WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
+      console.log(`${"=".repeat(80)}\n`);
 
       // Validate user and get workflow (active or inactive)
       const workflow = await db
@@ -5721,6 +5727,81 @@ export function registerRoutes(app: Express) {
             
             if (targetEdge) {
               console.log(`[Button Reply Debug] Found edge by fallback 2 (carousel): ${JSON.stringify(targetEdge)}`);
+            }
+          }
+          
+          // FALLBACK 3: Last resort - find ANY edge from a node that could have sent this button
+          // This handles cases where sourceHandle doesn't match exactly
+          if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by fallbacks 1 & 2, trying fallback 3 (any matching interactive node)...`);
+            
+            // Find all interactive nodes (carousel, quickReply, listMessage, buttons)
+            const interactiveNodes = definition.nodes?.filter((n: any) => {
+              const nodeType = n.data?.type || n.data?.nodeType;
+              return ['carousel', 'quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons'].includes(nodeType);
+            }) || [];
+            
+            console.log(`[Button Reply Debug] Found ${interactiveNodes.length} interactive nodes`);
+            
+            for (const node of interactiveNodes) {
+              const nodeType = node.data?.type || node.data?.nodeType;
+              const config = node.data?.config || {};
+              
+              // Check if this node has a button/row with matching ID
+              let hasMatchingButton = false;
+              
+              // Check carousel cards
+              if (nodeType === 'carousel') {
+                const cards = config.cards || [];
+                for (const card of cards) {
+                  if ((card.buttons || []).some((btn: any) => btn.id === buttonId)) {
+                    hasMatchingButton = true;
+                    console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in carousel node ${node.id}`);
+                    break;
+                  }
+                }
+              }
+              
+              // Check quickReply/buttons
+              if (['quickReply', 'quickReplyImage', 'quickReplyVideo', 'buttons'].includes(nodeType)) {
+                if ((config.buttons || []).some((btn: any) => btn.id === buttonId)) {
+                  hasMatchingButton = true;
+                  console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in ${nodeType} node ${node.id}`);
+                }
+              }
+              
+              // Check listMessage sections
+              if (nodeType === 'listMessage') {
+                const sections = config.sections || [];
+                for (const section of sections) {
+                  if ((section.rows || []).some((row: any) => row.id === buttonId)) {
+                    hasMatchingButton = true;
+                    console.log(`[Button Reply Debug] Fallback 3: Found row "${buttonId}" in listMessage node ${node.id}`);
+                    break;
+                  }
+                }
+              }
+              
+              if (hasMatchingButton) {
+                // Get all edges from this node
+                const nodeEdges = definition.edges?.filter((e: any) => e.source === node.id) || [];
+                console.log(`[Button Reply Debug] Fallback 3: Node ${node.id} has ${nodeEdges.length} outgoing edges`);
+                
+                // Try to find edge with matching sourceHandle
+                targetEdge = nodeEdges.find((e: any) => e.sourceHandle === buttonId);
+                
+                if (!targetEdge && nodeEdges.length > 0) {
+                  // If no exact match, use first available edge (for simple workflows)
+                  // This assumes buttons are connected in order
+                  console.log(`[Button Reply Debug] Fallback 3: No exact sourceHandle match, using first available edge`);
+                  targetEdge = nodeEdges[0];
+                }
+                
+                if (targetEdge) {
+                  console.log(`[Button Reply Debug] Fallback 3: Using edge ${JSON.stringify(targetEdge)}`);
+                  break;
+                }
+              }
             }
           }
 
