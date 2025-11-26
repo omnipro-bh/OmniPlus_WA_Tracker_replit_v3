@@ -5573,11 +5573,20 @@ export function registerRoutes(app: Express) {
             console.log("Not first message of day, no action taken");
           }
         } else if (messageType === "button_reply") {
+          console.log(`\n[BUTTON CLICK DEBUG] =============================================`);
+          console.log(`[BUTTON CLICK DEBUG] Button click received for workflow ${activeWorkflow.id} (${activeWorkflow.name})`);
+          console.log(`[BUTTON CLICK DEBUG] Raw button ID: "${rawButtonId}"`);
+          console.log(`[BUTTON CLICK DEBUG] Extracted button ID: "${buttonId}"`);
+          console.log(`[BUTTON CLICK DEBUG] Reply type: ${incomingMessage.reply?.type}`);
+          console.log(`[BUTTON CLICK DEBUG] context.quoted_id: ${incomingMessage.context?.quoted_id || 'MISSING'}`);
+          console.log(`[BUTTON CLICK DEBUG] Full context:`, JSON.stringify(incomingMessage.context, null, 2));
+          
           // CRITICAL: Check if this button reply belongs to THIS workflow
           // Multiple workflows may have the same webhook registered in WHAPI, so we need to verify ownership
           const quotedId = incomingMessage.context?.quoted_id;
           
           if (quotedId) {
+            console.log(`[BUTTON CLICK DEBUG] Looking up quotedId "${quotedId}" in sent_messages table...`);
             try {
               // First, check if ANY workflow owns this message
               const anyOwnership = await db
@@ -5586,8 +5595,11 @@ export function registerRoutes(app: Express) {
                 .where(eq(sentMessages.messageId, quotedId))
                 .limit(1);
               
+              console.log(`[BUTTON CLICK DEBUG] sent_messages lookup result:`, JSON.stringify(anyOwnership, null, 2));
+              
               if (anyOwnership && anyOwnership.length > 0) {
                 // Message is tracked - check if it belongs to THIS workflow
+                console.log(`[BUTTON CLICK DEBUG] Found ownership record: workflowId=${anyOwnership[0].workflowId}, messageType=${anyOwnership[0].messageType}`);
                 if (anyOwnership[0].workflowId !== activeWorkflow.id) {
                   // This button click is for a DIFFERENT workflow - ignore it
                   console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
@@ -5597,12 +5609,15 @@ export function registerRoutes(app: Express) {
               } else {
                 // Message is NOT tracked (test message, old message before tracking was added)
                 // Allow all workflows to process for backward compatibility
+                console.log(`[BUTTON CLICK DEBUG] No record found in sent_messages for quotedId "${quotedId}"`);
                 console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
               }
             } catch (ownershipError: any) {
               // If sent_messages table doesn't exist or query fails, allow processing (backward compatible)
               console.warn(`[Button Reply] Ownership check failed (table may not exist): ${ownershipError.message} - allowing processing for backward compatibility`);
             }
+          } else {
+            console.log(`[BUTTON CLICK DEBUG] No context.quoted_id in the webhook - cannot verify ownership`);
           }
           
           // Find the node linked to this button_id using workflow edges
@@ -6925,6 +6940,8 @@ export function registerRoutes(app: Express) {
 
     // Carousel
     else if (nodeType === 'carousel') {
+      console.log(`[CAROUSEL DEBUG] Sending carousel to ${phone} for workflow ${workflowId}`);
+      
       const response = await sendCarouselMessage(channelToken, {
         to: phone,
         body: { text: config.bodyText || 'Check out our offerings!' },
@@ -6950,8 +6967,23 @@ export function registerRoutes(app: Express) {
         })),
       });
       
+      // DEBUG: Log the full WHAPI response to see what ID field is available
+      console.log(`[CAROUSEL DEBUG] WHAPI response:`, JSON.stringify(response, null, 2));
+      console.log(`[CAROUSEL DEBUG] response.id = ${response?.id}`);
+      console.log(`[CAROUSEL DEBUG] response.message_id = ${(response as any)?.message_id}`);
+      console.log(`[CAROUSEL DEBUG] response.sent?.id = ${(response as any)?.sent?.id}`);
+      
       // Track sent message for button click routing
-      await trackSentMessage(workflowId, response?.id, phone, 'carousel');
+      // Try multiple possible ID fields from WHAPI response
+      const messageId = response?.id || (response as any)?.message_id || (response as any)?.sent?.id || (response as any)?.sent?.message_id;
+      console.log(`[CAROUSEL DEBUG] Final messageId to track: ${messageId}`);
+      
+      if (messageId) {
+        await trackSentMessage(workflowId, messageId, phone, 'carousel');
+        console.log(`[CAROUSEL DEBUG] Tracked carousel message ${messageId} for workflow ${workflowId}`);
+      } else {
+        console.error(`[CAROUSEL DEBUG] WARNING: No message ID found in WHAPI response - button clicks won't be routed!`);
+      }
       
       return response;
     }
