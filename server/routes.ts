@@ -2080,7 +2080,7 @@ export function registerRoutes(app: Express) {
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] image_buttons with media at root for ${message.to}`);
+              console.log(`[Bulk Send] image_buttons payload:`, JSON.stringify(imgPayload, null, 2));
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, imgPayload);
               break;
             }
@@ -2095,7 +2095,7 @@ export function registerRoutes(app: Express) {
                 footer: message.footer ? { text: message.footer } : undefined,
                 action: { buttons },
               };
-              console.log(`[Bulk Send] video_buttons with media at root for ${message.to}`);
+              console.log(`[Bulk Send] video_buttons payload:`, JSON.stringify(vidPayload, null, 2));
               result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, vidPayload);
               break;
             }
@@ -2115,14 +2115,18 @@ export function registerRoutes(app: Express) {
               // Send text with buttons or simple text
               if (buttons.length > 0) {
                 // Send interactive message with buttons
-                result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, {
+                const txtButtonPayload = {
                   to: message.to,
                   type: "button",
                   header: message.header ? { text: message.header } : undefined,
                   body: { text: message.body || "No message" },
                   footer: message.footer ? { text: message.footer } : undefined,
                   action: { buttons },
-                });
+                };
+                console.log(`[Bulk Send] text_buttons payload for ${message.to}:`, JSON.stringify(txtButtonPayload, null, 2));
+                console.log(`[Bulk Send] Buttons array type:`, Array.isArray(buttons), `length: ${buttons.length}`);
+                console.log(`[Bulk Send] First button:`, buttons[0] ? JSON.stringify(buttons[0]) : "NO BUTTONS");
+                result = await whapi.sendInteractiveMessage(channel.whapiChannelToken, txtButtonPayload);
               } else {
                 // Send simple text message
                 result = await whapi.sendTextMessage(channel.whapiChannelToken, {

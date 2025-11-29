@@ -4414,7 +4414,7 @@ function registerRoutes(app2) {
                 footer: message.footer ? { text: message.footer } : void 0,
                 action: { buttons }
               };
-              console.log(`[Bulk Send] image_buttons with media at root for ${message.to}`);
+              console.log(`[Bulk Send] image_buttons payload:`, JSON.stringify(imgPayload, null, 2));
               result = await sendInteractiveMessage(channel.whapiChannelToken, imgPayload);
               break;
             }
@@ -4428,7 +4428,7 @@ function registerRoutes(app2) {
                 footer: message.footer ? { text: message.footer } : void 0,
                 action: { buttons }
               };
-              console.log(`[Bulk Send] video_buttons with media at root for ${message.to}`);
+              console.log(`[Bulk Send] video_buttons payload:`, JSON.stringify(vidPayload, null, 2));
               result = await sendInteractiveMessage(channel.whapiChannelToken, vidPayload);
               break;
             }
@@ -4443,14 +4443,18 @@ function registerRoutes(app2) {
             case "text_buttons":
             default:
               if (buttons.length > 0) {
-                result = await sendInteractiveMessage(channel.whapiChannelToken, {
+                const txtButtonPayload = {
                   to: message.to,
                   type: "button",
                   header: message.header ? { text: message.header } : void 0,
                   body: { text: message.body || "No message" },
                   footer: message.footer ? { text: message.footer } : void 0,
                   action: { buttons }
-                });
+                };
+                console.log(`[Bulk Send] text_buttons payload for ${message.to}:`, JSON.stringify(txtButtonPayload, null, 2));
+                console.log(`[Bulk Send] Buttons array type:`, Array.isArray(buttons), `length: ${buttons.length}`);
+                console.log(`[Bulk Send] First button:`, buttons[0] ? JSON.stringify(buttons[0]) : "NO BUTTONS");
+                result = await sendInteractiveMessage(channel.whapiChannelToken, txtButtonPayload);
               } else {
                 result = await sendTextMessage(channel.whapiChannelToken, {
                   to: message.to,
