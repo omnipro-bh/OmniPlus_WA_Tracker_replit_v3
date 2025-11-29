@@ -22,6 +22,7 @@ __export(schema_exports, {
   bulkLogLevelEnum: () => bulkLogLevelEnum,
   bulkLogs: () => bulkLogs,
   bulkLogsRelations: () => bulkLogsRelations,
+  buttonSchema: () => buttonSchema,
   channelDaysLedger: () => channelDaysLedger,
   channelDaysLedgerRelations: () => channelDaysLedgerRelations,
   channelDaysSourceEnum: () => channelDaysSourceEnum,
@@ -56,6 +57,7 @@ __export(schema_exports, {
   insertPlanRequestSchema: () => insertPlanRequestSchema,
   insertPlanSchema: () => insertPlanSchema,
   insertSettingSchema: () => insertSettingSchema,
+  insertSubscriberSchema: () => insertSubscriberSchema,
   insertSubscriptionSchema: () => insertSubscriptionSchema,
   insertTemplateSchema: () => insertTemplateSchema,
   insertTermsDocumentSchema: () => insertTermsDocumentSchema,
@@ -79,8 +81,10 @@ __export(schema_exports, {
   messages: () => messages,
   messagesRelations: () => messagesRelations,
   offlinePaymentStatusEnum: () => offlinePaymentStatusEnum,
+  offlinePaymentTypeEnum: () => offlinePaymentTypeEnum,
   offlinePayments: () => offlinePayments,
   offlinePaymentsRelations: () => offlinePaymentsRelations,
+  outgoingMessageTypeEnum: () => outgoingMessageTypeEnum,
   phonebookContacts: () => phonebookContacts,
   phonebookContactsRelations: () => phonebookContactsRelations,
   phonebooks: () => phonebooks,
@@ -92,7 +96,12 @@ __export(schema_exports, {
   plans: () => plans,
   plansRelations: () => plansRelations,
   requestTypeEnum: () => requestTypeEnum,
+  sentMessages: () => sentMessages,
+  sentMessagesRelations: () => sentMessagesRelations,
   settings: () => settings,
+  subscriberStatusEnum: () => subscriberStatusEnum,
+  subscribers: () => subscribers,
+  subscribersRelations: () => subscribersRelations,
   subscriptionStatusEnum: () => subscriptionStatusEnum,
   subscriptions: () => subscriptions,
   subscriptionsRelations: () => subscriptionsRelations,
@@ -118,7 +127,7 @@ import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uni
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-var userRoleEnum, userStatusEnum, channelStatusEnum, authStatusEnum, subscriptionStatusEnum, durationTypeEnum, billingPeriodEnum, requestTypeEnum, offlinePaymentStatusEnum, jobTypeEnum, jobStatusEnum, messageStatusEnum, balanceTransactionTypeEnum, channelDaysSourceEnum, workflowExecutionStatusEnum, incomingMessageTypeEnum, lastReplyTypeEnum, planRequestStatusEnum, bulkLogLevelEnum, bulkLogCategoryEnum, planTypeEnum, couponStatusEnum, ledgerTransactionTypeEnum, users, usersRelations, plans, plansRelations, coupons, subscriptions, subscriptionsRelations, offlinePayments, offlinePaymentsRelations, planRequests, planRequestsRelations, userCustomPlans, userCustomPlansRelations, termsDocuments, ledger, ledgerRelations, webhookEvents, couponsRelations, channels, channelsRelations, templates, templatesRelations, jobs, jobsRelations, messages, messagesRelations, workflows, workflowsRelations, conversationStates, firstMessageFlags, conversationStatesRelations, workflowExecutions, workflowExecutionsRelations, auditLogs, auditLogsRelations, bulkLogs, bulkLogsRelations, settings, balanceTransactions, channelDaysLedger, balanceTransactionsRelations, channelDaysLedgerRelations, useCases, homepageFeatures, phonebooks, phonebooksRelations, phonebookContacts, phonebookContactsRelations, mediaUploads, mediaUploadsRelations, insertUserSchema, insertPlanSchema, insertSubscriptionSchema, insertOfflinePaymentSchema, insertPlanRequestSchema, insertChannelSchema, insertTemplateSchema, insertJobSchema, insertMessageSchema, insertWorkflowSchema, insertAuditLogSchema, insertSettingSchema, insertBalanceTransactionSchema, insertChannelDaysLedgerSchema, insertConversationStateSchema, insertFirstMessageFlagSchema, insertWorkflowExecutionSchema, insertBulkLogSchema, insertCouponSchema, insertUserCustomPlanSchema, insertTermsDocumentSchema, insertLedgerSchema, insertWebhookEventSchema, insertUseCaseSchema, insertHomepageFeatureSchema, insertPhonebookSchema, insertPhonebookContactSchema, insertMediaUploadSchema;
+var userRoleEnum, userStatusEnum, channelStatusEnum, authStatusEnum, subscriptionStatusEnum, durationTypeEnum, billingPeriodEnum, requestTypeEnum, offlinePaymentStatusEnum, offlinePaymentTypeEnum, jobTypeEnum, jobStatusEnum, messageStatusEnum, balanceTransactionTypeEnum, channelDaysSourceEnum, workflowExecutionStatusEnum, incomingMessageTypeEnum, lastReplyTypeEnum, planRequestStatusEnum, bulkLogLevelEnum, bulkLogCategoryEnum, planTypeEnum, couponStatusEnum, ledgerTransactionTypeEnum, outgoingMessageTypeEnum, subscriberStatusEnum, users, usersRelations, plans, plansRelations, coupons, subscriptions, subscriptionsRelations, offlinePayments, offlinePaymentsRelations, planRequests, planRequestsRelations, userCustomPlans, userCustomPlansRelations, termsDocuments, ledger, ledgerRelations, webhookEvents, couponsRelations, channels, channelsRelations, templates, templatesRelations, jobs, jobsRelations, messages, messagesRelations, workflows, workflowsRelations, sentMessages, sentMessagesRelations, conversationStates, firstMessageFlags, conversationStatesRelations, workflowExecutions, workflowExecutionsRelations, auditLogs, auditLogsRelations, bulkLogs, bulkLogsRelations, settings, balanceTransactions, channelDaysLedger, balanceTransactionsRelations, channelDaysLedgerRelations, useCases, homepageFeatures, phonebooks, phonebooksRelations, phonebookContacts, phonebookContactsRelations, mediaUploads, mediaUploadsRelations, subscribers, subscribersRelations, insertUserSchema, insertPlanSchema, insertSubscriptionSchema, insertOfflinePaymentSchema, insertPlanRequestSchema, insertChannelSchema, buttonSchema, insertTemplateSchema, insertJobSchema, insertMessageSchema, insertWorkflowSchema, insertAuditLogSchema, insertSettingSchema, insertBalanceTransactionSchema, insertChannelDaysLedgerSchema, insertConversationStateSchema, insertFirstMessageFlagSchema, insertWorkflowExecutionSchema, insertBulkLogSchema, insertCouponSchema, insertUserCustomPlanSchema, insertTermsDocumentSchema, insertLedgerSchema, insertWebhookEventSchema, insertUseCaseSchema, insertHomepageFeatureSchema, insertPhonebookSchema, insertPhonebookContactSchema, insertMediaUploadSchema, insertSubscriberSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -131,6 +140,7 @@ var init_schema = __esm({
     billingPeriodEnum = pgEnum("billing_period", ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
     requestTypeEnum = pgEnum("request_type", ["PAID", "REQUEST_QUOTE", "BOOK_DEMO"]);
     offlinePaymentStatusEnum = pgEnum("offline_payment_status", ["PENDING", "APPROVED", "REJECTED"]);
+    offlinePaymentTypeEnum = pgEnum("offline_payment_type", ["OFFLINE_PAYMENT", "FREE_TRIAL"]);
     jobTypeEnum = pgEnum("job_type", ["SINGLE", "BULK"]);
     jobStatusEnum = pgEnum("job_status", ["QUEUED", "PROCESSING", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "PARTIAL", "COMPLETED"]);
     messageStatusEnum = pgEnum("message_status", ["QUEUED", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "REPLIED"]);
@@ -145,6 +155,8 @@ var init_schema = __esm({
     planTypeEnum = pgEnum("plan_type", ["PUBLIC", "CUSTOM"]);
     couponStatusEnum = pgEnum("coupon_status", ["ACTIVE", "EXPIRED", "DISABLED"]);
     ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAYMENT_IN", "PAYMENT_IN_OFFLINE", "DAYS_GRANTED", "DAYS_REFUND", "ADJUSTMENT"]);
+    outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
+    subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
     users = pgTable("users", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       name: text("name").notNull(),
@@ -171,7 +183,8 @@ var init_schema = __esm({
       offlinePayments: many(offlinePayments),
       auditLogs: many(auditLogs),
       phonebooks: many(phonebooks),
-      mediaUploads: many(mediaUploads)
+      mediaUploads: many(mediaUploads),
+      subscribers: many(subscribers)
     }));
     plans = pgTable("plans", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -179,8 +192,13 @@ var init_schema = __esm({
       // PUBLIC or CUSTOM
       name: text("name").notNull(),
       currency: text("currency").notNull().default("USD"),
+      // PayPal currency (always USD)
       price: integer("price"),
-      // Price in cents, nullable for Quote/Demo/Custom
+      // PayPal price in cents (USD), nullable for Quote/Demo/Custom
+      displayCurrency: text("display_currency"),
+      // Currency to display on pricing page (e.g., "BHD")
+      displayPrice: integer("display_price"),
+      // Price to display on pricing page in cents (e.g., BHD)
       billingPeriod: billingPeriodEnum("billing_period").notNull().default("MONTHLY"),
       requestType: requestTypeEnum("request_type").notNull().default("PAID"),
       paypalPlanId: text("paypal_plan_id"),
@@ -213,7 +231,6 @@ var init_schema = __esm({
         dashboard: true,
         channels: false,
         send: false,
-        bulk: false,
         templates: false,
         workflows: false,
         chatbot: false,
@@ -223,7 +240,8 @@ var init_schema = __esm({
         pricing: true,
         balances: false,
         whapiSettings: false,
-        phonebooks: false
+        phonebooks: false,
+        subscribers: false
       }),
       features: jsonb("features").notNull().default([]),
       // Array of feature strings
@@ -240,6 +258,10 @@ var init_schema = __esm({
       // Show POPULAR badge
       safetyMeterEnabled: boolean("safety_meter_enabled").notNull().default(false),
       // Enable WhatsApp Safety Meter feature
+      freeTrialEnabled: boolean("free_trial_enabled").notNull().default(false),
+      // Enable free trial option
+      freeTrialDays: integer("free_trial_days").notNull().default(7),
+      // Number of days for free trial
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     });
@@ -327,6 +349,8 @@ var init_schema = __esm({
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
       planId: integer("plan_id").notNull().references(() => plans.id, { onDelete: "restrict" }),
+      type: offlinePaymentTypeEnum("type").notNull().default("OFFLINE_PAYMENT"),
+      // OFFLINE_PAYMENT or FREE_TRIAL
       amount: integer("amount").notNull(),
       // Amount in cents
       currency: text("currency").notNull().default("USD"),
@@ -509,11 +533,13 @@ var init_schema = __esm({
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
       title: text("title").notNull(),
+      messageType: outgoingMessageTypeEnum("message_type").notNull().default("text_buttons"),
       header: text("header"),
       body: text("body").notNull(),
       footer: text("footer"),
-      buttons: text("buttons").array().notNull().default([]),
-      // Array of button texts
+      buttons: jsonb("buttons").notNull().default([]),
+      // Array of button objects: [{ text, type, value, id }]
+      mediaUploadId: integer("media_upload_id").references(() => mediaUploads.id, { onDelete: "set null" }),
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     });
@@ -521,6 +547,10 @@ var init_schema = __esm({
       user: one(users, {
         fields: [templates.userId],
         references: [users.id]
+      }),
+      mediaUpload: one(mediaUploads, {
+        fields: [templates.mediaUploadId],
+        references: [mediaUploads.id]
       })
     }));
     jobs = pgTable("jobs", {
@@ -614,7 +644,29 @@ var init_schema = __esm({
         fields: [workflows.userId],
         references: [users.id]
       }),
-      executions: many(workflowExecutions)
+      executions: many(workflowExecutions),
+      sentMessages: many(sentMessages)
+    }));
+    sentMessages = pgTable("sent_messages", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+      messageId: text("message_id").notNull(),
+      // WHAPI message ID
+      phone: text("phone").notNull(),
+      // Recipient phone number
+      messageType: text("message_type").notNull(),
+      // "carousel", "buttons", "list", etc.
+      sentAt: timestamp("sent_at").notNull().defaultNow(),
+      expiresAt: timestamp("expires_at").notNull().default(sql`NOW() + INTERVAL '24 hours'`)
+      // Auto-cleanup after 24h
+    }, (table) => ({
+      messageIdIdx: uniqueIndex("sent_messages_message_id_idx").on(table.messageId)
+    }));
+    sentMessagesRelations = relations(sentMessages, ({ one }) => ({
+      workflow: one(workflows, {
+        fields: [sentMessages.workflowId],
+        references: [workflows.id]
+      })
     }));
     conversationStates = pgTable("conversation_states", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -626,6 +678,8 @@ var init_schema = __esm({
       // For "first message of day" check
       currentNodeId: text("current_node_id"),
       // Track where in the flow
+      context: jsonb("context").notNull().default({}),
+      // Stores all workflow variables including HTTP node results
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     }, (table) => ({
@@ -773,8 +827,8 @@ var init_schema = __esm({
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       title: text("title").notNull(),
       description: text("description").notNull(),
-      image: text("image"),
-      // URL or path to image
+      images: text("images").array().notNull().default(sql`'{}'`),
+      // Array of image URLs for carousel
       sortOrder: integer("sort_order").notNull().default(0),
       published: boolean("published").notNull().default(true),
       createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -868,6 +922,30 @@ var init_schema = __esm({
         references: [users.id]
       })
     }));
+    subscribers = pgTable("subscribers", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      // Subscriber Info
+      phone: varchar("phone", { length: 50 }).notNull(),
+      name: varchar("name", { length: 255 }).notNull().default(""),
+      // Subscriber name (can be edited)
+      // Status
+      status: subscriberStatusEnum("status").notNull().default("subscribed"),
+      // Timestamps
+      subscribedAt: timestamp("subscribed_at"),
+      unsubscribedAt: timestamp("unsubscribed_at"),
+      lastUpdated: timestamp("last_updated").notNull().defaultNow(),
+      createdAt: timestamp("created_at").notNull().defaultNow()
+    }, (table) => ({
+      // Unique constraint: one subscriber record per user per phone
+      uniqueUserPhone: uniqueIndex("unique_user_phone_subscribers").on(table.userId, table.phone)
+    }));
+    subscribersRelations = relations(subscribers, ({ one }) => ({
+      user: one(users, {
+        fields: [subscribers.userId],
+        references: [users.id]
+      })
+    }));
     insertUserSchema = createInsertSchema(users, {
       email: z.string().email(),
       name: z.string().min(1),
@@ -891,9 +969,29 @@ var init_schema = __esm({
       label: z.string().min(1),
       phone: z.string().min(1)
     });
+    buttonSchema = z.object({
+      text: z.string().min(1),
+      type: z.enum(["quick_reply", "url", "call"]),
+      value: z.string().nullable().optional(),
+      // URL or phone number for url/call buttons
+      id: z.string().optional()
+      // ID for quick_reply buttons
+    }).refine((data) => {
+      if (data.type === "quick_reply" && !data.id) {
+        return false;
+      }
+      if ((data.type === "url" || data.type === "call") && !data.value) {
+        return false;
+      }
+      return true;
+    }, {
+      message: "Button validation failed: quick_reply requires id, url/call requires value"
+    });
     insertTemplateSchema = createInsertSchema(templates, {
       title: z.string().min(1),
-      body: z.string().min(1)
+      body: z.string().min(1),
+      buttons: z.array(buttonSchema).default([]),
+      messageType: z.enum(["text", "text_buttons", "image_buttons", "video_buttons", "document"]).optional()
     });
     insertJobSchema = createInsertSchema(jobs);
     insertMessageSchema = createInsertSchema(messages, {
@@ -958,8 +1056,18 @@ var init_schema = __esm({
     });
     insertUseCaseSchema = createInsertSchema(useCases, {
       title: z.string().min(1),
-      description: z.string().min(1)
-    });
+      description: z.string().min(1),
+      images: z.array(
+        z.string().refine((val) => {
+          if (val === "") return true;
+          if (val.startsWith("/uploads/")) return true;
+          return z.string().url().safeParse(val).success;
+        }, { message: "Must be a valid URL or file path" })
+      ).min(1, "At least one image is required")
+    }).refine(
+      (data) => data.images.some((url) => url !== ""),
+      { message: "At least one image is required", path: ["images"] }
+    );
     insertHomepageFeatureSchema = createInsertSchema(homepageFeatures, {
       title: z.string().min(1),
       description: z.string().min(1)
@@ -975,6 +1083,11 @@ var init_schema = __esm({
     insertMediaUploadSchema = createInsertSchema(mediaUploads, {
       whapiMediaId: z.string().min(1),
       fileType: z.enum(["image", "video", "document"])
+    });
+    insertSubscriberSchema = createInsertSchema(subscribers, {
+      phone: z.string().min(1, "Phone number is required"),
+      name: z.string().default(""),
+      status: z.enum(["subscribed", "unsubscribed"]).optional()
     });
   }
 });
@@ -1000,6 +1113,11 @@ var init_db = __esm({
 });
 
 // server/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  DatabaseStorage: () => DatabaseStorage,
+  storage: () => storage
+});
 import { eq, and, desc, sql as sql2, like } from "drizzle-orm";
 var DatabaseStorage, storage;
 var init_storage = __esm({
@@ -1503,6 +1621,72 @@ var init_storage = __esm({
         const [upload] = await db.select().from(mediaUploads).where(eq(mediaUploads.id, id));
         return upload || void 0;
       }
+      // Subscribers
+      async getSubscribersForUser(userId, filters) {
+        const conditions = [eq(subscribers.userId, userId)];
+        if (filters?.status) {
+          conditions.push(eq(subscribers.status, filters.status));
+        }
+        const [{ count }] = await db.select({ count: sql2`count(*)::int` }).from(subscribers).where(and(...conditions));
+        const total = count || 0;
+        const page = filters?.page || 1;
+        const pageSize = Math.min(filters?.pageSize || 20, 100);
+        const offset = (page - 1) * pageSize;
+        const subscribers2 = await db.select().from(subscribers).where(and(...conditions)).orderBy(desc(subscribers.lastUpdated)).limit(pageSize).offset(offset);
+        return { subscribers: subscribers2, total };
+      }
+      async getSubscriber(id) {
+        const [subscriber] = await db.select().from(subscribers).where(eq(subscribers.id, id));
+        return subscriber || void 0;
+      }
+      async upsertSubscriber(data) {
+        const [existing] = await db.select().from(subscribers).where(
+          and(
+            eq(subscribers.userId, data.userId),
+            eq(subscribers.phone, data.phone)
+          )
+        );
+        const now = /* @__PURE__ */ new Date();
+        if (existing) {
+          const updateData = {
+            status: data.status,
+            lastUpdated: now
+          };
+          if (data.name !== void 0) {
+            updateData.name = data.name;
+          }
+          if (data.status === "subscribed") {
+            updateData.subscribedAt = now;
+            updateData.unsubscribedAt = null;
+          } else if (data.status === "unsubscribed") {
+            updateData.unsubscribedAt = now;
+          }
+          const [updated] = await db.update(subscribers).set(updateData).where(eq(subscribers.id, existing.id)).returning();
+          return updated;
+        } else {
+          const insertData = {
+            userId: data.userId,
+            phone: data.phone,
+            name: data.name || "",
+            status: data.status,
+            lastUpdated: now
+          };
+          if (data.status === "subscribed") {
+            insertData.subscribedAt = now;
+          } else if (data.status === "unsubscribed") {
+            insertData.unsubscribedAt = now;
+          }
+          const [created] = await db.insert(subscribers).values(insertData).returning();
+          return created;
+        }
+      }
+      async updateSubscriber(id, data) {
+        const [subscriber] = await db.update(subscribers).set({ ...data, lastUpdated: /* @__PURE__ */ new Date() }).where(eq(subscribers.id, id)).returning();
+        return subscriber || void 0;
+      }
+      async deleteSubscriber(id) {
+        await db.delete(subscribers).where(eq(subscribers.id, id));
+      }
     };
     storage = new DatabaseStorage();
   }
@@ -1718,8 +1902,21 @@ async function sendInteractiveMessage(channelToken, payload) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    console.error(`[WHAPI] sendInteractiveMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData,
+      errorMessage: errorData?.error || errorData?.message || errorData?.rawError
+    });
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI error");
   }
   return await response.json();
 }
@@ -1735,8 +1932,20 @@ async function sendCarouselMessage(channelToken, payload) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI carousel send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    console.error(`[WHAPI] sendCarouselMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData
+    });
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI carousel send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI carousel error");
   }
   return await response.json();
 }
@@ -1752,8 +1961,20 @@ async function sendTextMessage(channelToken, payload) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI text send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    console.error(`[WHAPI] sendTextMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData
+    });
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI text send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI text error");
   }
   return await response.json();
 }
@@ -1787,10 +2008,21 @@ async function sendMediaMessage(channelToken, payload) {
     body: JSON.stringify(mediaPayload)
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error("WHAPI media send error:", JSON.stringify(errorData, null, 2));
-    const errorMessage = typeof errorData?.error === "string" ? errorData.error : JSON.stringify(errorData?.error || errorData);
-    throw new Error(errorMessage || `WHAPI media send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    console.error(`[WHAPI] sendMediaMessage failed:`, {
+      status: response.status,
+      mediaType: whapiMediaType,
+      errorText: errorText.substring(0, 500),
+      errorData
+    });
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI media send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI media error");
   }
   return await response.json();
 }
@@ -1806,8 +2038,20 @@ async function sendLocationMessage(channelToken, payload) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI location send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    console.error(`[WHAPI] sendLocationMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData
+    });
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI location send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI location error");
   }
   return await response.json();
 }
@@ -1982,6 +2226,226 @@ var init_whapi = __esm({
   }
 });
 
+// server/workflows/httpExecutor.ts
+var httpExecutor_exports = {};
+__export(httpExecutor_exports, {
+  performHttpRequest: () => performHttpRequest,
+  resolveTemplate: () => resolveTemplate
+});
+function resolveTemplate(template, context) {
+  if (!template) return "";
+  return template.replace(/\{\{([^}]+)\}\}/g, (match, path6) => {
+    const trimmedPath = path6.trim();
+    const value = getNestedValue(context, trimmedPath);
+    return value !== void 0 && value !== null ? String(value) : "";
+  });
+}
+function getNestedValue(obj, path6) {
+  if (!path6) return obj;
+  const parts = path6.split(".");
+  let current = obj;
+  for (const part of parts) {
+    const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
+    if (arrayMatch) {
+      const key = arrayMatch[1];
+      const index = parseInt(arrayMatch[2]);
+      current = current?.[key]?.[index];
+    } else {
+      current = current?.[part];
+    }
+    if (current === void 0 || current === null) {
+      return void 0;
+    }
+  }
+  return current;
+}
+function validateUrl(urlString, allowedDomains) {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== "https:") {
+      throw new Error("Only HTTPS URLs are allowed for security. Please use https:// instead of http://");
+    }
+    if (allowedDomains.length === 0) {
+      throw new Error("HTTP Request nodes are disabled. Admin must configure allowed domains in Admin \u2192 Settings \u2192 HTTP Request Allowlist before using this feature.");
+    }
+    const hostname = url.hostname.toLowerCase();
+    const isAllowed = allowedDomains.some((domain) => {
+      const normalizedDomain = domain.toLowerCase().trim();
+      return hostname === normalizedDomain || hostname.endsWith("." + normalizedDomain);
+    });
+    if (!isAllowed) {
+      throw new Error(`Domain "${hostname}" is not in the allowlist. Allowed domains: ${allowedDomains.join(", ")}`);
+    }
+  } catch (error) {
+    if (error.message.includes("Invalid URL")) {
+      throw new Error("Invalid URL format. Please check the URL syntax.");
+    }
+    throw error;
+  }
+}
+function extractMappedVariables(data, responseMapping) {
+  const variables = {};
+  if (!responseMapping || responseMapping.length === 0) {
+    return variables;
+  }
+  for (const mapping of responseMapping) {
+    if (!mapping.jsonPath || !mapping.variableName) continue;
+    try {
+      const value = getNestedValue(data, mapping.jsonPath);
+      if (value !== void 0 && value !== null) {
+        variables[mapping.variableName] = value;
+      }
+    } catch {
+    }
+  }
+  return variables;
+}
+async function loadAllowedDomains() {
+  try {
+    const { storage: storage2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    const setting = await storage2.getSetting("http_allowed_domains");
+    return setting?.value ? JSON.parse(setting.value) : [];
+  } catch (error) {
+    console.error("[HTTP Executor] Failed to load allowed domains:", error);
+    return [];
+  }
+}
+async function performHttpRequest(config, context) {
+  const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+  const DEFAULT_TIMEOUT = 1e4;
+  try {
+    const allowedDomains = await loadAllowedDomains();
+    const resolvedUrl = resolveTemplate(config.url, context);
+    validateUrl(resolvedUrl, allowedDomains);
+    const url = new URL(resolvedUrl);
+    if (config.queryParams) {
+      for (const param of config.queryParams) {
+        if (param.name && param.value) {
+          const resolvedValue = resolveTemplate(param.value, context);
+          url.searchParams.append(param.name, resolvedValue);
+        }
+      }
+    }
+    const headers = {
+      "User-Agent": "OmniPlus-Workflow/1.0"
+    };
+    if (config.authType === "bearer" && config.bearerToken) {
+      const resolvedToken = resolveTemplate(config.bearerToken, context);
+      headers["Authorization"] = `Bearer ${resolvedToken}`;
+    } else if (config.authType === "basic" && config.basicUsername && config.basicPassword) {
+      const resolvedUsername = resolveTemplate(config.basicUsername, context);
+      const resolvedPassword = resolveTemplate(config.basicPassword, context);
+      const credentials = Buffer.from(`${resolvedUsername}:${resolvedPassword}`).toString("base64");
+      headers["Authorization"] = `Basic ${credentials}`;
+    }
+    if (config.headers) {
+      for (const header of config.headers) {
+        if (header.name && header.value) {
+          const resolvedValue = resolveTemplate(header.value, context);
+          headers[header.name] = resolvedValue;
+        }
+      }
+    }
+    let body;
+    if (config.body && ["POST", "PUT", "PATCH"].includes(config.method)) {
+      const resolvedBody = resolveTemplate(config.body, context);
+      if (config.bodyContentType === "json") {
+        headers["Content-Type"] = "application/json";
+        try {
+          JSON.parse(resolvedBody);
+          body = resolvedBody;
+        } catch {
+          throw new Error("Request body is not valid JSON");
+        }
+      } else {
+        headers["Content-Type"] = "application/x-www-form-urlencoded";
+        body = resolvedBody;
+      }
+    }
+    const timeout = typeof config.timeout === "string" ? parseInt(config.timeout) : config.timeout || DEFAULT_TIMEOUT;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url.toString(), {
+        method: config.method,
+        headers,
+        body,
+        redirect: "manual",
+        // CRITICAL: Disable redirects for security
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (response.status >= 300 && response.status < 400) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: "HTTP redirects are not supported for security reasons. Please use the final URL directly."
+        };
+      }
+      const contentLength = response.headers.get("content-length");
+      if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: `Response size (${contentLength} bytes) exceeds 5MB limit`
+        };
+      }
+      const rawResponse = await response.text();
+      if (rawResponse.length > MAX_RESPONSE_SIZE) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: `Response size (${rawResponse.length} bytes) exceeds 5MB limit`
+        };
+      }
+      let data;
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        try {
+          data = JSON.parse(rawResponse);
+        } catch {
+          data = rawResponse;
+        }
+      } else {
+        data = rawResponse;
+      }
+      const mappedVariables = extractMappedVariables(data, config.responseMapping);
+      const success = response.status >= 200 && response.status < 300;
+      return {
+        success,
+        status: response.status,
+        statusText: response.statusText,
+        data,
+        mappedVariables,
+        rawResponse
+      };
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === "AbortError") {
+        return {
+          success: false,
+          error: `Request timeout after ${timeout}ms`
+        };
+      }
+      throw fetchError;
+    }
+  } catch (error) {
+    console.error("[HTTP Executor] Request failed:", error);
+    return {
+      success: false,
+      error: error.message || "HTTP request failed"
+    };
+  }
+}
+var init_httpExecutor = __esm({
+  "server/workflows/httpExecutor.ts"() {
+    "use strict";
+  }
+});
+
 // server/index.ts
 import "dotenv/config";
 import express2 from "express";
@@ -2006,8 +2470,12 @@ async function hashPassword(password) {
 async function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
-function generateToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
+function generateToken(userId, impersonatedUserId) {
+  const payload = { userId };
+  if (impersonatedUserId) {
+    payload.impersonatedUserId = impersonatedUserId;
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 function verifyToken(token) {
   try {
@@ -2025,19 +2493,39 @@ async function requireAuth(req, res, next) {
   if (!payload) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
-  const user = await storage.getUser(payload.userId);
-  if (!user) {
+  const authenticatedUser = await storage.getUser(payload.userId);
+  if (!authenticatedUser) {
     return res.status(401).json({ error: "User not found" });
   }
-  if (user.status === "banned") {
+  if (authenticatedUser.status === "banned") {
     res.clearCookie("token");
     return res.status(403).json({
       error: "Account suspended",
       message: "Your account has been suspended. Please contact support for assistance."
     });
   }
-  req.userId = user.id;
-  req.user = user;
+  if (payload.impersonatedUserId) {
+    const impersonatedUser = await storage.getUser(payload.impersonatedUserId);
+    if (!impersonatedUser) {
+      res.clearCookie("token");
+      return res.status(401).json({
+        error: "Impersonated user not found. Please log in again."
+      });
+    }
+    if (impersonatedUser.status === "banned") {
+      res.clearCookie("token");
+      return res.status(403).json({
+        error: "Impersonated user account has been suspended. Please log in again."
+      });
+    }
+    req.user = authenticatedUser;
+    req.userId = authenticatedUser.id;
+    req.impersonatedUser = impersonatedUser;
+    req.isImpersonating = true;
+  } else {
+    req.user = authenticatedUser;
+    req.userId = authenticatedUser.id;
+  }
   next();
 }
 async function requireAdmin(req, res, next) {
@@ -2059,7 +2547,7 @@ import {
   OAuthAuthorizationController,
   OrdersController
 } from "@paypal/paypal-server-sdk";
-var { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET } = process.env;
+var { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_ENVIRONMENT } = process.env;
 if (!PAYPAL_CLIENT_ID) {
   throw new Error("Missing PAYPAL_CLIENT_ID");
 }
@@ -2072,7 +2560,7 @@ var client = new Client({
     oAuthClientSecret: PAYPAL_CLIENT_SECRET
   },
   timeout: 0,
-  environment: process.env.NODE_ENV === "production" ? Environment.Production : Environment.Sandbox,
+  environment: PAYPAL_ENVIRONMENT === "production" ? Environment.Production : Environment.Sandbox,
   logging: {
     logLevel: LogLevel.Info,
     logRequest: {
@@ -2263,8 +2751,102 @@ import timezone from "dayjs/plugin/timezone.js";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+
+// server/workflows/httpNodeExecutor.ts
+init_httpExecutor();
+function buildExecutionContext(conversationState, incomingMessage, userMetadata) {
+  const context = {
+    // User information
+    phone: userMetadata.phone || incomingMessage.from || "",
+    name: userMetadata.name || "",
+    email: userMetadata.email || "",
+    // Incoming message data
+    message: {
+      text: incomingMessage.text?.body || "",
+      from: incomingMessage.from || "",
+      timestamp: incomingMessage.timestamp || Date.now()
+    },
+    // Conversation state context (includes variables from previous nodes)
+    ...conversationState.context || {}
+  };
+  return context;
+}
+async function executeHttpNode(node, conversationState, incomingMessage = {}, userMetadata = {}) {
+  try {
+    const config = {
+      method: node.data?.config?.method || "GET",
+      url: node.data?.config?.url || "",
+      authType: node.data?.config?.authType || "none",
+      bearerToken: node.data?.config?.bearerToken,
+      basicUsername: node.data?.config?.basicUsername,
+      basicPassword: node.data?.config?.basicPassword,
+      headers: node.data?.config?.headers || [],
+      queryParams: node.data?.config?.queryParams || [],
+      bodyContentType: node.data?.config?.bodyContentType || "json",
+      body: node.data?.config?.body,
+      responseMapping: node.data?.config?.responseMapping || [],
+      timeout: node.data?.config?.timeout
+    };
+    const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);
+    const result = await performHttpRequest(config, executionContext);
+    const stateUpdate = {
+      status: result.status,
+      statusText: result.statusText,
+      data: result.data,
+      mappedVariables: result.mappedVariables || {},
+      error: result.error,
+      executedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const nextHandle = result.success ? "success" : "error";
+    const contextUpdate = {
+      ...conversationState.context
+    };
+    contextUpdate.http = contextUpdate.http || {};
+    contextUpdate.http[node.id] = stateUpdate;
+    if (result.mappedVariables) {
+      Object.assign(contextUpdate, result.mappedVariables);
+    }
+    return {
+      success: result.success,
+      nextHandle,
+      result,
+      stateUpdate: contextUpdate
+    };
+  } catch (error) {
+    console.error("[HTTP Node Executor] Execution failed:", error);
+    const errorStateUpdate = {
+      error: error.message || "HTTP request execution failed",
+      executedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const contextUpdate = {
+      ...conversationState.context
+    };
+    contextUpdate.http = contextUpdate.http || {};
+    contextUpdate.http[node.id] = errorStateUpdate;
+    return {
+      success: false,
+      nextHandle: "error",
+      result: {
+        success: false,
+        error: error.message || "Execution failed"
+      },
+      stateUpdate: contextUpdate
+    };
+  }
+}
+function getNextNodeByHandle(currentNodeId, handleType, edges) {
+  const edge = edges.find(
+    (e) => e.source === currentNodeId && (e.sourceHandle === handleType || e.sourceHandle === `${currentNodeId}-${handleType}`)
+  );
+  return edge?.target || null;
+}
+
+// server/routes.ts
 dayjs.extend(utc);
 dayjs.extend(timezone);
+function getEffectiveUserId(req) {
+  return req.impersonatedUser?.id || req.userId;
+}
 function getDaysFromBillingPeriod(billingPeriod) {
   switch (billingPeriod) {
     case "MONTHLY":
@@ -2319,6 +2901,15 @@ async function getPhonebookLimit(userId) {
   return mostPermissiveLimit;
 }
 function registerRoutes(app2) {
+  app2.get("/api/paypal/config", async (req, res) => {
+    try {
+      const environment = process.env.PAYPAL_ENVIRONMENT || "sandbox";
+      res.json({ environment });
+    } catch (e) {
+      console.error("Failed to get PayPal config", e);
+      res.status(500).json({ error: "Failed to get PayPal config" });
+    }
+  });
   app2.get("/paypal/setup", async (req, res) => {
     try {
       await loadPaypalDefault(req, res);
@@ -2555,7 +3146,9 @@ function registerRoutes(app2) {
   });
   app2.get("/api/me", requireAuth, async (req, res) => {
     try {
-      const user = await storage.getUser(req.userId);
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      const effectiveUser = req.impersonatedUser || req.user;
+      const user = await storage.getUser(effectiveUserId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -2577,7 +3170,6 @@ function registerRoutes(app2) {
           channels: false,
           safetyMeter: false,
           send: false,
-          bulk: false,
           templates: false,
           workflows: false,
           outbox: false,
@@ -2611,17 +3203,27 @@ function registerRoutes(app2) {
       );
       const messagesSentToday = Number(todayJobs[0]?.totalMessages || 0);
       const { passwordHash: _, ...userWithoutPassword } = user;
-      res.json({
+      const response = {
         ...userWithoutPassword,
         daysBalance: totalDaysRemaining,
-        // Override deprecated field with channel aggregate
         currentSubscription: subscription,
         currentPlan,
         effectivePageAccess,
         channelsUsed,
         channelsLimit,
         messagesSentToday
-      });
+      };
+      if (req.isImpersonating && req.user) {
+        response.impersonation = {
+          isImpersonating: true,
+          admin: {
+            id: req.userId,
+            name: req.user.name,
+            email: req.user.email
+          }
+        };
+      }
+      res.json(response);
     } catch (error) {
       console.error("Get user error:", error);
       res.status(500).json({ error: "Failed to get user data" });
@@ -2741,6 +3343,33 @@ function registerRoutes(app2) {
           details: `Expected ${expectedAmount} ${plan.currency} for ${durationType}, got ${verification.amount} ${verification.currency}`
         });
       }
+      const mainBalance = await storage.getMainDaysBalance();
+      if (mainBalance < days) {
+        return res.status(400).json({
+          error: "Insufficient admin balance",
+          details: `Admin pool has ${mainBalance} days, but ${days} days are needed for this subscription. Please contact support.`
+        });
+      }
+      const user = await storage.getUser(req.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const userChannels = await storage.getChannelsForUser(req.userId);
+      if (userChannels.length === 0) {
+        return res.status(400).json({
+          error: "No channels found",
+          details: "Please create a channel before subscribing."
+        });
+      }
+      const targetChannel = userChannels.find((c) => c.status === "ACTIVE" || c.status === "PENDING") || userChannels[0];
+      const newMainBalance = await storage.updateMainDaysBalance(-days);
+      const balanceTransaction = await storage.createBalanceTransaction({
+        type: "allocate",
+        days,
+        channelId: targetChannel.id,
+        userId: req.userId,
+        note: `PayPal subscription - ${plan.name} (${durationType}, ${days} days)`
+      });
       const subscription = await storage.createSubscription({
         userId: req.userId,
         planId: plan.id,
@@ -2751,13 +3380,60 @@ function registerRoutes(app2) {
         termsVersion,
         agreedAt: /* @__PURE__ */ new Date()
       });
-      const user = await storage.getUser(req.userId);
-      if (user) {
-        await storage.updateUser(req.userId, {
-          daysBalance: (user.daysBalance || 0) + days,
-          status: "active"
+      let whapiResponse = null;
+      try {
+        if (!targetChannel.whapiChannelId && targetChannel.status === "PENDING") {
+          console.log("Creating new WHAPI channel for PayPal subscription:", targetChannel.label);
+          whapiResponse = await createWhapiChannel(targetChannel.label, targetChannel.phone);
+          await storage.updateChannel(targetChannel.id, {
+            whapiChannelId: whapiResponse.id,
+            whapiChannelToken: whapiResponse.token,
+            phone: whapiResponse.phone || targetChannel.phone,
+            whapiStatus: whapiResponse.status,
+            stopped: whapiResponse.stopped || false,
+            creationTS: whapiResponse.creationTS ? new Date(whapiResponse.creationTS) : null,
+            activeTill: whapiResponse.activeTill ? new Date(whapiResponse.activeTill) : null
+          });
+        } else if (targetChannel.whapiChannelId) {
+          console.log("Extending WHAPI channel via PayPal:", targetChannel.whapiChannelId);
+          whapiResponse = await extendWhapiChannel(
+            targetChannel.whapiChannelId,
+            days,
+            `PayPal subscription for ${user.email}`
+          );
+        }
+      } catch (whapiError) {
+        console.error("WHAPI API failed during PayPal subscription:", whapiError.message);
+        await storage.updateMainDaysBalance(days);
+        await storage.deleteBalanceTransaction(balanceTransaction.id);
+        await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
+        return res.status(500).json({
+          error: "Failed to activate channel",
+          details: whapiError.message
         });
       }
+      await storage.addDaysToChannel({
+        channelId: targetChannel.id,
+        days,
+        source: "PAYPAL",
+        balanceTransactionId: balanceTransaction.id,
+        subscriptionId: subscription.id,
+        metadata: {
+          orderId,
+          planId,
+          durationType
+        }
+      });
+      if (whapiResponse) {
+        await storage.updateChannel(targetChannel.id, {
+          whapiStatus: whapiResponse.status,
+          activeTill: whapiResponse.activeTill ? new Date(whapiResponse.activeTill) : null
+        });
+      }
+      await storage.updateUser(req.userId, {
+        daysBalance: (user.daysBalance || 0) + days,
+        status: "active"
+      });
       await storage.createAuditLog({
         actorUserId: req.userId,
         action: "SUBSCRIBE",
@@ -2772,10 +3448,14 @@ function registerRoutes(app2) {
           verified: true,
           amount: verification.amount,
           currency: verification.currency,
-          payerEmail: verification.payerEmail
+          payerEmail: verification.payerEmail,
+          mainBalanceBefore: mainBalance,
+          mainBalanceAfter: newMainBalance,
+          channelId: targetChannel.id,
+          whapiExtended: !!whapiResponse
         }
       });
-      res.json({ subscription, daysAdded: days });
+      res.json({ subscription, daysAdded: days, channelExtended: true });
     } catch (error) {
       console.error("PayPal subscription error:", error);
       res.status(500).json({ error: "PayPal subscription failed" });
@@ -2783,20 +3463,31 @@ function registerRoutes(app2) {
   });
   app2.post("/api/subscribe/offline", requireAuth, async (req, res) => {
     try {
-      const validationResult = insertOfflinePaymentSchema.extend({ userId: z2.number() }).safeParse({
+      console.log("[OfflinePayment] Received request body:", JSON.stringify(req.body, null, 2));
+      const validationResult = insertOfflinePaymentSchema.extend({
+        userId: z2.number(),
+        type: z2.enum(["OFFLINE_PAYMENT", "FREE_TRIAL"]).optional(),
+        termsVersion: z2.preprocess(
+          (val) => val == null ? void 0 : String(val),
+          z2.string().optional()
+        )
+      }).safeParse({
         ...req.body,
         userId: req.userId,
         status: "PENDING"
       });
       if (!validationResult.success) {
+        console.log("[OfflinePayment] Validation failed:", JSON.stringify(validationResult.error.flatten(), null, 2));
         return res.status(400).json({
           error: "Validation failed",
           details: validationResult.error.flatten()
         });
       }
+      console.log("[OfflinePayment] Validation successful, data:", JSON.stringify(validationResult.data, null, 2));
       const { planId, amount, currency, reference, proofUrl, requestType, metadata, termsVersion, couponCode } = validationResult.data;
       const submittedDurationType = validationResult.data.durationType;
-      if (!termsVersion) {
+      const paymentType = validationResult.data.type || "OFFLINE_PAYMENT";
+      if (paymentType !== "FREE_TRIAL" && !termsVersion) {
         return res.status(400).json({ error: "Terms acceptance is required" });
       }
       if (proofUrl) {
@@ -2812,38 +3503,43 @@ function registerRoutes(app2) {
         return res.status(404).json({ error: "Plan not found" });
       }
       const durationType = submittedDurationType || "MONTHLY";
-      const basePlanPrice = plan.price || 0;
+      const planData = plan;
+      const hasDisplayPricing = planData.displayPrice && planData.displayCurrency;
+      const basePlanPrice = currency === planData.displayCurrency && hasDisplayPricing ? planData.displayPrice : plan.price || 0;
       let expectedBasePrice = basePlanPrice;
       if (durationType === "SEMI_ANNUAL") {
         expectedBasePrice = basePlanPrice * 6 * 0.95;
       } else if (durationType === "ANNUAL") {
         expectedBasePrice = basePlanPrice * 12 * 0.9;
       }
-      if (couponCode) {
-        const couponValidation = await storage.validateCoupon(couponCode, req.userId, planId);
-        if (!couponValidation.valid) {
-          return res.status(400).json({ error: couponValidation.message });
-        }
-        const discountPercent = couponValidation.coupon?.discountPercent || 0;
-        const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
-        if (Math.abs(amount - expectedAmount) > 1) {
-          return res.status(400).json({
-            error: "Amount mismatch",
-            details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
-          });
-        }
-      } else {
-        const expectedAmount = Math.round(expectedBasePrice);
-        if (Math.abs(amount - expectedAmount) > 1) {
-          return res.status(400).json({
-            error: "Amount mismatch",
-            details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
-          });
+      if (paymentType !== "FREE_TRIAL") {
+        if (couponCode) {
+          const couponValidation = await storage.validateCoupon(couponCode, req.userId, planId);
+          if (!couponValidation.valid) {
+            return res.status(400).json({ error: couponValidation.message });
+          }
+          const discountPercent = couponValidation.coupon?.discountPercent || 0;
+          const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
+          if (Math.abs(amount - expectedAmount) > 1) {
+            return res.status(400).json({
+              error: "Amount mismatch",
+              details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
+            });
+          }
+        } else {
+          const expectedAmount = Math.round(expectedBasePrice);
+          if (Math.abs(amount - expectedAmount) > 1) {
+            return res.status(400).json({
+              error: "Amount mismatch",
+              details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
+            });
+          }
         }
       }
       const payment = await storage.createOfflinePayment({
         userId: req.userId,
         planId,
+        type: paymentType,
         amount,
         currency: currency || "USD",
         reference,
@@ -2875,7 +3571,8 @@ function registerRoutes(app2) {
   });
   app2.get("/api/channels", requireAuth, async (req, res) => {
     try {
-      const channels2 = await storage.getChannelsForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const channels2 = await storage.getChannelsForUser(effectiveUserId);
       const now = /* @__PURE__ */ new Date();
       const updatedChannels = [];
       for (const channel of channels2) {
@@ -2918,9 +3615,10 @@ function registerRoutes(app2) {
   });
   app2.post("/api/channels", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const validationResult = insertChannelSchema.extend({ userId: z2.number() }).safeParse({
         ...req.body,
-        userId: req.userId
+        userId: effectiveUserId
       });
       if (!validationResult.success) {
         return res.status(400).json({
@@ -2929,8 +3627,8 @@ function registerRoutes(app2) {
         });
       }
       const { label, phone } = validationResult.data;
-      const user = await storage.getUser(req.userId);
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId);
+      const user = await storage.getUser(effectiveUserId);
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
       if (!subscription) {
         return res.status(403).json({ error: "Active subscription required" });
       }
@@ -2938,7 +3636,7 @@ function registerRoutes(app2) {
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
       }
-      const existingChannels = await storage.getChannelsForUser(req.userId);
+      const existingChannels = await storage.getChannelsForUser(effectiveUserId);
       if (existingChannels.length >= plan.channelsLimit) {
         return res.status(403).json({ error: "Channel limit reached for your plan" });
       }
@@ -2954,7 +3652,7 @@ function registerRoutes(app2) {
         });
       }
       const channel = await storage.createChannel({
-        userId: req.userId,
+        userId: effectiveUserId,
         label,
         phone: whapiResponse.phone || phone,
         // Use WHAPI-confirmed phone
@@ -3342,6 +4040,12 @@ function registerRoutes(app2) {
       if (!channelId || !to || !body) {
         return res.status(400).json({ error: "Missing required fields: channelId, to, body" });
       }
+      const mediaRequiredTypes = ["image", "image_buttons", "video_buttons", "document"];
+      if (mediaRequiredTypes.includes(messageType) && !mediaUrl) {
+        return res.status(400).json({
+          error: `Media file is required for ${messageType} messages. Please upload a file before sending.`
+        });
+      }
       const channel = await storage.getChannel(channelId);
       if (!channel || channel.userId !== req.userId) {
         return res.status(404).json({ error: "Channel not found" });
@@ -3367,15 +4071,17 @@ function registerRoutes(app2) {
       if (!plan) {
         return res.status(500).json({ error: "Plan not found" });
       }
-      const today = /* @__PURE__ */ new Date();
-      today.setHours(0, 0, 0, 0);
-      const todaysJobs = await storage.getJobsForUser(req.userId);
-      const todaysMessages = todaysJobs.filter((job2) => new Date(job2.createdAt) >= today).reduce((sum, job2) => sum + job2.total, 0);
-      if (todaysMessages >= plan.dailyMessagesLimit) {
-        return res.status(400).json({
-          error: `Daily message limit reached (${plan.dailyMessagesLimit}). Upgrade plan to send more.`,
-          limitReached: true
-        });
+      if (plan.dailyMessagesLimit !== -1) {
+        const today = /* @__PURE__ */ new Date();
+        today.setHours(0, 0, 0, 0);
+        const todaysJobs = await storage.getJobsForUser(req.userId);
+        const todaysSingleMessages = todaysJobs.filter((job2) => new Date(job2.createdAt) >= today && job2.type === "SINGLE").reduce((sum, job2) => sum + job2.total, 0);
+        if (todaysSingleMessages >= plan.dailyMessagesLimit) {
+          return res.status(400).json({
+            error: `Daily single message limit reached (${plan.dailyMessagesLimit}). Upgrade plan to send more.`,
+            limitReached: true
+          });
+        }
       }
       const job = await storage.createJob({
         userId: req.userId,
@@ -3405,6 +4111,7 @@ function registerRoutes(app2) {
       try {
         let whapiResponse;
         const currentMessageType = messageType || "text_buttons";
+        const resolvedMediaUrl = await resolveMediaForWhapi(mediaUrl);
         if (currentMessageType === "text_buttons") {
           const whapiPayload = {
             to,
@@ -3426,7 +4133,7 @@ function registerRoutes(app2) {
         } else if (currentMessageType === "image") {
           whapiResponse = await sendMediaMessage(channel.whapiChannelToken, {
             to,
-            media: mediaUrl || "",
+            media: resolvedMediaUrl || "",
             caption: body,
             mediaType: "Image"
           });
@@ -3434,7 +4141,7 @@ function registerRoutes(app2) {
           const imageButtonPayload = {
             to,
             type: "button",
-            ...mediaUrl && { media: mediaUrl },
+            ...resolvedMediaUrl && { media: resolvedMediaUrl },
             // Media at root level!
             body: { text: body },
             ...footer && { footer: { text: footer } },
@@ -3454,7 +4161,7 @@ function registerRoutes(app2) {
           const videoButtonPayload = {
             to,
             type: "button",
-            ...mediaUrl && { media: mediaUrl },
+            ...resolvedMediaUrl && { media: resolvedMediaUrl },
             // Media at root level!
             body: { text: body },
             ...footer && { footer: { text: footer } },
@@ -3473,7 +4180,7 @@ function registerRoutes(app2) {
         } else if (currentMessageType === "document") {
           whapiResponse = await sendMediaMessage(channel.whapiChannelToken, {
             to,
-            media: mediaUrl || "",
+            media: resolvedMediaUrl || "",
             caption: body,
             mediaType: "Document"
           });
@@ -3492,6 +4199,7 @@ function registerRoutes(app2) {
         });
         console.log(`[Send] Updated message ${message.id} with providerMessageId: ${providerMessageId}`);
         await storage.updateJob(job.id, {
+          status: "COMPLETED",
           pending: 0,
           sent: 1
         });
@@ -3509,17 +4217,26 @@ function registerRoutes(app2) {
         res.json({ job, message, success: true });
       } catch (whapiError) {
         console.error("Message send error:", whapiError);
+        let errorMessage = "Failed to send message";
+        if (whapiError.message) {
+          errorMessage = typeof whapiError.message === "string" ? whapiError.message : JSON.stringify(whapiError.message);
+        } else if (whapiError.error) {
+          errorMessage = typeof whapiError.error === "string" ? whapiError.error : JSON.stringify(whapiError.error);
+        } else if (typeof whapiError === "string") {
+          errorMessage = whapiError;
+        }
         await storage.updateMessage(message.id, {
           status: "FAILED",
-          error: whapiError.message || "Failed to send message"
+          error: errorMessage
         });
         await storage.updateJob(job.id, {
+          status: "FAILED",
           pending: 0,
           failed: 1
         });
         return res.status(500).json({
           error: "Failed to send message. Please try again later.",
-          details: whapiError.message
+          details: errorMessage
         });
       }
     } catch (error) {
@@ -3554,19 +4271,21 @@ function registerRoutes(app2) {
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
       }
-      if (rows.length > plan.bulkMessagesLimit) {
+      if (plan.bulkMessagesLimit !== -1 && rows.length > plan.bulkMessagesLimit) {
         return res.status(403).json({
           error: `Bulk message limit is ${plan.bulkMessagesLimit} messages per batch`
         });
       }
-      const jobs2 = await storage.getJobsForUser(req.userId);
-      const today = /* @__PURE__ */ new Date();
-      today.setHours(0, 0, 0, 0);
-      const messagesToday = jobs2.filter((j) => new Date(j.createdAt) >= today).reduce((sum, j) => sum + j.total, 0);
-      if (messagesToday + rows.length > plan.dailyMessagesLimit) {
-        return res.status(403).json({
-          error: `Daily message limit would be exceeded. Today: ${messagesToday}/${plan.dailyMessagesLimit}`
-        });
+      if (plan.bulkMessagesLimit !== -1) {
+        const jobs2 = await storage.getJobsForUser(req.userId);
+        const today = /* @__PURE__ */ new Date();
+        today.setHours(0, 0, 0, 0);
+        const bulkMessagesToday = jobs2.filter((j) => new Date(j.createdAt) >= today && j.type === "BULK").reduce((sum, j) => sum + j.total, 0);
+        if (bulkMessagesToday + rows.length > plan.bulkMessagesLimit) {
+          return res.status(403).json({
+            error: `Daily bulk message limit would be exceeded. Today: ${bulkMessagesToday}/${plan.bulkMessagesLimit}`
+          });
+        }
       }
       const job = await storage.createJob({
         userId: req.userId,
@@ -3640,20 +4359,47 @@ function registerRoutes(app2) {
         return;
       }
       await storage.updateJob(jobId, { status: "PROCESSING" });
+      let queuedCount = queuedMessages.length;
+      let pendingCount = 0;
+      let sentCount = messages2.filter((m) => m.status === "SENT").length;
+      let failedCount = messages2.filter((m) => m.status === "FAILED").length;
       for (const message of queuedMessages) {
         try {
+          console.log(`[Bulk Send] Processing message ${message.id} to ${message.to}`);
+          console.log(`[Bulk Send] Raw message data:`, JSON.stringify({
+            id: message.id,
+            messageType: message.messageType,
+            buttons: message.buttons,
+            body: message.body?.substring(0, 50),
+            mediaUrl: message.mediaUrl
+          }, null, 2));
           await storage.updateMessage(message.id, { status: "PENDING" });
-          const queued = messages2.filter((m) => m.status === "QUEUED").length - 1;
-          const pending = messages2.filter((m) => m.status === "PENDING").length + 1;
-          await storage.updateJob(jobId, { queued, pending });
+          queuedCount--;
+          pendingCount++;
+          await storage.updateJob(jobId, { queued: queuedCount, pending: pendingCount });
           const messageType = message.messageType || "text_buttons";
-          const buttons = Array.isArray(message.buttons) ? message.buttons : [];
+          let buttons = [];
+          if (message.buttons) {
+            if (typeof message.buttons === "string") {
+              try {
+                buttons = JSON.parse(message.buttons);
+              } catch (parseErr) {
+                console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
+                buttons = [];
+              }
+            } else if (Array.isArray(message.buttons)) {
+              buttons = message.buttons;
+            }
+          }
+          console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
+          console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
+          const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);
           let result;
           switch (messageType) {
             case "image":
               result = await sendMediaMessage(channel.whapiChannelToken, {
                 to: message.to,
-                media: message.mediaUrl || "",
+                media: resolvedMediaUrl || "",
                 caption: message.body || "",
                 mediaType: "Image"
               });
@@ -3662,7 +4408,7 @@ function registerRoutes(app2) {
               const imgPayload = {
                 to: message.to,
                 type: "button",
-                ...message.mediaUrl && { media: message.mediaUrl },
+                ...resolvedMediaUrl && { media: resolvedMediaUrl },
                 // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : void 0,
@@ -3676,7 +4422,7 @@ function registerRoutes(app2) {
               const vidPayload = {
                 to: message.to,
                 type: "button",
-                ...message.mediaUrl && { media: message.mediaUrl },
+                ...resolvedMediaUrl && { media: resolvedMediaUrl },
                 // Media at root level!
                 body: { text: message.body || "No message" },
                 footer: message.footer ? { text: message.footer } : void 0,
@@ -3689,7 +4435,7 @@ function registerRoutes(app2) {
             case "document":
               result = await sendMediaMessage(channel.whapiChannelToken, {
                 to: message.to,
-                media: message.mediaUrl || "",
+                media: resolvedMediaUrl || "",
                 caption: message.body || "",
                 mediaType: "Document"
               });
@@ -3713,9 +4459,15 @@ function registerRoutes(app2) {
               }
               break;
           }
+          console.log(`[Bulk Send] WHAPI result status:`, {
+            resultExists: !!result,
+            resultSent: result?.sent,
+            resultError: result?.error,
+            resultMessage: result?.message
+          });
           if (result && result.sent) {
             const providerMessageId = result.messages?.[0]?.id || result.message?.id || result.id || result.message_id;
-            console.log(`[Bulk Send] Message ${message.id} to ${message.to}:`);
+            console.log(`[Bulk Send] SUCCESS - Message ${message.id} to ${message.to}:`);
             console.log(`[Bulk Send] Full WHAPI response:`, JSON.stringify(result, null, 2));
             console.log(`[Bulk Send] Provider ID extracted: ${providerMessageId || "MISSING"}`);
             if (!providerMessageId) {
@@ -3727,25 +4479,78 @@ function registerRoutes(app2) {
               providerMessageId,
               sentAt: /* @__PURE__ */ new Date()
             });
-            const newPending = messages2.filter((m) => m.status === "PENDING").length;
-            const sent = messages2.filter((m) => m.status === "SENT").length + 1;
-            await storage.updateJob(jobId, { pending: newPending, sent });
+            pendingCount--;
+            sentCount++;
+            await storage.updateJob(jobId, { pending: pendingCount, sent: sentCount });
           } else {
-            throw new Error(result?.message || "Failed to send");
+            console.error(`[Bulk Send] FAILED - Message ${message.id} to ${message.to}`);
+            console.error(`[Bulk Send] Full WHAPI result:`, JSON.stringify(result, null, 2));
+            let errorMessage = "Failed to send";
+            if (result?.message) {
+              errorMessage = typeof result.message === "string" ? result.message : JSON.stringify(result.message);
+            } else if (result?.error) {
+              errorMessage = typeof result.error === "string" ? result.error : JSON.stringify(result.error);
+            } else if (result === void 0) {
+              errorMessage = "WHAPI returned undefined";
+            } else if (result === null) {
+              errorMessage = "WHAPI returned null";
+            } else {
+              errorMessage = `WHAPI returned unexpected result: ${JSON.stringify(result)}`;
+            }
+            throw new Error(errorMessage);
           }
           if (message.id !== queuedMessages[queuedMessages.length - 1].id) {
             const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
         } catch (msgError) {
-          console.error(`Failed to send message ${message.id}:`, msgError);
+          console.error(`[Bulk Send] EXCEPTION - Failed to send message ${message.id}:`, msgError);
+          console.error(`[Bulk Send] Error type:`, typeof msgError);
+          console.error(`[Bulk Send] Error keys:`, Object.keys(msgError || {}));
+          console.error(`[Bulk Send] Full error object:`, JSON.stringify(msgError, null, 2).substring(0, 500));
+          let errorMessage = "Unknown error";
+          if (typeof msgError === "string") {
+            errorMessage = msgError;
+          } else if (msgError?.message) {
+            if (typeof msgError.message === "string") {
+              errorMessage = msgError.message;
+            } else {
+              try {
+                errorMessage = JSON.stringify(msgError.message);
+              } catch {
+                errorMessage = String(msgError.message);
+              }
+            }
+          } else if (msgError?.error) {
+            if (typeof msgError.error === "string") {
+              errorMessage = msgError.error;
+            } else {
+              try {
+                errorMessage = JSON.stringify(msgError.error);
+              } catch {
+                errorMessage = String(msgError.error);
+              }
+            }
+          } else if (msgError instanceof Error) {
+            errorMessage = msgError.toString();
+          } else {
+            try {
+              errorMessage = JSON.stringify(msgError);
+            } catch {
+              errorMessage = String(msgError);
+            }
+          }
+          if (errorMessage === "[object Object]") {
+            errorMessage = `Error (${typeof msgError}): ${Object.keys(msgError || {}).join(", ")}`;
+          }
+          console.error(`[Bulk Send] Extracted error message: ${errorMessage}`);
           await storage.updateMessage(message.id, {
             status: "FAILED",
-            error: msgError.message || "Unknown error"
+            error: errorMessage
           });
-          const newPending = messages2.filter((m) => m.status === "PENDING").length;
-          const failed = messages2.filter((m) => m.status === "FAILED").length + 1;
-          await storage.updateJob(jobId, { pending: newPending, failed });
+          pendingCount--;
+          failedCount++;
+          await storage.updateJob(jobId, { pending: pendingCount, failed: failedCount });
         }
       }
       await storage.updateJob(jobId, { status: "COMPLETED" });
@@ -3756,17 +4561,83 @@ function registerRoutes(app2) {
   }
   app2.get("/api/jobs", requireAuth, async (req, res) => {
     try {
-      const jobs2 = await storage.getJobsForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobs2 = await storage.getJobsForUser(effectiveUserId);
       res.json(jobs2);
     } catch (error) {
       console.error("Get jobs error:", error);
       res.status(500).json({ error: "Failed to fetch jobs" });
     }
   });
+  const getMediaUrl = (mediaUpload) => {
+    if (!mediaUpload) return null;
+    if (mediaUpload.whapiMediaId?.startsWith("local-") && mediaUpload.fileName) {
+      return `/uploads/${mediaUpload.fileName}`;
+    }
+    return mediaUpload.whapiMediaId || null;
+  };
+  const resolveMediaForWhapi = async (mediaUrl) => {
+    if (!mediaUrl) return null;
+    if (mediaUrl.startsWith("data:")) {
+      return mediaUrl;
+    }
+    if (mediaUrl.startsWith("/uploads/")) {
+      try {
+        const fileName = mediaUrl.replace("/uploads/", "");
+        const filePath = path.join(process.cwd(), "uploads", fileName);
+        if (!fs.existsSync(filePath)) {
+          console.error(`[Media Resolver] File not found: ${filePath}`);
+          return null;
+        }
+        const fileBuffer = fs.readFileSync(filePath);
+        const base64Data = fileBuffer.toString("base64");
+        const ext = path.extname(fileName).toLowerCase();
+        const mimeTypes = {
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".png": "image/png",
+          ".gif": "image/gif",
+          ".webp": "image/webp",
+          ".mp4": "video/mp4",
+          ".mpeg": "video/mpeg",
+          ".mov": "video/quicktime",
+          ".avi": "video/x-msvideo",
+          ".pdf": "application/pdf",
+          ".doc": "application/msword",
+          ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          ".xls": "application/vnd.ms-excel",
+          ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        };
+        const mimeType = mimeTypes[ext] || "application/octet-stream";
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
+        console.log(`[Media Resolver] Converted local file ${fileName} to base64 (${(base64Data.length / 1024).toFixed(2)}KB)`);
+        return dataUrl;
+      } catch (error) {
+        console.error(`[Media Resolver] Error reading file:`, error);
+        return null;
+      }
+    }
+    return mediaUrl;
+  };
   app2.get("/api/templates", requireAuth, async (req, res) => {
     try {
-      const templates2 = await storage.getTemplatesForUser(req.userId);
-      res.json(templates2);
+      const effectiveUserId = getEffectiveUserId(req);
+      const templates2 = await storage.getTemplatesForUser(effectiveUserId);
+      const templatesWithMedia = await Promise.all(
+        templates2.map(async (template) => {
+          if (template.mediaUploadId) {
+            const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
+            return {
+              ...template,
+              mediaUrl: getMediaUrl(mediaUpload),
+              mediaUploadId: template.mediaUploadId
+              // Keep the ID for editing
+            };
+          }
+          return { ...template, mediaUrl: null };
+        })
+      );
+      res.json(templatesWithMedia);
     } catch (error) {
       console.error("Get templates error:", error);
       res.status(500).json({ error: "Failed to fetch templates" });
@@ -3774,9 +4645,10 @@ function registerRoutes(app2) {
   });
   app2.post("/api/templates", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const validationResult = insertTemplateSchema.extend({ userId: z2.number() }).safeParse({
         ...req.body,
-        userId: req.userId
+        userId: effectiveUserId
       });
       if (!validationResult.success) {
         return res.status(400).json({
@@ -3784,14 +4656,22 @@ function registerRoutes(app2) {
           details: validationResult.error.flatten()
         });
       }
-      const { title, header, body, footer, buttons } = validationResult.data;
+      const { title, header, body, footer, buttons, messageType, mediaUploadId } = validationResult.data;
+      if (mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(mediaUploadId);
+        if (!mediaUpload || mediaUpload.userId !== effectiveUserId) {
+          return res.status(404).json({ error: "Media upload not found or access denied" });
+        }
+      }
       const template = await storage.createTemplate({
-        userId: req.userId,
+        userId: effectiveUserId,
         title,
         header,
         body,
         footer,
-        buttons: buttons || []
+        buttons: buttons || [],
+        messageType: messageType || "text_buttons",
+        mediaUploadId: mediaUploadId || null
       });
       await storage.createAuditLog({
         actorUserId: req.userId,
@@ -3802,7 +4682,12 @@ function registerRoutes(app2) {
           title
         }
       });
-      res.json(template);
+      let responseTemplate = { ...template, mediaUrl: null };
+      if (template.mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(template.mediaUploadId);
+        responseTemplate.mediaUrl = getMediaUrl(mediaUpload);
+      }
+      res.json(responseTemplate);
     } catch (error) {
       console.error("Create template error:", error);
       res.status(500).json({ error: "Failed to create template" });
@@ -3815,13 +4700,21 @@ function registerRoutes(app2) {
       if (!template || template.userId !== req.userId) {
         return res.status(404).json({ error: "Template not found" });
       }
-      const { title, header, body, footer, buttons } = req.body;
+      const { title, header, body, footer, buttons, messageType, mediaUploadId } = req.body;
+      if (mediaUploadId !== void 0 && mediaUploadId !== null) {
+        const mediaUpload = await storage.getMediaUpload(mediaUploadId);
+        if (!mediaUpload || mediaUpload.userId !== req.userId) {
+          return res.status(404).json({ error: "Media upload not found or access denied" });
+        }
+      }
       const updated = await storage.updateTemplate(templateId, {
         title,
         header,
         body,
         footer,
-        buttons
+        buttons,
+        messageType,
+        mediaUploadId
       });
       await storage.createAuditLog({
         actorUserId: req.userId,
@@ -3832,7 +4725,12 @@ function registerRoutes(app2) {
           title
         }
       });
-      res.json(updated);
+      let responseTemplate = { ...updated, mediaUrl: null };
+      if (updated?.mediaUploadId) {
+        const mediaUpload = await storage.getMediaUpload(updated.mediaUploadId);
+        responseTemplate.mediaUrl = getMediaUrl(mediaUpload);
+      }
+      res.json(responseTemplate);
     } catch (error) {
       console.error("Update template error:", error);
       res.status(500).json({ error: "Failed to update template" });
@@ -3863,7 +4761,8 @@ function registerRoutes(app2) {
   });
   app2.get("/api/phonebooks", requireAuth, async (req, res) => {
     try {
-      const phonebooks2 = await storage.getPhonebooksForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const phonebooks2 = await storage.getPhonebooksForUser(effectiveUserId);
       const phonebooksWithCount = await Promise.all(
         phonebooks2.map(async (phonebook) => {
           const contacts = await storage.getContactsForPhonebook(phonebook.id);
@@ -3889,9 +4788,10 @@ function registerRoutes(app2) {
   });
   app2.get("/api/phonebooks/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       const contacts = await storage.getContactsForPhonebook(phonebookId);
@@ -3906,12 +4806,13 @@ function registerRoutes(app2) {
   });
   app2.post("/api/phonebooks", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const { name, description } = req.body;
       if (!name || name.trim() === "") {
         return res.status(400).json({ error: "Phonebook name is required" });
       }
       const phonebook = await storage.createPhonebook({
-        userId: req.userId,
+        userId: effectiveUserId,
         name: name.trim(),
         description: description || null
       });
@@ -3932,9 +4833,10 @@ function registerRoutes(app2) {
   });
   app2.put("/api/phonebooks/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       const { name, description } = req.body;
@@ -3959,9 +4861,10 @@ function registerRoutes(app2) {
   });
   app2.delete("/api/phonebooks/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       await storage.deletePhonebook(phonebookId);
@@ -3982,9 +4885,10 @@ function registerRoutes(app2) {
   });
   app2.get("/api/phonebooks/:id/contacts", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       const contacts = await storage.getContactsForPhonebook(phonebookId);
@@ -4157,7 +5061,7 @@ function registerRoutes(app2) {
       const filePath = path.join(uploadsDir, generatedFileName);
       fs.writeFileSync(filePath, buffer);
       const mediaId = `local-${uniqueId}`;
-      await storage.createMediaUpload({
+      const mediaUpload = await storage.createMediaUpload({
         userId: req.userId,
         whapiMediaId: mediaId,
         fileName: fileName || generatedFileName,
@@ -4167,6 +5071,8 @@ function registerRoutes(app2) {
       });
       console.log(`[Media Upload] Saved ${generatedFileName} (${fileSizeMB.toFixed(2)}MB) for user ${req.userId}`);
       res.json({
+        id: mediaUpload.id,
+        // Database record ID for mediaUploadId
         mediaId,
         url: file,
         // Return original base64 data URL for inline sending
@@ -4280,6 +5186,12 @@ function registerRoutes(app2) {
       const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
       if (!channelId || !body) {
         return res.status(400).json({ error: "Channel ID and message body are required" });
+      }
+      const mediaRequiredTypes = ["image", "image_buttons", "video_buttons", "document"];
+      if (mediaRequiredTypes.includes(messageType) && !mediaUrl) {
+        return res.status(400).json({
+          error: `Media file is required for ${messageType} messages. Please upload a file before sending.`
+        });
       }
       const phonebook = await storage.getPhonebook(phonebookId);
       if (!phonebook || phonebook.userId !== req.userId) {
@@ -4440,9 +5352,100 @@ function registerRoutes(app2) {
       res.status(500).json({ error: error.message || "Failed to import CSV" });
     }
   });
+  app2.get("/api/subscribers", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const status = req.query.status;
+      const page = parseInt(req.query.page) || 1;
+      const pageSize = parseInt(req.query.pageSize) || 20;
+      if (status && status !== "subscribed" && status !== "unsubscribed") {
+        return res.status(400).json({ error: "Invalid status filter" });
+      }
+      if (page < 1 || pageSize < 1 || pageSize > 100) {
+        return res.status(400).json({ error: "Invalid pagination parameters" });
+      }
+      const result = await storage.getSubscribersForUser(effectiveUserId, { status, page, pageSize });
+      res.json({
+        subscribers: result.subscribers,
+        total: result.total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(result.total / pageSize)
+      });
+    } catch (error) {
+      console.error("Get subscribers error:", error);
+      res.status(500).json({ error: "Failed to fetch subscribers" });
+    }
+  });
+  app2.put("/api/subscribers/:id", requireAuth, async (req, res) => {
+    try {
+      const subscriberId = parseInt(req.params.id);
+      if (isNaN(subscriberId)) {
+        return res.status(400).json({ error: "Invalid subscriber ID" });
+      }
+      const subscriber = await storage.getSubscriber(subscriberId);
+      if (!subscriber || subscriber.userId !== req.userId) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+      const updateSchema = z2.object({
+        status: z2.enum(["subscribed", "unsubscribed"])
+      });
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: validationResult.error.flatten()
+        });
+      }
+      const { status } = validationResult.data;
+      const updated = await storage.updateSubscriber(subscriberId, { status });
+      res.json(updated);
+    } catch (error) {
+      console.error("Update subscriber error:", error);
+      res.status(500).json({ error: "Failed to update subscriber" });
+    }
+  });
+  app2.delete("/api/subscribers/:id", requireAuth, async (req, res) => {
+    try {
+      const subscriberId = parseInt(req.params.id);
+      if (isNaN(subscriberId)) {
+        return res.status(400).json({ error: "Invalid subscriber ID" });
+      }
+      const subscriber = await storage.getSubscriber(subscriberId);
+      if (!subscriber || subscriber.userId !== req.userId) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+      await storage.deleteSubscriber(subscriberId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete subscriber error:", error);
+      res.status(500).json({ error: "Failed to delete subscriber" });
+    }
+  });
+  app2.get("/api/subscribers/export", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.getSubscribersForUser(req.userId, { pageSize: 1e5 });
+      const csvLines = [
+        "Name,Phone,Status,Last Updated"
+        // Header
+      ];
+      for (const sub of result.subscribers) {
+        const lastUpdated = sub.lastUpdated ? new Date(sub.lastUpdated).toLocaleString() : "";
+        csvLines.push(`"${sub.name}","${sub.phone}","${sub.status}","${lastUpdated}"`);
+      }
+      const csv = csvLines.join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="subscribers-${Date.now()}.csv"`);
+      res.send(csv);
+    } catch (error) {
+      console.error("Export subscribers error:", error);
+      res.status(500).json({ error: "Failed to export subscribers" });
+    }
+  });
   app2.get("/api/workflows", requireAuth, async (req, res) => {
     try {
-      const workflows2 = await storage.getWorkflowsForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflows2 = await storage.getWorkflowsForUser(effectiveUserId);
       res.json(workflows2);
     } catch (error) {
       console.error("Get workflows error:", error);
@@ -4451,9 +5454,10 @@ function registerRoutes(app2) {
   });
   app2.post("/api/workflows", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const validationResult = insertWorkflowSchema.extend({ userId: z2.number() }).safeParse({
         ...req.body,
-        userId: req.userId
+        userId: effectiveUserId
       });
       if (!validationResult.success) {
         return res.status(400).json({
@@ -4463,7 +5467,7 @@ function registerRoutes(app2) {
       }
       const { name, definitionJson } = validationResult.data;
       const workflow = await storage.createWorkflow({
-        userId: req.userId,
+        userId: effectiveUserId,
         name,
         definitionJson: definitionJson || {}
       });
@@ -4475,9 +5479,10 @@ function registerRoutes(app2) {
   });
   app2.put("/api/workflows/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
-      if (!workflow || workflow.userId !== req.userId) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
       const updateSchema = z2.object({
@@ -4506,9 +5511,10 @@ function registerRoutes(app2) {
   });
   app2.delete("/api/workflows/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
-      if (!workflow || workflow.userId !== req.userId) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
       await storage.deleteWorkflow(workflowId);
@@ -4520,9 +5526,10 @@ function registerRoutes(app2) {
   });
   app2.patch("/api/workflows/:id/toggle-active", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const workflowId = parseInt(req.params.id);
       const workflow = await storage.getWorkflow(workflowId);
-      if (!workflow || workflow.userId !== req.userId) {
+      if (!workflow || workflow.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Workflow not found" });
       }
       const { isActive } = req.body;
@@ -4542,8 +5549,9 @@ function registerRoutes(app2) {
       if (!phone || !nodeType || !config || !channelId) {
         return res.status(400).json({ error: "Missing required fields" });
       }
+      const effectiveUserId = getEffectiveUserId(req);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (channel.status !== "ACTIVE" || channel.authStatus !== "AUTHORIZED") {
@@ -4558,7 +5566,8 @@ function registerRoutes(app2) {
   });
   app2.get("/api/workflow-logs", requireAuth, async (req, res) => {
     try {
-      const userWorkflows = await storage.getWorkflowsForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const userWorkflows = await storage.getWorkflowsForUser(effectiveUserId);
       const workflowIds = userWorkflows.map((w) => w.id);
       if (workflowIds.length === 0) {
         return res.json([]);
@@ -4583,7 +5592,8 @@ function registerRoutes(app2) {
   });
   app2.get("/api/jobs", requireAuth, async (req, res) => {
     try {
-      const jobs2 = await storage.getJobsForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobs2 = await storage.getJobsForUser(effectiveUserId);
       res.json(jobs2);
     } catch (error) {
       console.error("Get jobs error:", error);
@@ -4592,9 +5602,10 @@ function registerRoutes(app2) {
   });
   app2.get("/api/jobs/:id", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const jobId = parseInt(req.params.id);
       const job = await storage.getJob(jobId);
-      if (!job || job.userId !== req.userId) {
+      if (!job || job.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Job not found" });
       }
       const messages2 = await storage.getMessagesForJob(jobId);
@@ -5097,6 +6108,79 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to unban user" });
     }
   });
+  app2.post("/api/admin/impersonate/:userId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const targetUserId = parseInt(req.params.userId);
+      if (targetUserId === req.userId) {
+        return res.status(400).json({ error: "You cannot impersonate yourself" });
+      }
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (targetUser.role === "admin") {
+        return res.status(403).json({ error: "Cannot impersonate other administrators" });
+      }
+      await storage.createAuditLog({
+        actorUserId: req.userId,
+        targetType: "user",
+        targetId: targetUserId,
+        action: "IMPERSONATE_USER",
+        meta: {
+          targetUserEmail: targetUser.email,
+          targetUserName: targetUser.name,
+          adminId: req.userId
+        }
+      });
+      const token = generateToken(req.userId, targetUserId);
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1e3
+        // 7 days
+      });
+      res.json({
+        success: true,
+        impersonatedUser: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email
+        }
+      });
+    } catch (error) {
+      console.error("Impersonate user error:", error);
+      res.status(500).json({ error: "Failed to impersonate user" });
+    }
+  });
+  app2.post("/api/admin/exit-impersonation", requireAuth, async (req, res) => {
+    try {
+      if (!req.isImpersonating || !req.impersonatedUser) {
+        return res.status(400).json({ error: "Not currently impersonating" });
+      }
+      await storage.createAuditLog({
+        actorUserId: req.userId,
+        // req.userId is the admin ID during impersonation
+        targetType: "user",
+        targetId: req.impersonatedUser.id,
+        // The user that was being impersonated
+        action: "EXIT_IMPERSONATION",
+        meta: { adminId: req.userId }
+      });
+      const token = generateToken(req.userId);
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1e3
+        // 7 days
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Exit impersonation error:", error);
+      res.status(500).json({ error: "Failed to exit impersonation" });
+    }
+  });
   app2.patch("/api/admin/users/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
@@ -5277,15 +6361,6 @@ function registerRoutes(app2) {
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
       }
-      const days = getDaysFromBillingPeriod(plan.billingPeriod);
-      await storage.updateMainDaysBalance(days);
-      await storage.createBalanceTransaction({
-        type: "topup",
-        days,
-        channelId: null,
-        userId: payment.userId,
-        note: `Offline payment approved for ${plan.name} (${days} days)`
-      });
       await storage.updateUser(payment.userId, { status: "active" });
       let couponId;
       if (payment.couponCode) {
@@ -5310,17 +6385,18 @@ function registerRoutes(app2) {
         agreedAt: payment.createdAt
         // Use payment creation time as terms agreement time
       });
+      const paymentType = payment.type || "OFFLINE_PAYMENT";
       await storage.createAuditLog({
         actorUserId: req.userId,
         action: "APPROVE_PAYMENT",
         meta: {
           entity: "offline_payment",
           entityId: paymentId,
-          days,
+          paymentType,
           adminId: req.userId
         }
       });
-      res.json({ success: true, daysAdded: days });
+      res.json({ success: true, message: "Payment approved. Channel is now active. Admin can add days manually." });
     } catch (error) {
       console.error("Approve payment error:", error);
       res.status(500).json({ error: "Failed to approve payment" });
@@ -5597,6 +6673,8 @@ function registerRoutes(app2) {
         name: `${original.name} (Copy)`,
         currency: original.currency,
         price: original.price,
+        displayCurrency: original.displayCurrency,
+        displayPrice: original.displayPrice,
         billingPeriod: original.billingPeriod,
         requestType: original.requestType,
         paymentMethods: duplicatePaymentMethods,
@@ -5803,7 +6881,32 @@ function registerRoutes(app2) {
     try {
       const { userId, webhookToken } = req.params;
       const webhookPayload = req.body;
-      console.log(`Webhook received for user ${userId}:`, webhookPayload);
+      console.log(`
+${"=".repeat(80)}`);
+      console.log(`[WORKFLOW WEBHOOK] Received for user ${userId} at ${(/* @__PURE__ */ new Date()).toISOString()}`);
+      console.log(`[WORKFLOW WEBHOOK] Token: ${webhookToken.substring(0, 8)}...`);
+      console.log(`[WORKFLOW WEBHOOK] Full token: ${webhookToken}`);
+      console.log(`[WORKFLOW WEBHOOK] Event type: ${webhookPayload.event?.type || "unknown"}`);
+      const msg = webhookPayload.messages?.[0];
+      if (msg) {
+        console.log(`[WORKFLOW WEBHOOK] Message type: ${msg.type}`);
+        console.log(`[WORKFLOW WEBHOOK] Reply type: ${msg.reply?.type || "none"}`);
+        console.log(`[WORKFLOW WEBHOOK] From: ${msg.from}`);
+        console.log(`[WORKFLOW WEBHOOK] Has context.quoted_id: ${!!msg.context?.quoted_id}`);
+        if (msg.reply?.type === "buttons_reply") {
+          console.log(`[WORKFLOW WEBHOOK] CAROUSEL/BUTTON CLICK DETECTED!`);
+          console.log(`[WORKFLOW WEBHOOK] Button ID: ${msg.reply.buttons_reply?.id}`);
+          console.log(`[WORKFLOW WEBHOOK] Button title: ${msg.reply.buttons_reply?.title}`);
+        }
+        if (msg.reply?.type === "list_reply") {
+          console.log(`[WORKFLOW WEBHOOK] LIST CLICK DETECTED!`);
+          console.log(`[WORKFLOW WEBHOOK] List ID: ${msg.reply.list_reply?.id}`);
+          console.log(`[WORKFLOW WEBHOOK] List title: ${msg.reply.list_reply?.title}`);
+        }
+      }
+      console.log(`[WORKFLOW WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
+      console.log(`${"=".repeat(80)}
+`);
       const workflow = await db.select().from(workflows).where(
         and2(
           eq2(workflows.userId, parseInt(userId)),
@@ -5811,7 +6914,13 @@ function registerRoutes(app2) {
         )
       ).limit(1);
       if (!workflow || workflow.length === 0) {
-        console.error("Invalid webhook token");
+        console.error(`[WORKFLOW WEBHOOK] INVALID TOKEN!`);
+        console.error(`[WORKFLOW WEBHOOK] User ID: ${userId}, Token: ${webhookToken}`);
+        const userWorkflows = await db.select({ id: workflows.id, name: workflows.name, token: workflows.webhookToken }).from(workflows).where(eq2(workflows.userId, parseInt(userId)));
+        console.error(`[WORKFLOW WEBHOOK] User ${userId} has ${userWorkflows.length} workflows with tokens:`);
+        userWorkflows.forEach((wf, idx) => {
+          console.error(`  [${idx + 1}] Workflow "${wf.name}" (ID: ${wf.id}): ${wf.token?.substring(0, 8)}...${wf.token?.slice(-4)}`);
+        });
         return res.status(401).json({ error: "Invalid webhook token" });
       }
       const workflowRecord = workflow[0];
@@ -5837,8 +6946,24 @@ function registerRoutes(app2) {
         console.log("Ignoring outbound message (from_me === true)");
         return res.json({ success: true, message: "Outbound message ignored" });
       }
+      const hasTextContent = incomingMessage.text?.body && incomingMessage.text.body.trim().length > 0;
+      const hasButtonReply = incomingMessage.reply?.type === "buttons_reply" || incomingMessage.reply?.type === "list_reply" || incomingMessage.button?.id;
+      if (!hasTextContent && !hasButtonReply) {
+        console.log("Ignoring system event/status update (no text content or button reply):", {
+          type: incomingMessage.type,
+          hasText: !!incomingMessage.text,
+          hasReply: !!incomingMessage.reply,
+          hasButton: !!incomingMessage.button
+        });
+        return res.json({ success: true, message: "System event ignored" });
+      }
       const chatId = incomingMessage.chat_id || "";
       const phone = chatId.split("@")[0];
+      const isGroupChat = chatId.endsWith("@g.us");
+      if (isGroupChat) {
+        console.log(`Ignoring group message from chat_id: ${chatId}`);
+        return res.json({ success: true, message: "Group messages are not supported by workflows" });
+      }
       let messageType = "other";
       let rawButtonId = "";
       if (incomingMessage.reply?.type === "buttons_reply") {
@@ -5856,6 +6981,42 @@ function registerRoutes(app2) {
       const buttonId = rawButtonId.includes(":") ? rawButtonId.split(":").pop() || "" : rawButtonId;
       const textBody = incomingMessage.text?.body || "";
       console.log(`Message type: ${messageType}, Raw ID: ${rawButtonId}, Extracted ID: ${buttonId}`);
+      if (messageType === "button_reply" && phone) {
+        try {
+          let buttonTitle = "";
+          if (incomingMessage.reply?.type === "buttons_reply") {
+            buttonTitle = incomingMessage.reply.buttons_reply?.title || "";
+          } else if (incomingMessage.reply?.type === "list_reply") {
+            buttonTitle = incomingMessage.reply.list_reply?.title || "";
+          } else if (incomingMessage.button?.text) {
+            buttonTitle = incomingMessage.button.text;
+          }
+          if (buttonTitle && buttonTitle.trim().length > 0) {
+            const buttonTitleNormalized = buttonTitle.trim();
+            const keywordsSetting = await storage.getSetting("subscriber_keywords");
+            const keywords = keywordsSetting?.value ? JSON.parse(keywordsSetting.value) : { subscribe: ["Subscribe"], unsubscribe: ["Unsubscribe"] };
+            const matchesSubscribe = keywords.subscribe.some(
+              (kw) => kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+            );
+            const matchesUnsubscribe = keywords.unsubscribe.some(
+              (kw) => kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+            );
+            if (matchesSubscribe || matchesUnsubscribe) {
+              const status = matchesSubscribe ? "subscribed" : "unsubscribed";
+              await storage.upsertSubscriber({
+                userId: activeWorkflow.userId,
+                phone,
+                name: "",
+                // Default empty name, can be edited later
+                status
+              });
+              console.log(`[Subscriber] ${phone} ${status} via button: "${buttonTitle}"`);
+            }
+          }
+        } catch (subscriberError) {
+          console.error(`[Subscriber] Error processing subscriber: ${subscriberError.message}`);
+        }
+      }
       const executionLog = {
         workflowId: activeWorkflow.id,
         phone,
@@ -5888,60 +7049,181 @@ function registerRoutes(app2) {
             }
           }
           if (isFirstMessageToday) {
-            const definition = activeWorkflow.definitionJson;
-            const entryNodeId = activeWorkflow.entryNodeId;
-            console.log(`Entry node ID: ${entryNodeId}, Total nodes: ${definition.nodes?.length || 0}`);
-            if (entryNodeId) {
-              const entryNode = definition.nodes?.find((n) => n.id === entryNodeId);
-              if (entryNode) {
-                console.log(`Found entry node, sending message...`);
+            const allActiveWorkflows = await db.select().from(workflows).where(
+              and2(
+                eq2(workflows.userId, activeWorkflow.userId),
+                eq2(workflows.isActive, true)
+              )
+            );
+            const workflowsWithEntryNodes = allActiveWorkflows.filter((wf) => wf.entryNodeId !== null);
+            console.log(`[First Message of Day] Found ${workflowsWithEntryNodes.length} active workflows with entry nodes for user ${activeWorkflow.userId}`);
+            for (const workflow2 of workflowsWithEntryNodes) {
+              try {
+                const definition = workflow2.definitionJson;
+                const entryNodeId = workflow2.entryNodeId;
+                console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] Entry node ID: ${entryNodeId}, Total nodes: ${definition.nodes?.length || 0}`);
+                if (!entryNodeId) {
+                  console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] No entry node configured - skipping`);
+                  continue;
+                }
+                const entryNode = definition.nodes?.find((n) => n.id === entryNodeId);
+                if (!entryNode) {
+                  console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] Entry node ${entryNodeId} not found in workflow definition`);
+                  continue;
+                }
+                console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] Found entry node, sending message...`);
                 try {
-                  const response = await sendNodeMessage(phone, entryNode, activeWorkflow.userId);
-                  executionLog.responsesSent.push(response);
-                  console.log(`Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                  const response = await sendNodeMessage(phone, entryNode, workflow2.userId, workflow2.id);
+                  if (workflow2.id === activeWorkflow.id) {
+                    executionLog.responsesSent.push(response);
+                  }
+                  console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow2.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [response],
+                    status: "SUCCESS",
+                    errorMessage: null
+                  });
                 } catch (sendError) {
                   const errorMsg = sendError.message || String(sendError);
-                  console.error(`Failed to send entry node message: ${errorMsg}`);
-                  executionLog.errorMessage = `Failed to send welcome message: ${errorMsg}`;
+                  console.error(`[Workflow ${workflow2.id}: ${workflow2.name}] Failed to send entry node message: ${errorMsg}`);
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow2.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [],
+                    status: "ERROR",
+                    errorMessage: `Failed to send welcome message: ${errorMsg}`
+                  });
+                  if (workflow2.id === activeWorkflow.id) {
+                    executionLog.errorMessage = `Failed to send welcome message: ${errorMsg}`;
+                    executionLog.status = "ERROR";
+                  }
+                }
+                const conversationState = await db.select().from(conversationStates).where(
+                  and2(
+                    eq2(conversationStates.workflowId, workflow2.id),
+                    eq2(conversationStates.phone, phone)
+                  )
+                ).limit(1);
+                const now = /* @__PURE__ */ new Date();
+                if (conversationState.length) {
+                  await db.update(conversationStates).set({
+                    lastMessageAt: now,
+                    lastMessageDate: now,
+                    currentNodeId: entryNodeId,
+                    updatedAt: now
+                  }).where(eq2(conversationStates.id, conversationState[0].id));
+                } else {
+                  await db.insert(conversationStates).values({
+                    workflowId: workflow2.id,
+                    phone,
+                    lastMessageAt: now,
+                    lastMessageDate: now,
+                    currentNodeId: entryNodeId
+                  });
+                }
+              } catch (workflowError) {
+                const errorMsg = workflowError.message || String(workflowError);
+                console.error(`[Workflow ${workflow2.id}: ${workflow2.name}] Critical error during first message processing: ${errorMsg}`);
+                try {
+                  await db.insert(workflowExecutions).values({
+                    workflowId: workflow2.id,
+                    phone,
+                    messageType: "text",
+                    triggerData: { trigger: "first_message_of_day", phone, dateLocal },
+                    responsesSent: [],
+                    status: "ERROR",
+                    errorMessage: `Critical workflow error: ${errorMsg}`
+                  });
+                } catch (logError) {
+                  console.error(`[Workflow ${workflow2.id}: ${workflow2.name}] Failed to log error: ${logError}`);
+                }
+                if (workflow2.id === activeWorkflow.id) {
+                  executionLog.errorMessage = `Critical workflow error: ${errorMsg}`;
                   executionLog.status = "ERROR";
                 }
-              } else {
-                console.log(`Entry node ${entryNodeId} not found in workflow definition`);
-                executionLog.errorMessage = `Entry node ${entryNodeId} not found in workflow definition`;
               }
-            } else {
-              console.log(`No entry node configured for workflow ${activeWorkflow.id} - skipping welcome message`);
             }
-            const conversationState = await db.select().from(conversationStates).where(
-              and2(
-                eq2(conversationStates.workflowId, activeWorkflow.id),
-                eq2(conversationStates.phone, phone)
-              )
-            ).limit(1);
-            const now = /* @__PURE__ */ new Date();
-            if (conversationState.length) {
-              await db.update(conversationStates).set({
-                lastMessageAt: now,
-                lastMessageDate: now,
-                currentNodeId: entryNodeId,
-                updatedAt: now
-              }).where(eq2(conversationStates.id, conversationState[0].id));
-            } else {
-              await db.insert(conversationStates).values({
-                workflowId: activeWorkflow.id,
-                phone,
-                lastMessageAt: now,
-                lastMessageDate: now,
-                currentNodeId: entryNodeId
-              });
+            if (workflowsWithEntryNodes.length === 0) {
+              console.log(`[First Message of Day] No active workflows with entry nodes found for user ${activeWorkflow.userId}`);
             }
           } else {
             console.log("Not first message of day, no action taken");
           }
         } else if (messageType === "button_reply") {
+          console.log(`
+[BUTTON CLICK DEBUG] =============================================`);
+          console.log(`[BUTTON CLICK DEBUG] Button click received for workflow ${activeWorkflow.id} (${activeWorkflow.name})`);
+          console.log(`[BUTTON CLICK DEBUG] Raw button ID: "${rawButtonId}"`);
+          console.log(`[BUTTON CLICK DEBUG] Extracted button ID: "${buttonId}"`);
+          console.log(`[BUTTON CLICK DEBUG] Reply type: ${incomingMessage.reply?.type}`);
+          console.log(`[BUTTON CLICK DEBUG] context.quoted_id: ${incomingMessage.context?.quoted_id || "MISSING"}`);
+          console.log(`[BUTTON CLICK DEBUG] Full context:`, JSON.stringify(incomingMessage.context, null, 2));
+          const quotedId = incomingMessage.context?.quoted_id;
+          if (quotedId) {
+            console.log(`[BUTTON CLICK DEBUG] Looking up quotedId "${quotedId}" in sent_messages table...`);
+            try {
+              const anyOwnership = await db.select().from(sentMessages).where(eq2(sentMessages.messageId, quotedId)).limit(1);
+              console.log(`[BUTTON CLICK DEBUG] sent_messages lookup result:`, JSON.stringify(anyOwnership, null, 2));
+              if (anyOwnership && anyOwnership.length > 0) {
+                console.log(`[BUTTON CLICK DEBUG] Found ownership record: workflowId=${anyOwnership[0].workflowId}, messageType=${anyOwnership[0].messageType}`);
+                if (anyOwnership[0].workflowId !== activeWorkflow.id) {
+                  console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
+                  return res.json({ success: true, message: "Button click belongs to different workflow" });
+                }
+                console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
+              } else {
+                console.log(`[BUTTON CLICK DEBUG] No record found in sent_messages for quotedId "${quotedId}"`);
+                console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
+              }
+            } catch (ownershipError) {
+              console.warn(`[Button Reply] Ownership check failed (table may not exist): ${ownershipError.message} - allowing processing for backward compatibility`);
+            }
+          } else {
+            console.log(`[BUTTON CLICK DEBUG] No context.quoted_id in the webhook - cannot verify ownership`);
+          }
           const definition = activeWorkflow.definitionJson;
+          console.log(`[Button Reply Debug] =============================================`);
+          console.log(`[Button Reply Debug] Workflow: ${activeWorkflow.name} (ID: ${activeWorkflow.id})`);
+          console.log(`[Button Reply Debug] Button ID received: "${buttonId}"`);
+          console.log(`[Button Reply Debug] Raw Button ID: "${rawButtonId}"`);
+          console.log(`[Button Reply Debug] Total edges: ${definition.edges?.length || 0}`);
+          console.log(`[Button Reply Debug] Total nodes: ${definition.nodes?.length || 0}`);
+          console.log(`[Button Reply Debug] All edges:`, JSON.stringify(definition.edges?.map((e) => ({
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle
+          })), null, 2));
+          const carouselNodes = definition.nodes?.filter(
+            (n) => n.data?.type === "carousel" || n.data?.nodeType === "carousel"
+          ) || [];
+          console.log(`[Button Reply Debug] Carousel nodes found: ${carouselNodes.length}`);
+          carouselNodes.forEach((node, idx) => {
+            const cards = node.data?.config?.cards || [];
+            console.log(`[Button Reply Debug] Carousel ${idx + 1} (${node.id}):`, JSON.stringify({
+              nodeId: node.id,
+              cards: cards.map((card) => ({
+                cardId: card.id,
+                buttons: (card.buttons || []).map((btn) => ({
+                  id: btn.id,
+                  title: btn.title,
+                  type: btn.type
+                }))
+              }))
+            }, null, 2));
+          });
           let targetEdge = definition.edges?.find((edge) => edge.sourceHandle === buttonId);
+          if (targetEdge) {
+            console.log(`[Button Reply Debug] Found edge by sourceHandle: ${JSON.stringify(targetEdge)}`);
+          }
           if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by sourceHandle, trying fallback 1 (buttons/list rows)...`);
             targetEdge = definition.edges?.find((edge) => {
               const sourceNode = definition.nodes?.find((n) => n.id === edge.source);
               if (!sourceNode) return false;
@@ -5951,29 +7233,252 @@ function registerRoutes(app2) {
               const hasMatchingRow = sections.some(
                 (section) => section.rows?.some((row) => row.id === buttonId)
               );
-              return hasMatchingButton || hasMatchingRow;
+              const found = hasMatchingButton || hasMatchingRow;
+              if (found) {
+                console.log(`[Button Reply Debug] Found matching button in node ${sourceNode.id}`);
+              }
+              return found;
             });
+            if (targetEdge) {
+              console.log(`[Button Reply Debug] Found edge by fallback 1: ${JSON.stringify(targetEdge)}`);
+            }
+          }
+          if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by fallback 1, trying fallback 2 (carousel cards)...`);
+            for (const node of definition.nodes || []) {
+              const nodeType = node.data?.type || node.data?.nodeType;
+              if (nodeType !== "carousel") continue;
+              const cards = node.data?.config?.cards || [];
+              for (const card of cards) {
+                const matchingBtn = (card.buttons || []).find((btn) => btn.id === buttonId);
+                if (matchingBtn) {
+                  console.log(`[Button Reply Debug] Found matching button "${buttonId}" in carousel card "${card.id}"`);
+                  targetEdge = definition.edges?.find(
+                    (e) => e.source === node.id && e.sourceHandle === buttonId
+                  );
+                  if (!targetEdge) {
+                    targetEdge = definition.edges?.find(
+                      (e) => e.source === node.id && e.sourceHandle === card.id
+                    );
+                    if (targetEdge) {
+                      console.log(`[Button Reply Debug] Found edge by card ID handle: ${JSON.stringify(targetEdge)}`);
+                    }
+                  }
+                  if (!targetEdge) {
+                    targetEdge = definition.edges?.find(
+                      (e) => e.source === node.id && e.sourceHandle?.includes(matchingBtn.title)
+                    );
+                    if (targetEdge) {
+                      console.log(`[Button Reply Debug] Found edge by button title handle: ${JSON.stringify(targetEdge)}`);
+                    }
+                  }
+                  if (!targetEdge) {
+                    const carouselEdges = definition.edges?.filter((e) => e.source === node.id) || [];
+                    console.log(`[Button Reply Debug] Carousel edges from node ${node.id}: ${JSON.stringify(carouselEdges)}`);
+                    if (carouselEdges.length > 0) {
+                      let btnIndex = 0;
+                      let found = false;
+                      for (const c of cards) {
+                        for (const b of c.buttons || []) {
+                          if (b.id === buttonId) {
+                            found = true;
+                            break;
+                          }
+                          if (b.type === "quick_reply") btnIndex++;
+                        }
+                        if (found) break;
+                      }
+                      if (found && btnIndex < carouselEdges.length) {
+                        targetEdge = carouselEdges[btnIndex];
+                        console.log(`[Button Reply Debug] Using carousel edge by index ${btnIndex}: ${JSON.stringify(targetEdge)}`);
+                      }
+                    }
+                  }
+                  if (targetEdge) break;
+                }
+              }
+              if (targetEdge) break;
+            }
+            if (targetEdge) {
+              console.log(`[Button Reply Debug] Found edge by fallback 2 (carousel): ${JSON.stringify(targetEdge)}`);
+            }
+          }
+          if (!targetEdge) {
+            console.log(`[Button Reply Debug] No edge found by fallbacks 1 & 2, trying fallback 3 (any matching interactive node)...`);
+            const interactiveNodes = definition.nodes?.filter((n) => {
+              const nodeType = n.data?.type || n.data?.nodeType;
+              return ["carousel", "quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons"].includes(nodeType);
+            }) || [];
+            console.log(`[Button Reply Debug] Found ${interactiveNodes.length} interactive nodes`);
+            for (const node of interactiveNodes) {
+              const nodeType = node.data?.type || node.data?.nodeType;
+              const config = node.data?.config || {};
+              let hasMatchingButton = false;
+              if (nodeType === "carousel") {
+                const cards = config.cards || [];
+                for (const card of cards) {
+                  if ((card.buttons || []).some((btn) => btn.id === buttonId)) {
+                    hasMatchingButton = true;
+                    console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in carousel node ${node.id}`);
+                    break;
+                  }
+                }
+              }
+              if (["quickReply", "quickReplyImage", "quickReplyVideo", "buttons"].includes(nodeType)) {
+                if ((config.buttons || []).some((btn) => btn.id === buttonId)) {
+                  hasMatchingButton = true;
+                  console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in ${nodeType} node ${node.id}`);
+                }
+              }
+              if (nodeType === "listMessage") {
+                const sections = config.sections || [];
+                for (const section of sections) {
+                  if ((section.rows || []).some((row) => row.id === buttonId)) {
+                    hasMatchingButton = true;
+                    console.log(`[Button Reply Debug] Fallback 3: Found row "${buttonId}" in listMessage node ${node.id}`);
+                    break;
+                  }
+                }
+              }
+              if (hasMatchingButton) {
+                const nodeEdges = definition.edges?.filter((e) => e.source === node.id) || [];
+                console.log(`[Button Reply Debug] Fallback 3: Node ${node.id} has ${nodeEdges.length} outgoing edges`);
+                targetEdge = nodeEdges.find((e) => e.sourceHandle === buttonId);
+                if (!targetEdge && nodeEdges.length > 0) {
+                  console.log(`[Button Reply Debug] Fallback 3: No exact sourceHandle match, using first available edge`);
+                  targetEdge = nodeEdges[0];
+                }
+                if (targetEdge) {
+                  console.log(`[Button Reply Debug] Fallback 3: Using edge ${JSON.stringify(targetEdge)}`);
+                  break;
+                }
+              }
+            }
           }
           if (targetEdge) {
             const targetNodeId = targetEdge.target;
             const targetNode = definition.nodes?.find((n) => n.id === targetNodeId);
+            console.log(`[Button Reply Debug] Target node ID: ${targetNodeId}`);
+            console.log(`[Button Reply Debug] Target node found: ${!!targetNode}`);
             if (targetNode) {
-              const response = await sendNodeMessage(phone, targetNode, activeWorkflow.userId);
-              executionLog.responsesSent.push(response);
-              await db.update(conversationStates).set({
-                lastMessageAt: /* @__PURE__ */ new Date(),
-                currentNodeId: targetNodeId,
-                updatedAt: /* @__PURE__ */ new Date()
-              }).where(
+              const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
+              console.log(`[Button Reply Debug] Target node type: ${nodeType}`);
+              let currentNode = targetNode;
+              let currentNodeId = targetNodeId;
+              let conversationState = await db.select().from(conversationStates).where(
                 and2(
                   eq2(conversationStates.workflowId, activeWorkflow.id),
                   eq2(conversationStates.phone, phone)
                 )
-              );
+              ).limit(1);
+              if (!conversationState || conversationState.length === 0) {
+                const now = /* @__PURE__ */ new Date();
+                await db.insert(conversationStates).values({
+                  workflowId: activeWorkflow.id,
+                  phone,
+                  lastMessageAt: now,
+                  lastMessageDate: now,
+                  currentNodeId,
+                  context: {}
+                });
+                conversationState = await db.select().from(conversationStates).where(
+                  and2(
+                    eq2(conversationStates.workflowId, activeWorkflow.id),
+                    eq2(conversationStates.phone, phone)
+                  )
+                ).limit(1);
+              }
+              let state = conversationState[0];
+              while (currentNode) {
+                const currentNodeType = currentNode.data?.type || currentNode.data?.nodeType;
+                if (currentNodeType === "action.http_request") {
+                  const httpResult = await executeHttpNode(
+                    currentNode,
+                    state,
+                    incomingMessage,
+                    { phone, userId: activeWorkflow.userId }
+                  );
+                  await db.update(conversationStates).set({
+                    lastMessageAt: /* @__PURE__ */ new Date(),
+                    currentNodeId,
+                    context: httpResult.stateUpdate,
+                    updatedAt: /* @__PURE__ */ new Date()
+                  }).where(eq2(conversationStates.id, state.id));
+                  state = { ...state, context: httpResult.stateUpdate };
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: "action.http_request",
+                    success: httpResult.success,
+                    handle: httpResult.nextHandle,
+                    result: httpResult.result
+                  });
+                  const nextNodeId = getNextNodeByHandle(currentNodeId, httpResult.nextHandle, definition.edges);
+                  if (!nextNodeId) {
+                    console.log(`HTTP node ${currentNodeId} has no ${httpResult.nextHandle} handle connected - workflow ends here`);
+                    break;
+                  }
+                  const nextNode = definition.nodes?.find((n) => n.id === nextNodeId);
+                  if (!nextNode) {
+                    console.log(`Next node ${nextNodeId} not found in workflow definition after HTTP node`);
+                    break;
+                  }
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+                } else if (currentNodeType && (currentNodeType.startsWith("message.") || ["quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons", "carousel"].includes(currentNodeType))) {
+                  console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
+                  console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
+                  try {
+                    const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId, activeWorkflow.id);
+                    console.log(`[Button Reply Debug] Message sent successfully: ${JSON.stringify(response)}`);
+                    executionLog.responsesSent.push(response);
+                    console.log(`[Button Reply Debug] Responses sent count: ${executionLog.responsesSent.length}`);
+                  } catch (sendError) {
+                    console.error(`[Button Reply Debug] Failed to send message: ${sendError.message}`);
+                    throw sendError;
+                  }
+                  await db.update(conversationStates).set({
+                    lastMessageAt: /* @__PURE__ */ new Date(),
+                    currentNodeId,
+                    updatedAt: /* @__PURE__ */ new Date()
+                  }).where(eq2(conversationStates.id, state.id));
+                  const hasInteractiveElements = ["quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons", "carousel"].includes(currentNodeType);
+                  if (hasInteractiveElements) {
+                    console.log(`[Button Reply Debug] Stopping execution - message node has interactive elements (${currentNodeType})`);
+                    break;
+                  }
+                  const outgoingEdges = definition.edges?.filter((e) => e.source === currentNodeId) || [];
+                  if (outgoingEdges.length === 0) {
+                    console.log(`[Button Reply Debug] No outgoing edges from message node ${currentNodeId} - workflow ends here`);
+                    break;
+                  }
+                  const nextEdge = outgoingEdges[0];
+                  const nextNodeId = nextEdge.target;
+                  const nextNode = definition.nodes?.find((n) => n.id === nextNodeId);
+                  if (!nextNode) {
+                    console.log(`[Button Reply Debug] Next node ${nextNodeId} not found - workflow ends here`);
+                    break;
+                  }
+                  console.log(`[Button Reply Debug] Continuing to next node: ${nextNodeId} (simple message, no user input required)`);
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+                } else {
+                  console.log(`[Button Reply Debug] Unknown node type: ${currentNodeType} - stopping execution`);
+                  console.log(`[Button Reply Debug] Node data: ${JSON.stringify(currentNode.data)}`);
+                  break;
+                }
+              }
+              console.log(`[Button Reply Debug] While loop finished. Total responses sent: ${executionLog.responsesSent.length}`);
+            } else {
+              console.log(`[Button Reply Debug] Target node not found in workflow definition`);
             }
           } else {
-            console.log(`No target node found for button_id: ${buttonId}`);
+            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId}`);
+            console.log(`[Button Reply Debug] Available sourceHandles in edges:`, definition.edges?.map((e) => e.sourceHandle));
           }
+        }
+        if (executionLog.responsesSent.length === 0 && !executionLog.errorMessage) {
+          console.log(`[Webhook] No responses sent - adding reason to log`);
+          executionLog.errorMessage = `No messages sent. Possible reasons: No target node found, node is not a message node, or button triggers native WhatsApp action (call/URL button).`;
         }
         await db.insert(workflowExecutions).values(executionLog);
         res.json({ success: true });
@@ -5992,7 +7497,31 @@ function registerRoutes(app2) {
     try {
       const { userId, bulkWebhookToken } = req.params;
       const webhookPayload = req.body;
-      console.log(`[Bulk Webhook] Received for user ${userId}:`, JSON.stringify(webhookPayload));
+      console.log(`
+${"=".repeat(80)}`);
+      console.log(`[BULK WEBHOOK] Received for user ${userId} at ${(/* @__PURE__ */ new Date()).toISOString()}`);
+      console.log(`[BULK WEBHOOK] Token: ${bulkWebhookToken.substring(0, 8)}...`);
+      console.log(`[BULK WEBHOOK] Event type: ${webhookPayload.event?.type || "unknown"}`);
+      const bulkMsg = webhookPayload.messages?.[0];
+      if (bulkMsg) {
+        console.log(`[BULK WEBHOOK] Message type: ${bulkMsg.type}`);
+        console.log(`[BULK WEBHOOK] Reply type: ${bulkMsg.reply?.type || "none"}`);
+        console.log(`[BULK WEBHOOK] From: ${bulkMsg.from}`);
+        console.log(`[BULK WEBHOOK] Has context.quoted_id: ${!!bulkMsg.context?.quoted_id}`);
+        if (bulkMsg.reply?.type === "buttons_reply") {
+          console.log(`[BULK WEBHOOK] *** CAROUSEL/BUTTON CLICK DETECTED! ***`);
+          console.log(`[BULK WEBHOOK] Button ID: ${bulkMsg.reply.buttons_reply?.id}`);
+          console.log(`[BULK WEBHOOK] Button title: ${bulkMsg.reply.buttons_reply?.title}`);
+        }
+        if (bulkMsg.reply?.type === "list_reply") {
+          console.log(`[BULK WEBHOOK] *** LIST CLICK DETECTED! ***`);
+          console.log(`[BULK WEBHOOK] List ID: ${bulkMsg.reply.list_reply?.id}`);
+          console.log(`[BULK WEBHOOK] List title: ${bulkMsg.reply.list_reply?.title}`);
+        }
+      }
+      console.log(`[BULK WEBHOOK] Full payload:`, JSON.stringify(webhookPayload, null, 2));
+      console.log(`${"=".repeat(80)}
+`);
       const user = await db.select().from(users).where(
         and2(
           eq2(users.id, parseInt(userId)),
@@ -6000,6 +7529,143 @@ function registerRoutes(app2) {
         )
       ).limit(1);
       if (!user || user.length === 0) {
+        console.log("[Bulk Webhook] Token doesn't match bulkWebhookToken, checking if it's a workflow token...");
+        const workflowWithToken = await db.select().from(workflows).where(
+          and2(
+            eq2(workflows.userId, parseInt(userId)),
+            eq2(workflows.webhookToken, bulkWebhookToken)
+          )
+        ).limit(1);
+        if (workflowWithToken && workflowWithToken.length > 0) {
+          console.log(`[Bulk Webhook] Found workflow ${workflowWithToken[0].id} with this token - redirecting to workflow handler`);
+          const messageEvent2 = webhookPayload.messages?.[0];
+          if (messageEvent2 && (messageEvent2.reply?.type === "buttons_reply" || messageEvent2.reply?.type === "list_reply")) {
+            console.log(`[Bulk Webhook] Processing button/list reply through workflow logic`);
+            const workflowRecord = workflowWithToken[0];
+            if (!workflowRecord.isActive) {
+              console.log(`[Bulk Webhook] Workflow ${workflowRecord.id} is inactive`);
+              return res.json({ success: true, message: "Workflow is inactive" });
+            }
+            const incomingMessage = messageEvent2;
+            const chatId = incomingMessage.chat_id || "";
+            const phone = chatId.split("@")[0];
+            if (chatId.endsWith("@g.us")) {
+              console.log(`[Bulk Webhook] Ignoring group message from chat_id: ${chatId}`);
+              return res.json({ success: true, message: "Group messages ignored" });
+            }
+            let rawButtonId = "";
+            if (incomingMessage.reply?.type === "buttons_reply") {
+              rawButtonId = incomingMessage.reply.buttons_reply?.id || "";
+            } else if (incomingMessage.reply?.type === "list_reply") {
+              rawButtonId = incomingMessage.reply.list_reply?.id || "";
+            }
+            const buttonId = rawButtonId.includes(":") ? rawButtonId.split(":").pop() || "" : rawButtonId;
+            console.log(`[Bulk Webhook] Processing button click: rawId="${rawButtonId}", extracted="${buttonId}"`);
+            let definition = {};
+            try {
+              const defJson = workflowRecord.definitionJson;
+              definition = typeof defJson === "string" ? JSON.parse(defJson) : defJson || {};
+            } catch (e) {
+              console.error("[Bulk Webhook] Failed to parse workflow definition:", e);
+              return res.status(500).json({ error: "Invalid workflow definition" });
+            }
+            const userChannels = await db.select().from(channels).where(
+              and2(
+                eq2(channels.userId, workflowRecord.userId),
+                eq2(channels.status, "ACTIVE")
+              )
+            ).limit(1);
+            const channel = userChannels[0];
+            if (!channel) {
+              console.error("[Bulk Webhook] No active channel found for user");
+              return res.status(400).json({ error: "No active channel" });
+            }
+            let targetEdge = null;
+            targetEdge = definition.edges?.find((e) => e.sourceHandle === buttonId);
+            if (!targetEdge) {
+              console.log(`[Bulk Webhook] No exact sourceHandle match, trying fallbacks...`);
+              const interactiveNodes = definition.nodes?.filter((n) => {
+                const nodeType2 = n.data?.type || n.data?.nodeType;
+                return ["carousel", "quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons"].includes(nodeType2);
+              }) || [];
+              for (const node of interactiveNodes) {
+                const nodeType2 = node.data?.type || node.data?.nodeType;
+                const config2 = node.data?.config || {};
+                let hasMatchingButton = false;
+                if (nodeType2 === "carousel") {
+                  const cards = config2.cards || [];
+                  for (const card of cards) {
+                    if ((card.buttons || []).some((btn) => btn.id === buttonId)) {
+                      hasMatchingButton = true;
+                      break;
+                    }
+                  }
+                }
+                if (["quickReply", "quickReplyImage", "quickReplyVideo", "buttons"].includes(nodeType2)) {
+                  if ((config2.buttons || []).some((btn) => btn.id === buttonId)) {
+                    hasMatchingButton = true;
+                  }
+                }
+                if (nodeType2 === "listMessage") {
+                  const sections = config2.sections || [];
+                  for (const section of sections) {
+                    if ((section.rows || []).some((row) => row.id === buttonId)) {
+                      hasMatchingButton = true;
+                      break;
+                    }
+                  }
+                }
+                if (hasMatchingButton) {
+                  const nodeEdges = definition.edges?.filter((e) => e.source === node.id) || [];
+                  targetEdge = nodeEdges.find((e) => e.sourceHandle === buttonId) || nodeEdges[0];
+                  if (targetEdge) {
+                    console.log(`[Bulk Webhook] Found edge from ${nodeType2} node: ${JSON.stringify(targetEdge)}`);
+                    break;
+                  }
+                }
+              }
+            }
+            if (!targetEdge) {
+              console.log(`[Bulk Webhook] No target edge found for button "${buttonId}"`);
+              return res.json({ success: true, message: "No target edge found" });
+            }
+            const targetNode = definition.nodes?.find((n) => n.id === targetEdge.target);
+            if (!targetNode) {
+              console.log(`[Bulk Webhook] Target node not found: ${targetEdge.target}`);
+              return res.json({ success: true, message: "Target node not found" });
+            }
+            const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
+            const config = targetNode.data?.config || {};
+            console.log(`[Bulk Webhook] Sending ${nodeType} message to ${phone}`);
+            const result = await buildAndSendNodeMessage(channel, phone, nodeType, config);
+            if (result.success) {
+              console.log(`[Bulk Webhook] Successfully sent ${nodeType} to ${phone}`);
+              if (result.messageId) {
+                try {
+                  await db.insert(sentMessages).values({
+                    workflowId: workflowRecord.id,
+                    messageId: result.messageId,
+                    phone,
+                    messageType: nodeType
+                  });
+                } catch (e) {
+                  console.warn("[Bulk Webhook] Failed to track sent message:", e);
+                }
+              }
+              await db.insert(workflowExecutions).values({
+                workflowId: workflowRecord.id,
+                phone,
+                messageType: "button_reply",
+                triggerData: webhookPayload,
+                responsesSent: [{ nodeId: targetNode.id, nodeType, success: true }],
+                status: "SUCCESS"
+              });
+            } else {
+              console.error(`[Bulk Webhook] Failed to send ${nodeType}:`, result.error);
+            }
+            return res.json({ success: true, message: "Button reply processed via workflow" });
+          }
+        }
         console.error("[Bulk Webhook] Invalid webhook token");
         return res.status(401).json({ error: "Invalid webhook token" });
       }
@@ -6176,6 +7842,42 @@ function registerRoutes(app2) {
             console.warn("[Bulk Webhook] Failed to log other reply:", logError);
           }
         }
+        if ((messageEvent.reply?.type === "buttons_reply" || messageEvent.reply?.type === "list_reply") && messageEvent.chat_id) {
+          try {
+            let buttonTitle = "";
+            if (messageEvent.reply?.type === "buttons_reply") {
+              buttonTitle = messageEvent.reply.buttons_reply?.title || "";
+            } else if (messageEvent.reply?.type === "list_reply") {
+              buttonTitle = messageEvent.reply.list_reply?.title || "";
+            }
+            const chatId = messageEvent.chat_id || "";
+            const phone = chatId.split("@")[0];
+            if (buttonTitle && buttonTitle.trim().length > 0 && phone) {
+              const buttonTitleNormalized = buttonTitle.trim();
+              const keywordsSetting = await storage.getSetting("subscriber_keywords");
+              const keywords = keywordsSetting?.value ? JSON.parse(keywordsSetting.value) : { subscribe: ["Subscribe"], unsubscribe: ["Unsubscribe"] };
+              const matchesSubscribe = keywords.subscribe.some(
+                (kw) => kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+              );
+              const matchesUnsubscribe = keywords.unsubscribe.some(
+                (kw) => kw.toLowerCase() === buttonTitleNormalized.toLowerCase()
+              );
+              if (matchesSubscribe || matchesUnsubscribe) {
+                const status = matchesSubscribe ? "subscribed" : "unsubscribed";
+                await storage.upsertSubscriber({
+                  userId: numericUserId,
+                  phone,
+                  name: "",
+                  // Default empty name, can be edited later
+                  status
+                });
+                console.log(`[Subscriber] ${phone} ${status} via button: "${buttonTitle}"`);
+              }
+            }
+          } catch (subscriberError) {
+            console.error(`[Subscriber] Error processing subscriber: ${subscriberError.message}`);
+          }
+        }
       }
       if (Object.keys(updateData).length > 1) {
         await db.update(messages).set(updateData).where(eq2(messages.id, message.id));
@@ -6233,7 +7935,21 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to fetch bulk logs" });
     }
   });
-  async function sendNodeMessage(phone, node, workflowUserId) {
+  async function trackSentMessage(workflowId, messageId, phone, messageType) {
+    if (!workflowId || !messageId) return;
+    try {
+      await db.insert(sentMessages).values({
+        workflowId,
+        messageId,
+        phone,
+        messageType
+      });
+      console.log(`[Message Tracking] Recorded ${messageType} message ${messageId} for workflow ${workflowId}`);
+    } catch (trackError) {
+      console.error(`[Message Tracking] Failed to track message: ${trackError}`);
+    }
+  }
+  async function sendNodeMessage(phone, node, workflowUserId, workflowId) {
     const nodeType = node.data?.type || node.data?.nodeType;
     const config = node.data?.config || {};
     const userChannels = await storage.getChannelsForUser(workflowUserId);
@@ -6279,7 +7995,9 @@ function registerRoutes(app2) {
         id: btn.id
       }));
       payload.action = { buttons };
-      return await sendInteractiveMessage2(channelToken, payload);
+      const response = await sendInteractiveMessage2(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, "quickReply");
+      return response;
     } else if (nodeType === "quickReplyImage") {
       const payload = {
         to: phone,
@@ -6294,7 +8012,9 @@ function registerRoutes(app2) {
         id: btn.id
       }));
       payload.action = { buttons };
-      return await sendInteractiveMessage2(channelToken, payload);
+      const response = await sendInteractiveMessage2(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, "quickReplyImage");
+      return response;
     } else if (nodeType === "quickReplyVideo") {
       const payload = {
         to: phone,
@@ -6310,7 +8030,9 @@ function registerRoutes(app2) {
         id: btn.id
       }));
       payload.action = { buttons };
-      return await sendInteractiveMessage2(channelToken, payload);
+      const response = await sendInteractiveMessage2(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, "quickReplyVideo");
+      return response;
     } else if (nodeType === "listMessage") {
       const sections = (config.sections || []).map((section) => ({
         title: section.title || "Options",
@@ -6333,6 +8055,36 @@ function registerRoutes(app2) {
           label: config.buttonLabel || "Choose option"
         }
       };
+      const response = await sendInteractiveMessage2(channelToken, payload);
+      await trackSentMessage(workflowId, response?.id, phone, "listMessage");
+      return response;
+    } else if (nodeType === "buttons") {
+      const payload = {
+        to: phone,
+        type: "button"
+      };
+      if (config.headerText) payload.header = { text: config.headerText };
+      payload.body = { text: config.bodyText || "No message" };
+      if (config.footerText) payload.footer = { text: config.footerText };
+      const buttons = (config.buttons || []).filter((btn) => btn.title && btn.id).map((btn) => {
+        let buttonType = btn.type || btn.kind;
+        if (buttonType === "phone_number") buttonType = "call";
+        const button = {
+          type: buttonType,
+          // 'call', 'url', or 'copy'
+          title: btn.title,
+          id: btn.id
+        };
+        if (buttonType === "call") {
+          button.phone_number = btn.phone_number || btn.value;
+        } else if (buttonType === "url") {
+          button.url = btn.url || btn.value;
+        } else if (buttonType === "copy") {
+          button.copy_code = btn.copy_code || btn.value;
+        }
+        return button;
+      });
+      payload.action = { buttons };
       return await sendInteractiveMessage2(channelToken, payload);
     } else if (nodeType === "callButton") {
       const payload = {
@@ -6386,7 +8138,8 @@ function registerRoutes(app2) {
       };
       return await sendInteractiveMessage2(channelToken, payload);
     } else if (nodeType === "carousel") {
-      return await sendCarouselMessage2(channelToken, {
+      console.log(`[CAROUSEL DEBUG] Sending carousel to ${phone} for workflow ${workflowId}`);
+      const response = await sendCarouselMessage2(channelToken, {
         to: phone,
         body: { text: config.bodyText || "Check out our offerings!" },
         cards: (config.cards || []).map((card) => ({
@@ -6410,10 +8163,48 @@ function registerRoutes(app2) {
           })
         }))
       });
+      console.log(`[CAROUSEL DEBUG] WHAPI response:`, JSON.stringify(response, null, 2));
+      console.log(`[CAROUSEL DEBUG] response.id = ${response?.id}`);
+      console.log(`[CAROUSEL DEBUG] response.message_id = ${response?.message_id}`);
+      console.log(`[CAROUSEL DEBUG] response.sent?.id = ${response?.sent?.id}`);
+      const messageId = response?.id || response?.message_id || response?.sent?.id || response?.sent?.message_id;
+      console.log(`[CAROUSEL DEBUG] Final messageId to track: ${messageId}`);
+      if (messageId) {
+        await trackSentMessage(workflowId, messageId, phone, "carousel");
+        console.log(`[CAROUSEL DEBUG] Tracked carousel message ${messageId} for workflow ${workflowId}`);
+      } else {
+        console.error(`[CAROUSEL DEBUG] WARNING: No message ID found in WHAPI response - button clicks won't be routed!`);
+      }
+      return response;
     }
     console.log(`Unsupported node type: ${nodeType}`);
     return { success: false, message: "Unsupported node type" };
   }
+  app2.post("/api/workflows/test-http-request", requireAuth, async (req, res) => {
+    try {
+      const { config, testContext } = req.body;
+      if (!config || !config.url) {
+        return res.status(400).json({ error: "HTTP request configuration with URL is required" });
+      }
+      const executionContext = testContext || {};
+      const { performHttpRequest: performHttpRequest2 } = await Promise.resolve().then(() => (init_httpExecutor(), httpExecutor_exports));
+      const result = await performHttpRequest2(config, executionContext);
+      res.json({
+        success: result.success,
+        status: result.status,
+        statusText: result.statusText,
+        data: result.data,
+        mappedVariables: result.mappedVariables,
+        error: result.error
+      });
+    } catch (error) {
+      console.error("Test HTTP request error:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Failed to test HTTP request"
+      });
+    }
+  });
   app2.get("/api/admin/settings/bulk-speed", requireAuth, requireAdmin, async (req, res) => {
     try {
       const minDelay = await storage.getSetting("bulk_send_min_delay");
@@ -6447,15 +8238,56 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to update settings" });
     }
   });
+  app2.get("/api/admin/settings/http-allowlist", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const setting = await storage.getSetting("http_allowed_domains");
+      const allowedDomains = setting?.value ? JSON.parse(setting.value) : [];
+      res.json({ allowedDomains });
+    } catch (error) {
+      console.error("Get HTTP allowlist settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.put("/api/admin/settings/http-allowlist", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { allowedDomains } = req.body;
+      if (!Array.isArray(allowedDomains)) {
+        return res.status(400).json({ error: "allowedDomains must be an array" });
+      }
+      const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+      for (const domain of allowedDomains) {
+        if (typeof domain !== "string" || !domainPattern.test(domain.toLowerCase().trim())) {
+          return res.status(400).json({ error: `Invalid domain: ${domain}` });
+        }
+      }
+      await storage.setSetting("http_allowed_domains", JSON.stringify(allowedDomains));
+      await storage.createAuditLog({
+        actorUserId: req.userId,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "http_allowlist",
+          domainCount: allowedDomains.length,
+          adminId: req.userId
+        }
+      });
+      res.json({ success: true, allowedDomains });
+    } catch (error) {
+      console.error("Update HTTP allowlist settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
   app2.get("/api/settings/auth", async (req, res) => {
     try {
       const enableSignin = await storage.getSetting("enable_signin");
       const enableSignup = await storage.getSetting("enable_signup");
+      const signupButtonText = await storage.getSetting("signup_button_text");
       res.json({
         enableSignin: enableSignin?.value !== "false",
         // Default true
-        enableSignup: enableSignup?.value !== "false"
+        enableSignup: enableSignup?.value !== "false",
         // Default true
+        signupButtonText: signupButtonText?.value || "Start Free Trial"
+        // Default text
       });
     } catch (error) {
       console.error("Get auth settings error:", error);
@@ -6464,19 +8296,22 @@ function registerRoutes(app2) {
   });
   app2.put("/api/admin/settings/auth", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { enableSignin, enableSignup } = req.body;
+      const { enableSignin, enableSignup, signupButtonText } = req.body;
       if (typeof enableSignin === "boolean") {
         await storage.setSetting("enable_signin", enableSignin.toString());
       }
       if (typeof enableSignup === "boolean") {
         await storage.setSetting("enable_signup", enableSignup.toString());
       }
+      if (typeof signupButtonText === "string") {
+        await storage.setSetting("signup_button_text", signupButtonText.trim() || "Start Free Trial");
+      }
       await storage.createAuditLog({
         actorUserId: req.userId,
         action: "UPDATE_SETTINGS",
         meta: {
           entity: "auth_settings",
-          updates: { enableSignin, enableSignup },
+          updates: { enableSignin, enableSignup, signupButtonText },
           adminId: req.userId
         }
       });
@@ -6493,7 +8328,6 @@ function registerRoutes(app2) {
         dashboard: true,
         channels: false,
         send: false,
-        bulk: false,
         templates: false,
         workflows: false,
         outbox: false,
@@ -6571,6 +8405,143 @@ function registerRoutes(app2) {
     } catch (error) {
       console.error("Get default theme error:", error);
       res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.get("/api/admin/settings/chat-widget-location", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const widgetLocationSetting = await storage.getSetting("chat_widget_location");
+      const chatWidgetLocation = widgetLocationSetting?.value || "all-pages";
+      res.json({ chatWidgetLocation });
+    } catch (error) {
+      console.error("Get chat widget location error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.put("/api/admin/settings/chat-widget-location", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { chatWidgetLocation } = req.body;
+      if (chatWidgetLocation && (chatWidgetLocation === "homepage-only" || chatWidgetLocation === "all-pages")) {
+        await storage.setSetting("chat_widget_location", chatWidgetLocation);
+      }
+      await storage.createAuditLog({
+        actorUserId: req.userId,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "chat_widget_location",
+          chatWidgetLocation,
+          adminId: req.userId
+        }
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Update chat widget location error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+  app2.get("/api/settings/chat-widget-location", async (req, res) => {
+    try {
+      const widgetLocationSetting = await storage.getSetting("chat_widget_location");
+      const chatWidgetLocation = widgetLocationSetting?.value || "all-pages";
+      res.json({ chatWidgetLocation });
+    } catch (error) {
+      console.error("Get chat widget location error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.get("/api/admin/settings/subscriber-keywords", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const keywordsSetting = await storage.getSetting("subscriber_keywords");
+      const defaultKeywords = {
+        subscribe: ["Subscribe"],
+        unsubscribe: ["Unsubscribe"]
+      };
+      const keywords = keywordsSetting?.value ? JSON.parse(keywordsSetting.value) : defaultKeywords;
+      res.json(keywords);
+    } catch (error) {
+      console.error("Get subscriber keywords error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.put("/api/admin/settings/subscriber-keywords", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { subscribe, unsubscribe } = req.body;
+      if (!Array.isArray(subscribe) || !Array.isArray(unsubscribe)) {
+        return res.status(400).json({ error: "Subscribe and unsubscribe must be arrays" });
+      }
+      const subscribeKeywords = Array.from(new Set(
+        subscribe.filter((k) => typeof k === "string" && k.trim().length > 0).map((k) => k.trim())
+      ));
+      const unsubscribeKeywords = Array.from(new Set(
+        unsubscribe.filter((k) => typeof k === "string" && k.trim().length > 0).map((k) => k.trim())
+      ));
+      if (subscribeKeywords.length === 0 || unsubscribeKeywords.length === 0) {
+        return res.status(400).json({
+          error: "At least one subscribe and one unsubscribe keyword is required"
+        });
+      }
+      const keywordsData = {
+        subscribe: subscribeKeywords,
+        unsubscribe: unsubscribeKeywords
+      };
+      await storage.setSetting("subscriber_keywords", JSON.stringify(keywordsData));
+      await storage.createAuditLog({
+        actorUserId: req.userId,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "subscriber_keywords",
+          keywords: keywordsData,
+          adminId: req.userId
+        }
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Update subscriber keywords error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+  app2.post("/api/admin/use-cases/upload-image", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { file } = req.body;
+      if (!file) {
+        return res.status(400).json({ error: "File data is required" });
+      }
+      const base64Data = file.split(",")[1] || file;
+      const buffer = Buffer.from(base64Data, "base64");
+      const fileSizeMB = buffer.length / (1024 * 1024);
+      if (fileSizeMB > 5) {
+        return res.status(400).json({
+          error: `File size (${fileSizeMB.toFixed(2)}MB) exceeds 5MB limit`
+        });
+      }
+      const mimeMatch = file.match(/^data:([^;]+);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const extensionMap = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "image/gif": "gif",
+        "image/webp": "webp"
+      };
+      const extension = extensionMap[mimeType] || "jpg";
+      const uniqueId = crypto.randomBytes(8).toString("hex");
+      const timestamp2 = Date.now();
+      const fileName = `${timestamp2}-${uniqueId}.${extension}`;
+      const useCasesDir = path.join(process.cwd(), "uploads", "use-cases");
+      if (!fs.existsSync(useCasesDir)) {
+        fs.mkdirSync(useCasesDir, { recursive: true });
+      }
+      const filePath = path.join(useCasesDir, fileName);
+      fs.writeFileSync(filePath, buffer);
+      console.log(`[Use Case Upload] Saved ${fileName} (${fileSizeMB.toFixed(2)}MB)`);
+      const relativeUrl = `/uploads/use-cases/${fileName}`;
+      res.json({
+        path: relativeUrl,
+        fileName,
+        fileSizeMB: fileSizeMB.toFixed(2)
+      });
+    } catch (error) {
+      console.error("Use case image upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to upload image" });
     }
   });
   app2.get("/api/use-cases", async (req, res) => {
@@ -7081,8 +9052,6 @@ async function seedDatabase() {
       dailyMessagesLimit: 999999,
       bulkMessagesLimit: 999999,
       features: [
-        "Unlimited channels",
-        "Unlimited messages",
         "Custom integrations",
         "SLA guarantee",
         "Account manager",
@@ -7095,6 +9064,71 @@ async function seedDatabase() {
   if (!mainBalanceSetting) {
     await storage.setSetting("main_days_balance", "1000");
     console.log("\u2713 Main admin balance initialized (1000 days)");
+  }
+  const existingTerms = await storage.getActiveTermsDocuments();
+  if (existingTerms.length === 0) {
+    await storage.createTermsDocument({
+      type: "BUTTON_FUNCTIONALITY",
+      version: "1.0",
+      title: "OMNI PLUS \u2013 Terms of Use for Button Functionality on WhatsApp API",
+      content: `OMNI PLUS \u2013 Terms of Use for Button Functionality on WhatsApp API
+
+Last Updated: November 2025
+
+By activating the button functionality in WhatsApp through OMNI PLUS, you agree to the terms outlined in this document.
+
+1. Functionality Description
+
+The endpoint for sending interactive button messages via OMNI PLUS API is used to send messages with buttons that allow users to engage, reply, or open URLs within WhatsApp.
+
+2. Disclaimer
+
+OMNI PLUS is not responsible for any changes, suspension, or removal of button features by Meta Platforms Inc. Meta may modify or discontinue such functionality at any time without prior notice.
+
+3. Risk Notice
+
+Users acknowledge that Meta may, at its discretion, modify, limit, or terminate button features without notice. OMNI PLUS assumes no liability for resulting data interruptions or business losses.
+
+4. Limitation of Liability
+
+OMNI PLUS shall not be liable for direct, indirect, incidental, or consequential damages arising from the use or inability to use button functionalities, including but not limited to business disruptions or data loss.
+
+5. User Responsibility
+
+Users are solely responsible for the content and compliance of messages sent using button features. OMNI PLUS does not monitor, control, or assume liability for user-generated content.
+
+6. Amendments
+
+OMNI PLUS reserves the right to update these terms at any time. Continued use of button functionality constitutes acceptance of revised terms.
+
+For questions, contact: support@omniplus.ai`,
+      isActive: true
+    });
+    await storage.createTermsDocument({
+      type: "PAYPAL_PAYMENT",
+      version: "1.0",
+      title: "Payment Terms & Conditions",
+      content: `Payment Terms & Conditions
+
+By subscribing to OMNI PLUS services via PayPal, you agree to the following terms:
+
+1. Payment Processing
+All payments are processed securely through PayPal. OMNI PLUS does not store your payment information.
+
+2. Subscription Billing
+Subscriptions are billed on a recurring basis according to your selected plan duration (monthly, quarterly, semi-annual, or annual).
+
+3. Refund Policy
+Refunds are handled on a case-by-case basis. Please contact support@omniplus.ai for refund requests.
+
+4. Service Availability
+OMNI PLUS reserves the right to modify service features and pricing with advance notice to subscribers.
+
+5. Cancellation
+You may cancel your subscription at any time through your account settings. Access continues until the end of your billing period.`,
+      isActive: true
+    });
+    console.log("\u2713 Terms & Conditions documents created");
   }
   console.log("Database seeded successfully!");
 }
@@ -7298,13 +9332,13 @@ var backgroundWorker = new BackgroundWorker();
 // server/index.ts
 var app = express2();
 app.use(express2.json({
-  limit: "10mb",
+  limit: "50mb",
   // Allow larger payloads for base64 file uploads
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express2.urlencoded({ limit: "10mb", extended: false }));
+app.use(express2.urlencoded({ limit: "50mb", extended: false }));
 app.use(cookieParser());
 app.use("/uploads", express2.static(path5.join(process.cwd(), "uploads")));
 app.use((req, res, next) => {

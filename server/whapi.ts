@@ -293,8 +293,23 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData: any = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    
+    console.error(`[WHAPI] sendInteractiveMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData,
+      errorMessage: errorData?.error || errorData?.message || errorData?.rawError
+    });
+    
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI error");
   }
 
   // Response should include message ID and other details
@@ -326,8 +341,22 @@ export async function sendCarouselMessage(channelToken: string, payload: {
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI carousel send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData: any = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    
+    console.error(`[WHAPI] sendCarouselMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData,
+    });
+    
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI carousel send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI carousel error");
   }
 
   // Response should include message ID and other details
@@ -352,8 +381,22 @@ export async function sendTextMessage(channelToken: string, payload: {
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI text send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData: any = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    
+    console.error(`[WHAPI] sendTextMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData,
+    });
+    
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI text send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI text error");
   }
 
   return await response.json();
@@ -404,12 +447,23 @@ export async function sendMediaMessage(channelToken: string, payload: {
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error("WHAPI media send error:", JSON.stringify(errorData, null, 2));
-    const errorMessage = typeof errorData?.error === 'string' 
-      ? errorData.error 
-      : JSON.stringify(errorData?.error || errorData);
-    throw new Error(errorMessage || `WHAPI media send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData: any = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    
+    console.error(`[WHAPI] sendMediaMessage failed:`, {
+      status: response.status,
+      mediaType: whapiMediaType,
+      errorText: errorText.substring(0, 500),
+      errorData,
+    });
+    
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI media send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI media error");
   }
 
   return await response.json();
@@ -436,8 +490,22 @@ export async function sendLocationMessage(channelToken: string, payload: {
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData?.error || `WHAPI location send failed (status ${response.status})`);
+    const errorText = await response.text().catch(() => "");
+    let errorData: any = {};
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { rawError: errorText };
+    }
+    
+    console.error(`[WHAPI] sendLocationMessage failed:`, {
+      status: response.status,
+      errorText: errorText.substring(0, 500),
+      errorData,
+    });
+    
+    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI location send failed (status ${response.status})`;
+    throw new Error(errorMessage || "Unknown WHAPI location error");
   }
 
   return await response.json();
