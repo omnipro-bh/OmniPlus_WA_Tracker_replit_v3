@@ -282,6 +282,12 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
   // Ensure token has Bearer prefix (add if missing)
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
+  console.log(`[WHAPI SEND] Sending interactive message to ${payload.to}`);
+  console.log(`[WHAPI SEND] Payload type: ${payload.type}`);
+  if (payload.action?.buttons) {
+    console.log(`[WHAPI SEND] Buttons being sent:`, JSON.stringify(payload.action.buttons, null, 2));
+  }
+  
   const response = await fetch("https://gate.whapi.cloud/messages/interactive", {
     method: "POST",
     headers: {
@@ -303,12 +309,13 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
     
     console.error(`[WHAPI] sendInteractiveMessage failed:`, {
       status: response.status,
-      errorText: errorText.substring(0, 500),
-      errorData,
-      errorMessage: errorData?.error || errorData?.message || errorData?.rawError
+      statusText: response.statusText,
+      errorText: errorText.substring(0, 1000),
+      errorData: JSON.stringify(errorData),
+      payloadSent: JSON.stringify(payload, null, 2).substring(0, 500)
     });
     
-    const errorMessage = errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
+    const errorMessage = errorData?.error?.message || errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
     throw new Error(errorMessage || "Unknown WHAPI error");
   }
 
