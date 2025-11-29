@@ -4391,6 +4391,21 @@ function registerRoutes(app2) {
               buttons = message.buttons;
             }
           }
+          buttons = buttons.map((btn) => {
+            const transformed = {
+              id: btn.id,
+              type: btn.type
+            };
+            if (btn.title) {
+              transformed.title = btn.title;
+            } else if (btn.text) {
+              transformed.title = btn.text;
+            }
+            if (btn.phone_number) transformed.phone_number = btn.phone_number;
+            if (btn.url) transformed.url = btn.url;
+            if (btn.copy_code) transformed.copy_code = btn.copy_code;
+            return transformed;
+          });
           console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
           console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
           const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);

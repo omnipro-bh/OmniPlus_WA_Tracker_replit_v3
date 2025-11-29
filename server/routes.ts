@@ -2050,6 +2050,26 @@ export function registerRoutes(app: Express) {
             }
           }
           
+          // Transform buttons: map "text" field to "title" for WHAPI compatibility
+          // WHAPI expects "title", but buttons are stored with "text" field
+          buttons = buttons.map((btn: any) => {
+            const transformed: any = {
+              id: btn.id,
+              type: btn.type,
+            };
+            // Use "title" if it exists, otherwise use "text" and rename it
+            if (btn.title) {
+              transformed.title = btn.title;
+            } else if (btn.text) {
+              transformed.title = btn.text;  // Map "text" to "title" for WHAPI
+            }
+            // Include optional fields for button types that need them
+            if (btn.phone_number) transformed.phone_number = btn.phone_number;
+            if (btn.url) transformed.url = btn.url;
+            if (btn.copy_code) transformed.copy_code = btn.copy_code;
+            return transformed;
+          });
+          
           console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
           console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
           
