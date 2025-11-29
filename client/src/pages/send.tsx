@@ -103,7 +103,7 @@ export default function Send() {
         const text = data[`button${i}Text`];
         if (text && text.trim()) {
           buttons.push({
-            text: text.trim(),
+            title: text.trim(),
             type: data[`button${i}Type`],
             value: data[`button${i}Value`] || null,
             id: data[`button${i}Id`] || `btn${i}`,
