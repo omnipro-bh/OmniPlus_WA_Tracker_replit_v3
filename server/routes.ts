@@ -2196,21 +2196,53 @@ export function registerRoutes(app: Express) {
             await new Promise(resolve => setTimeout(resolve, delay));
           }
         } catch (msgError: any) {
-          console.error(`Failed to send message ${message.id}:`, msgError);
+          console.error(`[Bulk Send] EXCEPTION - Failed to send message ${message.id}:`, msgError);
+          console.error(`[Bulk Send] Error type:`, typeof msgError);
+          console.error(`[Bulk Send] Error keys:`, Object.keys(msgError || {}));
+          console.error(`[Bulk Send] Full error object:`, JSON.stringify(msgError, null, 2).substring(0, 500));
           
-          // Extract error message - handle both string errors and complex objects
+          // Extract error message - handle all error types properly
           let errorMessage = "Unknown error";
-          if (msgError.message) {
-            errorMessage = typeof msgError.message === "string" 
-              ? msgError.message 
-              : JSON.stringify(msgError.message);
-          } else if (msgError.error) {
-            errorMessage = typeof msgError.error === "string" 
-              ? msgError.error 
-              : JSON.stringify(msgError.error);
-          } else if (typeof msgError === "string") {
+          
+          // Try multiple ways to extract a meaningful error message
+          if (typeof msgError === "string") {
             errorMessage = msgError;
+          } else if (msgError?.message) {
+            if (typeof msgError.message === "string") {
+              errorMessage = msgError.message;
+            } else {
+              try {
+                errorMessage = JSON.stringify(msgError.message);
+              } catch {
+                errorMessage = String(msgError.message);
+              }
+            }
+          } else if (msgError?.error) {
+            if (typeof msgError.error === "string") {
+              errorMessage = msgError.error;
+            } else {
+              try {
+                errorMessage = JSON.stringify(msgError.error);
+              } catch {
+                errorMessage = String(msgError.error);
+              }
+            }
+          } else if (msgError instanceof Error) {
+            errorMessage = msgError.toString();
+          } else {
+            try {
+              errorMessage = JSON.stringify(msgError);
+            } catch {
+              errorMessage = String(msgError);
+            }
           }
+          
+          // Safety check: ensure it's not [object Object]
+          if (errorMessage === "[object Object]") {
+            errorMessage = `Error (${typeof msgError}): ${Object.keys(msgError || {}).join(", ")}`;
+          }
+          
+          console.error(`[Bulk Send] Extracted error message: ${errorMessage}`);
           
           await storage.updateMessage(message.id, { 
             status: "FAILED",
