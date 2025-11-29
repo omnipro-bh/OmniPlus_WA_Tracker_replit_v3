@@ -2017,6 +2017,15 @@ export function registerRoutes(app: Express) {
       // Process messages one by one with random delays
       for (const message of queuedMessages) {
         try {
+          console.log(`[Bulk Send] Processing message ${message.id} to ${message.to}`);
+          console.log(`[Bulk Send] Raw message data:`, JSON.stringify({
+            id: message.id,
+            messageType: message.messageType,
+            buttons: message.buttons,
+            body: message.body?.substring(0, 50),
+            mediaUrl: message.mediaUrl,
+          }, null, 2));
+          
           // Update message to pending
           await storage.updateMessage(message.id, { status: "PENDING" });
           queuedCount--;
@@ -2025,7 +2034,24 @@ export function registerRoutes(app: Express) {
 
           // Get message type and buttons
           const messageType = message.messageType || "text_buttons";
-          const buttons = Array.isArray(message.buttons) ? message.buttons : [];
+          
+          // Parse buttons - they might be JSON string or already an array
+          let buttons: any[] = [];
+          if (message.buttons) {
+            if (typeof message.buttons === 'string') {
+              try {
+                buttons = JSON.parse(message.buttons);
+              } catch (parseErr) {
+                console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
+                buttons = [];
+              }
+            } else if (Array.isArray(message.buttons)) {
+              buttons = message.buttons;
+            }
+          }
+          
+          console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
+          console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
           
           // Resolve media URL (convert local paths to base64)
           const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);
@@ -2107,6 +2133,13 @@ export function registerRoutes(app: Express) {
               break;
           }
 
+          console.log(`[Bulk Send] WHAPI result status:`, {
+            resultExists: !!result,
+            resultSent: result?.sent,
+            resultError: result?.error,
+            resultMessage: result?.message,
+          });
+          
           if (result && result.sent) {
             // Extract provider message ID from WHAPI response
             // WHAPI can return different structures:
@@ -2115,7 +2148,7 @@ export function registerRoutes(app: Express) {
             // - Legacy: { sent: true, id: "..." }
             const providerMessageId = result.messages?.[0]?.id || result.message?.id || result.id || result.message_id;
             
-            console.log(`[Bulk Send] Message ${message.id} to ${message.to}:`);
+            console.log(`[Bulk Send] SUCCESS - Message ${message.id} to ${message.to}:`);
             console.log(`[Bulk Send] Full WHAPI response:`, JSON.stringify(result, null, 2));
             console.log(`[Bulk Send] Provider ID extracted: ${providerMessageId || 'MISSING'}`);
             
@@ -2133,6 +2166,10 @@ export function registerRoutes(app: Express) {
             sentCount++;
             await storage.updateJob(jobId, { pending: pendingCount, sent: sentCount });
           } else {
+            // Message send failed - log full response for debugging
+            console.error(`[Bulk Send] FAILED - Message ${message.id} to ${message.to}`);
+            console.error(`[Bulk Send] Full WHAPI result:`, JSON.stringify(result, null, 2));
+            
             // Properly extract error message from WHAPI response
             let errorMessage = "Failed to send";
             if (result?.message) {
@@ -2143,6 +2180,12 @@ export function registerRoutes(app: Express) {
               errorMessage = typeof result.error === "string" 
                 ? result.error 
                 : JSON.stringify(result.error);
+            } else if (result === undefined) {
+              errorMessage = "WHAPI returned undefined";
+            } else if (result === null) {
+              errorMessage = "WHAPI returned null";
+            } else {
+              errorMessage = `WHAPI returned unexpected result: ${JSON.stringify(result)}`;
             }
             throw new Error(errorMessage);
           }
