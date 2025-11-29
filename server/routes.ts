@@ -2037,41 +2037,50 @@ export function registerRoutes(app: Express) {
           
           // Parse buttons - they might be JSON string or already an array
           let buttons: any[] = [];
-          if (message.buttons) {
-            if (typeof message.buttons === 'string') {
-              try {
-                buttons = JSON.parse(message.buttons);
-              } catch (parseErr) {
-                console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
-                buttons = [];
+          try {
+            if (message.buttons) {
+              if (typeof message.buttons === 'string') {
+                try {
+                  buttons = JSON.parse(message.buttons);
+                  console.log(`[Bulk Send] Parsed buttons from JSON string: ${buttons.length} buttons`);
+                } catch (parseErr) {
+                  console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
+                  buttons = [];
+                }
+              } else if (Array.isArray(message.buttons)) {
+                buttons = message.buttons;
+                console.log(`[Bulk Send] Buttons already array: ${buttons.length} buttons`);
               }
-            } else if (Array.isArray(message.buttons)) {
-              buttons = message.buttons;
             }
+            
+            console.log(`[Bulk Send] Raw buttons before transform:`, JSON.stringify(buttons.slice(0, 1), null, 2));
+            
+            // Transform buttons: map "text" field to "title" for WHAPI compatibility
+            // WHAPI expects "title", but buttons are stored with "text" field
+            buttons = buttons.map((btn: any) => {
+              const transformed: any = {
+                id: btn.id,
+                type: btn.type,
+              };
+              // Use "title" if it exists, otherwise use "text" and rename it
+              if (btn.title) {
+                transformed.title = btn.title;
+              } else if (btn.text) {
+                transformed.title = btn.text;  // Map "text" to "title" for WHAPI
+              }
+              // Include optional fields for button types that need them
+              if (btn.phone_number) transformed.phone_number = btn.phone_number;
+              if (btn.url) transformed.url = btn.url;
+              if (btn.copy_code) transformed.copy_code = btn.copy_code;
+              return transformed;
+            });
+            
+            console.log(`[Bulk Send] Transformed buttons:`, JSON.stringify(buttons.slice(0, 1), null, 2));
+            console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
+          } catch (btnErr: any) {
+            console.error(`[Bulk Send] ERROR transforming buttons:`, btnErr?.message || btnErr);
+            throw new Error(`Failed to process buttons: ${btnErr?.message || 'Unknown error'}`);
           }
-          
-          // Transform buttons: map "text" field to "title" for WHAPI compatibility
-          // WHAPI expects "title", but buttons are stored with "text" field
-          buttons = buttons.map((btn: any) => {
-            const transformed: any = {
-              id: btn.id,
-              type: btn.type,
-            };
-            // Use "title" if it exists, otherwise use "text" and rename it
-            if (btn.title) {
-              transformed.title = btn.title;
-            } else if (btn.text) {
-              transformed.title = btn.text;  // Map "text" to "title" for WHAPI
-            }
-            // Include optional fields for button types that need them
-            if (btn.phone_number) transformed.phone_number = btn.phone_number;
-            if (btn.url) transformed.url = btn.url;
-            if (btn.copy_code) transformed.copy_code = btn.copy_code;
-            return transformed;
-          });
-          
-          console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
-          console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
           
           // Resolve media URL (convert local paths to base64)
           const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);

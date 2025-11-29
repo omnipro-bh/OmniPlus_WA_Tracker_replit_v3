@@ -4379,35 +4379,43 @@ function registerRoutes(app2) {
           await storage.updateJob(jobId, { queued: queuedCount, pending: pendingCount });
           const messageType = message.messageType || "text_buttons";
           let buttons = [];
-          if (message.buttons) {
-            if (typeof message.buttons === "string") {
-              try {
-                buttons = JSON.parse(message.buttons);
-              } catch (parseErr) {
-                console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
-                buttons = [];
+          try {
+            if (message.buttons) {
+              if (typeof message.buttons === "string") {
+                try {
+                  buttons = JSON.parse(message.buttons);
+                  console.log(`[Bulk Send] Parsed buttons from JSON string: ${buttons.length} buttons`);
+                } catch (parseErr) {
+                  console.warn(`[Bulk Send] Failed to parse buttons as JSON, treating as empty:`, message.buttons);
+                  buttons = [];
+                }
+              } else if (Array.isArray(message.buttons)) {
+                buttons = message.buttons;
+                console.log(`[Bulk Send] Buttons already array: ${buttons.length} buttons`);
               }
-            } else if (Array.isArray(message.buttons)) {
-              buttons = message.buttons;
             }
+            console.log(`[Bulk Send] Raw buttons before transform:`, JSON.stringify(buttons.slice(0, 1), null, 2));
+            buttons = buttons.map((btn) => {
+              const transformed = {
+                id: btn.id,
+                type: btn.type
+              };
+              if (btn.title) {
+                transformed.title = btn.title;
+              } else if (btn.text) {
+                transformed.title = btn.text;
+              }
+              if (btn.phone_number) transformed.phone_number = btn.phone_number;
+              if (btn.url) transformed.url = btn.url;
+              if (btn.copy_code) transformed.copy_code = btn.copy_code;
+              return transformed;
+            });
+            console.log(`[Bulk Send] Transformed buttons:`, JSON.stringify(buttons.slice(0, 1), null, 2));
+            console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
+          } catch (btnErr) {
+            console.error(`[Bulk Send] ERROR transforming buttons:`, btnErr?.message || btnErr);
+            throw new Error(`Failed to process buttons: ${btnErr?.message || "Unknown error"}`);
           }
-          buttons = buttons.map((btn) => {
-            const transformed = {
-              id: btn.id,
-              type: btn.type
-            };
-            if (btn.title) {
-              transformed.title = btn.title;
-            } else if (btn.text) {
-              transformed.title = btn.text;
-            }
-            if (btn.phone_number) transformed.phone_number = btn.phone_number;
-            if (btn.url) transformed.url = btn.url;
-            if (btn.copy_code) transformed.copy_code = btn.copy_code;
-            return transformed;
-          });
-          console.log(`[Bulk Send] Parsed buttons:`, JSON.stringify(buttons, null, 2));
-          console.log(`[Bulk Send] Message type: ${messageType}, buttons count: ${buttons.length}`);
           const resolvedMediaUrl = await resolveMediaForWhapi(message.mediaUrl);
           let result;
           switch (messageType) {
