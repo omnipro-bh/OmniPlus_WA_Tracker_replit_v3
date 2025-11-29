@@ -3139,6 +3139,30 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Phonebook has no contacts" });
       }
 
+      // Normalize and validate buttons - ensure they have required fields
+      let normalizedButtons: any[] = [];
+      if (buttons && Array.isArray(buttons)) {
+        normalizedButtons = buttons.map((btn: any) => {
+          // Ensure button has required fields for WHAPI
+          const normalized: any = {
+            type: btn.type || "quick_reply",
+            id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`,
+          };
+          // Use "title" if it exists, otherwise use "text" as fallback
+          normalized.title = btn.title || btn.text || "Button";
+          // Include optional fields
+          if (btn.phone_number) normalized.phone_number = btn.phone_number;
+          if (btn.url) normalized.url = btn.url;
+          if (btn.value && btn.type === "url") normalized.url = btn.value;
+          if (btn.value && btn.type === "call") normalized.phone_number = btn.value;
+          if (btn.copy_code) normalized.copy_code = btn.copy_code;
+          return normalized;
+        });
+      }
+
+      console.log(`[Send Uniform] Processing ${contacts.length} contacts with ${normalizedButtons.length} buttons`);
+      console.log(`[Send Uniform] Normalized buttons:`, JSON.stringify(normalizedButtons, null, 2));
+
       // Create job
       const job = await storage.createJob({
         userId: req.userId!,
@@ -3165,7 +3189,7 @@ export function registerRoutes(app: Express) {
           body: body,
           header: header || null,
           footer: footer || null,
-          buttons: buttons || [],
+          buttons: normalizedButtons,
           status: "QUEUED",
           messageType: messageType || "text_buttons",
           mediaUrl: mediaUrl || null,
