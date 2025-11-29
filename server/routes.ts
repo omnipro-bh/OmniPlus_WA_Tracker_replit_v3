@@ -3140,9 +3140,14 @@ export function registerRoutes(app: Express) {
       }
 
       // Normalize and validate buttons - ensure they have required fields
+      console.log(`[Send Uniform START] Buttons received from frontend:`, JSON.stringify(buttons, null, 2));
+      console.log(`[Send Uniform START] Buttons type:`, typeof buttons, "isArray:", Array.isArray(buttons));
+      
       let normalizedButtons: any[] = [];
       if (buttons && Array.isArray(buttons)) {
-        normalizedButtons = buttons.map((btn: any) => {
+        console.log(`[Send Uniform] Buttons IS an array with ${buttons.length} items`);
+        normalizedButtons = buttons.map((btn: any, idx: number) => {
+          console.log(`[Send Uniform] Processing button ${idx}:`, JSON.stringify(btn));
           // Ensure button has required fields for WHAPI
           const normalized: any = {
             type: btn.type || "quick_reply",
@@ -3150,6 +3155,7 @@ export function registerRoutes(app: Express) {
           };
           // Use "title" if it exists, otherwise use "text" as fallback
           normalized.title = btn.title || btn.text || "Button";
+          console.log(`[Send Uniform] Button ${idx} normalized to:`, JSON.stringify(normalized));
           // Include optional fields
           if (btn.phone_number) normalized.phone_number = btn.phone_number;
           if (btn.url) normalized.url = btn.url;
@@ -3158,10 +3164,12 @@ export function registerRoutes(app: Express) {
           if (btn.copy_code) normalized.copy_code = btn.copy_code;
           return normalized;
         });
+      } else {
+        console.log(`[Send Uniform] Buttons NOT an array! Type: ${typeof buttons}`, "Value:", buttons);
       }
 
       console.log(`[Send Uniform] Processing ${contacts.length} contacts with ${normalizedButtons.length} buttons`);
-      console.log(`[Send Uniform] Normalized buttons:`, JSON.stringify(normalizedButtons, null, 2));
+      console.log(`[Send Uniform] Final normalized buttons being stored:`, JSON.stringify(normalizedButtons, null, 2));
 
       // Create job
       const job = await storage.createJob({

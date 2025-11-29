@@ -5238,14 +5238,19 @@ function registerRoutes(app2) {
       if (contacts.length === 0) {
         return res.status(400).json({ error: "Phonebook has no contacts" });
       }
+      console.log(`[Send Uniform START] Buttons received from frontend:`, JSON.stringify(buttons, null, 2));
+      console.log(`[Send Uniform START] Buttons type:`, typeof buttons, "isArray:", Array.isArray(buttons));
       let normalizedButtons = [];
       if (buttons && Array.isArray(buttons)) {
-        normalizedButtons = buttons.map((btn) => {
+        console.log(`[Send Uniform] Buttons IS an array with ${buttons.length} items`);
+        normalizedButtons = buttons.map((btn, idx) => {
+          console.log(`[Send Uniform] Processing button ${idx}:`, JSON.stringify(btn));
           const normalized = {
             type: btn.type || "quick_reply",
             id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`
           };
           normalized.title = btn.title || btn.text || "Button";
+          console.log(`[Send Uniform] Button ${idx} normalized to:`, JSON.stringify(normalized));
           if (btn.phone_number) normalized.phone_number = btn.phone_number;
           if (btn.url) normalized.url = btn.url;
           if (btn.value && btn.type === "url") normalized.url = btn.value;
@@ -5253,9 +5258,11 @@ function registerRoutes(app2) {
           if (btn.copy_code) normalized.copy_code = btn.copy_code;
           return normalized;
         });
+      } else {
+        console.log(`[Send Uniform] Buttons NOT an array! Type: ${typeof buttons}`, "Value:", buttons);
       }
       console.log(`[Send Uniform] Processing ${contacts.length} contacts with ${normalizedButtons.length} buttons`);
-      console.log(`[Send Uniform] Normalized buttons:`, JSON.stringify(normalizedButtons, null, 2));
+      console.log(`[Send Uniform] Final normalized buttons being stored:`, JSON.stringify(normalizedButtons, null, 2));
       const job = await storage.createJob({
         userId: req.userId,
         channelId,
