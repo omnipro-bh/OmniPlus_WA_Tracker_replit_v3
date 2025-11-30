@@ -16,7 +16,8 @@ import {
   insertOfflinePaymentSchema,
   insertPlanSchema,
   insertPlanRequestSchema,
-  insertCouponSchema
+  insertCouponSchema,
+  buttonSchema
 } from "@shared/schema";
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import { verifyWebhookSignature } from "./paypal-webhooks";
@@ -3139,37 +3140,17 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Phonebook has no contacts" });
       }
 
-      // Normalize and validate buttons - ensure they have required fields
-      console.log(`[Send Uniform START] Buttons received from frontend:`, JSON.stringify(buttons, null, 2));
-      console.log(`[Send Uniform START] Buttons type:`, typeof buttons, "isArray:", Array.isArray(buttons));
-      
+      // Validate and normalize buttons through schema
       let normalizedButtons: any[] = [];
       if (buttons && Array.isArray(buttons)) {
-        console.log(`[Send Uniform] Buttons IS an array with ${buttons.length} items`);
-        normalizedButtons = buttons.map((btn: any, idx: number) => {
-          console.log(`[Send Uniform] Processing button ${idx}:`, JSON.stringify(btn));
-          // Ensure button has required fields for WHAPI
-          const normalized: any = {
-            type: btn.type || "quick_reply",
-            id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`,
-          };
-          // Use "title" if it exists, otherwise use "text" as fallback
-          normalized.title = btn.title || btn.text || "Button";
-          console.log(`[Send Uniform] Button ${idx} normalized to:`, JSON.stringify(normalized));
-          // Include optional fields
-          if (btn.phone_number) normalized.phone_number = btn.phone_number;
-          if (btn.url) normalized.url = btn.url;
-          if (btn.value && btn.type === "url") normalized.url = btn.value;
-          if (btn.value && btn.type === "call") normalized.phone_number = btn.value;
-          if (btn.copy_code) normalized.copy_code = btn.copy_code;
-          return normalized;
-        });
-      } else {
-        console.log(`[Send Uniform] Buttons NOT an array! Type: ${typeof buttons}`, "Value:", buttons);
+        try {
+          normalizedButtons = z.array(buttonSchema).parse(buttons);
+          console.log(`[Send Uniform] Buttons normalized via schema:`, JSON.stringify(normalizedButtons, null, 2));
+        } catch (error: any) {
+          console.error(`[Send Uniform] Button validation error:`, error.message);
+          return res.status(400).json({ error: `Invalid button format: ${error.message}` });
+        }
       }
-
-      console.log(`[Send Uniform] Processing ${contacts.length} contacts with ${normalizedButtons.length} buttons`);
-      console.log(`[Send Uniform] Final normalized buttons being stored:`, JSON.stringify(normalizedButtons, null, 2));
 
       // Create job
       const job = await storage.createJob({

@@ -970,13 +970,19 @@ var init_schema = __esm({
       phone: z.string().min(1)
     });
     buttonSchema = z.object({
-      text: z.string().min(1),
+      text: z.string().min(1).optional(),
+      // Legacy field name
+      title: z.string().min(1).optional(),
+      // WHAPI standard field name
       type: z.enum(["quick_reply", "url", "call"]),
       value: z.string().nullable().optional(),
       // URL or phone number for url/call buttons
       id: z.string().optional()
       // ID for quick_reply buttons
     }).refine((data) => {
+      if (!data.text && !data.title) {
+        return false;
+      }
       if (data.type === "quick_reply" && !data.id) {
         return false;
       }
@@ -985,7 +991,14 @@ var init_schema = __esm({
       }
       return true;
     }, {
-      message: "Button validation failed: quick_reply requires id, url/call requires value"
+      message: "Button validation failed: must have text or title, quick_reply requires id, url/call requires value"
+    }).transform((data) => {
+      return {
+        type: data.type,
+        title: data.title || data.text,
+        ...data.value !== void 0 && { value: data.value },
+        ...data.id && { id: data.id }
+      };
     });
     insertTemplateSchema = createInsertSchema(templates, {
       title: z.string().min(1),
@@ -996,7 +1009,9 @@ var init_schema = __esm({
     insertJobSchema = createInsertSchema(jobs);
     insertMessageSchema = createInsertSchema(messages, {
       to: z.string().min(1),
-      body: z.string().min(1)
+      body: z.string().min(1),
+      buttons: z.array(buttonSchema).default([])
+      // Validate and normalize buttons
     });
     insertWorkflowSchema = createInsertSchema(workflows, {
       name: z.string().min(1)
@@ -5238,31 +5253,16 @@ function registerRoutes(app2) {
       if (contacts.length === 0) {
         return res.status(400).json({ error: "Phonebook has no contacts" });
       }
-      console.log(`[Send Uniform START] Buttons received from frontend:`, JSON.stringify(buttons, null, 2));
-      console.log(`[Send Uniform START] Buttons type:`, typeof buttons, "isArray:", Array.isArray(buttons));
       let normalizedButtons = [];
       if (buttons && Array.isArray(buttons)) {
-        console.log(`[Send Uniform] Buttons IS an array with ${buttons.length} items`);
-        normalizedButtons = buttons.map((btn, idx) => {
-          console.log(`[Send Uniform] Processing button ${idx}:`, JSON.stringify(btn));
-          const normalized = {
-            type: btn.type || "quick_reply",
-            id: btn.id || `btn${Math.random().toString(36).substr(2, 9)}`
-          };
-          normalized.title = btn.title || btn.text || "Button";
-          console.log(`[Send Uniform] Button ${idx} normalized to:`, JSON.stringify(normalized));
-          if (btn.phone_number) normalized.phone_number = btn.phone_number;
-          if (btn.url) normalized.url = btn.url;
-          if (btn.value && btn.type === "url") normalized.url = btn.value;
-          if (btn.value && btn.type === "call") normalized.phone_number = btn.value;
-          if (btn.copy_code) normalized.copy_code = btn.copy_code;
-          return normalized;
-        });
-      } else {
-        console.log(`[Send Uniform] Buttons NOT an array! Type: ${typeof buttons}`, "Value:", buttons);
+        try {
+          normalizedButtons = z2.array(buttonSchema).parse(buttons);
+          console.log(`[Send Uniform] Buttons normalized via schema:`, JSON.stringify(normalizedButtons, null, 2));
+        } catch (error) {
+          console.error(`[Send Uniform] Button validation error:`, error.message);
+          return res.status(400).json({ error: `Invalid button format: ${error.message}` });
+        }
       }
-      console.log(`[Send Uniform] Processing ${contacts.length} contacts with ${normalizedButtons.length} buttons`);
-      console.log(`[Send Uniform] Final normalized buttons being stored:`, JSON.stringify(normalizedButtons, null, 2));
       const job = await storage.createJob({
         userId: req.userId,
         channelId,

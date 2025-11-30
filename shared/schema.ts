@@ -820,12 +820,18 @@ export const insertChannelSchema = createInsertSchema(channels, {
 });
 
 // Button schema for templates and messages
+// Accepts both 'text' (legacy) and 'title' (WHAPI standard), normalizes to 'title'
 export const buttonSchema = z.object({
-  text: z.string().min(1),
+  text: z.string().min(1).optional(), // Legacy field name
+  title: z.string().min(1).optional(), // WHAPI standard field name
   type: z.enum(["quick_reply", "url", "call"]),
   value: z.string().nullable().optional(), // URL or phone number for url/call buttons
   id: z.string().optional(), // ID for quick_reply buttons
 }).refine((data) => {
+  // Must have either text or title
+  if (!data.text && !data.title) {
+    return false;
+  }
   // quick_reply buttons should have an id
   if (data.type === "quick_reply" && !data.id) {
     return false;
@@ -836,7 +842,15 @@ export const buttonSchema = z.object({
   }
   return true;
 }, {
-  message: "Button validation failed: quick_reply requires id, url/call requires value"
+  message: "Button validation failed: must have text or title, quick_reply requires id, url/call requires value"
+}).transform((data) => {
+  // Normalize: use title if it exists, otherwise use text
+  return {
+    type: data.type,
+    title: data.title || data.text,
+    ...(data.value !== undefined && { value: data.value }),
+    ...(data.id && { id: data.id }),
+  };
 });
 
 export const insertTemplateSchema = createInsertSchema(templates, {
@@ -851,6 +865,7 @@ export const insertJobSchema = createInsertSchema(jobs);
 export const insertMessageSchema = createInsertSchema(messages, {
   to: z.string().min(1),
   body: z.string().min(1),
+  buttons: z.array(buttonSchema).default([]), // Validate and normalize buttons
 });
 
 export const insertWorkflowSchema = createInsertSchema(workflows, {
