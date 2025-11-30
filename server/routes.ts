@@ -3110,6 +3110,8 @@ export function registerRoutes(app: Express) {
       const phonebookId = parseInt(req.params.id);
       const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
 
+      console.log(`[Send Uniform] Received buttons from frontend:`, JSON.stringify(buttons && Array.isArray(buttons) ? buttons.slice(0, 1) : buttons, null, 2));
+      
       if (!channelId || !body) {
         return res.status(400).json({ error: "Channel ID and message body are required" });
       }

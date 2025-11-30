@@ -463,6 +463,7 @@ export class DatabaseStorage implements IStorage {
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     // Normalize buttons: ensure they have 'title' field, not 'text'
     if (insertMessage.buttons && Array.isArray(insertMessage.buttons)) {
+      console.log(`[Storage] createMessage raw buttons:`, JSON.stringify(insertMessage.buttons.slice(0, 1), null, 2));
       insertMessage.buttons = insertMessage.buttons.map((btn: any) => {
         const normalized: any = {
           type: btn.type || "quick_reply",
@@ -477,8 +478,10 @@ export class DatabaseStorage implements IStorage {
         if (btn.copy_code) normalized.copy_code = btn.copy_code;
         return normalized;
       });
+      console.log(`[Storage] createMessage normalized buttons:`, JSON.stringify(insertMessage.buttons.slice(0, 1), null, 2));
     }
     const [message] = await db.insert(schema.messages).values(insertMessage).returning();
+    console.log(`[Storage] Message created with buttons:`, JSON.stringify(message.buttons && Array.isArray(message.buttons) ? message.buttons.slice(0, 1) : message.buttons, null, 2));
     return message;
   }
 

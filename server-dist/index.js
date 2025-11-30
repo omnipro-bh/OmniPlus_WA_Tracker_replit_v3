@@ -1310,6 +1310,7 @@ var init_storage = __esm({
       }
       async createMessage(insertMessage) {
         if (insertMessage.buttons && Array.isArray(insertMessage.buttons)) {
+          console.log(`[Storage] createMessage raw buttons:`, JSON.stringify(insertMessage.buttons.slice(0, 1), null, 2));
           insertMessage.buttons = insertMessage.buttons.map((btn) => {
             const normalized = {
               type: btn.type || "quick_reply",
@@ -1322,8 +1323,10 @@ var init_storage = __esm({
             if (btn.copy_code) normalized.copy_code = btn.copy_code;
             return normalized;
           });
+          console.log(`[Storage] createMessage normalized buttons:`, JSON.stringify(insertMessage.buttons.slice(0, 1), null, 2));
         }
         const [message] = await db.insert(messages).values(insertMessage).returning();
+        console.log(`[Storage] Message created with buttons:`, JSON.stringify(message.buttons && Array.isArray(message.buttons) ? message.buttons.slice(0, 1) : message.buttons, null, 2));
         return message;
       }
       async updateMessage(id, data) {
@@ -5246,6 +5249,7 @@ function registerRoutes(app2) {
     try {
       const phonebookId = parseInt(req.params.id);
       const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
+      console.log(`[Send Uniform] Received buttons from frontend:`, JSON.stringify(buttons && Array.isArray(buttons) ? buttons.slice(0, 1) : buttons, null, 2));
       if (!channelId || !body) {
         return res.status(400).json({ error: "Channel ID and message body are required" });
       }
