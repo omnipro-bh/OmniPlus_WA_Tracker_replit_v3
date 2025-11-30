@@ -2885,6 +2885,19 @@ dayjs.extend(timezone);
 function getEffectiveUserId(req) {
   return req.impersonatedUser?.id || req.userId;
 }
+function normalizeButtons(buttons) {
+  if (!buttons || !Array.isArray(buttons)) return [];
+  return buttons.map((btn) => ({
+    type: btn.type || "quick_reply",
+    id: btn.id,
+    title: btn.title || btn.text || "Button",
+    // Use title if exists, fallback to text
+    ...btn.value !== void 0 && { value: btn.value },
+    ...btn.url && { url: btn.url },
+    ...btn.phone_number && { phone_number: btn.phone_number },
+    ...btn.copy_code && { copy_code: btn.copy_code }
+  }));
+}
 function getDaysFromBillingPeriod(billingPeriod) {
   switch (billingPeriod) {
     case "MONTHLY":
@@ -4361,7 +4374,7 @@ function registerRoutes(app2) {
           body: row.bodyText || row.message || "",
           header: row.headerMsg || null,
           footer: row.footerText || null,
-          buttons,
+          buttons: normalizeButtons(buttons),
           status: "QUEUED"
         });
       }
@@ -5232,7 +5245,7 @@ function registerRoutes(app2) {
           body: contact.body,
           header: contact.header || null,
           footer: contact.footer || null,
-          buttons,
+          buttons: normalizeButtons(buttons),
           status: "QUEUED",
           messageType: contact.messageType,
           mediaUrl: contact.mediaUrl || null
@@ -5304,7 +5317,7 @@ function registerRoutes(app2) {
           body,
           header: header || null,
           footer: footer || null,
-          buttons: normalizedButtons,
+          buttons: normalizeButtons(normalizedButtons),
           status: "QUEUED",
           messageType: messageType || "text_buttons",
           mediaUrl: mediaUrl || null

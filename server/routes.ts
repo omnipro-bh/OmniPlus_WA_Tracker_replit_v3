@@ -38,6 +38,21 @@ function getEffectiveUserId(req: AuthRequest): number {
   return req.impersonatedUser?.id || req.userId!;
 }
 
+// CRITICAL: Normalize buttons to ALWAYS have 'title' field (never 'text')
+// This ensures WHAPI compatibility regardless of source
+function normalizeButtons(buttons: any[] | undefined): any[] {
+  if (!buttons || !Array.isArray(buttons)) return [];
+  return buttons.map((btn: any) => ({
+    type: btn.type || "quick_reply",
+    id: btn.id,
+    title: btn.title || btn.text || "Button",  // Use title if exists, fallback to text
+    ...(btn.value !== undefined && { value: btn.value }),
+    ...(btn.url && { url: btn.url }),
+    ...(btn.phone_number && { phone_number: btn.phone_number }),
+    ...(btn.copy_code && { copy_code: btn.copy_code }),
+  }));
+}
+
 // Helper function to calculate days from billing period
 function getDaysFromBillingPeriod(billingPeriod: "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"): number {
   switch (billingPeriod) {
@@ -1960,7 +1975,7 @@ export function registerRoutes(app: Express) {
           body: row.bodyText || row.message || "",
           header: row.headerMsg || null,
           footer: row.footerText || null,
-          buttons: buttons,
+          buttons: normalizeButtons(buttons),
           status: "QUEUED",
         });
       }
@@ -3087,7 +3102,7 @@ export function registerRoutes(app: Express) {
           body: contact.body,
           header: contact.header || null,
           footer: contact.footer || null,
-          buttons: buttons,
+          buttons: normalizeButtons(buttons),
           status: "QUEUED",
           messageType: contact.messageType,
           mediaUrl: contact.mediaUrl || null,
@@ -3180,7 +3195,7 @@ export function registerRoutes(app: Express) {
           body: body,
           header: header || null,
           footer: footer || null,
-          buttons: normalizedButtons,
+          buttons: normalizeButtons(normalizedButtons),
           status: "QUEUED",
           messageType: messageType || "text_buttons",
           mediaUrl: mediaUrl || null,
