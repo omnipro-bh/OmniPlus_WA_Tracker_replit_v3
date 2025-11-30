@@ -315,8 +315,21 @@ export async function sendInteractiveMessage(channelToken: string, payload: {
       payloadSent: JSON.stringify(payload, null, 2).substring(0, 500)
     });
     
-    const errorMessage = errorData?.error?.message || errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
-    throw new Error(errorMessage || "Unknown WHAPI error");
+    // Properly extract error message - handle nested objects
+    let errorMessage = `WHAPI send failed (status ${response.status})`;
+    if (errorData?.error?.message && typeof errorData.error.message === 'string') {
+      errorMessage = errorData.error.message;
+    } else if (errorData?.error && typeof errorData.error === 'string') {
+      errorMessage = errorData.error;
+    } else if (errorData?.error && typeof errorData.error === 'object') {
+      // Stringify object errors to avoid [object Object]
+      errorMessage = JSON.stringify(errorData.error);
+    } else if (errorData?.message && typeof errorData.message === 'string') {
+      errorMessage = errorData.message;
+    } else if (errorData?.rawError && typeof errorData.rawError === 'string') {
+      errorMessage = errorData.rawError;
+    }
+    throw new Error(errorMessage);
   }
 
   // Response should include message ID and other details
