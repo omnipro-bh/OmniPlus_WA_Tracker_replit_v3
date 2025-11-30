@@ -1309,6 +1309,20 @@ var init_storage = __esm({
         return await db.select().from(messages).where(eq(messages.jobId, jobId)).orderBy(desc(messages.createdAt));
       }
       async createMessage(insertMessage) {
+        if (insertMessage.buttons && Array.isArray(insertMessage.buttons)) {
+          insertMessage.buttons = insertMessage.buttons.map((btn) => {
+            const normalized = {
+              type: btn.type || "quick_reply",
+              id: btn.id
+            };
+            normalized.title = btn.title || btn.text || "Button";
+            if (btn.value !== void 0) normalized.value = btn.value;
+            if (btn.phone_number) normalized.phone_number = btn.phone_number;
+            if (btn.url) normalized.url = btn.url;
+            if (btn.copy_code) normalized.copy_code = btn.copy_code;
+            return normalized;
+          });
+        }
         const [message] = await db.insert(messages).values(insertMessage).returning();
         return message;
       }

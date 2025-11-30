@@ -461,6 +461,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    // Normalize buttons: ensure they have 'title' field, not 'text'
+    if (insertMessage.buttons && Array.isArray(insertMessage.buttons)) {
+      insertMessage.buttons = insertMessage.buttons.map((btn: any) => {
+        const normalized: any = {
+          type: btn.type || "quick_reply",
+          id: btn.id,
+        };
+        // Always use 'title' field (WHAPI standard), fallback to 'text' if not available
+        normalized.title = btn.title || btn.text || "Button";
+        // Preserve optional fields
+        if (btn.value !== undefined) normalized.value = btn.value;
+        if (btn.phone_number) normalized.phone_number = btn.phone_number;
+        if (btn.url) normalized.url = btn.url;
+        if (btn.copy_code) normalized.copy_code = btn.copy_code;
+        return normalized;
+      });
+    }
     const [message] = await db.insert(schema.messages).values(insertMessage).returning();
     return message;
   }
