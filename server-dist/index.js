@@ -2887,16 +2887,19 @@ function getEffectiveUserId(req) {
 }
 function normalizeButtons(buttons) {
   if (!buttons || !Array.isArray(buttons)) return [];
-  return buttons.map((btn) => ({
-    type: btn.type || "quick_reply",
-    id: btn.id,
-    title: btn.title || btn.text || "Button",
-    // Use title if exists, fallback to text
-    ...btn.value !== void 0 && { value: btn.value },
-    ...btn.url && { url: btn.url },
-    ...btn.phone_number && { phone_number: btn.phone_number },
-    ...btn.copy_code && { copy_code: btn.copy_code }
-  }));
+  return buttons.map((btn) => {
+    const normalized = {
+      type: btn.type || "quick_reply",
+      id: btn.id,
+      title: btn.title || btn.text || "Button"
+      // Use title if exists, fallback to text, then default
+    };
+    if (btn.value !== void 0) normalized.value = btn.value;
+    if (btn.url) normalized.url = btn.url;
+    if (btn.phone_number) normalized.phone_number = btn.phone_number;
+    if (btn.copy_code) normalized.copy_code = btn.copy_code;
+    return normalized;
+  });
 }
 function getDaysFromBillingPeriod(billingPeriod) {
   switch (billingPeriod) {

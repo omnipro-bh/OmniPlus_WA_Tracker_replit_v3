@@ -38,19 +38,24 @@ function getEffectiveUserId(req: AuthRequest): number {
   return req.impersonatedUser?.id || req.userId!;
 }
 
-// CRITICAL: Normalize buttons to ALWAYS have 'title' field (never 'text')
+// CRITICAL: Normalize buttons to ALWAYS have 'title' field (NEVER 'text')
 // This ensures WHAPI compatibility regardless of source
+// MUST strip out 'text' field completely
 function normalizeButtons(buttons: any[] | undefined): any[] {
   if (!buttons || !Array.isArray(buttons)) return [];
-  return buttons.map((btn: any) => ({
-    type: btn.type || "quick_reply",
-    id: btn.id,
-    title: btn.title || btn.text || "Button",  // Use title if exists, fallback to text
-    ...(btn.value !== undefined && { value: btn.value }),
-    ...(btn.url && { url: btn.url }),
-    ...(btn.phone_number && { phone_number: btn.phone_number }),
-    ...(btn.copy_code && { copy_code: btn.copy_code }),
-  }));
+  return buttons.map((btn: any) => {
+    const normalized: any = {
+      type: btn.type || "quick_reply",
+      id: btn.id,
+      title: btn.title || btn.text || "Button",  // Use title if exists, fallback to text, then default
+    };
+    // Add optional fields but NEVER add 'text'
+    if (btn.value !== undefined) normalized.value = btn.value;
+    if (btn.url) normalized.url = btn.url;
+    if (btn.phone_number) normalized.phone_number = btn.phone_number;
+    if (btn.copy_code) normalized.copy_code = btn.copy_code;
+    return normalized;
+  });
 }
 
 // Helper function to calculate days from billing period
