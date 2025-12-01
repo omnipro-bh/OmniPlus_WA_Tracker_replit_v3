@@ -1,16 +1,19 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Inbox, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Inbox, ExternalLink, Download, ChevronLeft, ChevronRight, Pause, Play, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import type { Job, Message } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 import Papa from "papaparse";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface JobWithMessages extends Job {
   messages: Message[];
@@ -21,11 +24,102 @@ export default function Outbox() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const { toast } = useToast();
 
   const { data: jobs = [], isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
     refetchInterval: 3000, // Auto-refresh every 3 seconds
   });
+
+  // Stop job mutation
+  const stopJobMutation = useMutation({
+    mutationFn: async (jobId: number) => {
+      return await apiRequest("PATCH", `/api/jobs/${jobId}/stop`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({
+        title: "Job Paused",
+        description: "The bulk campaign has been paused. You can resume it anytime.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to pause job",
+        description: error.message || "Something went wrong",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Resume job mutation
+  const resumeJobMutation = useMutation({
+    mutationFn: async (jobId: number) => {
+      return await apiRequest("PATCH", `/api/jobs/${jobId}/resume`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({
+        title: "Job Resumed",
+        description: "The bulk campaign has been resumed and will continue sending.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to resume job",
+        description: error.message || "Something went wrong",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete job mutation
+  const deleteJobMutation = useMutation({
+    mutationFn: async (jobId: number) => {
+      return await apiRequest("DELETE", `/api/jobs/${jobId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      setSelectedJob(null);
+      toast({
+        title: "Job Deleted",
+        description: "The job and all its messages have been deleted.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete job",
+        description: error.message || "Something went wrong",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleStopJob = (e: React.MouseEvent, jobId: number) => {
+    e.stopPropagation();
+    stopJobMutation.mutate(jobId);
+  };
+
+  const handleResumeJob = (e: React.MouseEvent, jobId: number) => {
+    e.stopPropagation();
+    resumeJobMutation.mutate(jobId);
+  };
+
+  const handleDeleteJob = (jobId: number) => {
+    deleteJobMutation.mutate(jobId);
+  };
+
+  const isJobRunning = (status: string) => {
+    return status === "PROCESSING" || status === "QUEUED" || status === "PENDING";
+  };
+
+  const isJobPaused = (status: string) => {
+    return status === "PAUSED";
+  };
+
+  const canDeleteJob = (status: string) => {
+    return status === "PAUSED" || status === "COMPLETED" || status === "FAILED" || status === "PARTIAL";
+  };
 
   const { data: jobDetails } = useQuery<JobWithMessages>({
     queryKey: ["/api/jobs", selectedJob],
@@ -181,9 +275,71 @@ export default function Outbox() {
                       {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                     </CardDescription>
                   </div>
-                  <Button variant="ghost" size="sm">
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {job.type === "BULK" && (
+                      <>
+                        {isJobRunning(job.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => handleStopJob(e, job.id)}
+                            disabled={stopJobMutation.isPending}
+                            data-testid={`button-stop-job-${job.id}`}
+                          >
+                            <Pause className="h-4 w-4 mr-1" />
+                            Stop
+                          </Button>
+                        )}
+                        {isJobPaused(job.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => handleResumeJob(e, job.id)}
+                            disabled={resumeJobMutation.isPending}
+                            data-testid={`button-resume-job-${job.id}`}
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Resume
+                          </Button>
+                        )}
+                        {canDeleteJob(job.status) && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`button-delete-job-${job.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Job #{job.id}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete this job and all its messages. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteJob(job.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </>
+                    )}
+                    <Button variant="ghost" size="icon" data-testid={`button-view-job-${job.id}`}>
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -301,16 +457,77 @@ export default function Outbox() {
               >
                 ← Back to Outbox
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportToExcel}
-                disabled={!jobDetails || messages.length === 0}
-                data-testid="button-export-excel"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export to Excel
-              </Button>
+              <div className="flex items-center gap-2">
+                {jobDetails && jobDetails.type === "BULK" && (
+                  <>
+                    {isJobRunning(jobDetails.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); stopJobMutation.mutate(jobDetails.id); }}
+                        disabled={stopJobMutation.isPending}
+                        data-testid="button-stop-job-dialog"
+                      >
+                        <Pause className="h-4 w-4 mr-1" />
+                        Stop
+                      </Button>
+                    )}
+                    {isJobPaused(jobDetails.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); resumeJobMutation.mutate(jobDetails.id); }}
+                        disabled={resumeJobMutation.isPending}
+                        data-testid="button-resume-job-dialog"
+                      >
+                        <Play className="h-4 w-4 mr-1" />
+                        Resume
+                      </Button>
+                    )}
+                    {canDeleteJob(jobDetails.status) && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid="button-delete-job-dialog"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Delete
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Job #{jobDetails.id}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete this job and all its messages. This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteJob(jobDetails.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportToExcel}
+                  disabled={!jobDetails || messages.length === 0}
+                  data-testid="button-export-excel"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export to Excel
+                </Button>
+              </div>
             </div>
             <DialogTitle className="text-2xl font-bold">Job Details</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
@@ -511,7 +728,7 @@ export default function Outbox() {
               {selectedMessage.error && (
                 <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4">
                   <div className="text-xs font-semibold text-destructive uppercase mb-2">Error</div>
-                  <div className="text-sm text-destructive">{selectedMessage.error}</div>
+                  <div className="text-sm text-destructive">{String(selectedMessage.error)}</div>
                 </div>
               )}
 

@@ -176,12 +176,28 @@ export default function Send() {
       });
     },
     onError: (error: any) => {
-      const isLimitReached = error.message?.includes("limit reached");
-      toast({
-        title: isLimitReached ? "Daily limit reached" : "Failed to send",
-        description: error.message || "Could not send message",
-        variant: "destructive",
-      });
+      const isLimitReached = error.message?.includes("limit reached") || error.message?.includes("Daily bulk");
+      const isRunningCampaign = error.message?.includes("running bulk campaign") || error.message?.includes("running campaign");
+      
+      if (isRunningCampaign) {
+        toast({
+          title: "Campaign Already Running",
+          description: "You already have a bulk campaign in progress. Please wait for it to complete, or stop it from the Outbox before starting a new one.",
+          variant: "destructive",
+        });
+      } else if (isLimitReached) {
+        toast({
+          title: "Daily Limit Reached",
+          description: "You have reached your daily bulk message limit. Please try again tomorrow or upgrade your plan.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Failed to send",
+          description: error.message || "Could not send message",
+          variant: "destructive",
+        });
+      }
     },
   });
 

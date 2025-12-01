@@ -1915,6 +1915,19 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
+      // Check for existing running bulk job (only one at a time per user)
+      const existingJobs = await storage.getJobsForUser(req.userId!);
+      const runningJob = existingJobs.find(j => 
+        j.type === "BULK" && 
+        (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({ 
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
+      }
+
       // Check bulk batch size limit (-1 means unlimited)
       if (plan.bulkMessagesLimit !== -1 && rows.length > plan.bulkMessagesLimit) {
         return res.status(403).json({ 
@@ -2037,6 +2050,39 @@ export function registerRoutes(app: Express) {
 
       // Process messages one by one with random delays
       for (const message of queuedMessages) {
+        // Check if job was paused
+        const currentJob = await storage.getJob(jobId);
+        if (!currentJob || currentJob.status === "PAUSED") {
+          console.log(`[Job ${jobId}] Job was paused, stopping processing`);
+          return;
+        }
+        
+        // Check daily bulk message limit during processing
+        const job = await storage.getJob(jobId);
+        if (job) {
+          const user = await storage.getUser(job.userId);
+          if (user) {
+            const subscription = await storage.getActiveSubscriptionForUser(job.userId);
+            if (subscription) {
+              const plan = await storage.getPlan(subscription.planId);
+              if (plan && plan.bulkMessagesLimit !== -1) {
+                const jobs = await storage.getJobsForUser(job.userId);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const bulkMessagesSentToday = jobs
+                  .filter(j => new Date(j.createdAt) >= today && j.type === "BULK")
+                  .reduce((sum, j) => sum + j.sent + j.delivered + j.read, 0);
+                
+                if (bulkMessagesSentToday >= plan.bulkMessagesLimit) {
+                  console.log(`[Job ${jobId}] Daily bulk limit reached (${bulkMessagesSentToday}/${plan.bulkMessagesLimit}), pausing job`);
+                  await storage.updateJob(jobId, { status: "PAUSED" });
+                  return;
+                }
+              }
+            }
+          }
+        }
+        
         try {
           console.log(`[Bulk Send] Processing message ${message.id} to ${message.to}`);
           console.log(`[Bulk Send] Raw message data:`, JSON.stringify({
@@ -3023,6 +3069,19 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Channel not found or access denied" });
       }
 
+      // Check for existing running bulk job (only one at a time per user)
+      const existingJobs = await storage.getJobsForUser(req.userId!);
+      const runningJob = existingJobs.find(j => 
+        j.type === "BULK" && 
+        (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({ 
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
+      }
+
       // Get all contacts
       const contacts = await storage.getContactsForPhonebook(phonebookId);
       if (contacts.length === 0) {
@@ -3154,6 +3213,19 @@ export function registerRoutes(app: Express) {
       const channel = await storage.getChannel(channelId);
       if (!channel || channel.userId !== req.userId!) {
         return res.status(403).json({ error: "Channel not found or access denied" });
+      }
+
+      // Check for existing running bulk job (only one at a time per user)
+      const existingJobs = await storage.getJobsForUser(req.userId!);
+      const runningJob = existingJobs.find(j => 
+        j.type === "BULK" && 
+        (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({ 
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
       }
 
       // Get all contacts
@@ -3781,6 +3853,120 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Get job error:", error);
       res.status(500).json({ error: "Failed to fetch job" });
+    }
+  });
+
+  // Stop (pause) a running bulk job
+  app.patch("/api/jobs/:id/stop", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+
+      if (job.type !== "BULK") {
+        return res.status(400).json({ error: "Only bulk jobs can be stopped" });
+      }
+
+      if (job.status !== "PROCESSING" && job.status !== "QUEUED" && job.status !== "PENDING") {
+        return res.status(400).json({ error: "Job is not running" });
+      }
+
+      await storage.updateJob(jobId, { status: "PAUSED" });
+      
+      console.log(`[Job ${jobId}] Paused by user ${effectiveUserId}`);
+      
+      res.json({ success: true, message: "Job paused successfully" });
+    } catch (error: any) {
+      console.error("Stop job error:", error);
+      res.status(500).json({ error: "Failed to stop job" });
+    }
+  });
+
+  // Resume a paused bulk job
+  app.patch("/api/jobs/:id/resume", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+
+      if (job.type !== "BULK") {
+        return res.status(400).json({ error: "Only bulk jobs can be resumed" });
+      }
+
+      if (job.status !== "PAUSED") {
+        return res.status(400).json({ error: "Job is not paused" });
+      }
+
+      // Check for other running jobs
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
+      const runningJob = existingJobs.find(j => 
+        j.id !== jobId &&
+        j.type === "BULK" && 
+        (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({ 
+          error: "You already have another running bulk campaign. Please stop it first.",
+          runningJobId: runningJob.id
+        });
+      }
+
+      // Get the channel for this job
+      const channel = await storage.getChannel(job.channelId!);
+      if (!channel || channel.status !== "ACTIVE" || !channel.whapiChannelToken) {
+        return res.status(400).json({ error: "Channel is not available" });
+      }
+
+      // Update status and restart processing
+      await storage.updateJob(jobId, { status: "PROCESSING" });
+      
+      console.log(`[Job ${jobId}] Resumed by user ${effectiveUserId}`);
+      
+      // Start background processing again
+      processBulkJob(jobId, channel).catch(err => {
+        console.error(`Bulk job ${jobId} resume processing error:`, err);
+      });
+      
+      res.json({ success: true, message: "Job resumed successfully" });
+    } catch (error: any) {
+      console.error("Resume job error:", error);
+      res.status(500).json({ error: "Failed to resume job" });
+    }
+  });
+
+  // Delete a job (only if paused, completed, or failed)
+  app.delete("/api/jobs/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+
+      // Don't allow deleting running jobs
+      if (job.status === "PROCESSING" || job.status === "PENDING") {
+        return res.status(400).json({ error: "Cannot delete a running job. Please stop it first." });
+      }
+
+      // Delete the job (messages will cascade delete)
+      await storage.deleteJob(jobId);
+      
+      console.log(`[Job ${jobId}] Deleted by user ${effectiveUserId}`);
+      
+      res.json({ success: true, message: "Job deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete job error:", error);
+      res.status(500).json({ error: "Failed to delete job" });
     }
   });
 

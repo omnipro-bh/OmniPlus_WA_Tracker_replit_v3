@@ -451,6 +451,11 @@ export class DatabaseStorage implements IStorage {
     return job || undefined;
   }
 
+  async deleteJob(id: number): Promise<void> {
+    // Messages will cascade delete due to foreign key constraint
+    await db.delete(schema.jobs).where(eq(schema.jobs.id, id));
+  }
+
   // Messages
   async getMessagesForJob(jobId: number): Promise<Message[]> {
     return await db
