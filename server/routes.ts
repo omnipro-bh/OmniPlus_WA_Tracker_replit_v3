@@ -8163,7 +8163,8 @@ export function registerRoutes(app: Express) {
   // User: Cancel own subscription
   app.post("/api/me/cancel-subscription", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+      const effectiveUserId = getEffectiveUserId(req);
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
       if (!subscription) {
         return res.status(404).json({ error: "No active subscription found" });
       }
@@ -8171,12 +8172,14 @@ export function registerRoutes(app: Express) {
       await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
 
       await storage.createAuditLog({
-        actorUserId: req.userId!,
+        actorUserId: req.userId!, // Real admin ID for accountability
         action: "CANCEL_OWN_SUBSCRIPTION",
         meta: {
           entity: "subscription",
           entityId: subscription.id,
           planId: subscription.planId,
+          targetUserId: effectiveUserId, // Track which user was affected
+          impersonated: req.impersonatedUser ? true : false,
         },
       });
 
@@ -8190,6 +8193,8 @@ export function registerRoutes(app: Express) {
   // User: Reset password
   app.post("/api/me/reset-password", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
+      
       const validation = z.object({
         newPassword: z.string().min(6, "Password must be at least 6 characters"),
       }).safeParse(req.body);
@@ -8201,14 +8206,15 @@ export function registerRoutes(app: Express) {
       const { newPassword } = validation.data;
       const passwordHash = await hashPassword(newPassword);
 
-      await storage.updateUser(req.userId!, { passwordHash });
+      await storage.updateUser(effectiveUserId, { passwordHash });
 
       await storage.createAuditLog({
-        actorUserId: req.userId!,
+        actorUserId: req.userId!, // Real admin ID for accountability
         action: "RESET_PASSWORD",
         meta: {
           entity: "user",
-          userId: req.userId!,
+          targetUserId: effectiveUserId, // Track which user's password was reset
+          impersonated: req.impersonatedUser ? true : false,
         },
       });
 
