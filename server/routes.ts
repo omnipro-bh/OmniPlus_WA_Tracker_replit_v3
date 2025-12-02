@@ -3802,9 +3802,14 @@ export function registerRoutes(app: Express) {
       }
       
       // Calculate overall job status
-      let jobStatus: "QUEUED" | "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "PARTIAL" = "QUEUED";
+      // CRITICAL: If there are still QUEUED or PENDING messages, job is still running (PROCESSING)
+      let jobStatus: "QUEUED" | "PENDING" | "PROCESSING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "PARTIAL" = "QUEUED";
       const total = messages.length;
-      if (failed === total) {
+      
+      // First check: If there are still QUEUED or PENDING messages, job is still running
+      if (queued > 0 || pending > 0) {
+        jobStatus = "PROCESSING";
+      } else if (failed === total) {
         jobStatus = "FAILED";
       } else if (failed > 0 && (delivered + read + replied + failed) === total) {
         jobStatus = "PARTIAL";
@@ -3814,8 +3819,6 @@ export function registerRoutes(app: Express) {
         jobStatus = "DELIVERED";
       } else if (sent > 0 || delivered > 0 || read > 0) {
         jobStatus = "SENT";
-      } else if (pending > 0) {
-        jobStatus = "PENDING";
       }
       
       // Update job statistics if they differ from database
