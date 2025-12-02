@@ -3802,12 +3802,15 @@ export function registerRoutes(app: Express) {
       }
       
       // Calculate overall job status
-      // CRITICAL: If there are still QUEUED or PENDING messages, job is still running (PROCESSING)
-      let jobStatus: "QUEUED" | "PENDING" | "PROCESSING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "PARTIAL" = "QUEUED";
+      // CRITICAL: PAUSED status should be preserved - never overwrite PAUSED with PROCESSING
+      let jobStatus: "QUEUED" | "PENDING" | "PROCESSING" | "PAUSED" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "PARTIAL" = "QUEUED";
       const total = messages.length;
       
-      // First check: If there are still QUEUED or PENDING messages, job is still running
-      if (queued > 0 || pending > 0) {
+      // IMPORTANT: If job is already PAUSED, keep it PAUSED regardless of message states
+      if (job.status === "PAUSED") {
+        jobStatus = "PAUSED";
+      } else if (queued > 0 || pending > 0) {
+        // If there are still QUEUED or PENDING messages and job is not paused, it's running
         jobStatus = "PROCESSING";
       } else if (failed === total) {
         jobStatus = "FAILED";
@@ -3821,11 +3824,14 @@ export function registerRoutes(app: Express) {
         jobStatus = "SENT";
       }
       
-      // Update job statistics if they differ from database
-      if (job.queued !== queued || job.pending !== pending || job.sent !== sent || 
+      // Update job statistics if they differ from database (but only update counts, not status if PAUSED)
+      const statsChanged = job.queued !== queued || job.pending !== pending || job.sent !== sent || 
           job.delivered !== delivered || job.read !== read || job.failed !== failed || 
-          job.replied !== replied || job.status !== jobStatus) {
-        await storage.updateJob(jobId, {
+          job.replied !== replied;
+      const statusChanged = job.status !== jobStatus && job.status !== "PAUSED";
+      
+      if (statsChanged || statusChanged) {
+        const updateData: any = {
           queued,
           pending,
           sent,
@@ -3833,8 +3839,12 @@ export function registerRoutes(app: Express) {
           read,
           failed,
           replied,
-          status: jobStatus,
-        });
+        };
+        // Only update status if job is not PAUSED
+        if (job.status !== "PAUSED") {
+          updateData.status = jobStatus;
+        }
+        await storage.updateJob(jobId, updateData);
       }
       
       console.log(`[Job ${jobId}] Recalculated statistics:`, {
