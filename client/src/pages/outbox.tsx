@@ -118,7 +118,7 @@ export default function Outbox() {
   };
 
   const canDeleteJob = (status: string) => {
-    return status === "PAUSED" || status === "COMPLETED" || status === "FAILED" || status === "PARTIAL";
+    return status === "PAUSED" || status === "COMPLETED" || status === "FAILED" || status === "PARTIAL" || status === "SENT";
   };
 
   const { data: jobDetails } = useQuery<JobWithMessages>({
