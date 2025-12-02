@@ -3876,8 +3876,14 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Only bulk jobs can be stopped" });
       }
 
-      if (job.status !== "PROCESSING" && job.status !== "QUEUED" && job.status !== "PENDING") {
-        return res.status(400).json({ error: "Job is not running" });
+      // Check if job is actually running by looking at messages, not just status field
+      // This fixes race condition where status field hasn't been updated yet
+      const messages = await storage.getMessagesForJob(jobId);
+      const hasQueuedOrPending = messages.some(m => m.status === "QUEUED" || m.status === "PENDING");
+      const isRunningStatus = job.status === "PROCESSING" || job.status === "QUEUED" || job.status === "PENDING";
+      
+      if (!hasQueuedOrPending && !isRunningStatus) {
+        return res.status(400).json({ error: "Job is not running - all messages have been processed" });
       }
 
       await storage.updateJob(jobId, { status: "PAUSED" });
