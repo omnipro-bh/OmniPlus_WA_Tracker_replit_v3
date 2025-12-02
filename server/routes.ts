@@ -3050,6 +3050,7 @@ export function registerRoutes(app: Express) {
   // Send messages to all contacts in a phonebook
   app.post("/api/phonebooks/:id/send", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const { channelId } = req.body;
 
@@ -3059,18 +3060,18 @@ export function registerRoutes(app: Express) {
 
       // Verify phonebook ownership
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
       // Verify channel ownership
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(403).json({ error: "Channel not found or access denied" });
       }
 
       // Check for existing running bulk job (only one at a time per user)
-      const existingJobs = await storage.getJobsForUser(req.userId!);
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
       const runningJob = existingJobs.find(j => 
         j.type === "BULK" && 
         (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
@@ -3090,7 +3091,7 @@ export function registerRoutes(app: Express) {
 
       // Create job
       const job = await storage.createJob({
-        userId: req.userId!,
+        userId: effectiveUserId,
         channelId: channelId,
         type: "BULK",
         status: "PENDING",
@@ -3186,6 +3187,7 @@ export function registerRoutes(app: Express) {
   // Send uniform message to all contacts in phonebook
   app.post("/api/phonebooks/:id/send-uniform", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
 
@@ -3205,18 +3207,18 @@ export function registerRoutes(app: Express) {
 
       // Verify phonebook ownership
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId!) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
 
       // Verify channel ownership
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(403).json({ error: "Channel not found or access denied" });
       }
 
       // Check for existing running bulk job (only one at a time per user)
-      const existingJobs = await storage.getJobsForUser(req.userId!);
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
       const runningJob = existingJobs.find(j => 
         j.type === "BULK" && 
         (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
@@ -3248,7 +3250,7 @@ export function registerRoutes(app: Express) {
 
       // Create job
       const job = await storage.createJob({
-        userId: req.userId!,
+        userId: effectiveUserId,
         channelId: channelId,
         type: "BULK",
         status: "PENDING",
