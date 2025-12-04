@@ -933,6 +933,10 @@ export function registerRoutes(app: Express) {
 
       // Skip amount validation for free trials
       if (paymentType !== "FREE_TRIAL") {
+        // Frontend sends amount in cents (amount * 100), so we need to convert expectedBasePrice to cents too
+        // displayPrice/price are stored as currency units (e.g., 85 BD, 225 USD), not cents
+        const expectedBasePriceInCents = expectedBasePrice * 100;
+        
         // Validate coupon if provided and verify amount calculation
         if (couponCode) {
           const couponValidation = await storage.validateCoupon(couponCode, req.userId!, planId);
@@ -940,25 +944,27 @@ export function registerRoutes(app: Express) {
             return res.status(400).json({ error: couponValidation.message });
           }
 
-          // Calculate expected amount with coupon discount applied to duration-adjusted price
+          // Calculate expected amount with coupon discount applied to duration-adjusted price (in cents)
           const discountPercent = couponValidation.coupon?.discountPercent || 0;
-          const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
+          const expectedAmount = Math.round(expectedBasePriceInCents * (100 - discountPercent) / 100);
 
           // Verify the submitted amount matches the expected discounted amount
           // Allow for small rounding differences (within 1 cent)
           if (Math.abs(amount - expectedAmount) > 1) {
+            console.log(`[OfflinePayment] Amount mismatch with coupon: expected=${expectedAmount}, received=${amount}, durationType=${durationType}, discountPercent=${discountPercent}`);
             return res.status(400).json({ 
               error: "Amount mismatch",
-              details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
+              details: `Expected ${(expectedAmount / 100).toFixed(2)} ${currency} (${durationType} with ${discountPercent}% coupon), received ${(amount / 100).toFixed(2)} ${currency}`
             });
           }
         } else {
-          // No coupon - verify amount matches duration-adjusted plan price
-          const expectedAmount = Math.round(expectedBasePrice);
+          // No coupon - verify amount matches duration-adjusted plan price (in cents)
+          const expectedAmount = Math.round(expectedBasePriceInCents);
           if (Math.abs(amount - expectedAmount) > 1) {
+            console.log(`[OfflinePayment] Amount mismatch: expected=${expectedAmount}, received=${amount}, durationType=${durationType}, basePlanPrice=${basePlanPrice}`);
             return res.status(400).json({ 
               error: "Amount mismatch",
-              details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
+              details: `Expected ${(expectedAmount / 100).toFixed(2)} ${currency} (${durationType}), received ${(amount / 100).toFixed(2)} ${currency}`
             });
           }
         }
