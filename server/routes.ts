@@ -3375,16 +3375,10 @@ export function registerRoutes(app: Express) {
         }
       }
 
-      // Insert contacts (up to the limit)
-      let insertedCount = 0;
-      for (const contact of contactsToImport) {
-        try {
-          await storage.createContact(contact);
-          insertedCount++;
-        } catch (error) {
-          console.error("Error inserting contact:", error);
-        }
-      }
+      // Insert contacts in batch (much faster than one-by-one for large imports)
+      console.log(`[CSV Import] Starting batch insert of ${contactsToImport.length} contacts`);
+      const insertedCount = await storage.createContactsBatch(contactsToImport);
+      console.log(`[CSV Import] Batch insert completed: ${insertedCount} contacts inserted`);
 
       res.json({
         success: true,

@@ -173,6 +173,7 @@ export interface IStorage {
   getContactsForPhonebook(phonebookId: number): Promise<schema.PhonebookContact[]>;
   getContact(id: number): Promise<schema.PhonebookContact | undefined>;
   createContact(contact: schema.InsertPhonebookContact): Promise<schema.PhonebookContact>;
+  createContactsBatch(contacts: schema.InsertPhonebookContact[]): Promise<number>; // Batch insert for CSV import
   updateContact(id: number, data: Partial<schema.PhonebookContact>): Promise<schema.PhonebookContact | undefined>;
   deleteContact(id: number): Promise<void>;
 
@@ -994,6 +995,27 @@ export class DatabaseStorage implements IStorage {
   async createContact(contact: schema.InsertPhonebookContact): Promise<schema.PhonebookContact> {
     const [newContact] = await db.insert(schema.phonebookContacts).values(contact).returning();
     return newContact;
+  }
+
+  async createContactsBatch(contacts: schema.InsertPhonebookContact[]): Promise<number> {
+    if (contacts.length === 0) return 0;
+    
+    // Insert in batches of 100 to avoid query size limits
+    const BATCH_SIZE = 100;
+    let insertedCount = 0;
+    
+    for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+      const batch = contacts.slice(i, i + BATCH_SIZE);
+      try {
+        await db.insert(schema.phonebookContacts).values(batch);
+        insertedCount += batch.length;
+      } catch (error) {
+        console.error(`Error inserting batch ${i / BATCH_SIZE + 1}:`, error);
+        // Continue with remaining batches even if one fails
+      }
+    }
+    
+    return insertedCount;
   }
 
   async updateContact(id: number, data: Partial<schema.PhonebookContact>): Promise<schema.PhonebookContact | undefined> {
