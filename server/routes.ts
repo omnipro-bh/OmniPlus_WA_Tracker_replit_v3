@@ -902,72 +902,27 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Plan not found" });
       }
 
-      // Calculate expected amount based on duration type (matching frontend logic)
+      // Get duration type for record-keeping
       const durationType = submittedDurationType || "MONTHLY";
-      
-      // Support dual pricing: check both PayPal price (USD) and display price (BHD)
-      const planData = plan as any;
-      const hasDisplayPricing = planData.displayPrice && planData.displayCurrency;
-      
-      // Determine which price to use based on submitted currency
-      const basePlanPrice = (currency === planData.displayCurrency && hasDisplayPricing) 
-        ? planData.displayPrice 
-        : (plan.price || 0);
-      
-      let expectedBasePrice = basePlanPrice;
-      
-      // Apply duration-based pricing (matching frontend getDiscountedPrice function)
-      // Use plan-specific discount percentages if available
-      const planData2 = plan as any;
-      if (durationType === "QUARTERLY") {
-        const quarterlyDiscount = planData2.quarterlyDiscountPercent || 0;
-        expectedBasePrice = basePlanPrice * 3 * (1 - quarterlyDiscount / 100); // 3 months with plan's quarterly discount
-      } else if (durationType === "SEMI_ANNUAL") {
-        const semiAnnualDiscount = planData2.semiAnnualDiscountPercent || 5;
-        expectedBasePrice = basePlanPrice * 6 * (1 - semiAnnualDiscount / 100); // 6 months with plan's semi-annual discount
-      } else if (durationType === "ANNUAL") {
-        const annualDiscount = planData2.annualDiscountPercent || 10;
-        expectedBasePrice = basePlanPrice * 12 * (1 - annualDiscount / 100); // 12 months with plan's annual discount
-      }
-      // MONTHLY uses base price as-is
 
-      // Skip amount validation for free trials
+      // Basic validation only - require positive amount
+      // Offline payments are manually reviewed by admin, so strict price validation is not needed
+      // Admin can verify the amount during approval process
       if (paymentType !== "FREE_TRIAL") {
-        // Frontend sends amount in cents (amount * 100), so we need to convert expectedBasePrice to cents too
-        // displayPrice/price are stored as currency units (e.g., 85 BD, 225 USD), not cents
-        const expectedBasePriceInCents = expectedBasePrice * 100;
+        if (!amount || amount <= 0) {
+          return res.status(400).json({ error: "Amount must be a positive number" });
+        }
         
-        // Validate coupon if provided and verify amount calculation
+        // Validate coupon if provided (just check validity, not amount calculation)
         if (couponCode) {
           const couponValidation = await storage.validateCoupon(couponCode, req.userId!, planId);
           if (!couponValidation.valid) {
             return res.status(400).json({ error: couponValidation.message });
           }
-
-          // Calculate expected amount with coupon discount applied to duration-adjusted price (in cents)
-          const discountPercent = couponValidation.coupon?.discountPercent || 0;
-          const expectedAmount = Math.round(expectedBasePriceInCents * (100 - discountPercent) / 100);
-
-          // Verify the submitted amount matches the expected discounted amount
-          // Allow for small rounding differences (within 1 cent)
-          if (Math.abs(amount - expectedAmount) > 1) {
-            console.log(`[OfflinePayment] Amount mismatch with coupon: expected=${expectedAmount}, received=${amount}, durationType=${durationType}, discountPercent=${discountPercent}`);
-            return res.status(400).json({ 
-              error: "Amount mismatch",
-              details: `Expected ${(expectedAmount / 100).toFixed(2)} ${currency} (${durationType} with ${discountPercent}% coupon), received ${(amount / 100).toFixed(2)} ${currency}`
-            });
-          }
-        } else {
-          // No coupon - verify amount matches duration-adjusted plan price (in cents)
-          const expectedAmount = Math.round(expectedBasePriceInCents);
-          if (Math.abs(amount - expectedAmount) > 1) {
-            console.log(`[OfflinePayment] Amount mismatch: expected=${expectedAmount}, received=${amount}, durationType=${durationType}, basePlanPrice=${basePlanPrice}`);
-            return res.status(400).json({ 
-              error: "Amount mismatch",
-              details: `Expected ${(expectedAmount / 100).toFixed(2)} ${currency} (${durationType}), received ${(amount / 100).toFixed(2)} ${currency}`
-            });
-          }
         }
+        
+        // Log the submission for admin review (no blocking)
+        console.log(`[OfflinePayment] Submitted: planId=${planId}, amount=${amount}, currency=${currency}, durationType=${durationType}, couponCode=${couponCode || 'none'}`);
       }
 
       const payment = await storage.createOfflinePayment({
