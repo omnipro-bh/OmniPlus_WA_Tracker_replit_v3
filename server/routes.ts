@@ -917,10 +917,17 @@ export function registerRoutes(app: Express) {
       let expectedBasePrice = basePlanPrice;
       
       // Apply duration-based pricing (matching frontend getDiscountedPrice function)
-      if (durationType === "SEMI_ANNUAL") {
-        expectedBasePrice = basePlanPrice * 6 * 0.95; // 6 months with 5% discount
+      // Use plan-specific discount percentages if available
+      const planData2 = plan as any;
+      if (durationType === "QUARTERLY") {
+        const quarterlyDiscount = planData2.quarterlyDiscountPercent || 0;
+        expectedBasePrice = basePlanPrice * 3 * (1 - quarterlyDiscount / 100); // 3 months with plan's quarterly discount
+      } else if (durationType === "SEMI_ANNUAL") {
+        const semiAnnualDiscount = planData2.semiAnnualDiscountPercent || 5;
+        expectedBasePrice = basePlanPrice * 6 * (1 - semiAnnualDiscount / 100); // 6 months with plan's semi-annual discount
       } else if (durationType === "ANNUAL") {
-        expectedBasePrice = basePlanPrice * 12 * 0.9; // 12 months with 10% discount
+        const annualDiscount = planData2.annualDiscountPercent || 10;
+        expectedBasePrice = basePlanPrice * 12 * (1 - annualDiscount / 100); // 12 months with plan's annual discount
       }
       // MONTHLY uses base price as-is
 
