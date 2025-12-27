@@ -6174,6 +6174,16 @@ export function registerRoutes(app: Express) {
             console.log(`[Button Reply Debug] Target node ID: ${targetNodeId}`);
             console.log(`[Button Reply Debug] Target node found: ${!!targetNode}`);
             
+            // Extract button title for capture and other features
+            let clickedButtonTitle = "";
+            if (incomingMessage.reply?.type === "buttons_reply") {
+              clickedButtonTitle = incomingMessage.reply.buttons_reply?.title || "";
+            } else if (incomingMessage.reply?.type === "list_reply") {
+              clickedButtonTitle = incomingMessage.reply.list_reply?.title || "";
+            } else if (incomingMessage.button?.text) {
+              clickedButtonTitle = incomingMessage.button.text;
+            }
+            
             if (targetNode) {
               const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
               console.log(`[Button Reply Debug] Target node type: ${nodeType}`);
@@ -6219,6 +6229,98 @@ export function registerRoutes(app: Express) {
               }
               
               let state = conversationState[0];
+              
+              // DATA CAPTURE: Track button clicks if capture is active
+              const stateContext = (state.context || {}) as any;
+              if (stateContext.captureActive && clickedButtonTitle) {
+                // Check if this is a save action (ends capture)
+                const saveKeywords = ["save", "حفظ"];
+                const isSaveAction = saveKeywords.some(
+                  kw => clickedButtonTitle.toLowerCase().trim() === kw.toLowerCase()
+                );
+                
+                // Always record the click (including the save button click)
+                const capturedClicks = stateContext.capturedClicks || [];
+                capturedClicks.push({
+                  buttonId: buttonId,
+                  buttonTitle: clickedButtonTitle,
+                  timestamp: new Date().toISOString(),
+                  nodeId: targetEdge.source, // The node the button was on
+                });
+                
+                console.log(`[Data Capture] Recorded click: "${clickedButtonTitle}" (total: ${capturedClicks.length})`);
+                
+                // Update state with new click
+                stateContext.capturedClicks = capturedClicks;
+                state = { ...state, context: stateContext };
+                
+                // If save action, save the captured data and clear capture state
+                if (isSaveAction && stateContext.captureSequenceName) {
+                  console.log(`[Data Capture] Save action detected - saving ${capturedClicks.length} clicks for sequence "${stateContext.captureSequenceName}"`);
+                  
+                  try {
+                    // Check/create capture sequence for this workflow
+                    let existingSequence = await db
+                      .select()
+                      .from(schema.captureSequences)
+                      .where(
+                        and(
+                          eq(schema.captureSequences.workflowId, activeWorkflow.id),
+                          eq(schema.captureSequences.sequenceName, stateContext.captureSequenceName)
+                        )
+                      )
+                      .limit(1);
+                    
+                    let sequenceId: number;
+                    if (existingSequence.length === 0) {
+                      // Create new sequence
+                      const [newSeq] = await db
+                        .insert(schema.captureSequences)
+                        .values({
+                          userId: activeWorkflow.userId,
+                          workflowId: activeWorkflow.id,
+                          sequenceName: stateContext.captureSequenceName,
+                          startNodeId: stateContext.captureStartNodeId || '',
+                          endNodeId: currentNodeId || '',
+                        })
+                        .returning({ id: schema.captureSequences.id });
+                      sequenceId = newSeq.id;
+                      console.log(`[Data Capture] Created new sequence ID: ${sequenceId}`);
+                    } else {
+                      sequenceId = existingSequence[0].id;
+                    }
+                    
+                    // Save captured data
+                    await db.insert(schema.capturedData).values({
+                      sequenceId: sequenceId,
+                      userId: activeWorkflow.userId,
+                      phone: phone,
+                      clicksJson: capturedClicks,
+                      workflowName: activeWorkflow.name,
+                      sequenceName: stateContext.captureSequenceName,
+                    });
+                    
+                    console.log(`[Data Capture] Saved captured data for phone ${phone}`);
+                  } catch (captureError: any) {
+                    console.error(`[Data Capture] Error saving captured data: ${captureError.message}`);
+                  }
+                  
+                  // Clear capture state
+                  delete stateContext.captureActive;
+                  delete stateContext.captureSequenceName;
+                  delete stateContext.capturedClicks;
+                  state = { ...state, context: stateContext };
+                }
+                
+                // Update conversation state with capture data
+                await db
+                  .update(conversationStates)
+                  .set({
+                    context: stateContext,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(conversationStates.id, state.id));
+              }
               
               // Execute nodes in sequence until we hit a message node or end of workflow
               while (currentNode) {
@@ -6290,15 +6392,40 @@ export function registerRoutes(app: Express) {
                     throw sendError;
                   }
                   
-                  // Update current node
-                  await db
-                    .update(conversationStates)
-                    .set({
-                      lastMessageAt: new Date(),
-                      currentNodeId: currentNodeId,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(conversationStates.id, state.id));
+                  // DATA CAPTURE: Check if this node starts a capture sequence
+                  const nodeConfig = currentNode.data?.config || {};
+                  if (nodeConfig.isCaptureStart && nodeConfig.captureSequenceName) {
+                    console.log(`[Data Capture] Starting capture sequence: "${nodeConfig.captureSequenceName}"`);
+                    const updatedContext = {
+                      ...(state.context as any),
+                      captureActive: true,
+                      captureSequenceName: nodeConfig.captureSequenceName,
+                      captureStartNodeId: currentNodeId,
+                      capturedClicks: [],
+                    };
+                    state = { ...state, context: updatedContext };
+                    
+                    // Save capture start state immediately
+                    await db
+                      .update(conversationStates)
+                      .set({
+                        lastMessageAt: new Date(),
+                        currentNodeId: currentNodeId,
+                        context: updatedContext,
+                        updatedAt: new Date(),
+                      })
+                      .where(eq(conversationStates.id, state.id));
+                  } else {
+                    // Update current node (normal case)
+                    await db
+                      .update(conversationStates)
+                      .set({
+                        lastMessageAt: new Date(),
+                        currentNodeId: currentNodeId,
+                        updatedAt: new Date(),
+                      })
+                      .where(eq(conversationStates.id, state.id));
+                  }
                   
                   // Check if this message node has interactive elements (requires user input)
                   const hasInteractiveElements = ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType);
