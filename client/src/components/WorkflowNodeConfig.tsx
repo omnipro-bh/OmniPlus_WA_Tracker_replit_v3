@@ -68,21 +68,17 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
   const handleStartCaptureToggle = (checked: boolean) => {
     if (checked) {
-      updateConfig('isCaptureStart', true);
-      updateConfig('isCaptureEnd', false);
+      onUpdate(node.id, { ...config, isCaptureStart: true, isCaptureEnd: false });
     } else {
-      updateConfig('isCaptureStart', false);
-      updateConfig('captureSequenceName', '');
+      onUpdate(node.id, { ...config, isCaptureStart: false, captureSequenceName: '' });
     }
   };
 
   const handleEndCaptureToggle = (checked: boolean) => {
     if (checked) {
-      updateConfig('isCaptureEnd', true);
-      updateConfig('isCaptureStart', false);
-      updateConfig('captureSequenceName', '');
+      onUpdate(node.id, { ...config, isCaptureEnd: true, isCaptureStart: false, captureSequenceName: '' });
     } else {
-      updateConfig('isCaptureEnd', false);
+      onUpdate(node.id, { ...config, isCaptureEnd: false });
     }
   };
 
