@@ -22,6 +22,7 @@ import Channels from "@/pages/channels";
 import Send from "@/pages/send";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
+import CaptureList from "@/pages/capture-list";
 import Phonebooks from "@/pages/phonebooks";
 import PhonebookDetail from "@/pages/phonebook-detail";
 import Subscribers from "@/pages/subscribers";
@@ -87,6 +88,13 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="workflows">
             <Workflows />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/capture-list">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="captureList">
+            <CaptureList />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>

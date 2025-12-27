@@ -15,6 +15,7 @@ import {
   Wallet,
   User,
   ShieldCheck,
+  Database,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -102,6 +103,12 @@ export function AppSidebar() {
       url: "/bulk-logs",
       icon: FileText,
       pageKey: "bulkLogs",
+    },
+    {
+      title: "Data Capture",
+      url: "/capture-list",
+      icon: Database,
+      pageKey: "captureList",
     },
     {
       title: "Pricing",

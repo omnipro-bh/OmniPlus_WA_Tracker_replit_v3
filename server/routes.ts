@@ -3523,6 +3523,96 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // CAPTURE SEQUENCES
+  // ============================================================================
+
+  // Get capture sequences for user with captured data
+  app.get("/api/capture-sequences", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const sequences = await storage.getCaptureSequencesForUser(effectiveUserId);
+      
+      // Fetch captured data for each sequence
+      const sequencesWithData = await Promise.all(
+        sequences.map(async (seq) => {
+          const capturedData = await storage.getCapturedDataForSequence(seq.id);
+          return {
+            ...seq,
+            capturedData,
+          };
+        })
+      );
+      
+      res.json(sequencesWithData);
+    } catch (error: any) {
+      console.error("Get capture sequences error:", error);
+      res.status(500).json({ error: "Failed to fetch capture sequences" });
+    }
+  });
+
+  // Delete capture sequence and all its data
+  app.delete("/api/capture-sequences/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const sequenceId = parseInt(req.params.id);
+      if (isNaN(sequenceId)) {
+        return res.status(400).json({ error: "Invalid sequence ID" });
+      }
+
+      const sequence = await storage.getCaptureSequence(sequenceId);
+      if (!sequence) {
+        return res.status(404).json({ error: "Sequence not found" });
+      }
+
+      // Verify ownership
+      const effectiveUserId = getEffectiveUserId(req);
+      if (sequence.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      // Delete all captured data for this sequence first
+      const capturedEntries = await storage.getCapturedDataForSequence(sequenceId);
+      for (const entry of capturedEntries.entries) {
+        await storage.deleteCapturedData(entry.id);
+      }
+      
+      // Delete the sequence
+      await storage.deleteCaptureSequence(sequenceId);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete capture sequence error:", error);
+      res.status(500).json({ error: "Failed to delete sequence" });
+    }
+  });
+
+  // Delete individual captured data
+  app.delete("/api/captured-data/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const dataId = parseInt(req.params.id);
+      if (isNaN(dataId)) {
+        return res.status(400).json({ error: "Invalid data ID" });
+      }
+
+      const data = await storage.getCapturedDataEntry(dataId);
+      if (!data) {
+        return res.status(404).json({ error: "Data not found" });
+      }
+
+      // Verify ownership
+      const effectiveUserId = getEffectiveUserId(req);
+      if (data.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteCapturedData(dataId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete captured data error:", error);
+      res.status(500).json({ error: "Failed to delete data" });
+    }
+  });
+
+  // ============================================================================
   // WORKFLOWS
   // ============================================================================
 
@@ -7624,6 +7714,7 @@ export function registerRoutes(app: Express) {
         outbox: false,
         logs: false,
         bulkLogs: false,
+        captureList: false,
         pricing: true,
         settings: false,
         balances: false,
