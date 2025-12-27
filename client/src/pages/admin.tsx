@@ -254,6 +254,7 @@ function DefaultPageAccessSettings() {
     outbox: false,
     logs: false,
     bulkLogs: false,
+    captureList: false,
     pricing: true,
     settings: false,
     balances: false,
@@ -317,6 +318,7 @@ function DefaultPageAccessSettings() {
     { key: "outbox", label: "Outbox", description: "Message outbox" },
     { key: "logs", label: "Workflow Logs", description: "Workflow execution logs" },
     { key: "bulkLogs", label: "Bulk Logs", description: "Bulk sending logs" },
+    { key: "captureList", label: "Data Capture", description: "View captured user responses" },
     { key: "phonebooks", label: "Phonebooks", description: "Manage contact phonebooks" },
     { key: "subscribers", label: "Subscribers", description: "Manage subscribers list" },
     { key: "pricing", label: "Pricing", description: "View pricing plans" },
@@ -1964,6 +1966,7 @@ export default function Admin() {
     channelsLimit: "",
     chatbotsLimit: "",
     phonebookLimit: "",
+    captureSequenceLimit: "",
     pageAccess: {} as Record<string, boolean>,
   });
 
@@ -2001,10 +2004,12 @@ export default function Admin() {
     enableChannels: true,
     enableWorkflows: true,
     enablePhonebooks: true,
+    enableCaptureSequences: true,
     dailyMessagesLimit: "1000",
     bulkMessagesLimit: "5000",
     channelsLimit: "5",
     chatbotsLimit: "10",
+    captureSequenceLimit: "10",
     phonebookLimit: "10",
     maxImageSizeMB: "5",
     maxVideoSizeMB: "16",
@@ -2020,6 +2025,7 @@ export default function Admin() {
       outbox: false,
       logs: false,
       bulkLogs: false,
+      captureList: false,
       phonebooks: false,
       subscribers: false,
       settings: false,
@@ -2436,10 +2442,12 @@ export default function Admin() {
       enableChannels: true,
       enableWorkflows: true,
       enablePhonebooks: true,
+      enableCaptureSequences: true,
       dailyMessagesLimit: "",
       bulkMessagesLimit: "",
       channelsLimit: "",
       chatbotsLimit: "",
+      captureSequenceLimit: "",
       phonebookLimit: "",
       maxImageSizeMB: "5",
       maxVideoSizeMB: "16",
@@ -2455,6 +2463,7 @@ export default function Admin() {
         outbox: false,
         logs: false,
         bulkLogs: false,
+        captureList: false,
         phonebooks: false,
         subscribers: false,
         settings: false,
@@ -2483,6 +2492,7 @@ export default function Admin() {
       outbox: false,
       logs: false,
       bulkLogs: false,
+      captureList: false,
       settings: false,
       ...(plan.pageAccess || {}),
     };
@@ -2498,6 +2508,7 @@ export default function Admin() {
     const enableChannels = plan.channelsLimit !== -1;
     const enableWorkflows = plan.chatbotsLimit !== -1;
     const enablePhonebooks = (plan as any).phonebookLimit !== -1;
+    const enableCaptureSequences = (plan as any).captureSequenceLimit !== -1;
     
     // Extract enabled billing periods from plan or use defaults
     const enabledBillingPeriods = Array.isArray((plan as any).enabledBillingPeriods)
@@ -2530,10 +2541,12 @@ export default function Admin() {
       enableChannels,
       enableWorkflows,
       enablePhonebooks,
+      enableCaptureSequences,
       dailyMessagesLimit: String(plan.dailyMessagesLimit),
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
       chatbotsLimit: String(plan.chatbotsLimit || ""),
+      captureSequenceLimit: String((plan as any).captureSequenceLimit || ""),
       phonebookLimit: String((plan as any).phonebookLimit || ""),
       maxImageSizeMB: String((plan as any).maxImageSizeMB ?? 5),
       maxVideoSizeMB: String((plan as any).maxVideoSizeMB ?? 16),
@@ -2565,6 +2578,7 @@ export default function Admin() {
     const channelsLimit = planForm.enableChannels ? parseInt(planForm.channelsLimit) : 0;
     const chatbotsLimit = planForm.enableWorkflows ? parseInt(planForm.chatbotsLimit) : 0;
     const phonebookLimit = planForm.enablePhonebooks ? parseInt(planForm.phonebookLimit) : 0;
+    const captureSequenceLimit = planForm.enableCaptureSequences ? parseInt(planForm.captureSequenceLimit) : 0;
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
@@ -2630,6 +2644,12 @@ export default function Admin() {
         return;
       }
     }
+    if (planForm.enableCaptureSequences) {
+      if (isNaN(captureSequenceLimit) || (captureSequenceLimit <= 0 && captureSequenceLimit !== -1)) {
+        toast({ title: "Validation error", description: "Valid data capture limit is required (use -1 for unlimited)", variant: "destructive" });
+        return;
+      }
+    }
 
     const maxImageSizeMBRaw = parseInt(planForm.maxImageSizeMB);
     const maxVideoSizeMBRaw = parseInt(planForm.maxVideoSizeMB);
@@ -2691,6 +2711,7 @@ export default function Admin() {
       channelsLimit,
       chatbotsLimit,
       phonebookLimit,
+      captureSequenceLimit,
       maxImageSizeMB,
       maxVideoSizeMB,
       maxDocumentSizeMB,
@@ -2724,6 +2745,7 @@ export default function Admin() {
       channelsLimit: subscription?.channelsLimit ? String(subscription.channelsLimit) : "",
       chatbotsLimit: subscription?.chatbotsLimit ? String(subscription.chatbotsLimit) : "",
       phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
+      captureSequenceLimit: subscription?.captureSequenceLimit ? String(subscription.captureSequenceLimit) : "",
       pageAccess: subscription?.pageAccess || {},
     });
     setIsUserDrawerOpen(true);
@@ -2739,6 +2761,7 @@ export default function Admin() {
       channelsLimit: userOverrides.channelsLimit ? parseInt(userOverrides.channelsLimit) : null,
       chatbotsLimit: userOverrides.chatbotsLimit ? parseInt(userOverrides.chatbotsLimit) : null,
       phonebookLimit: userOverrides.phonebookLimit ? parseInt(userOverrides.phonebookLimit) : null,
+      captureSequenceLimit: userOverrides.captureSequenceLimit ? parseInt(userOverrides.captureSequenceLimit) : null,
       pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
     };
 
@@ -4275,6 +4298,31 @@ export default function Admin() {
                     />
                   )}
                 </div>
+
+                {/* Data Capture Limit */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-capture-sequences"
+                      checked={planForm.enableCaptureSequences}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableCaptureSequences: checked as boolean })}
+                      data-testid="checkbox-enable-capture-sequences"
+                    />
+                    <Label htmlFor="enable-capture-sequences" className="cursor-pointer">
+                      Data Capture Limit
+                    </Label>
+                  </div>
+                  {planForm.enableCaptureSequences && (
+                    <Input
+                      id="plan-capture-sequences"
+                      type="number"
+                      placeholder="10"
+                      value={planForm.captureSequenceLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, captureSequenceLimit: e.target.value })}
+                      data-testid="input-plan-capture-sequences"
+                    />
+                  )}
+                </div>
               </div>
               
               <h3 className="text-sm font-semibold mt-4">File Size Limits (MB)</h3>
@@ -4477,6 +4525,22 @@ export default function Admin() {
                   />
                   <Label htmlFor="page-bulklogs" className="text-sm font-normal cursor-pointer">
                     Bulk Logs
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-capturelist"
+                    checked={planForm.pageAccess.captureList}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, captureList: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-capturelist"
+                  />
+                  <Label htmlFor="page-capturelist" className="text-sm font-normal cursor-pointer">
+                    Data Capture
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4824,6 +4888,17 @@ export default function Admin() {
                       data-testid="input-override-phonebook"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="override-capture-sequences">Data Capture Limit</Label>
+                    <Input
+                      id="override-capture-sequences"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.captureSequenceLimit || "Plan default"}
+                      value={userOverrides.captureSequenceLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, captureSequenceLimit: e.target.value })}
+                      data-testid="input-override-capture-sequences"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -4845,6 +4920,7 @@ export default function Admin() {
                     { key: "outbox", label: "Outbox" },
                     { key: "logs", label: "Workflow Logs" },
                     { key: "bulkLogs", label: "Bulk Logs" },
+                    { key: "captureList", label: "Data Capture" },
                     { key: "phonebooks", label: "Phonebooks" },
                     { key: "subscribers", label: "Subscribers" },
                     { key: "settings", label: "Settings" },
