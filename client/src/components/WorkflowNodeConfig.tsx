@@ -86,85 +86,79 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     }
   };
 
-  // Capture Settings Section - for data collection workflows
-  const CaptureSettingsSection = () => {
-    if (!isCaptureEligible) {
-      return null;
-    }
-
-    return (
-      <>
-        <Collapsible open={captureSettingsOpen} onOpenChange={setCaptureSettingsOpen}>
-          <CollapsibleTrigger asChild>
-            <Button 
-              variant="outline" 
-              className="w-full justify-between"
-              data-testid="button-capture-settings-toggle"
-            >
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4" />
-                <span>Capture Settings</span>
-                {(config.isCaptureStart || config.isCaptureEnd) && (
-                  <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
-                    {config.isCaptureStart ? 'Start' : 'End'}
-                  </span>
-                )}
-              </div>
-              <ChevronDown className={`h-4 w-4 transition-transform ${captureSettingsOpen ? 'rotate-180' : ''}`} />
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-3 space-y-3">
-            <div className="p-3 border rounded-lg space-y-3 bg-muted/30">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="start-capture" className="text-sm">Start Capture</Label>
-                <Switch
-                  id="start-capture"
-                  checked={config.isCaptureStart || false}
-                  onCheckedChange={handleStartCaptureToggle}
-                  data-testid="switch-start-capture"
-                />
-              </div>
-              
-              {config.isCaptureStart && (
-                <div>
-                  <Label htmlFor="capture-sequence-name" className="text-sm">Sequence Name *</Label>
-                  <Input
-                    id="capture-sequence-name"
-                    placeholder="e.g., Medical Follow-Up"
-                    value={config.captureSequenceName || ''}
-                    onChange={(e) => updateConfig('captureSequenceName', e.target.value)}
-                    data-testid="input-capture-sequence-name"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This name identifies the capture sequence in your data collection
-                  </p>
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="end-capture" className="text-sm">End Capture</Label>
-                <Switch
-                  id="end-capture"
-                  checked={config.isCaptureEnd || false}
-                  onCheckedChange={handleEndCaptureToggle}
-                  data-testid="switch-end-capture"
-                />
-              </div>
-              
-              {config.isCaptureEnd && (
-                <p className="text-xs text-amber-600">
-                  This node ends the capture. User must click a button with text "Save" or "حفظ" to save the collected data.
-                </p>
+  // Capture Settings Section JSX - for data collection workflows
+  const captureSettingsJsx = isCaptureEligible ? (
+    <>
+      <Collapsible open={captureSettingsOpen} onOpenChange={setCaptureSettingsOpen}>
+        <CollapsibleTrigger asChild>
+          <Button 
+            variant="outline" 
+            className="w-full justify-between"
+            data-testid="button-capture-settings-toggle"
+          >
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              <span>Capture Settings</span>
+              {(config.isCaptureStart || config.isCaptureEnd) && (
+                <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
+                  {config.isCaptureStart ? 'Start' : 'End'}
+                </span>
               )}
             </div>
-          </CollapsibleContent>
-        </Collapsible>
-        <Separator />
-      </>
-    );
-  };
+            <ChevronDown className={`h-4 w-4 transition-transform ${captureSettingsOpen ? 'rotate-180' : ''}`} />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3 space-y-3">
+          <div className="p-3 border rounded-lg space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="start-capture" className="text-sm">Start Capture</Label>
+              <Switch
+                id="start-capture"
+                checked={config.isCaptureStart || false}
+                onCheckedChange={handleStartCaptureToggle}
+                data-testid="switch-start-capture"
+              />
+            </div>
+            
+            {config.isCaptureStart && (
+              <div>
+                <Label htmlFor="capture-sequence-name" className="text-sm">Sequence Name *</Label>
+                <Input
+                  id="capture-sequence-name"
+                  placeholder="e.g., Medical Follow-Up"
+                  value={config.captureSequenceName || ''}
+                  onChange={(e) => updateConfig('captureSequenceName', e.target.value)}
+                  data-testid="input-capture-sequence-name"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This name identifies the capture sequence in your data collection
+                </p>
+              </div>
+            )}
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="end-capture" className="text-sm">End Capture</Label>
+              <Switch
+                id="end-capture"
+                checked={config.isCaptureEnd || false}
+                onCheckedChange={handleEndCaptureToggle}
+                data-testid="switch-end-capture"
+              />
+            </div>
+            
+            {config.isCaptureEnd && (
+              <p className="text-xs text-amber-600">
+                This node ends the capture. User must click a button with text "Save" or "حفظ" to save the collected data.
+              </p>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+      <Separator />
+    </>
+  ) : null;
 
   const handleTestHttpRequest = async () => {
     if (!config.url) {
@@ -378,7 +372,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -510,7 +504,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="media-url">Image URL *</Label>
           <Input
@@ -641,7 +635,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="media-url">Video URL *</Label>
           <Input
@@ -795,7 +789,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -1245,7 +1239,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -1591,7 +1585,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
-        <CaptureSettingsSection />
+        {captureSettingsJsx}
         <div>
           <Label htmlFor="body-text">Introduction Text *</Label>
           <Textarea
