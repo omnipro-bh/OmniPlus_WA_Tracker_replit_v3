@@ -84,6 +84,7 @@ export const plans = pgTable("plans", {
   channelsLimit: integer("channels_limit").notNull().default(1),
   chatbotsLimit: integer("chatbots_limit").notNull().default(-1),
   phonebookLimit: integer("phonebook_limit").notNull().default(-1), // Max contacts per phonebook (-1 = unlimited)
+  captureSequenceLimit: integer("capture_sequence_limit").notNull().default(-1), // Max capture sequences user can create (-1 = unlimited)
   // File Upload Limits (in MB)
   maxImageSizeMB: integer("max_image_size_mb").notNull().default(5), // Default 5MB (WhatsApp limit: 5MB)
   maxVideoSizeMB: integer("max_video_size_mb").notNull().default(16), // Default 16MB (WhatsApp limit: 16MB)
@@ -104,6 +105,7 @@ export const plans = pgTable("plans", {
     whapiSettings: false,
     phonebooks: false,
     subscribers: false,
+    captureList: false,
   }),
   features: jsonb("features").notNull().default([]), // Array of feature strings
   // Pricing Controls
@@ -163,6 +165,7 @@ export const subscriptions = pgTable("subscriptions", {
   channelsLimit: integer("channels_limit_override"), // null = use plan default
   chatbotsLimit: integer("chatbots_limit_override"), // null = use plan default
   phonebookLimit: integer("phonebook_limit_override"), // null = use plan default
+  captureSequenceLimit: integer("capture_sequence_limit_override"), // null = use plan default
   pageAccess: jsonb("page_access_override"), // null = use plan default, object = override specific pages
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -789,6 +792,68 @@ export const subscribersRelations = relations(subscribers, ({ one }) => ({
   }),
 }));
 
+// Capture Sequences table - Defines capture zones in workflows
+export const captureSequences = pgTable("capture_sequences", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  
+  // Sequence Configuration
+  sequenceName: varchar("sequence_name", { length: 255 }).notNull(),
+  startNodeId: text("start_node_id").notNull(), // Node ID where capture starts
+  endNodeId: text("end_node_id").notNull(), // Node ID where capture ends (must have save/cancel buttons)
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const captureSequencesRelations = relations(captureSequences, ({ one, many }) => ({
+  user: one(users, {
+    fields: [captureSequences.userId],
+    references: [users.id],
+  }),
+  workflow: one(workflows, {
+    fields: [captureSequences.workflowId],
+    references: [workflows.id],
+  }),
+  entries: many(capturedData),
+}));
+
+// Captured Data table - Stores submitted capture sessions (after Save clicked)
+export const capturedData = pgTable("captured_data", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  sequenceId: integer("sequence_id").notNull().references(() => captureSequences.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  
+  // Contact Info
+  phone: varchar("phone", { length: 50 }).notNull(),
+  
+  // Captured Data (JSON array of button clicks)
+  clicksJson: jsonb("clicks_json").notNull().default([]), // [{nodeId, nodeName, buttonText, buttonId, timestamp}]
+  
+  // Metadata
+  workflowName: varchar("workflow_name", { length: 255 }),
+  sequenceName: varchar("sequence_name", { length: 255 }),
+  
+  savedAt: timestamp("saved_at").notNull().defaultNow(),
+});
+
+export const capturedDataRelations = relations(capturedData, ({ one }) => ({
+  sequence: one(captureSequences, {
+    fields: [capturedData.sequenceId],
+    references: [captureSequences.id],
+  }),
+  user: one(users, {
+    fields: [capturedData.userId],
+    references: [users.id],
+  }),
+  channel: one(channels, {
+    fields: [capturedData.channelId],
+    references: [channels.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -979,6 +1044,23 @@ export const insertSubscriberSchema = createInsertSchema(subscribers, {
   status: z.enum(["subscribed", "unsubscribed"]).optional(),
 });
 
+export const insertCaptureSequenceSchema = createInsertSchema(captureSequences, {
+  sequenceName: z.string().min(1, "Sequence name is required"),
+  startNodeId: z.string().min(1, "Start node ID is required"),
+  endNodeId: z.string().min(1, "End node ID is required"),
+});
+
+export const insertCapturedDataSchema = createInsertSchema(capturedData, {
+  phone: z.string().min(1, "Phone number is required"),
+  clicksJson: z.array(z.object({
+    nodeId: z.string(),
+    nodeName: z.string().optional(),
+    buttonText: z.string(),
+    buttonId: z.string().optional(),
+    timestamp: z.string(),
+  })).default([]),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1038,3 +1120,7 @@ export type MediaUpload = typeof mediaUploads.$inferSelect;
 export type InsertMediaUpload = z.infer<typeof insertMediaUploadSchema>;
 export type Subscriber = typeof subscribers.$inferSelect;
 export type InsertSubscriber = z.infer<typeof insertSubscriberSchema>;
+export type CaptureSequence = typeof captureSequences.$inferSelect;
+export type InsertCaptureSequence = z.infer<typeof insertCaptureSequenceSchema>;
+export type CapturedData = typeof capturedData.$inferSelect;
+export type InsertCapturedData = z.infer<typeof insertCapturedDataSchema>;

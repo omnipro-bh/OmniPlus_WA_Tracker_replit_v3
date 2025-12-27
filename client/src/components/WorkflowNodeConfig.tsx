@@ -7,7 +7,8 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { TestTube, Plus, X, RefreshCw } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { TestTube, Plus, X, RefreshCw, Database, ChevronDown } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -50,6 +51,119 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
   const updateConfig = (key: string, value: any) => {
     onUpdate(node.id, { ...config, [key]: value });
+  };
+
+  // Capture Settings state - managed in parent to avoid nested component hook issues
+  const [captureSettingsOpen, setCaptureSettingsOpen] = useState(
+    config.isCaptureStart || config.isCaptureEnd || false
+  );
+  
+  // Interactive node types that can have capture settings
+  const captureEligibleTypes = [
+    'quickReply', 'quickReplyImage', 'quickReplyVideo', 
+    'listMessage', 'buttons', 'carousel'
+  ];
+  
+  const isCaptureEligible = captureEligibleTypes.includes(nodeType);
+
+  const handleStartCaptureToggle = (checked: boolean) => {
+    if (checked) {
+      updateConfig('isCaptureStart', true);
+      updateConfig('isCaptureEnd', false);
+    } else {
+      updateConfig('isCaptureStart', false);
+      updateConfig('captureSequenceName', '');
+    }
+  };
+
+  const handleEndCaptureToggle = (checked: boolean) => {
+    if (checked) {
+      updateConfig('isCaptureEnd', true);
+      updateConfig('isCaptureStart', false);
+      updateConfig('captureSequenceName', '');
+    } else {
+      updateConfig('isCaptureEnd', false);
+    }
+  };
+
+  // Capture Settings Section - for data collection workflows
+  const CaptureSettingsSection = () => {
+    if (!isCaptureEligible) {
+      return null;
+    }
+
+    return (
+      <>
+        <Collapsible open={captureSettingsOpen} onOpenChange={setCaptureSettingsOpen}>
+          <CollapsibleTrigger asChild>
+            <Button 
+              variant="outline" 
+              className="w-full justify-between"
+              data-testid="button-capture-settings-toggle"
+            >
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4" />
+                <span>Capture Settings</span>
+                {(config.isCaptureStart || config.isCaptureEnd) && (
+                  <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded">
+                    {config.isCaptureStart ? 'Start' : 'End'}
+                  </span>
+                )}
+              </div>
+              <ChevronDown className={`h-4 w-4 transition-transform ${captureSettingsOpen ? 'rotate-180' : ''}`} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-3 space-y-3">
+            <div className="p-3 border rounded-lg space-y-3 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="start-capture" className="text-sm">Start Capture</Label>
+                <Switch
+                  id="start-capture"
+                  checked={config.isCaptureStart || false}
+                  onCheckedChange={handleStartCaptureToggle}
+                  data-testid="switch-start-capture"
+                />
+              </div>
+              
+              {config.isCaptureStart && (
+                <div>
+                  <Label htmlFor="capture-sequence-name" className="text-sm">Sequence Name *</Label>
+                  <Input
+                    id="capture-sequence-name"
+                    placeholder="e.g., Medical Follow-Up"
+                    value={config.captureSequenceName || ''}
+                    onChange={(e) => updateConfig('captureSequenceName', e.target.value)}
+                    data-testid="input-capture-sequence-name"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This name identifies the capture sequence in your data collection
+                  </p>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="end-capture" className="text-sm">End Capture</Label>
+                <Switch
+                  id="end-capture"
+                  checked={config.isCaptureEnd || false}
+                  onCheckedChange={handleEndCaptureToggle}
+                  data-testid="switch-end-capture"
+                />
+              </div>
+              
+              {config.isCaptureEnd && (
+                <p className="text-xs text-amber-600">
+                  This node ends the capture. User must click a button with text "Save" or "حفظ" to save the collected data.
+                </p>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+        <Separator />
+      </>
+    );
   };
 
   const handleTestHttpRequest = async () => {
@@ -264,6 +378,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -395,6 +510,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="media-url">Image URL *</Label>
           <Input
@@ -525,6 +641,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="media-url">Video URL *</Label>
           <Input
@@ -678,6 +795,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -1127,6 +1245,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="header-text">Header Text (Optional)</Label>
           <Input
@@ -1472,6 +1591,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     return (
       <div className="space-y-4">
+        <CaptureSettingsSection />
         <div>
           <Label htmlFor="body-text">Introduction Text *</Label>
           <Textarea

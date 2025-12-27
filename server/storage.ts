@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, sql, like } from "drizzle-orm";
+import { eq, and, or, desc, sql, like } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type {
   User,
@@ -195,6 +195,24 @@ export interface IStorage {
   upsertSubscriber(data: { userId: number; phone: string; name?: string; status: 'subscribed' | 'unsubscribed' }): Promise<schema.Subscriber>;
   updateSubscriber(id: number, data: Partial<schema.Subscriber>): Promise<schema.Subscriber | undefined>;
   deleteSubscriber(id: number): Promise<void>;
+
+  // Capture Sequences
+  getCaptureSequencesForUser(userId: number): Promise<schema.CaptureSequence[]>;
+  getCaptureSequencesForWorkflow(workflowId: number): Promise<schema.CaptureSequence[]>;
+  getCaptureSequence(id: number): Promise<schema.CaptureSequence | undefined>;
+  getCaptureSequenceByNodeId(workflowId: number, nodeId: string): Promise<schema.CaptureSequence | undefined>;
+  createCaptureSequence(sequence: schema.InsertCaptureSequence): Promise<schema.CaptureSequence>;
+  updateCaptureSequence(id: number, data: Partial<schema.CaptureSequence>): Promise<schema.CaptureSequence | undefined>;
+  deleteCaptureSequence(id: number): Promise<void>;
+  countCaptureSequencesForUser(userId: number): Promise<number>;
+
+  // Captured Data
+  getCapturedDataForSequence(sequenceId: number, page?: number, pageSize?: number): Promise<{ entries: schema.CapturedData[]; total: number }>;
+  getCapturedDataForUser(userId: number, filters?: { workflowId?: number; page?: number; pageSize?: number }): Promise<{ entries: schema.CapturedData[]; total: number }>;
+  getCapturedDataEntry(id: number): Promise<schema.CapturedData | undefined>;
+  createCapturedData(data: schema.InsertCapturedData): Promise<schema.CapturedData>;
+  deleteCapturedData(id: number): Promise<void>;
+  countCapturedDataForSequence(sequenceId: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1182,6 +1200,154 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSubscriber(id: number): Promise<void> {
     await db.delete(schema.subscribers).where(eq(schema.subscribers.id, id));
+  }
+
+  // Capture Sequences
+  async getCaptureSequencesForUser(userId: number): Promise<schema.CaptureSequence[]> {
+    return await db
+      .select()
+      .from(schema.captureSequences)
+      .where(eq(schema.captureSequences.userId, userId))
+      .orderBy(desc(schema.captureSequences.createdAt));
+  }
+
+  async getCaptureSequencesForWorkflow(workflowId: number): Promise<schema.CaptureSequence[]> {
+    return await db
+      .select()
+      .from(schema.captureSequences)
+      .where(eq(schema.captureSequences.workflowId, workflowId))
+      .orderBy(schema.captureSequences.sequenceName);
+  }
+
+  async getCaptureSequence(id: number): Promise<schema.CaptureSequence | undefined> {
+    const [sequence] = await db
+      .select()
+      .from(schema.captureSequences)
+      .where(eq(schema.captureSequences.id, id));
+    return sequence || undefined;
+  }
+
+  async getCaptureSequenceByNodeId(workflowId: number, nodeId: string): Promise<schema.CaptureSequence | undefined> {
+    const [sequence] = await db
+      .select()
+      .from(schema.captureSequences)
+      .where(
+        and(
+          eq(schema.captureSequences.workflowId, workflowId),
+          or(
+            eq(schema.captureSequences.startNodeId, nodeId),
+            eq(schema.captureSequences.endNodeId, nodeId)
+          )
+        )
+      );
+    return sequence || undefined;
+  }
+
+  async createCaptureSequence(sequence: schema.InsertCaptureSequence): Promise<schema.CaptureSequence> {
+    const [newSequence] = await db
+      .insert(schema.captureSequences)
+      .values(sequence)
+      .returning();
+    return newSequence;
+  }
+
+  async updateCaptureSequence(id: number, data: Partial<schema.CaptureSequence>): Promise<schema.CaptureSequence | undefined> {
+    const [sequence] = await db
+      .update(schema.captureSequences)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.captureSequences.id, id))
+      .returning();
+    return sequence || undefined;
+  }
+
+  async deleteCaptureSequence(id: number): Promise<void> {
+    await db.delete(schema.captureSequences).where(eq(schema.captureSequences.id, id));
+  }
+
+  async countCaptureSequencesForUser(userId: number): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.captureSequences)
+      .where(eq(schema.captureSequences.userId, userId));
+    return result[0]?.count || 0;
+  }
+
+  // Captured Data
+  async getCapturedDataForSequence(
+    sequenceId: number, 
+    page: number = 1, 
+    pageSize: number = 20
+  ): Promise<{ entries: schema.CapturedData[]; total: number }> {
+    const offset = (page - 1) * pageSize;
+    
+    const entries = await db
+      .select()
+      .from(schema.capturedData)
+      .where(eq(schema.capturedData.sequenceId, sequenceId))
+      .orderBy(desc(schema.capturedData.savedAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.capturedData)
+      .where(eq(schema.capturedData.sequenceId, sequenceId));
+
+    return { entries, total: countResult?.count || 0 };
+  }
+
+  async getCapturedDataForUser(
+    userId: number, 
+    filters?: { workflowId?: number; page?: number; pageSize?: number }
+  ): Promise<{ entries: schema.CapturedData[]; total: number }> {
+    const page = filters?.page || 1;
+    const pageSize = filters?.pageSize || 20;
+    const offset = (page - 1) * pageSize;
+
+    let whereClause = eq(schema.capturedData.userId, userId);
+
+    const entries = await db
+      .select()
+      .from(schema.capturedData)
+      .where(whereClause)
+      .orderBy(desc(schema.capturedData.savedAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.capturedData)
+      .where(whereClause);
+
+    return { entries, total: countResult?.count || 0 };
+  }
+
+  async getCapturedDataEntry(id: number): Promise<schema.CapturedData | undefined> {
+    const [entry] = await db
+      .select()
+      .from(schema.capturedData)
+      .where(eq(schema.capturedData.id, id));
+    return entry || undefined;
+  }
+
+  async createCapturedData(data: schema.InsertCapturedData): Promise<schema.CapturedData> {
+    const [newEntry] = await db
+      .insert(schema.capturedData)
+      .values(data)
+      .returning();
+    return newEntry;
+  }
+
+  async deleteCapturedData(id: number): Promise<void> {
+    await db.delete(schema.capturedData).where(eq(schema.capturedData.id, id));
+  }
+
+  async countCapturedDataForSequence(sequenceId: number): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.capturedData)
+      .where(eq(schema.capturedData.sequenceId, sequenceId));
+    return result[0]?.count || 0;
   }
 }
 
