@@ -1,0 +1,61 @@
+i need to check if possible to add **Data Collection** option in the workflow nodes (similar to the attached WhatsApp example)?
+
+### What we need
+
+We want a node that starts a **data-collection sequence** and collects user inputs step-by-step (date, time, full name, phone, CPR, choices, etc.).
+
+But **nothing should be saved permanently until the user reaches the end and clicks “Save”.**
+If the user doesn’t click Save (or clicks Stop/Cancel), then **all collected values should be discarded**.
+
+### Key behavior (important)
+
+1. **Start marker / start node**
+
+   * In the workflow, we need to define where the collection starts (a dedicated node that begins the collection flow).
+
+2. **Collect answers into a temporary “draft”**
+
+   * Each step stores the value into a temporary session object (draft), not the database.
+   * Support multiple input types:
+
+     * text
+     * phone number
+     * number
+     * date (DD/MM/YYYY)
+     * time (3PM / 03PM / 3 format)
+     * single-select options (buttons/list)
+
+3. **End screen + confirmation**
+
+   * At the end, show a **summary**: “Please confirm info below…”
+   * Provide 2 actions:
+
+     * ✅ **Save** → commits ALL draft fields (persist), and then continues the workflow
+     * ❌ **Stop/Cancel** → discards everything (no saving), and routes to a cancel path
+
+4. **Validation**
+
+   * Each field can have validation rules (required, regex, min/max, date format, etc.)
+   * If invalid, re-ask the same step with an error hint.
+
+### Workflow builder UI suggestion
+
+A single node like **“Data Collection”** with:
+
+* A list of fields (each field: label, prompt text, variable key, type, validation)
+* Save button label + Cancel button label
+* Next route after Save + route after Cancel
+
+### Acceptance criteria
+
+* Values are NOT persisted until Save is clicked.
+* Save commits the full bundle in one go (atomic).
+* Cancel/Stop leaves no partial data saved.
+* Works per-user session (multiple users simultaneously).
+
+i need to collect all these information in new menu tap called " Data collection " or "Capture list", 
+
+we need to have a way to see each sequence of data collection, because i might multiple data collection in the same workflow or in different workflow. 
+
+
+dont do changes, just give your best suggestion to achieve this option
