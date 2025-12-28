@@ -6322,6 +6322,8 @@ export function registerRoutes(app: Express) {
               
               // DATA CAPTURE: Track button clicks if capture is active
               const stateContext = (state.context || {}) as any;
+              console.log(`[Data Capture] Context check - captureActive: ${stateContext.captureActive}, clickedButtonTitle: ${clickedButtonTitle}`);
+              console.log(`[Data Capture] Full context:`, JSON.stringify(stateContext));
               if (stateContext.captureActive && clickedButtonTitle) {
                 // Check if this is a save action (ends capture)
                 const saveKeywords = ["save", "حفظ"];
@@ -6422,7 +6424,9 @@ export function registerRoutes(app: Express) {
                   delete stateContext.captureActive;
                   delete stateContext.captureSequenceName;
                   delete stateContext.capturedClicks;
+                  delete stateContext.captureStartNodeId;
                   state = { ...state, context: stateContext };
+                  console.log(`[Data Capture] Capture state cleared after save`);
                 }
                 
                 // Update conversation state with capture data
