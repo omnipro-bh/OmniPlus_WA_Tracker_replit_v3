@@ -10,6 +10,9 @@ import { backgroundWorker } from "./worker";
 
 const app = express();
 
+// Trust proxy (nginx) - required for secure cookies behind reverse proxy
+app.set('trust proxy', 1);
+
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
