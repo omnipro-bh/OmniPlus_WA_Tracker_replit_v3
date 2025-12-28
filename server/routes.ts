@@ -6380,17 +6380,40 @@ export function registerRoutes(app: Express) {
                       sequenceId = existingSequence[0].id;
                     }
                     
-                    // Save captured data
-                    await db.insert(schema.capturedData).values({
-                      sequenceId: sequenceId,
-                      userId: activeWorkflow.userId,
-                      phone: phone,
-                      clicksJson: capturedClicks,
-                      workflowName: activeWorkflow.name,
-                      sequenceName: stateContext.captureSequenceName,
-                    });
+                    // Check if entry already exists for this phone + sequence (upsert logic)
+                    const existingEntry = await db
+                      .select()
+                      .from(schema.capturedData)
+                      .where(
+                        and(
+                          eq(schema.capturedData.sequenceId, sequenceId),
+                          eq(schema.capturedData.phone, phone)
+                        )
+                      )
+                      .limit(1);
                     
-                    console.log(`[Data Capture] Saved captured data for phone ${phone}`);
+                    if (existingEntry.length > 0) {
+                      // Update existing entry
+                      await db
+                        .update(schema.capturedData)
+                        .set({
+                          clicksJson: capturedClicks,
+                          savedAt: new Date(),
+                        })
+                        .where(eq(schema.capturedData.id, existingEntry[0].id));
+                      console.log(`[Data Capture] Updated existing entry for phone ${phone} in sequence ${sequenceId}`);
+                    } else {
+                      // Create new entry
+                      await db.insert(schema.capturedData).values({
+                        sequenceId: sequenceId,
+                        userId: activeWorkflow.userId,
+                        phone: phone,
+                        clicksJson: capturedClicks,
+                        workflowName: activeWorkflow.name,
+                        sequenceName: stateContext.captureSequenceName,
+                      });
+                      console.log(`[Data Capture] Created new entry for phone ${phone}`);
+                    }
                   } catch (captureError: any) {
                     console.error(`[Data Capture] Error saving captured data: ${captureError.message}`);
                   }
