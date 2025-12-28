@@ -3535,10 +3535,10 @@ export function registerRoutes(app: Express) {
       // Fetch captured data for each sequence
       const sequencesWithData = await Promise.all(
         sequences.map(async (seq) => {
-          const capturedData = await storage.getCapturedDataForSequence(seq.id);
+          const { entries } = await storage.getCapturedDataForSequence(seq.id);
           return {
             ...seq,
-            capturedData,
+            capturedData: entries,
           };
         })
       );
