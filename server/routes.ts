@@ -6420,16 +6420,17 @@ export function registerRoutes(app: Express) {
                     console.error(`[Data Capture] Error saving captured data: ${captureError.message}`);
                   }
                   
-                  // Clear capture state
+                  // Clear capture state - keep other context variables intact
                   delete stateContext.captureActive;
                   delete stateContext.captureSequenceName;
                   delete stateContext.capturedClicks;
                   delete stateContext.captureStartNodeId;
+                  stateContext.captureCompleted = true; // Flag for post-loop reset
                   state = { ...state, context: stateContext };
-                  console.log(`[Data Capture] Capture state cleared after save`);
+                  console.log(`[Data Capture] Capture state cleared after save, marked for reset after workflow completes`);
                 }
                 
-                // Update conversation state with capture data
+                // Update conversation state with capture data (only if not save action)
                 await db
                   .update(conversationStates)
                   .set({
@@ -6584,12 +6585,28 @@ export function registerRoutes(app: Express) {
               }
               
               console.log(`[Button Reply Debug] While loop finished. Total responses sent: ${executionLog.responsesSent.length}`);
+              
+              // POST-LOOP: If capture was completed, reset conversation for next run
+              const finalContext = (state.context || {}) as any;
+              if (finalContext.captureCompleted) {
+                console.log(`[Data Capture] Workflow completed, resetting conversation state for next run`);
+                await db
+                  .update(conversationStates)
+                  .set({
+                    currentNodeId: null,
+                    context: {},
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(conversationStates.id, state.id));
+              }
             } else {
               console.log(`[Button Reply Debug] Target node not found in workflow definition`);
             }
           } else {
-            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId}`);
-            console.log(`[Button Reply Debug] Available sourceHandles in edges:`, definition.edges?.map((e: any) => e.sourceHandle));
+            // No target edge found - this button doesn't belong to this workflow
+            // Exit early without creating execution log to reduce DB writes for non-owning workflows
+            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId} - skipping workflow ${activeWorkflow.id}`);
+            return res.json({ success: true, message: "Button not handled by this workflow" });
           }
         }
 
