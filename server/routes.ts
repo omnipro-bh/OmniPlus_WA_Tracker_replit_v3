@@ -458,10 +458,17 @@ export function registerRoutes(app: Express) {
         
         // Calculate effective page access (plan + subscription overrides)
         if (currentPlan) {
+          const planPageAccess = typeof currentPlan.pageAccess === 'object' && currentPlan.pageAccess !== null ? currentPlan.pageAccess : {};
+          const subscriptionPageAccess = typeof subscription.pageAccess === 'object' && subscription.pageAccess !== null ? subscription.pageAccess : {};
+          
           effectivePageAccess = {
-            ...(typeof currentPlan.pageAccess === 'object' && currentPlan.pageAccess !== null ? currentPlan.pageAccess : {}),
-            ...(typeof subscription.pageAccess === 'object' && subscription.pageAccess !== null ? subscription.pageAccess : {})
+            ...planPageAccess,
+            ...subscriptionPageAccess
           };
+          
+          console.log(`[/api/me] User ${user.id} - Plan pageAccess:`, JSON.stringify(planPageAccess));
+          console.log(`[/api/me] User ${user.id} - Subscription pageAccess:`, JSON.stringify(subscriptionPageAccess));
+          console.log(`[/api/me] User ${user.id} - Effective pageAccess:`, JSON.stringify(effectivePageAccess));
         }
       } else {
         // Default page access for users without a subscription - get from settings
@@ -4705,6 +4712,9 @@ export function registerRoutes(app: Express) {
       if (chatbotsLimit !== undefined) overrides.chatbotsLimit = chatbotsLimit;
       if (phonebookLimit !== undefined) overrides.phonebookLimit = phonebookLimit;
       if (pageAccess !== undefined) overrides.pageAccess = pageAccess;
+
+      console.log(`[/api/admin/users/:id/overrides] Saving pageAccess for user ${userId}:`, JSON.stringify(pageAccess));
+      console.log(`[/api/admin/users/:id/overrides] Full overrides object:`, JSON.stringify(overrides));
 
       // Update subscription with overrides
       await storage.updateSubscription(subscription.id, overrides);

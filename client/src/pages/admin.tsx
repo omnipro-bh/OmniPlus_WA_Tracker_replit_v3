@@ -2282,6 +2282,8 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      // Also invalidate /api/me to refresh sidebar page access if impersonating
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
       toast({ title: "Overrides updated", description: "User subscription overrides have been saved." });
       setIsUserDrawerOpen(false);
     },
