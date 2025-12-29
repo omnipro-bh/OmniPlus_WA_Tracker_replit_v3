@@ -44,16 +44,19 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
         templates: "/templates",
         workflows: "/workflows",
         phonebooks: "/phonebooks",
+        subscribers: "/subscribers",
         outbox: "/outbox",
         logs: "/logs",
         bulkLogs: "/bulk-logs",
+        captureList: "/capture-list",
         pricing: "/pricing",
         settings: "/settings",
       };
       
+      // Find first accessible page, default to dashboard if nothing is accessible
       const firstAccessiblePage = accessiblePages.length > 0 
-        ? pageMap[accessiblePages[0]] || "/pricing"
-        : "/pricing";
+        ? pageMap[accessiblePages[0]] || "/dashboard"
+        : "/dashboard";
       
       toast({
         title: "Access Denied",

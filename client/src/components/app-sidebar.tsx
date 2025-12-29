@@ -125,9 +125,11 @@ export function AppSidebar() {
   ];
 
   const effectivePageAccess = (user as any)?.effectivePageAccess || {};
+  const isImpersonating = (user as any)?.impersonation?.isImpersonating;
   
   const mainItems = allMainItems.filter(item => {
-    if (user?.role === "admin") return true;
+    // Admins see all pages unless impersonating
+    if (user?.role === "admin" && !isImpersonating) return true;
     if (!item.pageKey) return true;
     return effectivePageAccess[item.pageKey] === true;
   });
