@@ -2741,6 +2741,28 @@ export default function Admin() {
     setSelectedUserForDrawer(user);
     // Initialize overrides form with current values from user's subscription
     const subscription = user.activeSubscription;
+    
+    // Get plan's pageAccess as base, then apply subscription overrides
+    // This ensures all page keys are present for proper override functionality
+    const planPageAccess = user.currentPlan?.pageAccess || {};
+    const subscriptionPageAccess = subscription?.pageAccess || {};
+    const allPageKeys = [
+      "dashboard", "pricing", "channels", "safetyMeter", "send", 
+      "templates", "workflows", "outbox", "logs", "bulkLogs", 
+      "captureList", "phonebooks", "subscribers", "settings"
+    ];
+    
+    // Build complete pageAccess object with all keys
+    const completePageAccess: Record<string, boolean> = {};
+    for (const key of allPageKeys) {
+      // If subscription has explicit override, use it; otherwise use plan value
+      if (subscriptionPageAccess.hasOwnProperty(key)) {
+        completePageAccess[key] = subscriptionPageAccess[key];
+      } else {
+        completePageAccess[key] = planPageAccess[key] || false;
+      }
+    }
+    
     setUserOverrides({
       dailyMessagesLimit: subscription?.dailyMessagesLimit ? String(subscription.dailyMessagesLimit) : "",
       bulkMessagesLimit: subscription?.bulkMessagesLimit ? String(subscription.bulkMessagesLimit) : "",
@@ -2748,7 +2770,7 @@ export default function Admin() {
       chatbotsLimit: subscription?.chatbotsLimit ? String(subscription.chatbotsLimit) : "",
       phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
       captureSequenceLimit: subscription?.captureSequenceLimit ? String(subscription.captureSequenceLimit) : "",
-      pageAccess: subscription?.pageAccess || {},
+      pageAccess: completePageAccess,
     });
     setIsUserDrawerOpen(true);
   };
@@ -4908,7 +4930,7 @@ export default function Admin() {
               <div>
                 <h3 className="text-sm font-semibold mb-3">Page Access Overrides</h3>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Check pages to grant this user access, regardless of their plan's page access settings.
+                  Control which pages this user can access. Checked pages will be accessible, unchecked pages will be hidden.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   {[

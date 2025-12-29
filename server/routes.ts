@@ -4285,6 +4285,7 @@ export function registerRoutes(app: Express) {
             daysBalance: totalChannelDays, // Override deprecated field with calculated channel days
             status: calculatedStatus, // Override active/expired based on channels, preserve manual overrides
             currentPlan,
+            activeSubscription: subscription, // Include subscription for page access overrides
             channelsUsed: channels.length,
             channelsLimit: currentPlan?.channelsLimit || 0,
           };
