@@ -1124,7 +1124,9 @@ export function registerRoutes(app: Express) {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      // Use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1167,7 +1169,9 @@ export function registerRoutes(app: Express) {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      // Use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1239,7 +1243,9 @@ export function registerRoutes(app: Express) {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      // Use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1285,7 +1291,9 @@ export function registerRoutes(app: Express) {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      // Use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1355,7 +1363,9 @@ export function registerRoutes(app: Express) {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
 
-      if (!channel || channel.userId !== req.userId!) {
+      // Use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1425,9 +1435,10 @@ export function registerRoutes(app: Express) {
     try {
       const channelId = parseInt(req.params.id);
 
-      // Get channel
+      // Get channel - use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1489,9 +1500,10 @@ export function registerRoutes(app: Express) {
     try {
       const channelId = parseInt(req.params.id);
 
-      // Get channel
+      // Get channel - use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1591,9 +1603,10 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      // Verify channel belongs to user and is active
+      // Verify channel belongs to user and is active - use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId!) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
@@ -1866,9 +1879,10 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Account is not active" });
       }
 
-      // Check channel
+      // Check channel - use effective user ID for impersonation support
+      const effectiveUserId = req.impersonatedUser?.id || req.userId!;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId! || channel.status !== "ACTIVE") {
+      if (!channel || channel.userId !== effectiveUserId || channel.status !== "ACTIVE") {
         return res.status(403).json({ error: "Channel not available" });
       }
 
