@@ -1365,7 +1365,10 @@ export function registerRoutes(app: Express) {
 
       // Use effective user ID for impersonation support
       const effectiveUserId = req.impersonatedUser?.id || req.userId!;
+      console.log(`[DELETE /api/channels/${channelId}] userId=${req.userId}, impersonatedId=${req.impersonatedUser?.id}, effectiveUserId=${effectiveUserId}, channel.userId=${channel?.userId}`);
+      
       if (!channel || channel.userId !== effectiveUserId) {
+        console.log(`[DELETE /api/channels/${channelId}] Channel not found or ownership mismatch`);
         return res.status(404).json({ error: "Channel not found" });
       }
 
