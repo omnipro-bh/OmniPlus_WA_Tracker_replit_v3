@@ -1968,6 +1968,9 @@ export default function Admin() {
     phonebookLimit: "",
     captureSequenceLimit: "",
     pageAccess: {} as Record<string, boolean>,
+    autoExtendEnabled: false,
+    skipFriday: false,
+    skipSaturday: false,
   });
 
   // Proof viewer dialog state
@@ -2771,6 +2774,9 @@ export default function Admin() {
       phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
       captureSequenceLimit: subscription?.captureSequenceLimit ? String(subscription.captureSequenceLimit) : "",
       pageAccess: completePageAccess,
+      autoExtendEnabled: subscription?.autoExtendEnabled || false,
+      skipFriday: subscription?.skipFriday || false,
+      skipSaturday: subscription?.skipSaturday || false,
     });
     setIsUserDrawerOpen(true);
   };
@@ -2787,6 +2793,9 @@ export default function Admin() {
       phonebookLimit: userOverrides.phonebookLimit ? parseInt(userOverrides.phonebookLimit) : null,
       captureSequenceLimit: userOverrides.captureSequenceLimit ? parseInt(userOverrides.captureSequenceLimit) : null,
       pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
+      autoExtendEnabled: userOverrides.autoExtendEnabled,
+      skipFriday: userOverrides.skipFriday,
+      skipSaturday: userOverrides.skipSaturday,
     };
 
     updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
@@ -4966,6 +4975,68 @@ export default function Admin() {
                       </Label>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Auto-Extend Settings */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Auto-Extend Channel Days</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Automatically add 1 day to the user's channel at midnight daily, deducting from Main Balance.
+                </p>
+                <div className="space-y-3 p-3 bg-card border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="auto-extend-enabled"
+                      checked={userOverrides.autoExtendEnabled}
+                      onCheckedChange={(checked) => {
+                        setUserOverrides({
+                          ...userOverrides,
+                          autoExtendEnabled: !!checked,
+                        });
+                      }}
+                      data-testid="checkbox-auto-extend-enabled"
+                    />
+                    <Label htmlFor="auto-extend-enabled" className="cursor-pointer">
+                      Enable auto-extend (add 1 day daily at midnight)
+                    </Label>
+                  </div>
+                  {userOverrides.autoExtendEnabled && (
+                    <div className="ml-6 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="skip-friday"
+                          checked={userOverrides.skipFriday}
+                          onCheckedChange={(checked) => {
+                            setUserOverrides({
+                              ...userOverrides,
+                              skipFriday: !!checked,
+                            });
+                          }}
+                          data-testid="checkbox-skip-friday"
+                        />
+                        <Label htmlFor="skip-friday" className="cursor-pointer text-sm">
+                          Skip adding days on Fridays
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="skip-saturday"
+                          checked={userOverrides.skipSaturday}
+                          onCheckedChange={(checked) => {
+                            setUserOverrides({
+                              ...userOverrides,
+                              skipSaturday: !!checked,
+                            });
+                          }}
+                          data-testid="checkbox-skip-saturday"
+                        />
+                        <Label htmlFor="skip-saturday" className="cursor-pointer text-sm">
+                          Skip adding days on Saturdays
+                        </Label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

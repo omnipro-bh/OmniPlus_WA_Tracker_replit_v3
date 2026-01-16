@@ -167,6 +167,10 @@ export const subscriptions = pgTable("subscriptions", {
   phonebookLimit: integer("phonebook_limit_override"), // null = use plan default
   captureSequenceLimit: integer("capture_sequence_limit_override"), // null = use plan default
   pageAccess: jsonb("page_access_override"), // null = use plan default, object = override specific pages
+  // Auto-extend settings
+  autoExtendEnabled: boolean("auto_extend_enabled").notNull().default(false), // Auto-add 1 day daily from main balance
+  skipFriday: boolean("skip_friday").notNull().default(false), // Skip auto-extend on Fridays
+  skipSaturday: boolean("skip_saturday").notNull().default(false), // Skip auto-extend on Saturdays
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

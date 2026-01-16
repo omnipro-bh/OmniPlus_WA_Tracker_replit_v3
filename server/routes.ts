@@ -4709,7 +4709,11 @@ export function registerRoutes(app: Express) {
   app.patch("/api/admin/users/:id/overrides", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
     try {
       const userId = parseInt(req.params.id);
-      const { dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, phonebookLimit, pageAccess } = req.body;
+      const { 
+        dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
+        phonebookLimit, captureSequenceLimit, pageAccess,
+        autoExtendEnabled, skipFriday, skipSaturday 
+      } = req.body;
 
       const user = await storage.getUser(userId);
       if (!user) {
@@ -4729,7 +4733,11 @@ export function registerRoutes(app: Express) {
       if (channelsLimit !== undefined) overrides.channelsLimit = channelsLimit;
       if (chatbotsLimit !== undefined) overrides.chatbotsLimit = chatbotsLimit;
       if (phonebookLimit !== undefined) overrides.phonebookLimit = phonebookLimit;
+      if (captureSequenceLimit !== undefined) overrides.captureSequenceLimit = captureSequenceLimit;
       if (pageAccess !== undefined) overrides.pageAccess = pageAccess;
+      if (autoExtendEnabled !== undefined) overrides.autoExtendEnabled = autoExtendEnabled;
+      if (skipFriday !== undefined) overrides.skipFriday = skipFriday;
+      if (skipSaturday !== undefined) overrides.skipSaturday = skipSaturday;
 
       console.log(`[/api/admin/users/:id/overrides] Saving pageAccess for user ${userId}:`, JSON.stringify(pageAccess));
       console.log(`[/api/admin/users/:id/overrides] Full overrides object:`, JSON.stringify(overrides));
