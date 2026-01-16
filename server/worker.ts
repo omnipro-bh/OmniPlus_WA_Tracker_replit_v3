@@ -9,6 +9,7 @@ export class BackgroundWorker {
   private dailyBalanceJob: ReturnType<typeof cron.schedule> | null = null;
   private messageProcessorJob: ReturnType<typeof cron.schedule> | null = null;
   private mediaCleanupJob: ReturnType<typeof cron.schedule> | null = null;
+  private autoExtendJob: ReturnType<typeof cron.schedule> | null = null;
 
   start() {
     // Channel expiration check - runs every hour to catch expirations quickly
@@ -19,6 +20,11 @@ export class BackgroundWorker {
     // Media cleanup - runs daily at 3 AM to delete files older than 30 days
     this.mediaCleanupJob = cron.schedule("0 3 * * *", async () => {
       await this.cleanupOldMedia();
+    });
+
+    // Auto-extend channels - runs daily at midnight (00:00)
+    this.autoExtendJob = cron.schedule("0 0 * * *", async () => {
+      await this.autoExtendChannels();
     });
 
     // Message queue processor - disabled for now
@@ -36,6 +42,9 @@ export class BackgroundWorker {
     }
     if (this.mediaCleanupJob) {
       this.mediaCleanupJob.stop();
+    }
+    if (this.autoExtendJob) {
+      this.autoExtendJob.stop();
     }
   }
 
@@ -79,7 +88,7 @@ export class BackgroundWorker {
 
             // Log audit trail
             await storage.createAuditLog({
-              userId: user.id,
+              actorUserId: user.id,
               action: "CHANNEL_EXPIRED",
               meta: {
                 channelId: channel.id,
@@ -245,6 +254,137 @@ export class BackgroundWorker {
       console.log(`Media cleanup completed. Deleted ${deletedCount} files older than 30 days.`);
     } catch (error) {
       console.error("Error in media cleanup:", error);
+    }
+  }
+
+  // Auto-extend channels for users with autoExtendEnabled
+  private async autoExtendChannels() {
+    try {
+      console.log("[AutoExtend] Starting daily auto-extend check...");
+      
+      // Get the current day of week (0 = Sunday, 5 = Friday, 6 = Saturday)
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const isFriday = dayOfWeek === 5;
+      const isSaturday = dayOfWeek === 6;
+      
+      // Get all active subscriptions with auto-extend enabled
+      const subscriptions = await storage.getSubscriptionsWithAutoExtend();
+      console.log(`[AutoExtend] Found ${subscriptions.length} subscriptions with auto-extend enabled`);
+      
+      let extendedCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+      
+      for (const subscription of subscriptions) {
+        try {
+          // Check if should skip based on day of week
+          if (isFriday && subscription.skipFriday) {
+            console.log(`[AutoExtend] Skipping user ${subscription.userId} - Friday skip enabled`);
+            skippedCount++;
+            continue;
+          }
+          if (isSaturday && subscription.skipSaturday) {
+            console.log(`[AutoExtend] Skipping user ${subscription.userId} - Saturday skip enabled`);
+            skippedCount++;
+            continue;
+          }
+          
+          // Get user's channels
+          const channels = await storage.getChannelsForUser(subscription.userId);
+          
+          // Filter to only active or paused channels that can be extended
+          const extendableChannels = channels.filter(ch => 
+            ch.status === "ACTIVE" || ch.status === "PAUSED"
+          );
+          
+          if (extendableChannels.length === 0) {
+            console.log(`[AutoExtend] No extendable channels for user ${subscription.userId}`);
+            continue;
+          }
+          
+          // Check main balance
+          const mainBalance = await storage.getMainDaysBalance();
+          if (mainBalance < extendableChannels.length) {
+            console.log(`[AutoExtend] Insufficient main balance (${mainBalance}) for user ${subscription.userId} with ${extendableChannels.length} channels`);
+            
+            // Create audit log for insufficient balance
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_FAILED",
+              meta: {
+                reason: "Insufficient main balance",
+                mainBalance,
+                channelsToExtend: extendableChannels.length,
+              },
+            });
+            
+            errorCount++;
+            continue;
+          }
+          
+          // Extend each channel by 1 day
+          for (const channel of extendableChannels) {
+            try {
+              // Deduct from main balance
+              await storage.updateMainDaysBalance(-1);
+              
+              // Add 1 day to channel
+              await storage.addDaysToChannel({
+                channelId: channel.id,
+                days: 1,
+                source: "ADMIN_MANUAL",
+                metadata: {
+                  reason: "auto_extend",
+                  subscriptionId: subscription.id,
+                  date: now.toISOString(),
+                },
+              });
+              
+              // Create balance transaction
+              await storage.createBalanceTransaction({
+                type: "allocate",
+                days: 1,
+                channelId: channel.id,
+                userId: subscription.userId,
+                note: `Auto-extend: 1 day added to channel "${channel.label}"`,
+              });
+              
+              console.log(`[AutoExtend] Extended channel "${channel.label}" (ID: ${channel.id}) for user ${subscription.userId}`);
+              extendedCount++;
+            } catch (channelError) {
+              console.error(`[AutoExtend] Failed to extend channel ${channel.id}:`, channelError);
+              
+              // Refund the main balance if channel extension failed after deduction
+              try {
+                await storage.updateMainDaysBalance(1);
+              } catch (refundError) {
+                console.error(`[AutoExtend] Failed to refund main balance:`, refundError);
+              }
+              
+              errorCount++;
+            }
+          }
+          
+          // Create audit log for successful auto-extend
+          await storage.createAuditLog({
+            actorUserId: subscription.userId,
+            action: "AUTO_EXTEND_SUCCESS",
+            meta: {
+              channelsExtended: extendableChannels.length,
+              date: now.toISOString(),
+            },
+          });
+          
+        } catch (subscriptionError) {
+          console.error(`[AutoExtend] Error processing subscription ${subscription.id}:`, subscriptionError);
+          errorCount++;
+        }
+      }
+      
+      console.log(`[AutoExtend] Completed. Extended: ${extendedCount} channels, Skipped: ${skippedCount} users, Errors: ${errorCount}`);
+    } catch (error) {
+      console.error("[AutoExtend] Error in auto-extend job:", error);
     }
   }
 }

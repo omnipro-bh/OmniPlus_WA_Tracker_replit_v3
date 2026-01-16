@@ -58,6 +58,7 @@ export interface IStorage {
 
   // Subscriptions
   getActiveSubscriptionForUser(userId: number): Promise<Subscription | undefined>;
+  getSubscriptionsWithAutoExtend(): Promise<Subscription[]>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: number, data: Partial<Subscription>): Promise<Subscription | undefined>;
 
@@ -362,6 +363,18 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(schema.subscriptions.createdAt))
       .limit(1);
     return subscription || undefined;
+  }
+
+  async getSubscriptionsWithAutoExtend(): Promise<Subscription[]> {
+    return await db
+      .select()
+      .from(schema.subscriptions)
+      .where(
+        and(
+          eq(schema.subscriptions.status, "ACTIVE"),
+          eq(schema.subscriptions.autoExtendEnabled, true)
+        )
+      );
   }
 
   async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
