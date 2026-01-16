@@ -324,6 +324,10 @@ export class BackgroundWorker {
           }
           
           // Extend each channel by 1 day
+          let userExtendedCount = 0;
+          let userFailedCount = 0;
+          const failedChannels: { id: number; label: string; error: string }[] = [];
+          
           for (const channel of extendableChannels) {
             try {
               // Deduct from main balance
@@ -351,6 +355,7 @@ export class BackgroundWorker {
               });
               
               console.log(`[AutoExtend] Extended channel "${channel.label}" (ID: ${channel.id}) for user ${subscription.userId}`);
+              userExtendedCount++;
               extendedCount++;
             } catch (channelError) {
               console.error(`[AutoExtend] Failed to extend channel ${channel.id}:`, channelError);
@@ -362,19 +367,52 @@ export class BackgroundWorker {
                 console.error(`[AutoExtend] Failed to refund main balance:`, refundError);
               }
               
+              userFailedCount++;
               errorCount++;
+              failedChannels.push({
+                id: channel.id,
+                label: channel.label,
+                error: channelError instanceof Error ? channelError.message : String(channelError),
+              });
             }
           }
           
-          // Create audit log for successful auto-extend
-          await storage.createAuditLog({
-            actorUserId: subscription.userId,
-            action: "AUTO_EXTEND_SUCCESS",
-            meta: {
-              channelsExtended: extendableChannels.length,
-              date: now.toISOString(),
-            },
-          });
+          // Create appropriate audit log based on results
+          if (userFailedCount > 0 && userExtendedCount === 0) {
+            // All channels failed
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_FAILED",
+              meta: {
+                reason: "All channel extensions failed",
+                channelsAttempted: extendableChannels.length,
+                failedChannels,
+                date: now.toISOString(),
+              },
+            });
+          } else if (userFailedCount > 0 && userExtendedCount > 0) {
+            // Partial success
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_PARTIAL",
+              meta: {
+                channelsExtended: userExtendedCount,
+                channelsFailed: userFailedCount,
+                failedChannels,
+                date: now.toISOString(),
+              },
+            });
+          } else if (userExtendedCount > 0) {
+            // All channels succeeded
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_SUCCESS",
+              meta: {
+                channelsExtended: userExtendedCount,
+                date: now.toISOString(),
+              },
+            });
+          }
           
         } catch (subscriptionError) {
           console.error(`[AutoExtend] Error processing subscription ${subscription.id}:`, subscriptionError);
