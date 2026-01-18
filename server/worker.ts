@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { storage } from "./storage";
-import { logoutChannel } from "./whapi";
+import { logoutChannel, extendWhapiChannel } from "./whapi";
 import fs from "fs";
 import path from "path";
 
@@ -330,10 +330,34 @@ export class BackgroundWorker {
           
           for (const channel of extendableChannels) {
             try {
-              // Deduct from main balance
+              // Check if channel has WHAPI channel ID for API call
+              if (!channel.whapiChannelId) {
+                console.log(`[AutoExtend] Channel "${channel.label}" (ID: ${channel.id}) has no WHAPI channel ID, skipping`);
+                userFailedCount++;
+                errorCount++;
+                failedChannels.push({
+                  id: channel.id,
+                  label: channel.label,
+                  error: "No WHAPI channel ID configured",
+                });
+                continue;
+              }
+              
+              // Deduct from main balance first
               await storage.updateMainDaysBalance(-1);
               
-              // Add 1 day to channel
+              // Call WHAPI API to extend the channel on their platform
+              try {
+                await extendWhapiChannel(channel.whapiChannelId, 1, "Auto-extend daily");
+                console.log(`[AutoExtend] WHAPI API call successful for channel "${channel.label}"`);
+              } catch (whapiError) {
+                console.error(`[AutoExtend] WHAPI API failed for channel ${channel.id}:`, whapiError);
+                // Refund main balance since WHAPI call failed
+                await storage.updateMainDaysBalance(1);
+                throw whapiError;
+              }
+              
+              // Update local database after successful WHAPI call
               await storage.addDaysToChannel({
                 channelId: channel.id,
                 days: 1,
@@ -359,13 +383,6 @@ export class BackgroundWorker {
               extendedCount++;
             } catch (channelError) {
               console.error(`[AutoExtend] Failed to extend channel ${channel.id}:`, channelError);
-              
-              // Refund the main balance if channel extension failed after deduction
-              try {
-                await storage.updateMainDaysBalance(1);
-              } catch (refundError) {
-                console.error(`[AutoExtend] Failed to refund main balance:`, refundError);
-              }
               
               userFailedCount++;
               errorCount++;
