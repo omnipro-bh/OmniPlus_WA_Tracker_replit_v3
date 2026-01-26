@@ -3637,6 +3637,486 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // BOOKING SCHEDULER
+  // ============================================================================
+
+  // --- Departments ---
+  app.get("/api/booking/departments", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const departments = await storage.getBookingDepartmentsForUser(effectiveUserId);
+      res.json(departments);
+    } catch (error: any) {
+      console.error("Get departments error:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+
+  app.post("/api/booking/departments", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { name, description } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Department name is required" });
+      }
+
+      const department = await storage.createBookingDepartment({
+        userId: effectiveUserId,
+        name: name.trim(),
+        description: description || null,
+      });
+      res.json(department);
+    } catch (error: any) {
+      console.error("Create department error:", error);
+      res.status(500).json({ error: "Failed to create department" });
+    }
+  });
+
+  app.put("/api/booking/departments/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const deptId = parseInt(req.params.id);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const updated = await storage.updateBookingDepartment(deptId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update department error:", error);
+      res.status(500).json({ error: "Failed to update department" });
+    }
+  });
+
+  app.delete("/api/booking/departments/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const deptId = parseInt(req.params.id);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteBookingDepartment(deptId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete department error:", error);
+      res.status(500).json({ error: "Failed to delete department" });
+    }
+  });
+
+  // --- Staff ---
+  app.get("/api/booking/departments/:deptId/staff", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const deptId = parseInt(req.params.deptId);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const staff = await storage.getBookingStaffForDepartment(deptId);
+      res.json(staff);
+    } catch (error: any) {
+      console.error("Get staff error:", error);
+      res.status(500).json({ error: "Failed to fetch staff" });
+    }
+  });
+
+  app.get("/api/booking/staff", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const staff = await storage.getBookingStaffForUser(effectiveUserId);
+      res.json(staff);
+    } catch (error: any) {
+      console.error("Get all staff error:", error);
+      res.status(500).json({ error: "Failed to fetch staff" });
+    }
+  });
+
+  app.post("/api/booking/departments/:deptId/staff", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const deptId = parseInt(req.params.deptId);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const { name, phone, email } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Staff name is required" });
+      }
+
+      const staff = await storage.createBookingStaff({
+        userId: effectiveUserId,
+        departmentId: deptId,
+        name: name.trim(),
+        phone: phone || null,
+        email: email || null,
+      });
+      res.json(staff);
+    } catch (error: any) {
+      console.error("Create staff error:", error);
+      res.status(500).json({ error: "Failed to create staff" });
+    }
+  });
+
+  app.put("/api/booking/staff/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const staffId = parseInt(req.params.id);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const updated = await storage.updateBookingStaff(staffId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update staff error:", error);
+      res.status(500).json({ error: "Failed to update staff" });
+    }
+  });
+
+  app.delete("/api/booking/staff/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const staffId = parseInt(req.params.id);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteBookingStaff(staffId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete staff error:", error);
+      res.status(500).json({ error: "Failed to delete staff" });
+    }
+  });
+
+  // --- Slots ---
+  app.get("/api/booking/staff/:staffId/slots", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const slots = await storage.getBookingStaffSlots(staffId);
+      res.json(slots);
+    } catch (error: any) {
+      console.error("Get slots error:", error);
+      res.status(500).json({ error: "Failed to fetch slots" });
+    }
+  });
+
+  app.post("/api/booking/staff/:staffId/slots", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const { dayOfWeek, startTime, endTime, slotDuration, capacity } = req.body;
+
+      if (dayOfWeek === undefined || dayOfWeek < 0 || dayOfWeek > 6) {
+        return res.status(400).json({ error: "Invalid day of week (0-6)" });
+      }
+      if (!startTime || !endTime) {
+        return res.status(400).json({ error: "Start time and end time are required" });
+      }
+
+      const slot = await storage.createBookingStaffSlot({
+        staffId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        slotDuration: slotDuration || 30,
+        capacity: capacity || 1,
+      });
+      res.json(slot);
+    } catch (error: any) {
+      console.error("Create slot error:", error);
+      res.status(500).json({ error: "Failed to create slot" });
+    }
+  });
+
+  app.put("/api/booking/slots/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const slotId = parseInt(req.params.id);
+      if (isNaN(slotId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const slot = await storage.getBookingStaffSlot(slotId);
+      if (!slot) return res.status(404).json({ error: "Slot not found" });
+
+      const staff = await storage.getBookingStaff(slot.staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const updated = await storage.updateBookingStaffSlot(slotId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update slot error:", error);
+      res.status(500).json({ error: "Failed to update slot" });
+    }
+  });
+
+  app.delete("/api/booking/slots/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const slotId = parseInt(req.params.id);
+      if (isNaN(slotId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const slot = await storage.getBookingStaffSlot(slotId);
+      if (!slot) return res.status(404).json({ error: "Slot not found" });
+
+      const staff = await storage.getBookingStaff(slot.staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteBookingStaffSlot(slotId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete slot error:", error);
+      res.status(500).json({ error: "Failed to delete slot" });
+    }
+  });
+
+  // --- Bookings ---
+  app.get("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { status, fromDate, toDate, staffId, departmentId, page, pageSize } = req.query;
+
+      const result = await storage.getBookingsForUser(effectiveUserId, {
+        status: status as string,
+        fromDate: fromDate as string,
+        toDate: toDate as string,
+        staffId: staffId ? parseInt(staffId as string) : undefined,
+        departmentId: departmentId ? parseInt(departmentId as string) : undefined,
+        page: page ? parseInt(page as string) : 1,
+        pageSize: pageSize ? parseInt(pageSize as string) : 20,
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get bookings error:", error);
+      res.status(500).json({ error: "Failed to fetch bookings" });
+    }
+  });
+
+  app.post("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { departmentId, staffId, slotDate, startTime, endTime, customerPhone, customerName, nodeId, bookingLabel, metadata } = req.body;
+
+      if (!departmentId || !staffId || !slotDate || !startTime || !endTime || !customerPhone) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Check slot availability
+      const availability = await storage.checkSlotAvailability(staffId, slotDate, startTime);
+      if (!availability.available) {
+        return res.status(409).json({ 
+          error: "Slot not available", 
+          existingCount: availability.existingCount,
+          capacity: availability.capacity 
+        });
+      }
+
+      const booking = await storage.createBooking({
+        userId: effectiveUserId,
+        departmentId,
+        staffId,
+        slotDate,
+        startTime,
+        endTime,
+        customerPhone,
+        customerName: customerName || null,
+        nodeId: nodeId || null,
+        bookingLabel: bookingLabel || null,
+        metadata: metadata || null,
+        status: "confirmed",
+      });
+      res.json(booking);
+    } catch (error: any) {
+      console.error("Create booking error:", error);
+      res.status(500).json({ error: "Failed to create booking" });
+    }
+  });
+
+  app.put("/api/booking/bookings/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const updated = await storage.updateBooking(bookingId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update booking error:", error);
+      res.status(500).json({ error: "Failed to update booking" });
+    }
+  });
+
+  app.delete("/api/booking/bookings/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteBooking(bookingId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete booking error:", error);
+      res.status(500).json({ error: "Failed to delete booking" });
+    }
+  });
+
+  // Check slot availability (for UI preview)
+  app.get("/api/booking/availability", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { staffId, slotDate, startTime } = req.query;
+
+      if (!staffId || !slotDate || !startTime) {
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+
+      const result = await storage.checkSlotAvailability(
+        parseInt(staffId as string),
+        slotDate as string,
+        startTime as string
+      );
+      res.json(result);
+    } catch (error: any) {
+      console.error("Check availability error:", error);
+      res.status(500).json({ error: "Failed to check availability" });
+    }
+  });
+
+  // Get available time slots for a specific date and staff (for chatbot)
+  app.get("/api/booking/available-slots", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { staffId, date } = req.query;
+
+      if (!staffId || !date) {
+        return res.status(400).json({ error: "staffId and date are required" });
+      }
+
+      const staff = await storage.getBookingStaff(parseInt(staffId as string));
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      // Get day of week from date
+      const dateObj = new Date(date as string);
+      const dayOfWeek = dateObj.getDay();
+
+      // Get staff slots for this day
+      const allSlots = await storage.getBookingStaffSlots(staff.id);
+      const daySlots = allSlots.filter(s => s.dayOfWeek === dayOfWeek && s.isActive);
+
+      // For each slot, generate time intervals and check availability
+      const availableSlots: Array<{ startTime: string; endTime: string; available: boolean; remainingCapacity: number }> = [];
+
+      for (const slot of daySlots) {
+        // Generate time slots within this availability window
+        const [startHour, startMin] = slot.startTime.split(':').map(Number);
+        const [endHour, endMin] = slot.endTime.split(':').map(Number);
+        const slotDuration = slot.slotDuration;
+
+        let currentMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        while (currentMinutes + slotDuration <= endMinutes) {
+          const slotStartTime = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
+          const slotEndMinutes = currentMinutes + slotDuration;
+          const slotEndTime = `${String(Math.floor(slotEndMinutes / 60)).padStart(2, '0')}:${String(slotEndMinutes % 60).padStart(2, '0')}`;
+
+          const availability = await storage.checkSlotAvailability(staff.id, date as string, slotStartTime);
+
+          availableSlots.push({
+            startTime: slotStartTime,
+            endTime: slotEndTime,
+            available: availability.available,
+            remainingCapacity: availability.capacity - availability.existingCount,
+          });
+
+          currentMinutes += slotDuration;
+        }
+      }
+
+      res.json(availableSlots);
+    } catch (error: any) {
+      console.error("Get available slots error:", error);
+      res.status(500).json({ error: "Failed to get available slots" });
+    }
+  });
+
+  // ============================================================================
   // WORKFLOWS
   // ============================================================================
 
@@ -5818,6 +6298,325 @@ export function registerRoutes(app: Express) {
         }
       }
 
+      // ============================================================================
+      // BOOKING FLOW HANDLER: Process booking step responses
+      // ============================================================================
+      if (messageType === "button_reply" && buttonId.startsWith("booking_")) {
+        try {
+          console.log(`[Booking] Processing booking response: ${buttonId}`);
+          
+          // Get current conversation state to check booking state
+          const [currentState] = await db
+            .select()
+            .from(conversationStates)
+            .where(and(
+              eq(conversationStates.phone, phone),
+              eq(conversationStates.workflowId, activeWorkflow.id)
+            ))
+            .limit(1);
+          
+          if (currentState?.context && (currentState.context as any).bookingState) {
+            const context = currentState.context as any;
+            const bookingState = context.bookingState;
+            
+            // Get active channel for sending messages
+            const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            
+            if (!activeChannel?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for user ${activeWorkflow.userId}`);
+              return res.status(200).json({ success: true });
+            }
+            
+            if (bookingState.step === 'select_department' && buttonId.startsWith("booking_dept_")) {
+              // User selected a department - show staff list
+              const deptId = parseInt(buttonId.replace("booking_dept_", ""));
+              
+              // SECURITY: Verify department belongs to workflow owner
+              const department = await storage.getBookingDepartment(deptId);
+              if (!department || department.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid department selection: ${deptId} for user ${activeWorkflow.userId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              const staff = await storage.getBookingStaffForDepartment(deptId);
+              
+              if (staff.length === 0) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, no staff available for this department.',
+                });
+                // Reset booking state
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Send staff selection list
+              const listPayload = {
+                to: phone,
+                title: 'Select Staff',
+                body: 'Please select a staff member:',
+                footer: 'Select an option',
+                action: {
+                  button: 'Select Staff',
+                  sections: [{
+                    title: 'Staff',
+                    rows: staff.map((s: any) => ({
+                      id: `booking_staff_${s.id}`,
+                      title: s.name,
+                      description: s.title || '',
+                    })),
+                  }],
+                },
+              };
+              
+              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
+                type: 'list',
+                ...listPayload,
+              });
+              
+              // Update booking state
+              await db.update(conversationStates).set({
+                context: { ...context, bookingState: { ...bookingState, step: 'select_staff', departmentId: deptId } },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, currentState.id));
+              
+              return res.status(200).json({ success: true });
+              
+            } else if (bookingState.step === 'select_staff' && buttonId.startsWith("booking_staff_")) {
+              // User selected staff - show available dates
+              const staffId = parseInt(buttonId.replace("booking_staff_", ""));
+              
+              // Verify staff belongs to user (security check)
+              const staffMember = await storage.getBookingStaff(staffId);
+              if (!staffMember || staffMember.departmentId !== bookingState.departmentId) {
+                console.error(`[Booking] Invalid staff selection: ${staffId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Check if customer already has booking (if allowMultiple is false)
+              if (!bookingState.config?.allowMultiple) {
+                const existingCount = await storage.countActiveBookingsForCustomer(
+                  phone, activeWorkflow.userId, bookingState.nodeId
+                );
+                if (existingCount > 0) {
+                  await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                    to: phone,
+                    body: 'You already have an active appointment. Please cancel your existing booking first.',
+                  });
+                  await db.update(conversationStates).set({
+                    context: { ...context, bookingState: undefined },
+                    updatedAt: new Date(),
+                  }).where(eq(conversationStates.id, currentState.id));
+                  return res.status(200).json({ success: true });
+                }
+              }
+              
+              // Get staff recurring slots (dayOfWeek based)
+              const staffSlots = await storage.getBookingStaffSlots(staffId);
+              const activeSlots = staffSlots.filter((s: any) => s.isActive);
+              
+              if (activeSlots.length === 0) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: bookingState.config?.noSlotsMessage || 'Sorry, no available time slots.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Generate available date/time combinations for next N days
+              const maxDays = bookingState.config?.maxAdvanceDays || 30;
+              const availableDateTimes: { date: string; startTime: string; endTime: string; slotId: number }[] = [];
+              
+              for (let i = 0; i < maxDays && availableDateTimes.length < 10; i++) {
+                const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
+                const dateStr = checkDate.format("YYYY-MM-DD");
+                const dayOfWeek = checkDate.day();
+                
+                // Find slots for this day of week
+                for (const slot of activeSlots) {
+                  if (slot.dayOfWeek === dayOfWeek) {
+                    // Check availability using proper method
+                    const availability = await storage.checkSlotAvailability(
+                      staffId, dateStr, slot.startTime
+                    );
+                    if (availability.available) {
+                      availableDateTimes.push({
+                        date: dateStr,
+                        startTime: slot.startTime,
+                        endTime: slot.endTime,
+                        slotId: slot.id,
+                      });
+                    }
+                  }
+                }
+              }
+              
+              if (availableDateTimes.length === 0) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: bookingState.config?.noSlotsMessage || 'Sorry, no available time slots.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Build slot rows with date-time combinations
+              const slotRows = availableDateTimes.map((slot, idx) => ({
+                id: `booking_slot_${slot.slotId}_${slot.date}`,
+                title: `${slot.date} at ${slot.startTime}`,
+                description: `${slot.startTime} - ${slot.endTime}`,
+              }));
+              
+              const listPayload = {
+                to: phone,
+                title: 'Select Time',
+                body: 'Please select an available time slot:',
+                footer: 'Select an option',
+                action: {
+                  button: 'Select Time',
+                  sections: [{
+                    title: 'Available Times',
+                    rows: slotRows,
+                  }],
+                },
+              };
+              
+              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
+                type: 'list',
+                ...listPayload,
+              });
+              
+              // Update booking state
+              await db.update(conversationStates).set({
+                context: { ...context, bookingState: { ...bookingState, step: 'select_slot', staffId } },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, currentState.id));
+              
+              return res.status(200).json({ success: true });
+              
+            } else if (bookingState.step === 'select_slot' && buttonId.startsWith("booking_slot_")) {
+              // User selected slot - create the booking
+              // Parse ID format: booking_slot_${slotId}_${date}
+              const slotParts = buttonId.replace("booking_slot_", "").split("_");
+              const slotId = parseInt(slotParts[0]);
+              const slotDate = slotParts.slice(1).join("_"); // Handle dates with underscores
+              
+              // Get slot details (recurring slot configuration)
+              const slot = await storage.getBookingStaffSlot(slotId);
+              
+              if (!slot || slot.staffId !== bookingState.staffId) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, this slot is no longer available.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Verify slot is still available for this date
+              const availability = await storage.checkSlotAvailability(
+                bookingState.staffId, slotDate, slot.startTime
+              );
+              
+              if (!availability.available) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, this slot is no longer available. It may have been taken.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Check availability and create booking
+              try {
+                const booking = await storage.createBooking({
+                  userId: activeWorkflow.userId,
+                  staffId: bookingState.staffId,
+                  departmentId: bookingState.departmentId,
+                  customerPhone: phone,
+                  customerName: '',
+                  slotDate: slotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  status: 'confirmed',
+                  nodeId: bookingState.nodeId,
+                  bookingLabel: bookingState.bookingLabel,
+                });
+                
+                // Get staff and department names for success message
+                const staff = await storage.getBookingStaff(bookingState.staffId);
+                const dept = await storage.getBookingDepartment(bookingState.departmentId);
+                
+                let successMessage = bookingState.config?.successMessage || 
+                  'Your appointment has been booked for {{date}} at {{time}}.';
+                successMessage = successMessage
+                  .replace(/\{\{date\}\}/g, slotDate)
+                  .replace(/\{\{time\}\}/g, slot.startTime)
+                  .replace(/\{\{department\}\}/g, dept?.name || '')
+                  .replace(/\{\{staff\}\}/g, staff?.name || '');
+                
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: successMessage,
+                });
+                
+                // Clear booking state and continue workflow on "booked" path
+                const definition = activeWorkflow.definitionJson as any;
+                const bookedNodeId = getNextNodeByHandle(bookingState.nodeId, 'booked', definition.edges);
+                
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || bookingState.nodeId,
+                  context: { ...context, bookingState: undefined, lastBookingId: booking.id },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                
+                console.log(`[Booking] Created booking ${booking.id} for ${phone}`);
+                
+              } catch (bookingError: any) {
+                console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, we could not book this slot. It may no longer be available.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+              }
+              
+              return res.status(200).json({ success: true });
+            }
+          }
+        } catch (bookingError: any) {
+          console.error(`[Booking] Error processing booking flow: ${bookingError.message}`);
+        }
+      }
+
       // Log execution start
       const executionLog = {
         workflowId: activeWorkflow.id,
@@ -6527,6 +7326,162 @@ export function registerRoutes(app: Express) {
                   }
                   
                   // Continue to next node - UPDATE BOTH!
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+                  
+                // Booking Node - handle appointment booking
+                } else if (currentNodeType === 'booking.book_appointment') {
+                  const config = currentNode.data?.config || {};
+                  const context = (state.context || {}) as any;
+                  
+                  console.log(`[Booking] Processing book_appointment node: ${currentNodeId}`);
+                  
+                  // Check if we're in a booking flow already
+                  if (!context.bookingState) {
+                    // Start new booking flow - send department list
+                    const departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
+                    
+                    if (departments.length === 0) {
+                      // No departments configured - go to no_slots path
+                      console.log(`[Booking] No departments configured for user ${activeWorkflow.userId}`);
+                      
+                      const noSlotsMessage = config.noSlotsMessage || 'Sorry, booking is not available at this time.';
+                      
+                      // Send no slots message
+                      const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                      const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                      if (activeChannel?.whapiChannelToken) {
+                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noSlotsMessage,
+                        });
+                      }
+                      
+                      // Follow no_slots path
+                      const noSlotsNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
+                      if (!noSlotsNodeId) break;
+                      const noSlotsNode = definition.nodes?.find((n: any) => n.id === noSlotsNodeId);
+                      if (!noSlotsNode) break;
+                      currentNode = noSlotsNode;
+                      currentNodeId = noSlotsNodeId;
+                      continue;
+                    }
+                    
+                    // Send department selection as list message
+                    const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                    const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                    
+                    if (activeChannel?.whapiChannelToken) {
+                      const promptMessage = config.promptMessage || 'Please select a department for your appointment:';
+                      
+                      // Build list message with departments
+                      const listPayload = {
+                        to: phone,
+                        title: 'Book Appointment',
+                        body: promptMessage,
+                        footer: 'Select an option',
+                        action: {
+                          button: 'Select Department',
+                          sections: [{
+                            title: 'Departments',
+                            rows: departments.map((dept: any) => ({
+                              id: `booking_dept_${dept.id}`,
+                              title: dept.name,
+                              description: dept.description || '',
+                            })),
+                          }],
+                        },
+                      };
+                      
+                      await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
+                        type: 'list',
+                        ...listPayload,
+                      });
+                      
+                      // Save booking state
+                      const bookingState = {
+                        step: 'select_department',
+                        nodeId: currentNodeId,
+                        bookingLabel: config.bookingLabel || 'appointment',
+                        config,
+                      };
+                      
+                      await db
+                        .update(conversationStates)
+                        .set({
+                          lastMessageAt: new Date(),
+                          currentNodeId: currentNodeId,
+                          context: { ...context, bookingState },
+                          updatedAt: new Date(),
+                        })
+                        .where(eq(conversationStates.id, state.id));
+                      
+                      executionLog.responsesSent.push({
+                        nodeId: currentNodeId,
+                        nodeType: 'booking.book_appointment',
+                        step: 'select_department',
+                        success: true,
+                      });
+                      
+                      // Wait for user input - exit the loop
+                      break;
+                    }
+                  }
+                  
+                  // This shouldn't happen in normal flow
+                  break;
+                  
+                // Check Bookings Node - handle viewing customer bookings
+                } else if (currentNodeType === 'booking.check_bookings') {
+                  const config = currentNode.data?.config || {};
+                  
+                  console.log(`[Booking] Processing check_bookings node: ${currentNodeId}`);
+                  
+                  // Get customer bookings by phone
+                  const customerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
+                  
+                  const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                  const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                  
+                  if (activeChannel?.whapiChannelToken) {
+                    if (customerBookings.length === 0) {
+                      const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
+                      await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                        to: phone,
+                        body: noBookingsMessage,
+                      });
+                    } else {
+                      // Format booking list
+                      const bookingListFormat = config.bookingListFormat || '📅 {{date}} at {{time}}\nStatus: {{status}}';
+                      let bookingsText = 'Your appointments:\n\n';
+                      
+                      for (const booking of customerBookings) {
+                        let formatted = bookingListFormat
+                          .replace(/\{\{date\}\}/g, booking.slotDate)
+                          .replace(/\{\{time\}\}/g, booking.startTime)
+                          .replace(/\{\{status\}\}/g, booking.status);
+                        bookingsText += formatted + '\n\n';
+                      }
+                      
+                      await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                        to: phone,
+                        body: bookingsText.trim(),
+                      });
+                    }
+                  }
+                  
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: 'booking.check_bookings',
+                    bookingsCount: customerBookings.length,
+                    success: true,
+                  });
+                  
+                  // Continue to next node (booked path for check_bookings)
+                  const nextNodeId = getNextNodeByHandle(currentNodeId, 'booked', definition.edges);
+                  if (!nextNodeId) break;
+                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                  if (!nextNode) break;
                   currentNode = nextNode;
                   currentNodeId = nextNodeId;
                   

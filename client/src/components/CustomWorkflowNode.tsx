@@ -18,6 +18,9 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   // Check if this is an HTTP Request node (has success and error outputs)
   const isHttpNode = nodeType === 'httpRequest';
   
+  // Check if this is a booking node
+  const isBookingNode = nodeType.startsWith('booking.');
+  
   // For list messages, collect all row IDs from all sections
   const listRowIds: { id: string; title: string; sectionTitle?: string }[] = [];
   if (sections.length > 0) {
@@ -79,10 +82,13 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
       style={{
         backgroundColor: (data.type as string)?.includes('Trigger') 
           ? 'hsl(var(--primary))' 
-          : 'hsl(var(--card))',
+          : isBookingNode
+            ? 'hsl(160 84% 10%)' // Dark emerald background
+            : 'hsl(var(--card))',
         color: (data.type as string)?.includes('Trigger') 
           ? 'hsl(var(--primary-foreground))' 
           : 'hsl(var(--card-foreground))',
+        borderColor: isBookingNode && selected ? 'hsl(158 64% 52%)' : undefined,
       }}
     >
       {/* Entry node badge - top center */}
@@ -305,8 +311,58 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
           
-          {/* Default single output handle if no buttons/options and not HTTP node */}
-          {!hasMultipleOutputs && !isHttpNode && (
+          {/* Booking Node - booked and no_slots outputs */}
+          {isBookingNode && (
+            <div className="space-y-1 mt-3">
+              {/* Booked path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                  title="Appointment booked successfully"
+                >
+                  Booked
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="booked"
+                  className="!w-3 !h-3 !bg-emerald-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+              {/* No slots path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
+                  title="No available time slots"
+                >
+                  No Slots
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="no_slots"
+                  className="!w-3 !h-3 !bg-amber-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* Default single output handle if no buttons/options and not HTTP node and not Booking node */}
+          {!hasMultipleOutputs && !isHttpNode && !isBookingNode && (
             <Handle
               type="source"
               position={Position.Right}

@@ -31,6 +31,7 @@ export const couponStatusEnum = pgEnum("coupon_status", ["ACTIVE", "EXPIRED", "D
 export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAYMENT_IN", "PAYMENT_IN_OFFLINE", "DAYS_GRANTED", "DAYS_REFUND", "ADJUSTMENT"]);
 export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
 export const subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
+export const bookingStatusEnum = pgEnum("booking_status", ["pending", "confirmed", "cancelled", "completed", "no_show"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -106,6 +107,7 @@ export const plans = pgTable("plans", {
     phonebooks: false,
     subscribers: false,
     captureList: false,
+    bookingScheduler: false,
   }),
   features: jsonb("features").notNull().default([]), // Array of feature strings
   // Pricing Controls
@@ -858,6 +860,130 @@ export const capturedDataRelations = relations(capturedData, ({ one }) => ({
   }),
 }));
 
+// ============================================================================
+// BOOKING SCHEDULER TABLES
+// ============================================================================
+
+// Departments table - Groups staff by department
+export const bookingDepartments = pgTable("booking_departments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const bookingDepartmentsRelations = relations(bookingDepartments, ({ one, many }) => ({
+  user: one(users, {
+    fields: [bookingDepartments.userId],
+    references: [users.id],
+  }),
+  staff: many(bookingStaff),
+}));
+
+// Staff table - Staff members within departments
+export const bookingStaff = pgTable("booking_staff", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  departmentId: integer("department_id").notNull().references(() => bookingDepartments.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const bookingStaffRelations = relations(bookingStaff, ({ one, many }) => ({
+  user: one(users, {
+    fields: [bookingStaff.userId],
+    references: [users.id],
+  }),
+  department: one(bookingDepartments, {
+    fields: [bookingStaff.departmentId],
+    references: [bookingDepartments.id],
+  }),
+  slots: many(bookingStaffSlots),
+  bookings: many(bookings),
+}));
+
+// Staff Slots table - Recurring weekly availability for staff
+export const bookingStaffSlots = pgTable("booking_staff_slots", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  staffId: integer("staff_id").notNull().references(() => bookingStaff.id, { onDelete: "cascade" }),
+  dayOfWeek: integer("day_of_week").notNull(), // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime: varchar("start_time", { length: 10 }).notNull(), // Format: "HH:MM" (24hr)
+  endTime: varchar("end_time", { length: 10 }).notNull(), // Format: "HH:MM" (24hr)
+  slotDuration: integer("slot_duration").notNull().default(30), // Duration in minutes
+  capacity: integer("capacity").notNull().default(1), // Max bookings per slot
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const bookingStaffSlotsRelations = relations(bookingStaffSlots, ({ one }) => ({
+  staff: one(bookingStaff, {
+    fields: [bookingStaffSlots.staffId],
+    references: [bookingStaff.id],
+  }),
+}));
+
+// Bookings table - Actual bookings made by end-users
+export const bookings = pgTable("bookings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+  departmentId: integer("department_id").notNull().references(() => bookingDepartments.id, { onDelete: "cascade" }),
+  staffId: integer("staff_id").notNull().references(() => bookingStaff.id, { onDelete: "cascade" }),
+  
+  // Booking Node Configuration (for differentiating multiple schedulers in same workflow)
+  nodeId: varchar("node_id", { length: 100 }), // Workflow node ID
+  bookingLabel: varchar("booking_label", { length: 255 }), // User-defined label (e.g., "Doctor Visit", "Consultation")
+  
+  // Booking Details
+  slotDate: varchar("slot_date", { length: 10 }).notNull(), // Format: "YYYY-MM-DD"
+  startTime: varchar("start_time", { length: 10 }).notNull(), // Format: "HH:MM"
+  endTime: varchar("end_time", { length: 10 }).notNull(), // Format: "HH:MM"
+  
+  // Customer Info
+  customerPhone: varchar("customer_phone", { length: 50 }).notNull(), // Phone number from chatbot
+  customerName: varchar("customer_name", { length: 255 }),
+  
+  // Status
+  status: bookingStatusEnum("status").notNull().default("pending"),
+  
+  // Additional Data
+  metadata: jsonb("metadata"), // Extra fields collected from chatbot
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  // Index for fast lookup by customer phone (for "Check Bookings" feature)
+  customerPhoneIdx: uniqueIndex("bookings_customer_phone_date_idx").on(table.customerPhone, table.slotDate, table.staffId, table.startTime),
+  // Index for availability checks (most common query path)
+  availabilityIdx: uniqueIndex("bookings_availability_idx").on(table.staffId, table.slotDate, table.startTime, table.status),
+}));
+
+export const bookingsRelations = relations(bookings, ({ one }) => ({
+  user: one(users, {
+    fields: [bookings.userId],
+    references: [users.id],
+  }),
+  workflow: one(workflows, {
+    fields: [bookings.workflowId],
+    references: [workflows.id],
+  }),
+  department: one(bookingDepartments, {
+    fields: [bookings.departmentId],
+    references: [bookingDepartments.id],
+  }),
+  staff: one(bookingStaff, {
+    fields: [bookings.staffId],
+    references: [bookingStaff.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -1065,6 +1191,35 @@ export const insertCapturedDataSchema = createInsertSchema(capturedData, {
   })).default([]),
 });
 
+// Booking Scheduler Schemas
+export const insertBookingDepartmentSchema = createInsertSchema(bookingDepartments, {
+  name: z.string().min(1, "Department name is required"),
+  description: z.string().optional(),
+});
+
+export const insertBookingStaffSchema = createInsertSchema(bookingStaff, {
+  name: z.string().min(1, "Staff name is required"),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal("")),
+});
+
+export const insertBookingStaffSlotSchema = createInsertSchema(bookingStaffSlots, {
+  dayOfWeek: z.number().int().min(0).max(6),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  slotDuration: z.number().int().min(5).max(480).default(30),
+  capacity: z.number().int().min(1).max(100).default(1),
+});
+
+export const insertBookingSchema = createInsertSchema(bookings, {
+  slotDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  customerPhone: z.string().min(1, "Customer phone is required"),
+  customerName: z.string().optional(),
+  status: z.enum(["pending", "confirmed", "cancelled", "completed", "no_show"]).default("pending"),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1128,3 +1283,13 @@ export type CaptureSequence = typeof captureSequences.$inferSelect;
 export type InsertCaptureSequence = z.infer<typeof insertCaptureSequenceSchema>;
 export type CapturedData = typeof capturedData.$inferSelect;
 export type InsertCapturedData = z.infer<typeof insertCapturedDataSchema>;
+
+// Booking Scheduler Types
+export type BookingDepartment = typeof bookingDepartments.$inferSelect;
+export type InsertBookingDepartment = z.infer<typeof insertBookingDepartmentSchema>;
+export type BookingStaff = typeof bookingStaff.$inferSelect;
+export type InsertBookingStaff = z.infer<typeof insertBookingStaffSchema>;
+export type BookingStaffSlot = typeof bookingStaffSlots.$inferSelect;
+export type InsertBookingStaffSlot = z.infer<typeof insertBookingStaffSlotSchema>;
+export type Booking = typeof bookings.$inferSelect;
+export type InsertBooking = z.infer<typeof insertBookingSchema>;

@@ -49,6 +49,7 @@ export function ProtectedRoute({ children, requiredKey, fallbackPath = "/pricing
         logs: "/logs",
         bulkLogs: "/bulk-logs",
         captureList: "/capture-list",
+        bookingScheduler: "/booking-scheduler",
         pricing: "/pricing",
         settings: "/settings",
       };

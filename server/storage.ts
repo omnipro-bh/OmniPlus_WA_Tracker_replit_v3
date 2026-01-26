@@ -214,6 +214,49 @@ export interface IStorage {
   createCapturedData(data: schema.InsertCapturedData): Promise<schema.CapturedData>;
   deleteCapturedData(id: number): Promise<void>;
   countCapturedDataForSequence(sequenceId: number): Promise<number>;
+
+  // Booking Scheduler - Departments
+  getBookingDepartmentsForUser(userId: number): Promise<schema.BookingDepartment[]>;
+  getBookingDepartment(id: number): Promise<schema.BookingDepartment | undefined>;
+  createBookingDepartment(dept: schema.InsertBookingDepartment): Promise<schema.BookingDepartment>;
+  updateBookingDepartment(id: number, data: Partial<schema.BookingDepartment>): Promise<schema.BookingDepartment | undefined>;
+  deleteBookingDepartment(id: number): Promise<void>;
+
+  // Booking Scheduler - Staff
+  getBookingStaffForDepartment(departmentId: number): Promise<schema.BookingStaff[]>;
+  getBookingStaffForUser(userId: number): Promise<schema.BookingStaff[]>;
+  getBookingStaff(id: number): Promise<schema.BookingStaff | undefined>;
+  createBookingStaff(staff: schema.InsertBookingStaff): Promise<schema.BookingStaff>;
+  updateBookingStaff(id: number, data: Partial<schema.BookingStaff>): Promise<schema.BookingStaff | undefined>;
+  deleteBookingStaff(id: number): Promise<void>;
+
+  // Booking Scheduler - Slots
+  getBookingStaffSlots(staffId: number): Promise<schema.BookingStaffSlot[]>;
+  getBookingStaffSlot(id: number): Promise<schema.BookingStaffSlot | undefined>;
+  createBookingStaffSlot(slot: schema.InsertBookingStaffSlot): Promise<schema.BookingStaffSlot>;
+  updateBookingStaffSlot(id: number, data: Partial<schema.BookingStaffSlot>): Promise<schema.BookingStaffSlot | undefined>;
+  deleteBookingStaffSlot(id: number): Promise<void>;
+
+  // Booking Scheduler - Bookings (optimized for fast chatbot response)
+  getBookingsForUser(userId: number, filters?: { 
+    status?: string; 
+    fromDate?: string; 
+    toDate?: string; 
+    staffId?: number;
+    departmentId?: number;
+    page?: number; 
+    pageSize?: number 
+  }): Promise<{ bookings: schema.Booking[]; total: number }>;
+  getBookingsForCustomer(customerPhone: string, userId: number, options?: { 
+    status?: string; 
+    upcoming?: boolean 
+  }): Promise<schema.Booking[]>;
+  getBooking(id: number): Promise<schema.Booking | undefined>;
+  createBooking(booking: schema.InsertBooking): Promise<schema.Booking>;
+  updateBooking(id: number, data: Partial<schema.Booking>): Promise<schema.Booking | undefined>;
+  deleteBooking(id: number): Promise<void>;
+  checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
+  countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1361,6 +1404,323 @@ export class DatabaseStorage implements IStorage {
       .from(schema.capturedData)
       .where(eq(schema.capturedData.sequenceId, sequenceId));
     return result[0]?.count || 0;
+  }
+
+  // ============================================================================
+  // BOOKING SCHEDULER METHODS
+  // ============================================================================
+
+  // Departments
+  async getBookingDepartmentsForUser(userId: number): Promise<schema.BookingDepartment[]> {
+    return await db
+      .select()
+      .from(schema.bookingDepartments)
+      .where(eq(schema.bookingDepartments.userId, userId))
+      .orderBy(schema.bookingDepartments.name);
+  }
+
+  async getBookingDepartment(id: number): Promise<schema.BookingDepartment | undefined> {
+    const [dept] = await db
+      .select()
+      .from(schema.bookingDepartments)
+      .where(eq(schema.bookingDepartments.id, id));
+    return dept || undefined;
+  }
+
+  async createBookingDepartment(dept: schema.InsertBookingDepartment): Promise<schema.BookingDepartment> {
+    const [newDept] = await db
+      .insert(schema.bookingDepartments)
+      .values(dept)
+      .returning();
+    return newDept;
+  }
+
+  async updateBookingDepartment(id: number, data: Partial<schema.BookingDepartment>): Promise<schema.BookingDepartment | undefined> {
+    const [updated] = await db
+      .update(schema.bookingDepartments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.bookingDepartments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBookingDepartment(id: number): Promise<void> {
+    await db.delete(schema.bookingDepartments).where(eq(schema.bookingDepartments.id, id));
+  }
+
+  // Staff
+  async getBookingStaffForDepartment(departmentId: number): Promise<schema.BookingStaff[]> {
+    return await db
+      .select()
+      .from(schema.bookingStaff)
+      .where(eq(schema.bookingStaff.departmentId, departmentId))
+      .orderBy(schema.bookingStaff.name);
+  }
+
+  async getBookingStaffForUser(userId: number): Promise<schema.BookingStaff[]> {
+    return await db
+      .select()
+      .from(schema.bookingStaff)
+      .where(eq(schema.bookingStaff.userId, userId))
+      .orderBy(schema.bookingStaff.name);
+  }
+
+  async getBookingStaff(id: number): Promise<schema.BookingStaff | undefined> {
+    const [staff] = await db
+      .select()
+      .from(schema.bookingStaff)
+      .where(eq(schema.bookingStaff.id, id));
+    return staff || undefined;
+  }
+
+  async createBookingStaff(staff: schema.InsertBookingStaff): Promise<schema.BookingStaff> {
+    const [newStaff] = await db
+      .insert(schema.bookingStaff)
+      .values(staff)
+      .returning();
+    return newStaff;
+  }
+
+  async updateBookingStaff(id: number, data: Partial<schema.BookingStaff>): Promise<schema.BookingStaff | undefined> {
+    const [updated] = await db
+      .update(schema.bookingStaff)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.bookingStaff.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBookingStaff(id: number): Promise<void> {
+    await db.delete(schema.bookingStaff).where(eq(schema.bookingStaff.id, id));
+  }
+
+  // Slots
+  async getBookingStaffSlots(staffId: number): Promise<schema.BookingStaffSlot[]> {
+    return await db
+      .select()
+      .from(schema.bookingStaffSlots)
+      .where(eq(schema.bookingStaffSlots.staffId, staffId))
+      .orderBy(schema.bookingStaffSlots.dayOfWeek, schema.bookingStaffSlots.startTime);
+  }
+
+  async getBookingStaffSlot(id: number): Promise<schema.BookingStaffSlot | undefined> {
+    const [slot] = await db
+      .select()
+      .from(schema.bookingStaffSlots)
+      .where(eq(schema.bookingStaffSlots.id, id));
+    return slot || undefined;
+  }
+
+  async createBookingStaffSlot(slot: schema.InsertBookingStaffSlot): Promise<schema.BookingStaffSlot> {
+    const [newSlot] = await db
+      .insert(schema.bookingStaffSlots)
+      .values(slot)
+      .returning();
+    return newSlot;
+  }
+
+  async updateBookingStaffSlot(id: number, data: Partial<schema.BookingStaffSlot>): Promise<schema.BookingStaffSlot | undefined> {
+    const [updated] = await db
+      .update(schema.bookingStaffSlots)
+      .set(data)
+      .where(eq(schema.bookingStaffSlots.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBookingStaffSlot(id: number): Promise<void> {
+    await db.delete(schema.bookingStaffSlots).where(eq(schema.bookingStaffSlots.id, id));
+  }
+
+  // Bookings - Optimized for fast chatbot response
+  async getBookingsForUser(
+    userId: number,
+    filters?: {
+      status?: string;
+      fromDate?: string;
+      toDate?: string;
+      staffId?: number;
+      departmentId?: number;
+      page?: number;
+      pageSize?: number;
+    }
+  ): Promise<{ bookings: schema.Booking[]; total: number }> {
+    const page = filters?.page || 1;
+    const pageSize = filters?.pageSize || 20;
+    const offset = (page - 1) * pageSize;
+
+    const conditions = [eq(schema.bookings.userId, userId)];
+
+    if (filters?.status) {
+      conditions.push(eq(schema.bookings.status, filters.status as any));
+    }
+    if (filters?.fromDate) {
+      conditions.push(sql`${schema.bookings.slotDate} >= ${filters.fromDate}`);
+    }
+    if (filters?.toDate) {
+      conditions.push(sql`${schema.bookings.slotDate} <= ${filters.toDate}`);
+    }
+    if (filters?.staffId) {
+      conditions.push(eq(schema.bookings.staffId, filters.staffId));
+    }
+    if (filters?.departmentId) {
+      conditions.push(eq(schema.bookings.departmentId, filters.departmentId));
+    }
+
+    const bookingsList = await db
+      .select()
+      .from(schema.bookings)
+      .where(and(...conditions))
+      .orderBy(desc(schema.bookings.slotDate), desc(schema.bookings.startTime))
+      .limit(pageSize)
+      .offset(offset);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookings)
+      .where(and(...conditions));
+
+    return { bookings: bookingsList, total: countResult?.count || 0 };
+  }
+
+  async getBookingsForCustomer(
+    customerPhone: string,
+    userId: number,
+    options?: { status?: string; upcoming?: boolean }
+  ): Promise<schema.Booking[]> {
+    const conditions = [
+      eq(schema.bookings.customerPhone, customerPhone),
+      eq(schema.bookings.userId, userId),
+    ];
+
+    if (options?.status) {
+      conditions.push(eq(schema.bookings.status, options.status as any));
+    }
+
+    if (options?.upcoming) {
+      const today = new Date().toISOString().split('T')[0];
+      conditions.push(sql`${schema.bookings.slotDate} >= ${today}`);
+      conditions.push(sql`${schema.bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`);
+    }
+
+    return await db
+      .select()
+      .from(schema.bookings)
+      .where(and(...conditions))
+      .orderBy(schema.bookings.slotDate, schema.bookings.startTime)
+      .limit(10); // Limit for fast response
+  }
+
+  async getBooking(id: number): Promise<schema.Booking | undefined> {
+    const [booking] = await db
+      .select()
+      .from(schema.bookings)
+      .where(eq(schema.bookings.id, id));
+    return booking || undefined;
+  }
+
+  async createBooking(booking: schema.InsertBooking): Promise<schema.Booking> {
+    const [newBooking] = await db
+      .insert(schema.bookings)
+      .values(booking)
+      .returning();
+    return newBooking;
+  }
+
+  async updateBooking(id: number, data: Partial<schema.Booking>): Promise<schema.Booking | undefined> {
+    const [updated] = await db
+      .update(schema.bookings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.bookings.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBooking(id: number): Promise<void> {
+    await db.delete(schema.bookings).where(eq(schema.bookings.id, id));
+  }
+
+  // OPTIMIZED: Single query to check slot availability (critical path for chatbot response)
+  async checkSlotAvailability(
+    staffId: number,
+    slotDate: string,
+    startTime: string,
+    excludeBookingId?: number
+  ): Promise<{ available: boolean; existingCount: number; capacity: number }> {
+    // Get staff slot configuration for capacity
+    const today = new Date(slotDate);
+    const dayOfWeek = today.getDay();
+
+    const [slotConfig] = await db
+      .select()
+      .from(schema.bookingStaffSlots)
+      .where(
+        and(
+          eq(schema.bookingStaffSlots.staffId, staffId),
+          eq(schema.bookingStaffSlots.dayOfWeek, dayOfWeek),
+          eq(schema.bookingStaffSlots.isActive, true),
+          sql`${schema.bookingStaffSlots.startTime} <= ${startTime}`,
+          sql`${schema.bookingStaffSlots.endTime} > ${startTime}`
+        )
+      )
+      .limit(1);
+
+    if (!slotConfig) {
+      return { available: false, existingCount: 0, capacity: 0 };
+    }
+
+    // Count existing bookings for this slot
+    const conditions = [
+      eq(schema.bookings.staffId, staffId),
+      eq(schema.bookings.slotDate, slotDate),
+      eq(schema.bookings.startTime, startTime),
+      sql`${schema.bookings.status} NOT IN ('cancelled')`,
+    ];
+
+    if (excludeBookingId) {
+      conditions.push(sql`${schema.bookings.id} != ${excludeBookingId}`);
+    }
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookings)
+      .where(and(...conditions));
+
+    const existingCount = countResult?.count || 0;
+    const capacity = slotConfig.capacity;
+
+    return {
+      available: existingCount < capacity,
+      existingCount,
+      capacity,
+    };
+  }
+
+  // Count active bookings for a customer (for duplicate prevention)
+  async countActiveBookingsForCustomer(
+    customerPhone: string,
+    userId: number,
+    nodeId?: string
+  ): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const conditions = [
+      eq(schema.bookings.customerPhone, customerPhone),
+      eq(schema.bookings.userId, userId),
+      sql`${schema.bookings.slotDate} >= ${today}`,
+      sql`${schema.bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`,
+    ];
+
+    if (nodeId) {
+      conditions.push(eq(schema.bookings.nodeId, nodeId));
+    }
+
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookings)
+      .where(and(...conditions));
+
+    return result?.count || 0;
   }
 }
 

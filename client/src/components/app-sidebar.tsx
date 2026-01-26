@@ -16,6 +16,7 @@ import {
   User,
   ShieldCheck,
   Database,
+  Calendar,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -109,6 +110,12 @@ export function AppSidebar() {
       url: "/capture-list",
       icon: Database,
       pageKey: "captureList",
+    },
+    {
+      title: "Booking Scheduler",
+      url: "/booking-scheduler",
+      icon: Calendar,
+      pageKey: "bookingScheduler",
     },
     {
       title: "Pricing",

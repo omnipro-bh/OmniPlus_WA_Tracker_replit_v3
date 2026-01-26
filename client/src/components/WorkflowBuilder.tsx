@@ -64,6 +64,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  CalendarCheck,
+  CalendarSearch,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -151,6 +153,22 @@ export const nodeTypes = {
       icon: Network,
       cost: 0,
       description: 'Call external APIs with custom HTTP requests'
+    },
+  ],
+  BOOKING: [
+    {
+      id: 'booking.book_appointment',
+      label: 'Book Appointment',
+      icon: CalendarCheck,
+      cost: 0,
+      description: 'Collect booking details and create appointment'
+    },
+    {
+      id: 'booking.check_bookings',
+      label: 'Check Bookings',
+      icon: CalendarSearch,
+      cost: 0,
+      description: 'Check customer bookings and availability'
     },
   ],
 };
@@ -606,7 +624,7 @@ export default function WorkflowBuilder({
   // Node Palette Content (reusable)
   const renderNodePalette = () => (
     <Tabs defaultValue="message" className="flex flex-col h-full">
-      <TabsList className="grid w-full grid-cols-4 flex-shrink-0 h-auto p-0.5">
+      <TabsList className="grid w-full grid-cols-5 flex-shrink-0 h-auto p-0.5">
         <TabsTrigger value="message" data-testid="tab-message" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
           <span className="truncate">MSG</span>
         </TabsTrigger>
@@ -618,6 +636,9 @@ export default function WorkflowBuilder({
         </TabsTrigger>
         <TabsTrigger value="action" data-testid="tab-action" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
           <span className="truncate">ACT</span>
+        </TabsTrigger>
+        <TabsTrigger value="booking" data-testid="tab-booking" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">BOOK</span>
         </TabsTrigger>
       </TabsList>
       
@@ -729,6 +750,37 @@ export default function WorkflowBuilder({
               >
                 <div className="flex items-start gap-2">
                   <node.icon className="h-5 w-5 text-cyan-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{node.label}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {node.description}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {node.cost} tokens
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="booking" className="flex-1 min-h-0 mt-4">
+        <ScrollArea className="h-full">
+          <div className="space-y-2 pr-4">
+            {nodeTypes.BOOKING.map((node) => (
+              <div
+                key={node.id}
+                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                draggable
+                onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                onClick={() => addNodeToCanvas(node.id, node.label)}
+                data-testid={`node-type-${node.id}`}
+                title={`Click to add or drag to canvas`}
+              >
+                <div className="flex items-start gap-2">
+                  <node.icon className="h-5 w-5 text-emerald-500 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm">{node.label}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 truncate">

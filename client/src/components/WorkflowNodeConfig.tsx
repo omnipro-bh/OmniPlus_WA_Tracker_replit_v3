@@ -2193,6 +2193,211 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     );
   }
 
+  // Book Appointment Node Configuration
+  if (nodeType === 'booking.book_appointment') {
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="bookingLabel">Booking Label *</Label>
+          <Input
+            id="bookingLabel"
+            placeholder="e.g., Appointment, Consultation"
+            value={config.bookingLabel || ''}
+            onChange={(e) => updateConfig('bookingLabel', e.target.value)}
+            data-testid="input-booking-label"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Unique label to identify this booking scheduler in the workflow
+          </p>
+        </div>
+
+        <Separator />
+
+        <div>
+          <Label htmlFor="promptMessage">Prompt Message *</Label>
+          <Textarea
+            id="promptMessage"
+            placeholder="Please select a department to book your appointment..."
+            value={config.promptMessage || ''}
+            onChange={(e) => updateConfig('promptMessage', e.target.value)}
+            data-testid="input-prompt-message"
+            rows={3}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Message sent to user to start booking process
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="successMessage">Success Message *</Label>
+          <Textarea
+            id="successMessage"
+            placeholder="Your appointment has been booked! Date: {{date}}, Time: {{time}}"
+            value={config.successMessage || ''}
+            onChange={(e) => updateConfig('successMessage', e.target.value)}
+            data-testid="input-success-message"
+            rows={3}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="noSlotsMessage">No Slots Message</Label>
+          <Textarea
+            id="noSlotsMessage"
+            placeholder="Sorry, no available slots at this time. Please try again later."
+            value={config.noSlotsMessage || ''}
+            onChange={(e) => updateConfig('noSlotsMessage', e.target.value)}
+            data-testid="input-no-slots-message"
+            rows={2}
+          />
+        </div>
+
+        <Separator />
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="requireName">Require Customer Name</Label>
+            <p className="text-xs text-muted-foreground">Ask for name before booking</p>
+          </div>
+          <Switch
+            id="requireName"
+            checked={config.requireName || false}
+            onCheckedChange={(checked) => updateConfig('requireName', checked)}
+            data-testid="switch-require-name"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="allowMultiple">Allow Multiple Bookings</Label>
+            <p className="text-xs text-muted-foreground">Allow same customer to book multiple appointments</p>
+          </div>
+          <Switch
+            id="allowMultiple"
+            checked={config.allowMultiple || false}
+            onCheckedChange={(checked) => updateConfig('allowMultiple', checked)}
+            data-testid="switch-allow-multiple"
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="maxAdvanceDays">Max Advance Days</Label>
+          <Input
+            id="maxAdvanceDays"
+            type="number"
+            min={1}
+            max={365}
+            placeholder="30"
+            value={config.maxAdvanceDays || 30}
+            onChange={(e) => updateConfig('maxAdvanceDays', parseInt(e.target.value) || 30)}
+            data-testid="input-max-advance-days"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Maximum number of days in advance to allow booking
+          </p>
+        </div>
+
+        <p className="text-xs text-amber-600 mt-4">
+          Note: Configure departments, staff, and time slots in the Booking Scheduler page. The chatbot will dynamically show available options.
+        </p>
+      </div>
+    );
+  }
+
+  // Check Bookings Node Configuration
+  if (nodeType === 'booking.check_bookings') {
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="checkType">Check Type *</Label>
+          <Select
+            value={config.checkType || 'my_bookings'}
+            onValueChange={(value) => updateConfig('checkType', value)}
+          >
+            <SelectTrigger id="checkType" data-testid="select-check-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="my_bookings">My Bookings</SelectItem>
+              <SelectItem value="cancel_booking">Cancel Booking</SelectItem>
+              <SelectItem value="reschedule">Reschedule Booking</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Separator />
+
+        <div>
+          <Label htmlFor="noBookingsMessage">No Bookings Message</Label>
+          <Textarea
+            id="noBookingsMessage"
+            placeholder="You don't have any upcoming appointments."
+            value={config.noBookingsMessage || ''}
+            onChange={(e) => updateConfig('noBookingsMessage', e.target.value)}
+            data-testid="input-no-bookings-message"
+            rows={2}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="bookingListFormat">Booking List Format</Label>
+          <Textarea
+            id="bookingListFormat"
+            placeholder="📅 {{date}} at {{time}}\n📍 {{department}} - {{staff}}\nStatus: {{status}}"
+            value={config.bookingListFormat || ''}
+            onChange={(e) => updateConfig('bookingListFormat', e.target.value)}
+            data-testid="input-booking-list-format"
+            rows={3}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Format for each booking. Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{status}}`}
+          </p>
+        </div>
+
+        {config.checkType === 'cancel_booking' && (
+          <>
+            <Separator />
+            <div>
+              <Label htmlFor="cancelConfirmMessage">Cancel Confirmation Message</Label>
+              <Textarea
+                id="cancelConfirmMessage"
+                placeholder="Your appointment on {{date}} at {{time}} has been cancelled."
+                value={config.cancelConfirmMessage || ''}
+                onChange={(e) => updateConfig('cancelConfirmMessage', e.target.value)}
+                data-testid="input-cancel-confirm-message"
+                rows={2}
+              />
+            </div>
+          </>
+        )}
+
+        {config.checkType === 'reschedule' && (
+          <>
+            <Separator />
+            <div>
+              <Label htmlFor="rescheduleSuccessMessage">Reschedule Success Message</Label>
+              <Textarea
+                id="rescheduleSuccessMessage"
+                placeholder="Your appointment has been rescheduled to {{date}} at {{time}}."
+                value={config.rescheduleSuccessMessage || ''}
+                onChange={(e) => updateConfig('rescheduleSuccessMessage', e.target.value)}
+                data-testid="input-reschedule-success-message"
+                rows={2}
+              />
+            </div>
+          </>
+        )}
+
+        <p className="text-xs text-amber-600 mt-4">
+          Note: Customer is identified by their WhatsApp phone number.
+        </p>
+      </div>
+    );
+  }
+
   // Default fallback
   return (
     <div className="space-y-4">

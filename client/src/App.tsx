@@ -23,6 +23,7 @@ import Send from "@/pages/send";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import CaptureList from "@/pages/capture-list";
+import BookingScheduler from "@/pages/booking-scheduler";
 import Phonebooks from "@/pages/phonebooks";
 import PhonebookDetail from "@/pages/phonebook-detail";
 import Subscribers from "@/pages/subscribers";
@@ -95,6 +96,13 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="captureList">
             <CaptureList />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/booking-scheduler">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bookingScheduler">
+            <BookingScheduler />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>
