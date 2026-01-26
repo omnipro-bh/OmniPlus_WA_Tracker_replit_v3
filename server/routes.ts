@@ -6358,29 +6358,27 @@ export function registerRoutes(app: Express) {
                 return res.status(200).json({ success: true });
               }
               
-              // Send staff selection list
+              // Send staff selection list (using correct WHAPI format)
               const listPayload = {
                 to: phone,
-                title: 'Select Staff',
-                body: 'Please select a staff member:',
-                footer: 'Select an option',
+                type: 'list',
+                body: { text: 'Please select a staff member:' },
                 action: {
-                  button: 'Select Staff',
-                  sections: [{
-                    title: 'Staff',
-                    rows: staff.map((s: any) => ({
-                      id: `booking_staff_${s.id}`,
-                      title: s.name,
-                      description: s.title || '',
-                    })),
-                  }],
+                  list: {
+                    sections: [{
+                      title: 'Staff',
+                      rows: staff.map((s: any) => ({
+                        id: `booking_staff_${s.id}`,
+                        title: s.name,
+                        description: s.specialty || '',
+                      })),
+                    }],
+                    label: 'Select Staff',
+                  },
                 },
               };
               
-              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
-                type: 'list',
-                ...listPayload,
-              });
+              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
               
               // Update booking state
               await db.update(conversationStates).set({
@@ -6488,22 +6486,20 @@ export function registerRoutes(app: Express) {
               
               const listPayload = {
                 to: phone,
-                title: 'Select Time',
-                body: 'Please select an available time slot:',
-                footer: 'Select an option',
+                type: 'list',
+                body: { text: 'Please select an available time slot:' },
                 action: {
-                  button: 'Select Time',
-                  sections: [{
-                    title: 'Available Times',
-                    rows: slotRows,
-                  }],
+                  list: {
+                    sections: [{
+                      title: 'Available Times',
+                      rows: slotRows,
+                    }],
+                    label: 'Select Time',
+                  },
                 },
               };
               
-              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
-                type: 'list',
-                ...listPayload,
-              });
+              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
               
               // Update booking state
               await db.update(conversationStates).set({
@@ -7374,29 +7370,27 @@ export function registerRoutes(app: Express) {
                     if (activeChannel?.whapiChannelToken) {
                       const promptMessage = config.promptMessage || 'Please select a department for your appointment:';
                       
-                      // Build list message with departments
+                      // Build list message with departments (using correct WHAPI format)
                       const listPayload = {
                         to: phone,
-                        title: 'Book Appointment',
-                        body: promptMessage,
-                        footer: 'Select an option',
+                        type: 'list',
+                        body: { text: promptMessage },
                         action: {
-                          button: 'Select Department',
-                          sections: [{
-                            title: 'Departments',
-                            rows: departments.map((dept: any) => ({
-                              id: `booking_dept_${dept.id}`,
-                              title: dept.name,
-                              description: dept.description || '',
-                            })),
-                          }],
+                          list: {
+                            sections: [{
+                              title: 'Departments',
+                              rows: departments.map((dept: any) => ({
+                                id: `booking_dept_${dept.id}`,
+                                title: dept.name,
+                                description: dept.description || '',
+                              })),
+                            }],
+                            label: 'Select Department',
+                          },
                         },
                       };
                       
-                      await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, {
-                        type: 'list',
-                        ...listPayload,
-                      });
+                      await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
                       
                       // Save booking state
                       const bookingState = {
