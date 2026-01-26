@@ -83,12 +83,14 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
         backgroundColor: (data.type as string)?.includes('Trigger') 
           ? 'hsl(var(--primary))' 
           : isBookingNode
-            ? 'hsl(160 84% 10%)' // Dark emerald background
+            ? 'hsl(185 60% 45%)' // Lighter cyan/teal for booking nodes
             : 'hsl(var(--card))',
         color: (data.type as string)?.includes('Trigger') 
           ? 'hsl(var(--primary-foreground))' 
-          : 'hsl(var(--card-foreground))',
-        borderColor: isBookingNode && selected ? 'hsl(158 64% 52%)' : undefined,
+          : isBookingNode
+            ? 'hsl(0 0% 100%)' // White text for booking nodes
+            : 'hsl(var(--card-foreground))',
+        borderColor: isBookingNode && selected ? 'hsl(185 70% 55%)' : undefined,
       }}
     >
       {/* Entry node badge - top center */}

@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download } from "lucide-react";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -231,6 +231,49 @@ export default function BookingScheduler() {
       case 'no_show': return 'destructive';
       default: return 'secondary';
     }
+  };
+
+  const exportBookingsToExcel = () => {
+    if (!bookingsData?.bookings || bookingsData.bookings.length === 0) return;
+    
+    const headers = ['Date', 'Start Time', 'End Time', 'Customer Name', 'Customer Phone', 'Booking Label', 'Status', 'Created At'];
+    const rows = bookingsData.bookings.map((booking) => [
+      booking.slotDate,
+      booking.startTime,
+      booking.endTime,
+      booking.customerName || 'Unknown',
+      booking.customerPhone,
+      booking.bookingLabel || '',
+      booking.status,
+      booking.createdAt ? format(new Date(booking.createdAt), 'yyyy-MM-dd HH:mm') : '',
+    ]);
+    
+    // Create CSV content with proper escaping
+    const escapeCell = (cell: string) => {
+      if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+        return `"${cell.replace(/"/g, '""')}"`;
+      }
+      return cell;
+    };
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => escapeCell(String(cell))).join(','))
+    ].join('\n');
+    
+    // Add BOM for Excel to recognize UTF-8
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bookings_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast({ title: "Export Complete", description: "Bookings exported successfully" });
   };
 
   if (loadingDepts) {
@@ -655,9 +698,21 @@ export default function BookingScheduler() {
 
         <TabsContent value="bookings" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>All Bookings</CardTitle>
-              <CardDescription>View and manage customer appointments</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <div>
+                <CardTitle>All Bookings</CardTitle>
+                <CardDescription>View and manage customer appointments</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportBookingsToExcel()}
+                disabled={!bookingsData?.bookings || bookingsData.bookings.length === 0}
+                data-testid="button-export-bookings"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
             </CardHeader>
             <CardContent>
               {loadingBookings ? (
