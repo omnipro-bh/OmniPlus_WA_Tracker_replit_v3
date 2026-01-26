@@ -23,6 +23,7 @@ The platform utilizes a modern stack consisting of a React TypeScript frontend (
 -   **Pricing & Billing:** Dynamic pricing page with duration toggles, supporting PayPal, offline payments, and free trials. Admins control dual pricing (display vs. PayPal), discounts, and billing periods. Features an Admin Balance Pool for managing days and automated PayPal integration.
 -   **Admin Dashboard & Settings:** Comprehensive administration panel for managing users, billing, payments, channels, dynamic content, and global configurations (authentication, bulk sending speed, page access, theme, chat widget, HTTP Request allowlist). Includes plan-based page access control.
 -   **Data Capture/Collection:** Enables tracking user interactions within workflow sequences using "Start Capture" and "End Capture" nodes, recording button clicks for data collection and storage.
+-   **Booking Scheduler:** Complete appointment booking system with departments, staff members, recurring time slots (dayOfWeek-based), and customer bookings. Includes "Book Appointment" and "Check Bookings" workflow nodes for conversational booking flows via WhatsApp with multi-step department→staff→slot selection, availability validation, and configurable booking limits per customer.
 
 **Design System:**
 -   **Aesthetics:** Dark mode with vibrant accents (blue, green, amber, red, cyan).
@@ -31,7 +32,7 @@ The platform utilizes a modern stack consisting of a React TypeScript frontend (
 -   **Responsiveness:** Mobile-first design approach with a collapsible sidebar.
 
 **Data Model:**
-Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows, Phonebooks, Subscribers, ConversationStates, SentMessages, CaptureSequences, and CapturedData.
+Key entities include Users, Plans, Subscriptions, Channels, Templates, Workflows, Phonebooks, Subscribers, ConversationStates, SentMessages, CaptureSequences, CapturedData, BookingDepartments, BookingStaff, BookingStaffSlots, and Bookings.
 
 **Technical Implementations:**
 -   **Media Handling:** Local media uploads are saved locally, sent as inline base64, and cleaned up automatically. Template media URLs are resolved to base64.
