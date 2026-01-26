@@ -320,7 +320,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
               <div className="relative flex items-center justify-end gap-2 h-6">
                 <Badge 
                   variant="secondary" 
-                  className="text-xs truncate max-w-[140px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                  className="text-xs truncate max-w-[140px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/20"
                   title="Appointment booked successfully"
                 >
                   Booked
@@ -329,7 +329,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
                   type="source"
                   position={Position.Right}
                   id="booked"
-                  className="!w-3 !h-3 !bg-emerald-500 !border-2 !border-white dark:!border-gray-800"
+                  className="!w-3 !h-3 !bg-cyan-500 !border-2 !border-white dark:!border-gray-800"
                   style={{ 
                     position: 'absolute',
                     right: '-12px',

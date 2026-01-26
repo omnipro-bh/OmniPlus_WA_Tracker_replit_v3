@@ -262,6 +262,7 @@ function DefaultPageAccessSettings() {
     phonebooks: false,
     subscribers: false,
     safetyMeter: false,
+    bookingScheduler: false,
   });
 
   const { data: settings, isLoading } = useQuery<{pageAccess: typeof pageAccess}>({
@@ -325,6 +326,7 @@ function DefaultPageAccessSettings() {
     { key: "settings", label: "Settings", description: "User account settings" },
     { key: "balances", label: "Balances", description: "View balance information" },
     { key: "whapiSettings", label: "WHAPI Settings", description: "WHAPI configuration" },
+    { key: "bookingScheduler", label: "Booking Scheduler", description: "Appointment booking system" },
   ];
 
   return (
@@ -1967,6 +1969,7 @@ export default function Admin() {
     chatbotsLimit: "",
     phonebookLimit: "",
     captureSequenceLimit: "",
+    bookingSchedulerLimit: "",
     pageAccess: {} as Record<string, boolean>,
     autoExtendEnabled: false,
     skipFriday: false,
@@ -2008,11 +2011,13 @@ export default function Admin() {
     enableWorkflows: true,
     enablePhonebooks: true,
     enableCaptureSequences: true,
+    enableBookingScheduler: true,
     dailyMessagesLimit: "1000",
     bulkMessagesLimit: "5000",
     channelsLimit: "5",
     chatbotsLimit: "10",
     captureSequenceLimit: "10",
+    bookingSchedulerLimit: "10",
     phonebookLimit: "10",
     maxImageSizeMB: "5",
     maxVideoSizeMB: "16",
@@ -2029,6 +2034,7 @@ export default function Admin() {
       logs: false,
       bulkLogs: false,
       captureList: false,
+      bookingScheduler: false,
       phonebooks: false,
       subscribers: false,
       settings: false,
@@ -2448,11 +2454,13 @@ export default function Admin() {
       enableWorkflows: true,
       enablePhonebooks: true,
       enableCaptureSequences: true,
+      enableBookingScheduler: true,
       dailyMessagesLimit: "",
       bulkMessagesLimit: "",
       channelsLimit: "",
       chatbotsLimit: "",
       captureSequenceLimit: "",
+      bookingSchedulerLimit: "",
       phonebookLimit: "",
       maxImageSizeMB: "5",
       maxVideoSizeMB: "16",
@@ -2469,6 +2477,7 @@ export default function Admin() {
         logs: false,
         bulkLogs: false,
         captureList: false,
+        bookingScheduler: false,
         phonebooks: false,
         subscribers: false,
         settings: false,
@@ -2514,6 +2523,7 @@ export default function Admin() {
     const enableWorkflows = plan.chatbotsLimit !== -1;
     const enablePhonebooks = (plan as any).phonebookLimit !== -1;
     const enableCaptureSequences = (plan as any).captureSequenceLimit !== -1;
+    const enableBookingScheduler = (plan as any).bookingSchedulerLimit !== -1;
     
     // Extract enabled billing periods from plan or use defaults
     const enabledBillingPeriods = Array.isArray((plan as any).enabledBillingPeriods)
@@ -2547,11 +2557,13 @@ export default function Admin() {
       enableWorkflows,
       enablePhonebooks,
       enableCaptureSequences,
+      enableBookingScheduler,
       dailyMessagesLimit: String(plan.dailyMessagesLimit),
       bulkMessagesLimit: String(plan.bulkMessagesLimit),
       channelsLimit: String(plan.channelsLimit),
       chatbotsLimit: String(plan.chatbotsLimit || ""),
       captureSequenceLimit: String((plan as any).captureSequenceLimit || ""),
+      bookingSchedulerLimit: String((plan as any).bookingSchedulerLimit || ""),
       phonebookLimit: String((plan as any).phonebookLimit || ""),
       maxImageSizeMB: String((plan as any).maxImageSizeMB ?? 5),
       maxVideoSizeMB: String((plan as any).maxVideoSizeMB ?? 16),
@@ -2584,6 +2596,7 @@ export default function Admin() {
     const chatbotsLimit = planForm.enableWorkflows ? parseInt(planForm.chatbotsLimit) : 0;
     const phonebookLimit = planForm.enablePhonebooks ? parseInt(planForm.phonebookLimit) : 0;
     const captureSequenceLimit = planForm.enableCaptureSequences ? parseInt(planForm.captureSequenceLimit) : 0;
+    const bookingSchedulerLimit = planForm.enableBookingScheduler ? parseInt(planForm.bookingSchedulerLimit) : 0;
 
     // Check for invalid numeric values
     if (!planForm.name.trim()) {
@@ -2717,6 +2730,7 @@ export default function Admin() {
       chatbotsLimit,
       phonebookLimit,
       captureSequenceLimit,
+      bookingSchedulerLimit,
       maxImageSizeMB,
       maxVideoSizeMB,
       maxDocumentSizeMB,
@@ -2773,6 +2787,7 @@ export default function Admin() {
       chatbotsLimit: subscription?.chatbotsLimit ? String(subscription.chatbotsLimit) : "",
       phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
       captureSequenceLimit: subscription?.captureSequenceLimit ? String(subscription.captureSequenceLimit) : "",
+      bookingSchedulerLimit: subscription?.bookingSchedulerLimit ? String(subscription.bookingSchedulerLimit) : "",
       pageAccess: completePageAccess,
       autoExtendEnabled: subscription?.autoExtendEnabled || false,
       skipFriday: subscription?.skipFriday || false,
@@ -2792,6 +2807,7 @@ export default function Admin() {
       chatbotsLimit: userOverrides.chatbotsLimit ? parseInt(userOverrides.chatbotsLimit) : null,
       phonebookLimit: userOverrides.phonebookLimit ? parseInt(userOverrides.phonebookLimit) : null,
       captureSequenceLimit: userOverrides.captureSequenceLimit ? parseInt(userOverrides.captureSequenceLimit) : null,
+      bookingSchedulerLimit: userOverrides.bookingSchedulerLimit ? parseInt(userOverrides.bookingSchedulerLimit) : null,
       pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
       autoExtendEnabled: userOverrides.autoExtendEnabled,
       skipFriday: userOverrides.skipFriday,
@@ -4356,6 +4372,31 @@ export default function Admin() {
                     />
                   )}
                 </div>
+
+                {/* Booking Scheduler Limit */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-booking-scheduler"
+                      checked={planForm.enableBookingScheduler}
+                      onCheckedChange={(checked) => setPlanForm({ ...planForm, enableBookingScheduler: checked as boolean })}
+                      data-testid="checkbox-enable-booking-scheduler"
+                    />
+                    <Label htmlFor="enable-booking-scheduler" className="cursor-pointer">
+                      Booking Scheduler Limit
+                    </Label>
+                  </div>
+                  {planForm.enableBookingScheduler && (
+                    <Input
+                      id="plan-booking-scheduler"
+                      type="number"
+                      placeholder="10"
+                      value={planForm.bookingSchedulerLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, bookingSchedulerLimit: e.target.value })}
+                      data-testid="input-plan-booking-scheduler"
+                    />
+                  )}
+                </div>
               </div>
               
               <h3 className="text-sm font-semibold mt-4">File Size Limits (MB)</h3>
@@ -4622,6 +4663,22 @@ export default function Admin() {
                   />
                   <Label htmlFor="page-settings" className="text-sm font-normal cursor-pointer">
                     Settings
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="page-bookingscheduler"
+                    checked={planForm.pageAccess.bookingScheduler}
+                    onCheckedChange={(checked) =>
+                      setPlanForm({
+                        ...planForm,
+                        pageAccess: { ...planForm.pageAccess, bookingScheduler: !!checked },
+                      })
+                    }
+                    data-testid="checkbox-page-bookingscheduler"
+                  />
+                  <Label htmlFor="page-bookingscheduler" className="text-sm font-normal cursor-pointer">
+                    Booking Scheduler
                   </Label>
                 </div>
               </div>
@@ -4932,6 +4989,17 @@ export default function Admin() {
                       data-testid="input-override-capture-sequences"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="override-booking-scheduler">Booking Scheduler Limit</Label>
+                    <Input
+                      id="override-booking-scheduler"
+                      type="number"
+                      placeholder={effectiveLimits?.planDefaults?.bookingSchedulerLimit || "Plan default"}
+                      value={userOverrides.bookingSchedulerLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, bookingSchedulerLimit: e.target.value })}
+                      data-testid="input-override-booking-scheduler"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -4954,6 +5022,7 @@ export default function Admin() {
                     { key: "logs", label: "Workflow Logs" },
                     { key: "bulkLogs", label: "Bulk Logs" },
                     { key: "captureList", label: "Data Capture" },
+                    { key: "bookingScheduler", label: "Booking Scheduler" },
                     { key: "phonebooks", label: "Phonebooks" },
                     { key: "subscribers", label: "Subscribers" },
                     { key: "settings", label: "Settings" },

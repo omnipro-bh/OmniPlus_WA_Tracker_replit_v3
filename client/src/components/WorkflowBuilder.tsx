@@ -1,4 +1,5 @@
 import { useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import { useAuth } from '@/lib/auth-context';
 import {
   ReactFlow,
   MiniMap,
@@ -229,6 +230,19 @@ export default function WorkflowBuilder({
   onToggleActive,
   workflowName = 'Untitled Workflow',
 }: WorkflowBuilderProps) {
+  const { user } = useAuth();
+  
+  // Check if user has access to booking scheduler
+  const hasBookingAccess = useMemo(() => {
+    if (!user) return false;
+    // Admins always have access (unless impersonating)
+    const isImpersonating = (user as any)?.impersonation?.isImpersonating;
+    if (user.role === 'admin' && !isImpersonating) return true;
+    // Check effective page access
+    const effectivePageAccess = (user as any)?.effectivePageAccess || {};
+    return !!effectivePageAccess.bookingScheduler;
+  }, [user]);
+  
   // Convert all nodes to use custom type for multi-handle support
   const convertedInitialNodes = initialNodes.map(node => ({
     ...node,
@@ -637,9 +651,11 @@ export default function WorkflowBuilder({
         <TabsTrigger value="action" data-testid="tab-action" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
           <span className="truncate">ACT</span>
         </TabsTrigger>
-        <TabsTrigger value="booking" data-testid="tab-booking" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">BOOK</span>
-        </TabsTrigger>
+        {hasBookingAccess && (
+          <TabsTrigger value="booking" data-testid="tab-booking" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+            <span className="truncate">BOOK</span>
+          </TabsTrigger>
+        )}
       </TabsList>
       
       <TabsContent value="message" className="flex-1 min-h-0 mt-4">
@@ -766,36 +782,38 @@ export default function WorkflowBuilder({
         </ScrollArea>
       </TabsContent>
 
-      <TabsContent value="booking" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.BOOKING.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
+      {hasBookingAccess && (
+        <TabsContent value="booking" className="flex-1 min-h-0 mt-4">
+          <ScrollArea className="h-full">
+            <div className="space-y-2 pr-4">
+              {nodeTypes.BOOKING.map((node) => (
+                <div
+                  key={node.id}
+                  className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                  onClick={() => addNodeToCanvas(node.id, node.label)}
+                  data-testid={`node-type-${node.id}`}
+                  title={`Click to add or drag to canvas`}
+                >
+                  <div className="flex items-start gap-2">
+                    <node.icon className="h-5 w-5 text-cyan-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{node.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {node.description}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {node.cost} tokens
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
+              ))}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      )}
     </Tabs>
   );
 
