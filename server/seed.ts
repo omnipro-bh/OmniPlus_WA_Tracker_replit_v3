@@ -170,5 +170,172 @@ You may cancel your subscription at any time through your account settings. Acce
     console.log("✓ Terms & Conditions documents created");
   }
 
+  // Create sample hospital booking data for testing
+  const admin = await storage.getUserByEmail("admin@omniplus.com");
+  if (admin) {
+    const existingDepts = await storage.getBookingDepartmentsForUser(admin.id);
+    if (existingDepts.length === 0) {
+      // Create hospital departments
+      const generalDept = await storage.createBookingDepartment({
+        userId: admin.id,
+        name: "General Medicine",
+        description: "General health checkups and consultations",
+        isActive: true,
+      });
+      
+      const cardioDept = await storage.createBookingDepartment({
+        userId: admin.id,
+        name: "Cardiology",
+        description: "Heart and cardiovascular health",
+        isActive: true,
+      });
+      
+      // Create staff members
+      const drSmith = await storage.createBookingStaff({
+        userId: admin.id,
+        departmentId: generalDept.id,
+        name: "Dr. Sarah Smith",
+        specialty: "General Practitioner",
+        isActive: true,
+      });
+      
+      const drJones = await storage.createBookingStaff({
+        userId: admin.id,
+        departmentId: cardioDept.id,
+        name: "Dr. Michael Jones",
+        specialty: "Cardiologist",
+        isActive: true,
+      });
+      
+      // Create time slots (Monday to Friday, 9 AM - 5 PM)
+      const timeSlots = [
+        { startTime: "09:00", endTime: "10:00" },
+        { startTime: "10:00", endTime: "11:00" },
+        { startTime: "11:00", endTime: "12:00" },
+        { startTime: "14:00", endTime: "15:00" },
+        { startTime: "15:00", endTime: "16:00" },
+        { startTime: "16:00", endTime: "17:00" },
+      ];
+      
+      // Add slots for Dr. Smith (Mon-Fri)
+      for (let day = 1; day <= 5; day++) {
+        for (const slot of timeSlots) {
+          await storage.createBookingStaffSlot({
+            staffId: drSmith.id,
+            dayOfWeek: day,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            maxBookings: 2,
+            isActive: true,
+          });
+        }
+      }
+      
+      // Add slots for Dr. Jones (Mon, Wed, Fri)
+      for (const day of [1, 3, 5]) {
+        for (const slot of timeSlots.slice(0, 3)) {
+          await storage.createBookingStaffSlot({
+            staffId: drJones.id,
+            dayOfWeek: day,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            maxBookings: 1,
+            isActive: true,
+          });
+        }
+      }
+      
+      console.log("✓ Hospital booking departments, staff, and slots created");
+      
+      // Create a sample booking workflow
+      const workflowDefinition = {
+        nodes: [
+          {
+            id: "entry_1",
+            type: "entry",
+            position: { x: 250, y: 50 },
+            data: {
+              label: "Book Appointment",
+              type: "entry",
+              config: { keyword: "book" }
+            }
+          },
+          {
+            id: "message_1",
+            type: "message",
+            position: { x: 250, y: 150 },
+            data: {
+              label: "Welcome Message",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "Welcome to City Hospital! 🏥\n\nI'll help you book an appointment with one of our specialists."
+              }
+            }
+          },
+          {
+            id: "booking_1",
+            type: "booking.book_appointment",
+            position: { x: 250, y: 280 },
+            data: {
+              label: "Book Appointment",
+              type: "booking.book_appointment",
+              config: {
+                promptMessage: "Please select a department to book your appointment:",
+                successMessage: "Great! Your appointment is confirmed for {{date}} at {{time}} with {{staff}} in {{department}}.",
+                noSlotsMessage: "Sorry, no available slots at the moment. Please try again later.",
+                allowMultiple: false,
+                maxAdvanceDays: 14,
+                bookingLabel: "Hospital Appointment"
+              }
+            }
+          },
+          {
+            id: "success_msg",
+            type: "message",
+            position: { x: 100, y: 450 },
+            data: {
+              label: "Booking Confirmed",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "Thank you for booking with City Hospital! We look forward to seeing you.\n\nPlease arrive 15 minutes before your appointment time."
+              }
+            }
+          },
+          {
+            id: "no_slots_msg",
+            type: "message",
+            position: { x: 400, y: 450 },
+            data: {
+              label: "No Slots Available",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "We apologize for the inconvenience. Please try booking again later or call us at (555) 123-4567."
+              }
+            }
+          }
+        ],
+        edges: [
+          { id: "e1", source: "entry_1", target: "message_1", sourceHandle: "default", targetHandle: null },
+          { id: "e2", source: "message_1", target: "booking_1", sourceHandle: "default", targetHandle: null },
+          { id: "e3", source: "booking_1", target: "success_msg", sourceHandle: "booked", targetHandle: null },
+          { id: "e4", source: "booking_1", target: "no_slots_msg", sourceHandle: "no_slots", targetHandle: null }
+        ]
+      };
+      
+      await storage.createWorkflow({
+        userId: admin.id,
+        name: "Hospital Appointment Booking",
+        definitionJson: workflowDefinition,
+        entryNodeId: "entry_1",
+        isActive: true,
+      });
+      
+      console.log("✓ Hospital booking workflow created (trigger: 'book')");
+    }
+  }
+
   console.log("Database seeded successfully!");
 }
