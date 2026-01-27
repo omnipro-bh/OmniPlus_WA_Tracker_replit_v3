@@ -2214,17 +2214,47 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         <Separator />
 
         <div>
-          <Label htmlFor="promptMessage">Prompt Message *</Label>
+          <Label htmlFor="promptMessage">Department Selection Message *</Label>
           <Textarea
             id="promptMessage"
             placeholder="Please select a department to book your appointment..."
             value={config.promptMessage || ''}
             onChange={(e) => updateConfig('promptMessage', e.target.value)}
             data-testid="input-prompt-message"
-            rows={3}
+            rows={2}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Message sent to user to start booking process
+            Message shown when asking user to select a department
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="staffPromptMessage">Staff Selection Message *</Label>
+          <Textarea
+            id="staffPromptMessage"
+            placeholder="Please select a staff member for your appointment..."
+            value={config.staffPromptMessage || ''}
+            onChange={(e) => updateConfig('staffPromptMessage', e.target.value)}
+            data-testid="input-staff-prompt-message"
+            rows={2}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Message shown when asking user to select a staff member
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="slotPromptMessage">Time Slot Selection Message *</Label>
+          <Textarea
+            id="slotPromptMessage"
+            placeholder="Please select an available time slot..."
+            value={config.slotPromptMessage || ''}
+            onChange={(e) => updateConfig('slotPromptMessage', e.target.value)}
+            data-testid="input-slot-prompt-message"
+            rows={2}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Message shown when asking user to select a time slot
           </p>
         </div>
 
@@ -2239,7 +2269,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             rows={3}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+            Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders
           </p>
         </div>
 
@@ -2269,6 +2299,23 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             data-testid="switch-require-name"
           />
         </div>
+
+        {config.requireName && (
+          <div>
+            <Label htmlFor="namePromptMessage">Name Prompt Message</Label>
+            <Textarea
+              id="namePromptMessage"
+              placeholder="Please enter your full name to complete the booking..."
+              value={config.namePromptMessage || ''}
+              onChange={(e) => updateConfig('namePromptMessage', e.target.value)}
+              data-testid="input-name-prompt-message"
+              rows={2}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Message shown when asking user to enter their name
+            </p>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <div>

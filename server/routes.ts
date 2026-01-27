@@ -6359,10 +6359,11 @@ export function registerRoutes(app: Express) {
               }
               
               // Send staff selection list (using correct WHAPI format)
+              const staffPromptMsg = bookingState.config?.staffPromptMessage || 'Please select a staff member:';
               const listPayload = {
                 to: phone,
                 type: 'list',
-                body: { text: 'Please select a staff member:' },
+                body: { text: staffPromptMsg },
                 action: {
                   list: {
                     sections: [{
@@ -6484,10 +6485,11 @@ export function registerRoutes(app: Express) {
                 description: `${slot.startTime} - ${slot.endTime}`,
               }));
               
+              const slotPromptMsg = bookingState.config?.slotPromptMessage || 'Please select an available time slot:';
               const listPayload = {
                 to: phone,
                 type: 'list',
-                body: { text: 'Please select an available time slot:' },
+                body: { text: slotPromptMsg },
                 action: {
                   list: {
                     sections: [{
@@ -6510,7 +6512,7 @@ export function registerRoutes(app: Express) {
               return res.status(200).json({ success: true });
               
             } else if (bookingState.step === 'select_slot' && buttonId.startsWith("booking_slot_")) {
-              // User selected slot - create the booking
+              // User selected slot
               // Parse ID format: booking_slot_${slotId}_${date}
               const slotParts = buttonId.replace("booking_slot_", "").split("_");
               const slotId = parseInt(slotParts[0]);
@@ -6548,7 +6550,35 @@ export function registerRoutes(app: Express) {
                 return res.status(200).json({ success: true });
               }
               
-              // Check availability and create booking
+              // If requireName is enabled, ask for customer name before creating booking
+              if (bookingState.config?.requireName) {
+                const namePrompt = bookingState.config?.namePromptMessage || 
+                  'Please enter your full name to complete the booking:';
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: namePrompt,
+                });
+                
+                // Update booking state to wait for name
+                await db.update(conversationStates).set({
+                  context: { 
+                    ...context, 
+                    bookingState: { 
+                      ...bookingState, 
+                      step: 'enter_name', 
+                      selectedSlotId: slotId,
+                      selectedSlotDate: slotDate,
+                      selectedStartTime: slot.startTime,
+                      selectedEndTime: slot.endTime,
+                    } 
+                  },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                
+                return res.status(200).json({ success: true });
+              }
+              
+              // No name required - create booking immediately
               try {
                 const booking = await storage.createBooking({
                   userId: activeWorkflow.userId,
@@ -6627,6 +6657,102 @@ export function registerRoutes(app: Express) {
       try {
         // Process based on message type
         if (messageType === "text") {
+          // Check if we're waiting for customer name in booking flow
+          const [nameCheckState] = await db
+            .select()
+            .from(conversationStates)
+            .where(and(
+              eq(conversationStates.phone, phone),
+              eq(conversationStates.workflowId, activeWorkflow.id)
+            ))
+            .limit(1);
+          
+          const nameCheckContext = (nameCheckState?.context || {}) as any;
+          const nameCheckBookingState = nameCheckContext.bookingState;
+          
+          if (nameCheckBookingState?.step === 'enter_name') {
+            // Customer is providing their name
+            const customerName = incomingMessage.text?.body?.trim() || '';
+            
+            // Get active channel for sending messages
+            const userChannelsForName = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForName = userChannelsForName.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            
+            if (!activeChannelForName?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for name step, user ${activeWorkflow.userId}`);
+              return res.status(200).json({ success: true });
+            }
+            
+            if (customerName.length < 2) {
+              // Invalid name, ask again
+              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: 'Please enter a valid name (at least 2 characters).',
+              });
+              return res.status(200).json({ success: true });
+            }
+            
+            // Create booking with the provided name
+            try {
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName: customerName,
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: 'confirmed',
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+              });
+              
+              // Get staff and department names for success message
+              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
+              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              
+              let successMessage = nameCheckBookingState.config?.successMessage || 
+                'Your appointment has been booked for {{date}} at {{time}}.';
+              successMessage = successMessage
+                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
+                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
+                .replace(/\{\{department\}\}/g, dept?.name || '')
+                .replace(/\{\{staff\}\}/g, staff?.name || '')
+                .replace(/\{\{name\}\}/g, customerName);
+              
+              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: successMessage,
+              });
+              
+              // Clear booking state and continue workflow on "booked" path
+              const definition = activeWorkflow.definitionJson as any;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
+              
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+              
+              console.log(`[Booking] Created booking ${booking.id} for ${phone} with name: ${customerName}`);
+              
+            } catch (bookingError: any) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: 'Sorry, we could not book this slot. It may no longer be available.',
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: undefined },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+            }
+            
+            return res.status(200).json({ success: true });
+          }
+          
           // First-message-of-day detection using Asia/Bahrain timezone
           const msgTimestamp = dayjs.unix(incomingMessage.timestamp || Date.now() / 1000);
           const msgTimeInBahrain = msgTimestamp.tz("Asia/Bahrain");
