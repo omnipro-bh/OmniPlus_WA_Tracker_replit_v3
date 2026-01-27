@@ -2467,7 +2467,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         </div>
 
         <div>
-          <Label htmlFor="maxAdvanceDays">Max Advance Days</Label>
+          <Label htmlFor="maxAdvanceDays">Max Slots to Show</Label>
           <Input
             id="maxAdvanceDays"
             type="number"
@@ -2479,8 +2479,21 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             data-testid="input-max-advance-days"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Maximum number of days in advance to allow booking
+            Maximum number of time slots to display
           </p>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="startToday">Include Today</Label>
+            <p className="text-xs text-muted-foreground">Show today's available slots</p>
+          </div>
+          <Switch
+            id="startToday"
+            checked={config.startToday !== false}
+            onCheckedChange={(checked) => updateConfig('startToday', checked)}
+            data-testid="switch-start-today"
+          />
         </div>
 
         <Separator />

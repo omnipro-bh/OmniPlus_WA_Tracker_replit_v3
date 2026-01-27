@@ -6455,11 +6455,15 @@ export function registerRoutes(app: Express) {
               }
               
               // Generate available date/time combinations for next N days
-              const maxDays = bookingState.config?.maxAdvanceDays || 30;
+              const maxSlots = bookingState.config?.maxAdvanceDays || 30;
+              const startToday = bookingState.config?.startToday !== false;
+              const startOffset = startToday ? 0 : 1;
               const availableDateTimes: { date: string; startTime: string; endTime: string; slotId: number }[] = [];
               
-              for (let i = 0; i < maxDays && availableDateTimes.length < 10; i++) {
+              for (let i = startOffset; availableDateTimes.length < maxSlots; i++) {
                 const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
+                // Prevent infinite loop - stop after 365 days
+                if (i > 365) break;
                 const dateStr = checkDate.format("YYYY-MM-DD");
                 const dayOfWeek = checkDate.day();
                 
