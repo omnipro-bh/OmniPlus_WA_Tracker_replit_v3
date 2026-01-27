@@ -956,6 +956,12 @@ export const bookings = pgTable("bookings", {
   // Additional Data
   metadata: jsonb("metadata"), // Extra fields collected from chatbot
   
+  // Reminder Settings (copied from workflow config at booking creation)
+  reminderEnabled: boolean("reminder_enabled").default(false),
+  reminderHoursBefore: integer("reminder_hours_before").default(24),
+  reminderMessage: text("reminder_message"),
+  reminderSent: boolean("reminder_sent").default(false),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

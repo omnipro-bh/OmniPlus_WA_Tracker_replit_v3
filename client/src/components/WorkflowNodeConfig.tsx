@@ -2389,6 +2389,57 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           </p>
         </div>
 
+        <Separator />
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="reminderEnabled">Appointment Reminder</Label>
+            <p className="text-xs text-muted-foreground">Send reminder before appointment</p>
+          </div>
+          <Switch
+            id="reminderEnabled"
+            checked={config.reminderEnabled || false}
+            onCheckedChange={(checked) => updateConfig('reminderEnabled', checked)}
+            data-testid="switch-reminder-enabled"
+          />
+        </div>
+
+        {config.reminderEnabled && (
+          <>
+            <div>
+              <Label htmlFor="reminderHoursBefore">Hours Before Appointment</Label>
+              <Input
+                id="reminderHoursBefore"
+                type="number"
+                min={1}
+                max={168}
+                placeholder="24"
+                value={config.reminderHoursBefore || 24}
+                onChange={(e) => updateConfig('reminderHoursBefore', parseInt(e.target.value) || 24)}
+                data-testid="input-reminder-hours-before"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Send reminder this many hours before the appointment (1-168)
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="reminderMessage">Reminder Message *</Label>
+              <Textarea
+                id="reminderMessage"
+                placeholder="Reminder: You have an appointment on {{date}} at {{time}} with {{staff}} in {{department}}."
+                value={config.reminderMessage || ''}
+                onChange={(e) => updateConfig('reminderMessage', e.target.value)}
+                data-testid="input-reminder-message"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders
+              </p>
+            </div>
+          </>
+        )}
+
         <p className="text-xs text-amber-600 mt-4">
           Note: Configure departments, staff, and time slots in the Booking Scheduler page. The chatbot will dynamically show available options.
         </p>
