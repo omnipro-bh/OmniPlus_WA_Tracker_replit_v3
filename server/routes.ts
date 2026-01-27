@@ -3944,7 +3944,23 @@ export function registerRoutes(app: Express) {
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
       });
-      res.json(result);
+      
+      // Enrich bookings with department and staff names
+      const enrichedBookings = await Promise.all(
+        result.bookings.map(async (booking) => {
+          const [department, staff] = await Promise.all([
+            booking.departmentId ? storage.getBookingDepartment(booking.departmentId) : null,
+            booking.staffId ? storage.getBookingStaff(booking.staffId) : null,
+          ]);
+          return {
+            ...booking,
+            departmentName: department?.name || null,
+            staffName: staff?.name || null,
+          };
+        })
+      );
+      
+      res.json({ bookings: enrichedBookings, total: result.total });
     } catch (error: any) {
       console.error("Get bookings error:", error);
       res.status(500).json({ error: "Failed to fetch bookings" });

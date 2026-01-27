@@ -779,24 +779,47 @@ export default function BookingScheduler() {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Staff</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Label</TableHead>
+                      <TableHead>Details</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {bookingsData.bookings.map((booking) => (
+                    {bookingsData.bookings.map((booking: any) => (
                       <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`}>
                         <TableCell>{booking.slotDate}</TableCell>
                         <TableCell>{booking.startTime} - {booking.endTime}</TableCell>
+                        <TableCell>{booking.departmentName || '-'}</TableCell>
+                        <TableCell>{booking.staffName || '-'}</TableCell>
                         <TableCell>
                           <div>
                             <div className="font-medium">{booking.customerName || 'Unknown'}</div>
                             <div className="text-sm text-muted-foreground">{booking.customerPhone}</div>
                           </div>
                         </TableCell>
-                        <TableCell>{booking.bookingLabel || '-'}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1 text-sm">
+                            {booking.bookingLabel && (
+                              <div className="text-muted-foreground">{booking.bookingLabel}</div>
+                            )}
+                            {booking.customField1Label && booking.customField1Value && (
+                              <div>
+                                <span className="font-medium">{booking.customField1Label}:</span>{' '}
+                                {booking.customField1Value}
+                              </div>
+                            )}
+                            {booking.customField2Label && booking.customField2Value && (
+                              <div>
+                                <span className="font-medium">{booking.customField2Label}:</span>{' '}
+                                {booking.customField2Value}
+                              </div>
+                            )}
+                            {!booking.bookingLabel && !booking.customField1Value && !booking.customField2Value && '-'}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant={getStatusBadgeVariant(booking.status)}>
                             {booking.status}
