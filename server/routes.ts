@@ -6638,6 +6638,287 @@ export function registerRoutes(app: Express) {
               return res.status(200).json({ success: true });
             }
           }
+          
+          // Handle CHECK BOOKINGS state (reschedule/cancel flows)
+          if (currentState?.context && (currentState.context as any).checkBookingsState) {
+            const context = currentState.context as any;
+            const checkBookingsState = context.checkBookingsState;
+            
+            // Get active channel for sending messages
+            const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            
+            if (!activeChannel?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for check bookings flow`);
+              return res.status(200).json({ success: true });
+            }
+            
+            // Handle RESCHEDULE booking selection
+            if (checkBookingsState.step === 'select_reschedule' && buttonId.startsWith("booking_reschedule_")) {
+              const bookingId = parseInt(buttonId.replace("booking_reschedule_", ""));
+              console.log(`[Booking] User selected booking ${bookingId} to reschedule`);
+              
+              // Get the booking to verify ownership
+              const booking = await storage.getBooking(bookingId);
+              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid booking selection for reschedule: ${bookingId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Get available slots for the same staff member
+              const staffSlots = await storage.getBookingStaffSlots(booking.staffId);
+              
+              if (staffSlots.length === 0) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, no available slots for rescheduling at this time.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Build available date-time combinations (next 7 days)
+              const availableDateTimes: { slotId: number, date: string, startTime: string, endTime: string }[] = [];
+              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+              
+              for (let i = 0; i < 7; i++) {
+                const checkDate = new Date();
+                checkDate.setDate(checkDate.getDate() + i);
+                const dayOfWeek = checkDate.getDay();
+                const dateStr = checkDate.toISOString().split('T')[0];
+                
+                // Find slots for this day
+                const daySlots = staffSlots.filter((s: any) => s.dayOfWeek === dayOfWeek);
+                
+                for (const slot of daySlots) {
+                  // Check availability (capacity not reached)
+                  const availabilityResult = await storage.checkSlotAvailability(booking.staffId, dateStr, slot.startTime);
+                  if (availabilityResult.available) {
+                    availableDateTimes.push({
+                      slotId: slot.id,
+                      date: dateStr,
+                      startTime: slot.startTime,
+                      endTime: slot.endTime,
+                    });
+                  }
+                }
+              }
+              
+              if (availableDateTimes.length === 0) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, no available slots for rescheduling in the next 7 days.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Build slot rows
+              const slotRows = availableDateTimes.slice(0, 10).map((slot) => ({
+                id: `booking_newslot_${slot.slotId}_${slot.date}`,
+                title: `${slot.date} at ${slot.startTime}`,
+                description: `${slot.startTime} - ${slot.endTime}`,
+              }));
+              
+              const slotPromptMsg = checkBookingsState.config?.rescheduleSlotMessage || 'Select a new time for your appointment:';
+              const slotButtonLabel = checkBookingsState.config?.rescheduleSlotButtonLabel || 'Select New Time';
+              
+              const listPayload = {
+                to: phone,
+                type: 'list',
+                body: { text: slotPromptMsg },
+                action: {
+                  list: {
+                    sections: [{
+                      title: 'Available Times',
+                      rows: slotRows,
+                    }],
+                    label: slotButtonLabel,
+                  },
+                },
+              };
+              
+              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+              
+              // Update state with selected booking
+              await db.update(conversationStates).set({
+                context: { 
+                  ...context, 
+                  checkBookingsState: { 
+                    ...checkBookingsState, 
+                    step: 'select_new_slot',
+                    bookingId,
+                    staffId: booking.staffId,
+                  } 
+                },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, currentState.id));
+              
+              return res.status(200).json({ success: true });
+            }
+            
+            // Handle NEW SLOT selection for reschedule
+            if (checkBookingsState.step === 'select_new_slot' && buttonId.startsWith("booking_newslot_")) {
+              const slotParts = buttonId.replace("booking_newslot_", "").split("_");
+              const slotId = parseInt(slotParts[0]);
+              const newSlotDate = slotParts.slice(1).join("_");
+              
+              console.log(`[Booking] Rescheduling booking ${checkBookingsState.bookingId} to slot ${slotId} on ${newSlotDate}`);
+              
+              // Get slot details
+              const slot = await storage.getBookingStaffSlot(slotId);
+              if (!slot || slot.staffId !== checkBookingsState.staffId) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, this slot is no longer available.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Check availability again
+              const availabilityResult = await storage.checkSlotAvailability(checkBookingsState.staffId, newSlotDate, slot.startTime, checkBookingsState.bookingId);
+              if (!availabilityResult.available) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, this slot is no longer available. Please try again.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Update the booking with new date/time
+              try {
+                await storage.updateBooking(checkBookingsState.bookingId, {
+                  slotDate: newSlotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                });
+                
+                // Get staff and department for success message
+                const staff = await storage.getBookingStaff(checkBookingsState.staffId);
+                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                
+                let successMessage = checkBookingsState.config?.rescheduleSuccessMessage || 
+                  'Your appointment has been rescheduled to {{date}} at {{time}}.';
+                successMessage = successMessage
+                  .replace(/\{\{date\}\}/g, newSlotDate)
+                  .replace(/\{\{time\}\}/g, slot.startTime)
+                  .replace(/\{\{department\}\}/g, dept?.name || '')
+                  .replace(/\{\{staff\}\}/g, staff?.name || '');
+                
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: successMessage,
+                });
+                
+                // Clear state and continue to booked path
+                const definition = activeWorkflow.definitionJson as any;
+                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, 'booked', definition.edges);
+                
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                
+                console.log(`[Booking] Rescheduled booking ${checkBookingsState.bookingId} to ${newSlotDate} at ${slot.startTime}`);
+                
+              } catch (updateError: any) {
+                console.error(`[Booking] Failed to reschedule: ${updateError.message}`);
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, we could not reschedule your appointment. Please try again.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+              }
+              
+              return res.status(200).json({ success: true });
+            }
+            
+            // Handle CANCEL booking selection
+            if (checkBookingsState.step === 'select_cancel' && buttonId.startsWith("booking_cancel_")) {
+              const bookingId = parseInt(buttonId.replace("booking_cancel_", ""));
+              console.log(`[Booking] User selected booking ${bookingId} to cancel`);
+              
+              // Get the booking to verify ownership
+              const booking = await storage.getBooking(bookingId);
+              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid booking selection for cancel: ${bookingId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              
+              // Cancel the booking (update status to cancelled)
+              try {
+                await storage.updateBooking(bookingId, { status: 'cancelled' });
+                
+                // Get staff and department for cancel message
+                const staff = await storage.getBookingStaff(booking.staffId);
+                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                
+                let cancelMessage = checkBookingsState.config?.cancelSuccessMessage || 
+                  'Your appointment on {{date}} at {{time}} has been cancelled.';
+                cancelMessage = cancelMessage
+                  .replace(/\{\{date\}\}/g, booking.slotDate)
+                  .replace(/\{\{time\}\}/g, booking.startTime)
+                  .replace(/\{\{department\}\}/g, dept?.name || '')
+                  .replace(/\{\{staff\}\}/g, staff?.name || '');
+                
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: cancelMessage,
+                });
+                
+                // Clear state and continue to booked path
+                const definition = activeWorkflow.definitionJson as any;
+                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, 'booked', definition.edges);
+                
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                
+                console.log(`[Booking] Cancelled booking ${bookingId}`);
+                
+              } catch (cancelError: any) {
+                console.error(`[Booking] Failed to cancel booking: ${cancelError.message}`);
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: 'Sorry, we could not cancel your appointment. Please try again.',
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+              }
+              
+              return res.status(200).json({ success: true });
+            }
+          }
         } catch (bookingError: any) {
           console.error(`[Booking] Error processing booking flow: ${bookingError.message}`);
         }
@@ -7554,39 +7835,142 @@ export function registerRoutes(app: Express) {
                 // Check Bookings Node - handle viewing customer bookings
                 } else if (currentNodeType === 'booking.check_bookings') {
                   const config = currentNode.data?.config || {};
+                  const checkType = config.checkType || 'my_bookings';
+                  const context = (state.context || {}) as any;
                   
-                  console.log(`[Booking] Processing check_bookings node: ${currentNodeId}`);
+                  console.log(`[Booking] Processing check_bookings node: ${currentNodeId}, type: ${checkType}`);
                   
-                  // Get customer bookings by phone
+                  // Get customer bookings by phone (only confirmed ones for reschedule/cancel)
                   const customerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
+                  const activeBookings = customerBookings.filter((b: any) => b.status === 'confirmed');
                   
                   const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
                   const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
                   
                   if (activeChannel?.whapiChannelToken) {
-                    if (customerBookings.length === 0) {
-                      const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
-                      await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                        to: phone,
-                        body: noBookingsMessage,
-                      });
-                    } else {
-                      // Format booking list
-                      const bookingListFormat = config.bookingListFormat || '📅 {{date}} at {{time}}\nStatus: {{status}}';
-                      let bookingsText = 'Your appointments:\n\n';
-                      
-                      for (const booking of customerBookings) {
-                        let formatted = bookingListFormat
-                          .replace(/\{\{date\}\}/g, booking.slotDate)
-                          .replace(/\{\{time\}\}/g, booking.startTime)
-                          .replace(/\{\{status\}\}/g, booking.status);
-                        bookingsText += formatted + '\n\n';
+                    if (checkType === 'my_bookings') {
+                      // Original behavior: show text list of bookings
+                      if (customerBookings.length === 0) {
+                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
+                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noBookingsMessage,
+                        });
+                      } else {
+                        const bookingListFormat = config.bookingListFormat || '{{date}} at {{time}}\n{{department}} - {{staff}}\nStatus: {{status}}';
+                        let bookingsText = 'Your appointments:\n\n';
+                        
+                        for (const booking of customerBookings) {
+                          // Get department and staff names
+                          const staff = await storage.getBookingStaff(booking.staffId);
+                          const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                          
+                          let formatted = bookingListFormat
+                            .replace(/\{\{date\}\}/g, booking.slotDate)
+                            .replace(/\{\{time\}\}/g, booking.startTime)
+                            .replace(/\{\{department\}\}/g, dept?.name || '')
+                            .replace(/\{\{staff\}\}/g, staff?.name || '')
+                            .replace(/\{\{status\}\}/g, booking.status);
+                          bookingsText += formatted + '\n\n';
+                        }
+                        
+                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: bookingsText.trim(),
+                        });
                       }
                       
-                      await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                        to: phone,
-                        body: bookingsText.trim(),
-                      });
+                      // Continue to next node
+                      const nextNodeId = getNextNodeByHandle(currentNodeId, 'booked', definition.edges);
+                      if (!nextNodeId) break;
+                      const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                      if (!nextNode) break;
+                      currentNode = nextNode;
+                      currentNodeId = nextNodeId;
+                      
+                    } else if (checkType === 'reschedule' || checkType === 'cancel_booking') {
+                      // Interactive mode: show list of bookings to select
+                      if (activeBookings.length === 0) {
+                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
+                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noBookingsMessage,
+                        });
+                        
+                        // Continue to next node (no_slots path)
+                        const nextNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
+                        if (!nextNodeId) break;
+                        const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                        if (!nextNode) break;
+                        currentNode = nextNode;
+                        currentNodeId = nextNodeId;
+                      } else {
+                        // Build interactive list of bookings
+                        const actionType = checkType === 'reschedule' ? 'reschedule' : 'cancel';
+                        const promptMessage = checkType === 'reschedule' 
+                          ? (config.reschedulePromptMessage || 'Select the appointment you want to reschedule:')
+                          : (config.cancelPromptMessage || 'Select the appointment you want to cancel:');
+                        const buttonLabel = checkType === 'reschedule'
+                          ? (config.rescheduleButtonLabel || 'Select Appointment')
+                          : (config.cancelButtonLabel || 'Select Appointment');
+                        
+                        // Build rows with booking info
+                        const bookingRows = [];
+                        for (const booking of activeBookings) {
+                          const staff = await storage.getBookingStaff(booking.staffId);
+                          const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                          bookingRows.push({
+                            id: `booking_${actionType}_${booking.id}`,
+                            title: `${booking.slotDate} at ${booking.startTime}`,
+                            description: `${dept?.name || ''} - ${staff?.name || ''}`.trim() || 'Appointment',
+                          });
+                        }
+                        
+                        const listPayload = {
+                          to: phone,
+                          type: 'list',
+                          body: { text: promptMessage },
+                          action: {
+                            list: {
+                              sections: [{
+                                title: 'Your Appointments',
+                                rows: bookingRows,
+                              }],
+                              label: buttonLabel,
+                            },
+                          },
+                        };
+                        
+                        await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+                        
+                        // Save state for handling response
+                        const checkBookingsState = {
+                          step: `select_${actionType}`,
+                          nodeId: currentNodeId,
+                          checkType,
+                          config,
+                        };
+                        
+                        await db
+                          .update(conversationStates)
+                          .set({
+                            lastMessageAt: new Date(),
+                            currentNodeId: currentNodeId,
+                            context: { ...context, checkBookingsState },
+                            updatedAt: new Date(),
+                          })
+                          .where(eq(conversationStates.id, state.id));
+                        
+                        // Don't continue - wait for user selection
+                        executionLog.responsesSent.push({
+                          nodeId: currentNodeId,
+                          nodeType: 'booking.check_bookings',
+                          checkType,
+                          bookingsCount: activeBookings.length,
+                          success: true,
+                        });
+                        break;
+                      }
                     }
                   }
                   
@@ -7596,14 +7980,6 @@ export function registerRoutes(app: Express) {
                     bookingsCount: customerBookings.length,
                     success: true,
                   });
-                  
-                  // Continue to next node (booked path for check_bookings)
-                  const nextNodeId = getNextNodeByHandle(currentNodeId, 'booked', definition.edges);
-                  if (!nextNodeId) break;
-                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                  if (!nextNode) break;
-                  currentNode = nextNode;
-                  currentNodeId = nextNodeId;
                   
                 } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
                            ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType))) {

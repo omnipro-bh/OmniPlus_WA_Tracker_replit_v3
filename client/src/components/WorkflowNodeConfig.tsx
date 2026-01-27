@@ -2450,15 +2450,39 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           <>
             <Separator />
             <div>
-              <Label htmlFor="cancelConfirmMessage">Cancel Confirmation Message</Label>
+              <Label htmlFor="cancelPromptMessage">Cancel Selection Message</Label>
               <Textarea
-                id="cancelConfirmMessage"
-                placeholder="Your appointment on {{date}} at {{time}} has been cancelled."
-                value={config.cancelConfirmMessage || ''}
-                onChange={(e) => updateConfig('cancelConfirmMessage', e.target.value)}
-                data-testid="input-cancel-confirm-message"
+                id="cancelPromptMessage"
+                placeholder="Select the appointment you want to cancel:"
+                value={config.cancelPromptMessage || ''}
+                onChange={(e) => updateConfig('cancelPromptMessage', e.target.value)}
+                data-testid="input-cancel-prompt-message"
                 rows={2}
               />
+            </div>
+            <div>
+              <Label htmlFor="cancelButtonLabel">Cancel Button Label</Label>
+              <Input
+                id="cancelButtonLabel"
+                placeholder="Select Appointment"
+                value={config.cancelButtonLabel || ''}
+                onChange={(e) => updateConfig('cancelButtonLabel', e.target.value)}
+                data-testid="input-cancel-button-label"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cancelSuccessMessage">Cancel Success Message</Label>
+              <Textarea
+                id="cancelSuccessMessage"
+                placeholder="Your appointment on {{date}} at {{time}} has been cancelled."
+                value={config.cancelSuccessMessage || ''}
+                onChange={(e) => updateConfig('cancelSuccessMessage', e.target.value)}
+                data-testid="input-cancel-success-message"
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+              </p>
             </div>
           </>
         )}
@@ -2466,6 +2490,48 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         {config.checkType === 'reschedule' && (
           <>
             <Separator />
+            <div>
+              <Label htmlFor="reschedulePromptMessage">Reschedule Selection Message</Label>
+              <Textarea
+                id="reschedulePromptMessage"
+                placeholder="Select the appointment you want to reschedule:"
+                value={config.reschedulePromptMessage || ''}
+                onChange={(e) => updateConfig('reschedulePromptMessage', e.target.value)}
+                data-testid="input-reschedule-prompt-message"
+                rows={2}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rescheduleButtonLabel">Reschedule Button Label</Label>
+              <Input
+                id="rescheduleButtonLabel"
+                placeholder="Select Appointment"
+                value={config.rescheduleButtonLabel || ''}
+                onChange={(e) => updateConfig('rescheduleButtonLabel', e.target.value)}
+                data-testid="input-reschedule-button-label"
+              />
+            </div>
+            <div>
+              <Label htmlFor="rescheduleSlotMessage">New Slot Selection Message</Label>
+              <Textarea
+                id="rescheduleSlotMessage"
+                placeholder="Select a new time for your appointment:"
+                value={config.rescheduleSlotMessage || ''}
+                onChange={(e) => updateConfig('rescheduleSlotMessage', e.target.value)}
+                data-testid="input-reschedule-slot-message"
+                rows={2}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rescheduleSlotButtonLabel">New Slot Button Label</Label>
+              <Input
+                id="rescheduleSlotButtonLabel"
+                placeholder="Select New Time"
+                value={config.rescheduleSlotButtonLabel || ''}
+                onChange={(e) => updateConfig('rescheduleSlotButtonLabel', e.target.value)}
+                data-testid="input-reschedule-slot-button-label"
+              />
+            </div>
             <div>
               <Label htmlFor="rescheduleSuccessMessage">Reschedule Success Message</Label>
               <Textarea
@@ -2476,6 +2542,9 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                 data-testid="input-reschedule-success-message"
                 rows={2}
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+              </p>
             </div>
           </>
         )}
