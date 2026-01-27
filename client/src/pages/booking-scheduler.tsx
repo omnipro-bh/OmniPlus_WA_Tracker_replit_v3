@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft } from "lucide-react";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -86,6 +86,11 @@ export default function BookingScheduler() {
   const [slotEnd, setSlotEnd] = useState("17:00");
   const [slotDuration, setSlotDuration] = useState("30");
   const [slotCapacity, setSlotCapacity] = useState("1");
+  
+  // Bookings pagination and filter state
+  const [bookingsPage, setBookingsPage] = useState(1);
+  const [bookingsStatusFilter, setBookingsStatusFilter] = useState<string>("all");
+  const BOOKINGS_PAGE_SIZE = 10;
 
   // Queries
   const { data: departments = [], isLoading: loadingDepts } = useQuery<BookingDepartment[]>({
@@ -114,8 +119,19 @@ export default function BookingScheduler() {
     },
   });
 
-  const { data: bookingsData, isLoading: loadingBookings } = useQuery<{ bookings: Booking[]; total: number }>({
-    queryKey: ['/api/booking/bookings'],
+  const { data: bookingsData, isLoading: loadingBookings, refetch: refetchBookings, isFetching: fetchingBookings } = useQuery<{ bookings: Booking[]; total: number }>({
+    queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('page', String(bookingsPage));
+      params.set('pageSize', String(BOOKINGS_PAGE_SIZE));
+      if (bookingsStatusFilter !== 'all') {
+        params.set('status', bookingsStatusFilter);
+      }
+      const res = await fetch(`/api/booking/bookings?${params.toString()}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch bookings');
+      return res.json();
+    },
   });
 
   // Mutations
@@ -697,12 +713,41 @@ export default function BookingScheduler() {
         </TabsContent>
 
         <TabsContent value="bookings" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <div>
-                <CardTitle>All Bookings</CardTitle>
-                <CardDescription>View and manage customer appointments</CardDescription>
-              </div>
+          {/* Filter and Controls Row */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select
+                value={bookingsStatusFilter}
+                onValueChange={(val) => {
+                  setBookingsStatusFilter(val);
+                  setBookingsPage(1);
+                }}
+              >
+                <SelectTrigger className="w-40" data-testid="select-bookings-filter">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="no_show">No Show</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchBookings()}
+                disabled={fetchingBookings}
+                data-testid="button-refresh-bookings"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${fetchingBookings ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -713,12 +758,21 @@ export default function BookingScheduler() {
                 <Download className="h-4 w-4 mr-2" />
                 Export Excel
               </Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>All Bookings ({bookingsData?.total || 0})</CardTitle>
+              <CardDescription>View and manage customer appointments</CardDescription>
             </CardHeader>
             <CardContent>
               {loadingBookings ? (
                 <Skeleton className="h-64 w-full" />
               ) : !bookingsData?.bookings || bookingsData.bookings.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No bookings yet</p>
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  {bookingsStatusFilter !== 'all' ? `No ${bookingsStatusFilter} bookings found` : 'No bookings yet'}
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -772,6 +826,37 @@ export default function BookingScheduler() {
               )}
             </CardContent>
           </Card>
+
+          {/* Pagination */}
+          {bookingsData && bookingsData.total > 0 && (
+            <div className="flex items-center justify-between px-2">
+              <p className="text-sm text-muted-foreground">
+                Page {bookingsPage} of {Math.ceil(bookingsData.total / BOOKINGS_PAGE_SIZE)} ({bookingsData.total} bookings)
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBookingsPage(p => Math.max(1, p - 1))}
+                  disabled={bookingsPage <= 1 || fetchingBookings}
+                  data-testid="button-prev-page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBookingsPage(p => p + 1)}
+                  disabled={bookingsPage >= Math.ceil(bookingsData.total / BOOKINGS_PAGE_SIZE) || fetchingBookings}
+                  data-testid="button-next-page"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
