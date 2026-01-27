@@ -252,14 +252,35 @@ export default function BookingScheduler() {
   const exportBookingsToExcel = () => {
     if (!bookingsData?.bookings || bookingsData.bookings.length === 0) return;
     
-    const headers = ['Date', 'Start Time', 'End Time', 'Customer Name', 'Customer Phone', 'Booking Label', 'Status', 'Created At'];
-    const rows = bookingsData.bookings.map((booking) => [
+    const headers = [
+      'Date', 
+      'Start Time', 
+      'End Time', 
+      'Department',
+      'Staff',
+      'Customer Name', 
+      'Customer Phone', 
+      'Booking Label', 
+      'Custom Question 1 Label',
+      'Custom Question 1 Answer',
+      'Custom Question 2 Label',
+      'Custom Question 2 Answer',
+      'Status', 
+      'Created At'
+    ];
+    const rows = bookingsData.bookings.map((booking: any) => [
       booking.slotDate,
       booking.startTime,
       booking.endTime,
+      booking.departmentName || '',
+      booking.staffName || '',
       booking.customerName || 'Unknown',
       booking.customerPhone,
       booking.bookingLabel || '',
+      booking.customField1Label || '',
+      booking.customField1Value || '',
+      booking.customField2Label || '',
+      booking.customField2Value || '',
       booking.status,
       booking.createdAt ? format(new Date(booking.createdAt), 'yyyy-MM-dd HH:mm') : '',
     ]);
