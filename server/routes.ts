@@ -6374,7 +6374,7 @@ export function registerRoutes(app: Express) {
                         description: s.specialty || '',
                       })),
                     }],
-                    label: 'Select Staff',
+                    label: bookingState.config?.staffButtonLabel || 'Select Staff',
                   },
                 },
               };
@@ -6496,7 +6496,7 @@ export function registerRoutes(app: Express) {
                       title: 'Available Times',
                       rows: slotRows,
                     }],
-                    label: 'Select Time',
+                    label: bookingState.config?.slotButtonLabel || 'Select Time',
                   },
                 },
               };
@@ -7511,7 +7511,7 @@ export function registerRoutes(app: Express) {
                                 description: dept.description || '',
                               })),
                             }],
-                            label: 'Select Department',
+                            label: config.departmentButtonLabel || 'Select Department',
                           },
                         },
                       };

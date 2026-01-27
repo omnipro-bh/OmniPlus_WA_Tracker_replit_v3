@@ -2229,6 +2229,20 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         </div>
 
         <div>
+          <Label htmlFor="departmentButtonLabel">Department Button Label</Label>
+          <Input
+            id="departmentButtonLabel"
+            placeholder="Select Department"
+            value={config.departmentButtonLabel || ''}
+            onChange={(e) => updateConfig('departmentButtonLabel', e.target.value)}
+            data-testid="input-department-button-label"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Button text for department selection (default: Select Department)
+          </p>
+        </div>
+
+        <div>
           <Label htmlFor="staffPromptMessage">Staff Selection Message *</Label>
           <Textarea
             id="staffPromptMessage"
@@ -2244,6 +2258,20 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         </div>
 
         <div>
+          <Label htmlFor="staffButtonLabel">Staff Button Label</Label>
+          <Input
+            id="staffButtonLabel"
+            placeholder="Select Staff"
+            value={config.staffButtonLabel || ''}
+            onChange={(e) => updateConfig('staffButtonLabel', e.target.value)}
+            data-testid="input-staff-button-label"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Button text for staff selection (default: Select Staff)
+          </p>
+        </div>
+
+        <div>
           <Label htmlFor="slotPromptMessage">Time Slot Selection Message *</Label>
           <Textarea
             id="slotPromptMessage"
@@ -2255,6 +2283,20 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           />
           <p className="text-xs text-muted-foreground mt-1">
             Message shown when asking user to select a time slot
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="slotButtonLabel">Slot Button Label</Label>
+          <Input
+            id="slotButtonLabel"
+            placeholder="Select Time"
+            value={config.slotButtonLabel || ''}
+            onChange={(e) => updateConfig('slotButtonLabel', e.target.value)}
+            data-testid="input-slot-button-label"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Button text for time slot selection (default: Select Time)
           </p>
         </div>
 
