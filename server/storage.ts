@@ -257,6 +257,10 @@ export interface IStorage {
   deleteBooking(id: number): Promise<void>;
   checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
+  
+  // Appointment Reminders
+  getBookingsNeedingReminders(): Promise<schema.Booking[]>;
+  markBookingReminderSent(bookingId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1721,6 +1725,36 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions));
 
     return result?.count || 0;
+  }
+
+  // Get confirmed bookings that need reminders sent
+  async getBookingsNeedingReminders(): Promise<schema.Booking[]> {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const results = await db
+      .select()
+      .from(schema.bookings)
+      .where(
+        and(
+          eq(schema.bookings.status, 'confirmed'),
+          eq(schema.bookings.reminderEnabled, true),
+          eq(schema.bookings.reminderSent, false),
+          sql`${schema.bookings.slotDate} >= ${today}`
+        )
+      );
+    
+    return results;
+  }
+
+  // Mark a booking's reminder as sent
+  async markBookingReminderSent(bookingId: number): Promise<void> {
+    await db
+      .update(schema.bookings)
+      .set({ 
+        reminderSent: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bookings.id, bookingId));
   }
 }
 

@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { storage } from "./storage";
-import { logoutChannel, extendWhapiChannel } from "./whapi";
+import { logoutChannel, extendWhapiChannel, sendTextMessage } from "./whapi";
 import fs from "fs";
 import path from "path";
 
@@ -10,6 +10,7 @@ export class BackgroundWorker {
   private messageProcessorJob: ReturnType<typeof cron.schedule> | null = null;
   private mediaCleanupJob: ReturnType<typeof cron.schedule> | null = null;
   private autoExtendJob: ReturnType<typeof cron.schedule> | null = null;
+  private appointmentReminderJob: ReturnType<typeof cron.schedule> | null = null;
 
   start() {
     // Channel expiration check - runs every hour to catch expirations quickly
@@ -25,6 +26,11 @@ export class BackgroundWorker {
     // Auto-extend channels - runs daily at midnight (00:00)
     this.autoExtendJob = cron.schedule("0 0 * * *", async () => {
       await this.autoExtendChannels();
+    });
+
+    // Appointment reminders - runs every 15 minutes to check for upcoming appointments
+    this.appointmentReminderJob = cron.schedule("*/15 * * * *", async () => {
+      await this.sendAppointmentReminders();
     });
 
     // Message queue processor - disabled for now
@@ -45,6 +51,9 @@ export class BackgroundWorker {
     }
     if (this.autoExtendJob) {
       this.autoExtendJob.stop();
+    }
+    if (this.appointmentReminderJob) {
+      this.appointmentReminderJob.stop();
     }
   }
 
@@ -440,6 +449,88 @@ export class BackgroundWorker {
       console.log(`[AutoExtend] Completed. Extended: ${extendedCount} channels, Skipped: ${skippedCount} users, Errors: ${errorCount}`);
     } catch (error) {
       console.error("[AutoExtend] Error in auto-extend job:", error);
+    }
+  }
+
+  // Send appointment reminders for upcoming bookings
+  private async sendAppointmentReminders() {
+    try {
+      console.log("[Reminder] Starting appointment reminder check...");
+      
+      // Get all confirmed bookings with reminders enabled and not yet sent
+      const bookingsNeedingReminders = await storage.getBookingsNeedingReminders();
+      
+      if (bookingsNeedingReminders.length === 0) {
+        console.log("[Reminder] No reminders to send.");
+        return;
+      }
+      
+      console.log(`[Reminder] Found ${bookingsNeedingReminders.length} potential reminders to check`);
+      
+      const now = new Date();
+      let sentCount = 0;
+      let errorCount = 0;
+      
+      for (const booking of bookingsNeedingReminders) {
+        try {
+          // Parse appointment date and time
+          const [year, month, day] = booking.slotDate.split('-').map(Number);
+          const [hours, minutes] = booking.startTime.split(':').map(Number);
+          const appointmentTime = new Date(year, month - 1, day, hours, minutes);
+          
+          // Calculate when reminder should be sent (hours before appointment)
+          const reminderHours = booking.reminderHoursBefore || 24;
+          const reminderTime = new Date(appointmentTime.getTime() - (reminderHours * 60 * 60 * 1000));
+          
+          // Check if it's time to send the reminder (within 15 minute window after reminder time)
+          // This prevents sending too early or re-sending on every cron run
+          const fifteenMinutes = 15 * 60 * 1000;
+          if (now >= reminderTime && now < new Date(reminderTime.getTime() + fifteenMinutes)) {
+            // Time to send reminder - get user's active channel
+            const channels = await storage.getChannelsForUser(booking.userId);
+            const activeChannel = channels.find(ch => ch.status === "ACTIVE" && ch.whapiChannelToken);
+            
+            if (!activeChannel) {
+              console.log(`[Reminder] No active channel for user ${booking.userId}, skipping booking ${booking.id}`);
+              continue;
+            }
+            
+            // Get staff and department for message placeholders
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            
+            // Build reminder message with placeholders
+            let reminderMessage = booking.reminderMessage || 
+              'Reminder: You have an appointment on {{date}} at {{time}} with {{staff}} in {{department}}.';
+            
+            reminderMessage = reminderMessage
+              .replace(/\{\{date\}\}/g, booking.slotDate)
+              .replace(/\{\{time\}\}/g, booking.startTime)
+              .replace(/\{\{department\}\}/g, dept?.name || '')
+              .replace(/\{\{staff\}\}/g, staff?.name || '')
+              .replace(/\{\{name\}\}/g, booking.customerName || '');
+            
+            // Send the reminder via WHAPI
+            await sendTextMessage(activeChannel.whapiChannelToken!, {
+              to: booking.customerPhone,
+              body: reminderMessage,
+            });
+            
+            // Mark reminder as sent
+            await storage.markBookingReminderSent(booking.id);
+            
+            console.log(`[Reminder] Sent reminder for booking ${booking.id} to ${booking.customerPhone}`);
+            sentCount++;
+          }
+        } catch (bookingError) {
+          console.error(`[Reminder] Error processing booking ${booking.id}:`, bookingError);
+          errorCount++;
+        }
+      }
+      
+      console.log(`[Reminder] Completed. Sent: ${sentCount}, Errors: ${errorCount}`);
+    } catch (error) {
+      console.error("[Reminder] Error in appointment reminder job:", error);
     }
   }
 }
