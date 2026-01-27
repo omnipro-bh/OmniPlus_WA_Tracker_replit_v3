@@ -6592,6 +6592,10 @@ export function registerRoutes(app: Express) {
                   status: 'confirmed',
                   nodeId: bookingState.nodeId,
                   bookingLabel: bookingState.bookingLabel,
+                  reminderEnabled: bookingState.config?.reminderEnabled || false,
+                  reminderHoursBefore: bookingState.config?.reminderHoursBefore || 24,
+                  reminderMessage: bookingState.config?.reminderMessage || null,
+                  reminderSent: false,
                 });
                 
                 // Get staff and department names for success message
@@ -6987,6 +6991,10 @@ export function registerRoutes(app: Express) {
                 status: 'confirmed',
                 nodeId: nameCheckBookingState.nodeId,
                 bookingLabel: nameCheckBookingState.bookingLabel,
+                reminderEnabled: nameCheckBookingState.config?.reminderEnabled || false,
+                reminderHoursBefore: nameCheckBookingState.config?.reminderHoursBefore || 24,
+                reminderMessage: nameCheckBookingState.config?.reminderMessage || null,
+                reminderSent: false,
               });
               
               // Get staff and department names for success message
