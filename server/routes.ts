@@ -6578,7 +6578,34 @@ export function registerRoutes(app: Express) {
                 return res.status(200).json({ success: true });
               }
               
-              // No name required - create booking immediately
+              // Check if custom questions are enabled (without requiring name)
+              const configCheck = bookingState.config || {};
+              if (configCheck.customQuestion1Enabled && configCheck.customQuestion1Prompt) {
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: configCheck.customQuestion1Prompt,
+                });
+                
+                await db.update(conversationStates).set({
+                  context: { 
+                    ...context, 
+                    bookingState: { 
+                      ...bookingState, 
+                      step: 'enter_custom1',
+                      customerName: '',
+                      selectedSlotId: slotId,
+                      selectedSlotDate: slotDate,
+                      selectedStartTime: slot.startTime,
+                      selectedEndTime: slot.endTime,
+                    } 
+                  },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                
+                return res.status(200).json({ success: true });
+              }
+              
+              // No name or custom questions required - create booking immediately
               try {
                 const booking = await storage.createBooking({
                   userId: activeWorkflow.userId,
@@ -6977,7 +7004,32 @@ export function registerRoutes(app: Express) {
               return res.status(200).json({ success: true });
             }
             
-            // Create booking with the provided name
+            // Store the name and check if we need to ask custom questions
+            const config = nameCheckBookingState.config || {};
+            
+            // Check if custom question 1 is enabled
+            if (config.customQuestion1Enabled && config.customQuestion1Prompt) {
+              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: config.customQuestion1Prompt,
+              });
+              
+              await db.update(conversationStates).set({
+                context: { 
+                  ...nameCheckContext, 
+                  bookingState: { 
+                    ...nameCheckBookingState, 
+                    step: 'enter_custom1',
+                    customerName: customerName,
+                  } 
+                },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+              
+              return res.status(200).json({ success: true });
+            }
+            
+            // No custom questions - create booking with the provided name
             try {
               const booking = await storage.createBooking({
                 userId: activeWorkflow.userId,
@@ -7030,6 +7082,189 @@ export function registerRoutes(app: Express) {
             } catch (bookingError: any) {
               console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
               await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: 'Sorry, we could not book this slot. It may no longer be available.',
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: undefined },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+            }
+            
+            return res.status(200).json({ success: true });
+          }
+          
+          // Handle custom question 1 entry
+          if (nameCheckBookingState?.step === 'enter_custom1') {
+            const customValue1 = incomingMessage.text?.body?.trim() || '';
+            
+            const userChannelsForQ1 = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForQ1 = userChannelsForQ1.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            
+            if (!activeChannelForQ1?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for custom question 1`);
+              return res.status(200).json({ success: true });
+            }
+            
+            const config = nameCheckBookingState.config || {};
+            
+            // Check if custom question 2 is enabled
+            if (config.customQuestion2Enabled && config.customQuestion2Prompt) {
+              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: config.customQuestion2Prompt,
+              });
+              
+              await db.update(conversationStates).set({
+                context: { 
+                  ...nameCheckContext, 
+                  bookingState: { 
+                    ...nameCheckBookingState, 
+                    step: 'enter_custom2',
+                    customField1Value: customValue1,
+                    customField1Label: config.customQuestion1Label || 'Question 1',
+                  } 
+                },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+              
+              return res.status(200).json({ success: true });
+            }
+            
+            // No second question - create booking
+            try {
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName: nameCheckBookingState.customerName || '',
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: 'confirmed',
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+                customField1Label: config.customQuestion1Label || 'Question 1',
+                customField1Value: customValue1,
+                reminderEnabled: config.reminderEnabled || false,
+                reminderHoursBefore: config.reminderHoursBefore || 24,
+                reminderMessage: config.reminderMessage || null,
+                reminderSent: false,
+              });
+              
+              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
+              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              
+              let successMessage = config.successMessage || 
+                'Your appointment has been booked for {{date}} at {{time}}.';
+              successMessage = successMessage
+                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
+                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
+                .replace(/\{\{department\}\}/g, dept?.name || '')
+                .replace(/\{\{staff\}\}/g, staff?.name || '')
+                .replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || '');
+              
+              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: successMessage,
+              });
+              
+              const definition = activeWorkflow.definitionJson as any;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
+              
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+              
+              console.log(`[Booking] Created booking ${booking.id} with custom field 1`);
+              
+            } catch (bookingError: any) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: 'Sorry, we could not book this slot. It may no longer be available.',
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: undefined },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+            }
+            
+            return res.status(200).json({ success: true });
+          }
+          
+          // Handle custom question 2 entry
+          if (nameCheckBookingState?.step === 'enter_custom2') {
+            const customValue2 = incomingMessage.text?.body?.trim() || '';
+            
+            const userChannelsForQ2 = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForQ2 = userChannelsForQ2.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            
+            if (!activeChannelForQ2?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for custom question 2`);
+              return res.status(200).json({ success: true });
+            }
+            
+            const config = nameCheckBookingState.config || {};
+            
+            // Create booking with both custom fields
+            try {
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName: nameCheckBookingState.customerName || '',
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: 'confirmed',
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+                customField1Label: nameCheckBookingState.customField1Label || 'Question 1',
+                customField1Value: nameCheckBookingState.customField1Value || '',
+                customField2Label: config.customQuestion2Label || 'Question 2',
+                customField2Value: customValue2,
+                reminderEnabled: config.reminderEnabled || false,
+                reminderHoursBefore: config.reminderHoursBefore || 24,
+                reminderMessage: config.reminderMessage || null,
+                reminderSent: false,
+              });
+              
+              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
+              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              
+              let successMessage = config.successMessage || 
+                'Your appointment has been booked for {{date}} at {{time}}.';
+              successMessage = successMessage
+                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
+                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
+                .replace(/\{\{department\}\}/g, dept?.name || '')
+                .replace(/\{\{staff\}\}/g, staff?.name || '')
+                .replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || '');
+              
+              await whapi.sendTextMessage(activeChannelForQ2.whapiChannelToken, {
+                to: phone,
+                body: successMessage,
+              });
+              
+              const definition = activeWorkflow.definitionJson as any;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
+              
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
+                updatedAt: new Date(),
+              }).where(eq(conversationStates.id, nameCheckState.id));
+              
+              console.log(`[Booking] Created booking ${booking.id} with both custom fields`);
+              
+            } catch (bookingError: any) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await whapi.sendTextMessage(activeChannelForQ2.whapiChannelToken, {
                 to: phone,
                 body: 'Sorry, we could not book this slot. It may no longer be available.',
               });

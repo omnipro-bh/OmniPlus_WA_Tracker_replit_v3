@@ -949,6 +949,10 @@ export const bookings = pgTable("bookings", {
   // Customer Info
   customerPhone: varchar("customer_phone", { length: 50 }).notNull(), // Phone number from chatbot
   customerName: varchar("customer_name", { length: 255 }),
+  customField1Label: varchar("custom_field1_label", { length: 255 }),
+  customField1Value: varchar("custom_field1_value", { length: 500 }),
+  customField2Label: varchar("custom_field2_label", { length: 255 }),
+  customField2Value: varchar("custom_field2_value", { length: 500 }),
   
   // Status
   status: bookingStatusEnum("status").notNull().default("pending"),
@@ -1223,6 +1227,10 @@ export const insertBookingSchema = createInsertSchema(bookings, {
   endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
   customerPhone: z.string().min(1, "Customer phone is required"),
   customerName: z.string().optional(),
+  customField1Label: z.string().optional(),
+  customField1Value: z.string().optional(),
+  customField2Label: z.string().optional(),
+  customField2Value: z.string().optional(),
   status: z.enum(["pending", "confirmed", "cancelled", "completed", "no_show"]).default("pending"),
 });
 

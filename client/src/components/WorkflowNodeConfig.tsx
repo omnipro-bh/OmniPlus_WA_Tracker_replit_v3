@@ -2359,6 +2359,100 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           </div>
         )}
 
+        <Separator />
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="customQuestion1Enabled">Custom Question 1</Label>
+            <p className="text-xs text-muted-foreground">Ask an additional question</p>
+          </div>
+          <Switch
+            id="customQuestion1Enabled"
+            checked={config.customQuestion1Enabled || false}
+            onCheckedChange={(checked) => updateConfig('customQuestion1Enabled', checked)}
+            data-testid="switch-custom-question-1"
+          />
+        </div>
+
+        {config.customQuestion1Enabled && (
+          <>
+            <div>
+              <Label htmlFor="customQuestion1Label">Question 1 Label</Label>
+              <Input
+                id="customQuestion1Label"
+                placeholder="e.g., Email, Phone Number, ID Number"
+                value={config.customQuestion1Label || ''}
+                onChange={(e) => updateConfig('customQuestion1Label', e.target.value)}
+                data-testid="input-custom-question-1-label"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Label for this question (stored with booking)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="customQuestion1Prompt">Question 1 Prompt</Label>
+              <Textarea
+                id="customQuestion1Prompt"
+                placeholder="Please enter your email address..."
+                value={config.customQuestion1Prompt || ''}
+                onChange={(e) => updateConfig('customQuestion1Prompt', e.target.value)}
+                data-testid="input-custom-question-1-prompt"
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Message shown when asking this question
+              </p>
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="customQuestion2Enabled">Custom Question 2</Label>
+            <p className="text-xs text-muted-foreground">Ask another additional question</p>
+          </div>
+          <Switch
+            id="customQuestion2Enabled"
+            checked={config.customQuestion2Enabled || false}
+            onCheckedChange={(checked) => updateConfig('customQuestion2Enabled', checked)}
+            data-testid="switch-custom-question-2"
+          />
+        </div>
+
+        {config.customQuestion2Enabled && (
+          <>
+            <div>
+              <Label htmlFor="customQuestion2Label">Question 2 Label</Label>
+              <Input
+                id="customQuestion2Label"
+                placeholder="e.g., Notes, Reason for Visit"
+                value={config.customQuestion2Label || ''}
+                onChange={(e) => updateConfig('customQuestion2Label', e.target.value)}
+                data-testid="input-custom-question-2-label"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Label for this question (stored with booking)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="customQuestion2Prompt">Question 2 Prompt</Label>
+              <Textarea
+                id="customQuestion2Prompt"
+                placeholder="Please describe the reason for your visit..."
+                value={config.customQuestion2Prompt || ''}
+                onChange={(e) => updateConfig('customQuestion2Prompt', e.target.value)}
+                data-testid="input-custom-question-2-prompt"
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Message shown when asking this question
+              </p>
+            </div>
+          </>
+        )}
+
+        <Separator />
+
         <div className="flex items-center justify-between">
           <div>
             <Label htmlFor="allowMultiple">Allow Multiple Bookings</Label>
