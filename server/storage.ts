@@ -245,7 +245,8 @@ export interface IStorage {
     staffId?: number;
     departmentId?: number;
     page?: number; 
-    pageSize?: number 
+    pageSize?: number;
+    search?: string;
   }): Promise<{ bookings: schema.Booking[]; total: number }>;
   getBookingsForCustomer(customerPhone: string, userId: number, options?: { 
     status?: string; 
@@ -1547,6 +1548,7 @@ export class DatabaseStorage implements IStorage {
       departmentId?: number;
       page?: number;
       pageSize?: number;
+      search?: string;
     }
   ): Promise<{ bookings: schema.Booking[]; total: number }> {
     const page = filters?.page || 1;
@@ -1569,6 +1571,17 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.departmentId) {
       conditions.push(eq(schema.bookings.departmentId, filters.departmentId));
+    }
+    if (filters?.search) {
+      const searchTerm = `%${filters.search.toLowerCase()}%`;
+      conditions.push(sql`(
+        LOWER(${schema.bookings.customerName}) LIKE ${searchTerm} OR 
+        ${schema.bookings.customerPhone} LIKE ${searchTerm} OR 
+        LOWER(${schema.bookings.bookingLabel}) LIKE ${searchTerm} OR
+        ${schema.bookings.slotDate} LIKE ${searchTerm} OR
+        LOWER(${schema.bookings.customField1Value}) LIKE ${searchTerm} OR
+        LOWER(${schema.bookings.customField2Value}) LIKE ${searchTerm}
+      )`);
     }
 
     const bookingsList = await db

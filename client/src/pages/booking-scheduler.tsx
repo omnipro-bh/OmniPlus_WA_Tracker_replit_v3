@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -90,6 +91,8 @@ export default function BookingScheduler() {
   // Bookings pagination and filter state
   const [bookingsPage, setBookingsPage] = useState(1);
   const [bookingsStatusFilter, setBookingsStatusFilter] = useState<string>("all");
+  const [bookingsSearch, setBookingsSearch] = useState("");
+  const [selectedBookings, setSelectedBookings] = useState<Set<number>>(new Set());
   const BOOKINGS_PAGE_SIZE = 10;
 
   // Queries
@@ -120,13 +123,16 @@ export default function BookingScheduler() {
   });
 
   const { data: bookingsData, isLoading: loadingBookings, refetch: refetchBookings, isFetching: fetchingBookings } = useQuery<{ bookings: Booking[]; total: number }>({
-    queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter],
+    queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter, bookingsSearch],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', String(bookingsPage));
       params.set('pageSize', String(BOOKINGS_PAGE_SIZE));
       if (bookingsStatusFilter !== 'all') {
         params.set('status', bookingsStatusFilter);
+      }
+      if (bookingsSearch.trim()) {
+        params.set('search', bookingsSearch.trim());
       }
       const res = await fetch(`/api/booking/bookings?${params.toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch bookings');
@@ -237,6 +243,46 @@ export default function BookingScheduler() {
       toast({ title: "Error", description: error.message || "Failed to update booking", variant: "destructive" });
     },
   });
+
+  const bulkDeleteBookingsMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      return await apiRequest('DELETE', '/api/booking/bookings/bulk', { ids });
+    },
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      setSelectedBookings(new Set());
+      toast({ title: `${ids.length} booking(s) deleted` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete bookings", variant: "destructive" });
+    },
+  });
+
+  const handleSelectAll = () => {
+    if (!bookingsData?.bookings) return;
+    if (selectedBookings.size === bookingsData.bookings.length) {
+      setSelectedBookings(new Set());
+    } else {
+      setSelectedBookings(new Set(bookingsData.bookings.map((b: any) => b.id)));
+    }
+  };
+
+  const handleSelectBooking = (id: number) => {
+    const newSet = new Set(selectedBookings);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedBookings(newSet);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedBookings.size === 0) return;
+    if (confirm(`Are you sure you want to permanently delete ${selectedBookings.size} booking(s)? This cannot be undone.`)) {
+      bulkDeleteBookingsMutation.mutate(Array.from(selectedBookings));
+    }
+  };
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -736,13 +782,14 @@ export default function BookingScheduler() {
         <TabsContent value="bookings" className="space-y-4">
           {/* Filter and Controls Row */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <Select
                 value={bookingsStatusFilter}
                 onValueChange={(val) => {
                   setBookingsStatusFilter(val);
                   setBookingsPage(1);
+                  setSelectedBookings(new Set());
                 }}
               >
                 <SelectTrigger className="w-40" data-testid="select-bookings-filter">
@@ -757,8 +804,34 @@ export default function BookingScheduler() {
                   <SelectItem value="no_show">No Show</SelectItem>
                 </SelectContent>
               </Select>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search bookings..."
+                  className="pl-8 w-64"
+                  value={bookingsSearch}
+                  onChange={(e) => {
+                    setBookingsSearch(e.target.value);
+                    setBookingsPage(1);
+                    setSelectedBookings(new Set());
+                  }}
+                  data-testid="input-search-bookings"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2">
+              {selectedBookings.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleteBookingsMutation.isPending}
+                  data-testid="button-delete-selected"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete ({selectedBookings.size})
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -798,6 +871,13 @@ export default function BookingScheduler() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={bookingsData.bookings.length > 0 && selectedBookings.size === bookingsData.bookings.length}
+                          onCheckedChange={handleSelectAll}
+                          data-testid="checkbox-select-all"
+                        />
+                      </TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
                       <TableHead>Department</TableHead>
@@ -811,6 +891,13 @@ export default function BookingScheduler() {
                   <TableBody>
                     {bookingsData.bookings.map((booking: any) => (
                       <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedBookings.has(booking.id)}
+                            onCheckedChange={() => handleSelectBooking(booking.id)}
+                            data-testid={`checkbox-booking-${booking.id}`}
+                          />
+                        </TableCell>
                         <TableCell>{booking.slotDate}</TableCell>
                         <TableCell>{booking.startTime} - {booking.endTime}</TableCell>
                         <TableCell>{booking.departmentName || '-'}</TableCell>

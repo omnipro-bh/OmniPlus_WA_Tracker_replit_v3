@@ -3933,7 +3933,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { status, fromDate, toDate, staffId, departmentId, page, pageSize } = req.query;
+      const { status, fromDate, toDate, staffId, departmentId, page, pageSize, search } = req.query;
 
       const result = await storage.getBookingsForUser(effectiveUserId, {
         status: status as string,
@@ -3943,6 +3943,7 @@ export function registerRoutes(app: Express) {
         departmentId: departmentId ? parseInt(departmentId as string) : undefined,
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
+        search: search as string,
       });
       
       // Enrich bookings with department and staff names
@@ -4046,6 +4047,32 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Delete booking error:", error);
       res.status(500).json({ error: "Failed to delete booking" });
+    }
+  });
+
+  // Bulk delete bookings
+  app.delete("/api/booking/bookings/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "No booking IDs provided" });
+      }
+
+      const effectiveUserId = getEffectiveUserId(req);
+      let deletedCount = 0;
+
+      for (const id of ids) {
+        const booking = await storage.getBooking(id);
+        if (booking && (booking.userId === effectiveUserId || req.user?.role === "admin")) {
+          await storage.deleteBooking(id);
+          deletedCount++;
+        }
+      }
+
+      res.json({ success: true, deleted: deletedCount });
+    } catch (error: any) {
+      console.error("Bulk delete bookings error:", error);
+      res.status(500).json({ error: "Failed to delete bookings" });
     }
   });
 
