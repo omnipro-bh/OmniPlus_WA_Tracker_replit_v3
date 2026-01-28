@@ -110,12 +110,20 @@ export default function BookingScheduler() {
   const [editBookingLabel, setEditBookingLabel] = useState("");
   const [editCustomField1, setEditCustomField1] = useState("");
   const [editCustomField2, setEditCustomField2] = useState("");
+  const [editDepartmentId, setEditDepartmentId] = useState<string>("");
+  const [editStaffId, setEditStaffId] = useState<string>("");
+  const [editDate, setEditDate] = useState("");
+  const [editSlot, setEditSlot] = useState("");
+  const [editAvailableStaff, setEditAvailableStaff] = useState<BookingStaff[]>([]);
+  const [editAvailableSlots, setEditAvailableSlots] = useState<any[]>([]);
   
   // Reschedule form
   const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleDepartmentId, setRescheduleDepartmentId] = useState<string>("");
   const [rescheduleStaffId, setRescheduleStaffId] = useState<string>("");
   const [rescheduleSlot, setRescheduleSlot] = useState("");
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [rescheduleAvailableStaff, setRescheduleAvailableStaff] = useState<BookingStaff[]>([]);
   
   // Notification toggles
   const [sendConfirmNotification, setSendConfirmNotification] = useState(true);
@@ -287,7 +295,19 @@ export default function BookingScheduler() {
 
   // Edit booking mutation
   const editBookingMutation = useMutation({
-    mutationFn: async (data: { id: number; customerName?: string; customerPhone?: string; bookingLabel?: string; customField1Value?: string; customField2Value?: string }) => {
+    mutationFn: async (data: { 
+      id: number; 
+      customerName?: string; 
+      customerPhone?: string; 
+      bookingLabel?: string; 
+      customField1Value?: string; 
+      customField2Value?: string;
+      departmentId?: number;
+      staffId?: number;
+      slotDate?: string;
+      startTime?: string;
+      endTime?: string;
+    }) => {
       return await apiRequest('PUT', `/api/booking/bookings/${data.id}`, data);
     },
     onSuccess: () => {
@@ -335,8 +355,8 @@ export default function BookingScheduler() {
 
   // Reschedule booking mutation (with optional notification)
   const rescheduleBookingMutation = useMutation({
-    mutationFn: async ({ id, newDate, newStartTime, newEndTime, newStaffId, sendNotification }: { id: number; newDate: string; newStartTime: string; newEndTime: string; newStaffId?: number; sendNotification: boolean }) => {
-      return await apiRequest('POST', `/api/booking/bookings/${id}/reschedule`, { newDate, newStartTime, newEndTime, newStaffId, sendNotification });
+    mutationFn: async ({ id, newDate, newStartTime, newEndTime, newStaffId, newDepartmentId, sendNotification }: { id: number; newDate: string; newStartTime: string; newEndTime: string; newStaffId?: number; newDepartmentId?: number; sendNotification: boolean }) => {
+      return await apiRequest('POST', `/api/booking/bookings/${id}/reschedule`, { newDate, newStartTime, newEndTime, newStaffId, newDepartmentId, sendNotification });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
@@ -361,24 +381,60 @@ export default function BookingScheduler() {
     }
   };
 
+  // Fetch staff for a department (for edit/reschedule)
+  const fetchStaffForDepartment = async (departmentId: number): Promise<BookingStaff[]> => {
+    try {
+      const res = await fetch(`/api/booking/departments/${departmentId}/staff`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch staff');
+      return await res.json();
+    } catch (err) {
+      return [];
+    }
+  };
+
+  // Fetch available slots for edit modal
+  const fetchAvailableSlotsForEdit = async (staffId: number, date: string) => {
+    try {
+      const res = await fetch(`/api/booking/staff/${staffId}/available-slots?date=${date}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch slots');
+      const slots = await res.json();
+      setEditAvailableSlots(slots);
+    } catch (err) {
+      setEditAvailableSlots([]);
+    }
+  };
+
   // Helper to open edit modal
-  const openEditBookingModal = (booking: any) => {
+  const openEditBookingModal = async (booking: any) => {
     setActionBooking(booking);
     setEditCustomerName(booking.customerName || '');
     setEditCustomerPhone(booking.customerPhone || '');
     setEditBookingLabel(booking.bookingLabel || '');
     setEditCustomField1(booking.customField1Value || '');
     setEditCustomField2(booking.customField2Value || '');
+    setEditDepartmentId(String(booking.departmentId));
+    setEditStaffId(String(booking.staffId));
+    setEditDate(booking.slotDate);
+    setEditSlot(`${booking.startTime}|${booking.endTime}`);
+    // Fetch staff for the current department
+    const staffList = await fetchStaffForDepartment(booking.departmentId);
+    setEditAvailableStaff(staffList);
+    // Fetch available slots for current staff and date
+    await fetchAvailableSlotsForEdit(booking.staffId, booking.slotDate);
     setEditBookingOpen(true);
   };
 
   // Helper to open reschedule modal
-  const openRescheduleModal = (booking: any) => {
+  const openRescheduleModal = async (booking: any) => {
     setActionBooking(booking);
-    setRescheduleDate(booking.slotDate);
+    setRescheduleDepartmentId(String(booking.departmentId));
     setRescheduleStaffId(String(booking.staffId));
+    setRescheduleDate(booking.slotDate);
     setRescheduleSlot('');
     setAvailableSlots([]);
+    // Fetch staff for the current department
+    const staffList = await fetchStaffForDepartment(booking.departmentId);
+    setRescheduleAvailableStaff(staffList);
     setRescheduleBookingOpen(true);
     // Fetch available slots for current date
     fetchAvailableSlotsForReschedule(booking.staffId, booking.slotDate);
@@ -1165,7 +1221,7 @@ export default function BookingScheduler() {
 
       {/* Edit Booking Dialog */}
       <Dialog open={editBookingOpen} onOpenChange={setEditBookingOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Booking</DialogTitle>
             <DialogDescription>
@@ -1173,25 +1229,27 @@ export default function BookingScheduler() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="edit-customer-name">Customer Name</Label>
-              <Input
-                id="edit-customer-name"
-                value={editCustomerName}
-                onChange={(e) => setEditCustomerName(e.target.value)}
-                placeholder="Customer name"
-                data-testid="input-edit-customer-name"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-customer-phone">Customer Phone</Label>
-              <Input
-                id="edit-customer-phone"
-                value={editCustomerPhone}
-                onChange={(e) => setEditCustomerPhone(e.target.value)}
-                placeholder="Customer phone"
-                data-testid="input-edit-customer-phone"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-customer-name">Customer Name</Label>
+                <Input
+                  id="edit-customer-name"
+                  value={editCustomerName}
+                  onChange={(e) => setEditCustomerName(e.target.value)}
+                  placeholder="Customer name"
+                  data-testid="input-edit-customer-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-customer-phone">Customer Phone</Label>
+                <Input
+                  id="edit-customer-phone"
+                  value={editCustomerPhone}
+                  onChange={(e) => setEditCustomerPhone(e.target.value)}
+                  placeholder="Customer phone"
+                  data-testid="input-edit-customer-phone"
+                />
+              </div>
             </div>
             <div>
               <Label htmlFor="edit-booking-label">Booking Label</Label>
@@ -1227,12 +1285,111 @@ export default function BookingScheduler() {
                 />
               </div>
             )}
+            
+            <div className="border-t pt-4 mt-4">
+              <p className="text-sm font-medium mb-3">Appointment Details</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-department">Department</Label>
+                  <Select
+                    value={editDepartmentId}
+                    onValueChange={async (val) => {
+                      setEditDepartmentId(val);
+                      setEditStaffId('');
+                      setEditSlot('');
+                      setEditAvailableSlots([]);
+                      const staffList = await fetchStaffForDepartment(parseInt(val));
+                      setEditAvailableStaff(staffList);
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-edit-department">
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.id} value={String(dept.id)}>
+                          {dept.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="edit-staff">Staff</Label>
+                  <Select
+                    value={editStaffId}
+                    onValueChange={async (val) => {
+                      setEditStaffId(val);
+                      setEditSlot('');
+                      if (editDate) {
+                        await fetchAvailableSlotsForEdit(parseInt(val), editDate);
+                      }
+                    }}
+                    disabled={!editDepartmentId}
+                  >
+                    <SelectTrigger data-testid="select-edit-staff">
+                      <SelectValue placeholder="Select staff" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {editAvailableStaff.filter(s => s.isActive).map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <Label htmlFor="edit-date">Date</Label>
+                  <Input
+                    id="edit-date"
+                    type="date"
+                    value={editDate}
+                    onChange={async (e) => {
+                      setEditDate(e.target.value);
+                      setEditSlot('');
+                      if (editStaffId && e.target.value) {
+                        await fetchAvailableSlotsForEdit(parseInt(editStaffId), e.target.value);
+                      }
+                    }}
+                    min={new Date().toISOString().split('T')[0]}
+                    data-testid="input-edit-date"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-slot">Time Slot</Label>
+                  {editAvailableSlots.length === 0 && editDate ? (
+                    <p className="text-sm text-muted-foreground mt-2">No available slots</p>
+                  ) : (
+                    <Select
+                      value={editSlot}
+                      onValueChange={setEditSlot}
+                      disabled={!editStaffId || !editDate}
+                    >
+                      <SelectTrigger data-testid="select-edit-slot">
+                        <SelectValue placeholder="Select time" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editAvailableSlots.map((slot: any) => (
+                          <SelectItem key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}|${slot.endTime}`}>
+                            {slot.startTime} - {slot.endTime}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditBookingOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
                 if (!actionBooking) return;
+                const [startTime, endTime] = editSlot ? editSlot.split('|') : [actionBooking.startTime, actionBooking.endTime];
                 editBookingMutation.mutate({
                   id: actionBooking.id,
                   customerName: editCustomerName,
@@ -1240,6 +1397,11 @@ export default function BookingScheduler() {
                   bookingLabel: editBookingLabel,
                   customField1Value: editCustomField1,
                   customField2Value: editCustomField2,
+                  departmentId: editDepartmentId ? parseInt(editDepartmentId) : undefined,
+                  staffId: editStaffId ? parseInt(editStaffId) : undefined,
+                  slotDate: editDate || undefined,
+                  startTime: startTime || undefined,
+                  endTime: endTime || undefined,
                 });
               }}
               disabled={editBookingMutation.isPending}
@@ -1351,58 +1513,112 @@ export default function BookingScheduler() {
 
       {/* Reschedule Booking Dialog */}
       <Dialog open={rescheduleBookingOpen} onOpenChange={setRescheduleBookingOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Reschedule Booking</DialogTitle>
             <DialogDescription>
-              Choose a new date and time for this booking
+              Choose a new department, staff, date and time for this booking
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
             <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
               <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
-              <div><span className="font-medium">Current:</span> {actionBooking?.slotDate} at {actionBooking?.startTime}</div>
+              <div><span className="font-medium">Current:</span> {actionBooking?.slotDate} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
             </div>
-            <div>
-              <Label htmlFor="reschedule-date">New Date</Label>
-              <Input
-                id="reschedule-date"
-                type="date"
-                value={rescheduleDate}
-                onChange={(e) => {
-                  setRescheduleDate(e.target.value);
-                  setRescheduleSlot('');
-                  if (rescheduleStaffId && e.target.value) {
-                    fetchAvailableSlotsForReschedule(parseInt(rescheduleStaffId), e.target.value);
-                  }
-                }}
-                min={new Date().toISOString().split('T')[0]}
-                data-testid="input-reschedule-date"
-              />
-            </div>
-            <div>
-              <Label htmlFor="reschedule-slot">Available Time Slots</Label>
-              {availableSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-2">
-                  {rescheduleDate ? 'No available slots for this date' : 'Select a date to see available slots'}
-                </p>
-              ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="reschedule-department">Department</Label>
                 <Select
-                  value={rescheduleSlot}
-                  onValueChange={setRescheduleSlot}
+                  value={rescheduleDepartmentId}
+                  onValueChange={async (val) => {
+                    setRescheduleDepartmentId(val);
+                    setRescheduleStaffId('');
+                    setRescheduleSlot('');
+                    setAvailableSlots([]);
+                    const staffList = await fetchStaffForDepartment(parseInt(val));
+                    setRescheduleAvailableStaff(staffList);
+                  }}
                 >
-                  <SelectTrigger data-testid="select-reschedule-slot">
-                    <SelectValue placeholder="Select a time slot" />
+                  <SelectTrigger data-testid="select-reschedule-department">
+                    <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableSlots.map((slot: any) => (
-                      <SelectItem key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}|${slot.endTime}`}>
-                        {slot.startTime} - {slot.endTime}
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.id} value={String(dept.id)}>
+                        {dept.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
+              </div>
+              <div>
+                <Label htmlFor="reschedule-staff">Staff</Label>
+                <Select
+                  value={rescheduleStaffId}
+                  onValueChange={(val) => {
+                    setRescheduleStaffId(val);
+                    setRescheduleSlot('');
+                    if (rescheduleDate) {
+                      fetchAvailableSlotsForReschedule(parseInt(val), rescheduleDate);
+                    }
+                  }}
+                  disabled={!rescheduleDepartmentId}
+                >
+                  <SelectTrigger data-testid="select-reschedule-staff">
+                    <SelectValue placeholder="Select staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rescheduleAvailableStaff.filter(s => s.isActive).map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="reschedule-date">New Date</Label>
+                <Input
+                  id="reschedule-date"
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={(e) => {
+                    setRescheduleDate(e.target.value);
+                    setRescheduleSlot('');
+                    if (rescheduleStaffId && e.target.value) {
+                      fetchAvailableSlotsForReschedule(parseInt(rescheduleStaffId), e.target.value);
+                    }
+                  }}
+                  min={new Date().toISOString().split('T')[0]}
+                  disabled={!rescheduleStaffId}
+                  data-testid="input-reschedule-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="reschedule-slot">Time Slot</Label>
+                {availableSlots.length === 0 && rescheduleDate ? (
+                  <p className="text-sm text-muted-foreground mt-2">No available slots</p>
+                ) : (
+                  <Select
+                    value={rescheduleSlot}
+                    onValueChange={setRescheduleSlot}
+                    disabled={!rescheduleStaffId || !rescheduleDate}
+                  >
+                    <SelectTrigger data-testid="select-reschedule-slot">
+                      <SelectValue placeholder="Select time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSlots.map((slot: any) => (
+                        <SelectItem key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}|${slot.endTime}`}>
+                          {slot.startTime} - {slot.endTime}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <div>
@@ -1429,6 +1645,7 @@ export default function BookingScheduler() {
                   newStartTime,
                   newEndTime,
                   newStaffId: rescheduleStaffId ? parseInt(rescheduleStaffId) : undefined,
+                  newDepartmentId: rescheduleDepartmentId ? parseInt(rescheduleDepartmentId) : undefined,
                   sendNotification: sendRescheduleNotification,
                 });
               }}

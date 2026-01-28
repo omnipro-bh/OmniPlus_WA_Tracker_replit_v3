@@ -4138,7 +4138,7 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      const { newDate, newStartTime, newEndTime, newStaffId, sendNotification } = req.body;
+      const { newDate, newStartTime, newEndTime, newStaffId, newDepartmentId, sendNotification } = req.body;
       
       if (!newDate || !newStartTime || !newEndTime) {
         return res.status(400).json({ error: "New date and time are required" });
@@ -4146,6 +4146,7 @@ export function registerRoutes(app: Express) {
 
       // Check if new slot is available
       const staffIdToUse = newStaffId || booking.staffId;
+      const departmentIdToUse = newDepartmentId || booking.departmentId;
       const isAvailable = await storage.checkSlotAvailability(staffIdToUse, newDate, newStartTime);
       
       if (!isAvailable) {
@@ -4156,12 +4157,13 @@ export function registerRoutes(app: Express) {
       const oldDate = booking.slotDate;
       const oldTime = booking.startTime;
 
-      // Update booking with new date/time
+      // Update booking with new date/time (and department if changed)
       const updated = await storage.updateBooking(bookingId, {
         slotDate: newDate,
         startTime: newStartTime,
         endTime: newEndTime,
         staffId: staffIdToUse,
+        departmentId: departmentIdToUse,
       });
 
       // Send notification if requested
@@ -4172,7 +4174,7 @@ export function registerRoutes(app: Express) {
           
           if (activeChannel?.whapiChannelToken) {
             const staff = await storage.getBookingStaff(staffIdToUse);
-            const dept = await storage.getBookingDepartment(booking.departmentId);
+            const dept = await storage.getBookingDepartment(departmentIdToUse);
             
             const message = `Your booking has been rescheduled.\n\nOld: ${oldDate} at ${oldTime}\nNew: ${newDate} at ${newStartTime}\nDepartment: ${dept?.name || ''}\nStaff: ${staff?.name || ''}\n\nWe look forward to seeing you!`;
             
