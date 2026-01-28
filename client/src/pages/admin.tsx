@@ -2766,7 +2766,7 @@ export default function Admin() {
     const allPageKeys = [
       "dashboard", "pricing", "channels", "safetyMeter", "send", 
       "templates", "workflows", "outbox", "logs", "bulkLogs", 
-      "captureList", "phonebooks", "subscribers", "settings"
+      "captureList", "phonebooks", "subscribers", "settings", "bookingScheduler"
     ];
     
     // Build complete pageAccess object with all keys

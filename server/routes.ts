@@ -490,6 +490,7 @@ export function registerRoutes(app: Express) {
               settings: false,
               balances: false,
               whapiSettings: false,
+              bookingScheduler: false,
             };
       }
 
