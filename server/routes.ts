@@ -9811,55 +9811,6 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Get booking notification settings
-  app.get("/api/admin/settings/booking-notifications", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
-    try {
-      const confirmSetting = await storage.getSetting("booking_confirm_message");
-      const rescheduleSetting = await storage.getSetting("booking_reschedule_message");
-      const cancelSetting = await storage.getSetting("booking_cancel_message");
-      
-      res.json({
-        bookingConfirmMessage: confirmSetting?.value || null,
-        bookingRescheduleMessage: rescheduleSetting?.value || null,
-        bookingCancelMessage: cancelSetting?.value || null,
-      });
-    } catch (error: any) {
-      console.error("Get booking notification settings error:", error);
-      res.status(500).json({ error: "Failed to get settings" });
-    }
-  });
-
-  // Update booking notification settings
-  app.put("/api/admin/settings/booking-notifications", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
-    try {
-      const { bookingConfirmMessage, bookingRescheduleMessage, bookingCancelMessage } = req.body;
-      
-      if (bookingConfirmMessage !== undefined) {
-        await storage.setSetting("booking_confirm_message", bookingConfirmMessage);
-      }
-      if (bookingRescheduleMessage !== undefined) {
-        await storage.setSetting("booking_reschedule_message", bookingRescheduleMessage);
-      }
-      if (bookingCancelMessage !== undefined) {
-        await storage.setSetting("booking_cancel_message", bookingCancelMessage);
-      }
-
-      await storage.createAuditLog({
-        actorUserId: req.userId!,
-        action: "UPDATE_SETTINGS",
-        meta: {
-          entity: "booking_notifications",
-          adminId: req.userId
-        },
-      });
-
-      res.json({ success: true });
-    } catch (error: any) {
-      console.error("Update booking notification settings error:", error);
-      res.status(500).json({ error: "Failed to update settings" });
-    }
-  });
-
   // Get auth settings (public - needed for home page)
   app.get("/api/settings/auth", async (req: Request, res: Response) => {
     try {
