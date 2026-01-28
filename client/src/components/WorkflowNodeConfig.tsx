@@ -2547,6 +2547,44 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           </>
         )}
 
+        <Separator />
+
+        <div>
+          <Label htmlFor="defaultBookingStatus">Default Booking Status</Label>
+          <Select
+            value={config.defaultBookingStatus || 'confirmed'}
+            onValueChange={(value) => updateConfig('defaultBookingStatus', value)}
+          >
+            <SelectTrigger id="defaultBookingStatus" data-testid="select-default-booking-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="confirmed">Confirmed (Instant)</SelectItem>
+              <SelectItem value="pending">Pending (Requires Manual Confirmation)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Confirmed: Booking is instantly confirmed. Pending: Requires manual confirmation from admin.
+          </p>
+        </div>
+
+        {config.defaultBookingStatus === 'pending' && (
+          <div>
+            <Label htmlFor="pendingMessage">Pending Booking Message *</Label>
+            <Textarea
+              id="pendingMessage"
+              placeholder="Your booking request has been submitted. Our team will review and confirm your appointment soon."
+              value={config.pendingMessage || ''}
+              onChange={(e) => updateConfig('pendingMessage', e.target.value)}
+              data-testid="input-pending-message"
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Message sent when booking is created as pending. Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders.
+            </p>
+          </div>
+        )}
+
         <p className="text-xs text-amber-600 mt-4">
           Note: Configure departments, staff, and time slots in the Booking Scheduler page. The chatbot will dynamically show available options.
         </p>

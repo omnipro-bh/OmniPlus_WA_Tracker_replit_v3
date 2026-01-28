@@ -11,7 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -94,6 +96,31 @@ export default function BookingScheduler() {
   const [bookingsSearch, setBookingsSearch] = useState("");
   const [selectedBookings, setSelectedBookings] = useState<Set<number>>(new Set());
   const BOOKINGS_PAGE_SIZE = 10;
+
+  // Booking action modal states
+  const [editBookingOpen, setEditBookingOpen] = useState(false);
+  const [rescheduleBookingOpen, setRescheduleBookingOpen] = useState(false);
+  const [cancelBookingOpen, setCancelBookingOpen] = useState(false);
+  const [confirmBookingOpen, setConfirmBookingOpen] = useState(false);
+  const [actionBooking, setActionBooking] = useState<any>(null);
+  
+  // Edit booking form
+  const [editCustomerName, setEditCustomerName] = useState("");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [editBookingLabel, setEditBookingLabel] = useState("");
+  const [editCustomField1, setEditCustomField1] = useState("");
+  const [editCustomField2, setEditCustomField2] = useState("");
+  
+  // Reschedule form
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleStaffId, setRescheduleStaffId] = useState<string>("");
+  const [rescheduleSlot, setRescheduleSlot] = useState("");
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  
+  // Notification toggles
+  const [sendConfirmNotification, setSendConfirmNotification] = useState(true);
+  const [sendCancelNotification, setSendCancelNotification] = useState(true);
+  const [sendRescheduleNotification, setSendRescheduleNotification] = useState(true);
 
   // Queries
   const { data: departments = [], isLoading: loadingDepts } = useQuery<BookingDepartment[]>({
@@ -257,6 +284,119 @@ export default function BookingScheduler() {
       toast({ title: "Error", description: error.message || "Failed to delete bookings", variant: "destructive" });
     },
   });
+
+  // Edit booking mutation
+  const editBookingMutation = useMutation({
+    mutationFn: async (data: { id: number; customerName?: string; customerPhone?: string; bookingLabel?: string; customField1Value?: string; customField2Value?: string }) => {
+      return await apiRequest('PUT', `/api/booking/bookings/${data.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      setEditBookingOpen(false);
+      setActionBooking(null);
+      toast({ title: "Booking updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update booking", variant: "destructive" });
+    },
+  });
+
+  // Confirm booking mutation (with optional notification)
+  const confirmBookingMutation = useMutation({
+    mutationFn: async ({ id, sendNotification }: { id: number; sendNotification: boolean }) => {
+      return await apiRequest('POST', `/api/booking/bookings/${id}/confirm`, { sendNotification });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      setConfirmBookingOpen(false);
+      setActionBooking(null);
+      toast({ title: "Booking confirmed" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to confirm booking", variant: "destructive" });
+    },
+  });
+
+  // Cancel booking mutation (with optional notification)
+  const cancelBookingMutation = useMutation({
+    mutationFn: async ({ id, sendNotification }: { id: number; sendNotification: boolean }) => {
+      return await apiRequest('POST', `/api/booking/bookings/${id}/cancel`, { sendNotification });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      setCancelBookingOpen(false);
+      setActionBooking(null);
+      toast({ title: "Booking cancelled" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to cancel booking", variant: "destructive" });
+    },
+  });
+
+  // Reschedule booking mutation (with optional notification)
+  const rescheduleBookingMutation = useMutation({
+    mutationFn: async ({ id, newDate, newStartTime, newEndTime, newStaffId, sendNotification }: { id: number; newDate: string; newStartTime: string; newEndTime: string; newStaffId?: number; sendNotification: boolean }) => {
+      return await apiRequest('POST', `/api/booking/bookings/${id}/reschedule`, { newDate, newStartTime, newEndTime, newStaffId, sendNotification });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      setRescheduleBookingOpen(false);
+      setActionBooking(null);
+      toast({ title: "Booking rescheduled" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to reschedule booking", variant: "destructive" });
+    },
+  });
+
+  // Fetch available slots for reschedule
+  const fetchAvailableSlotsForReschedule = async (staffId: number, date: string) => {
+    try {
+      const res = await fetch(`/api/booking/staff/${staffId}/available-slots?date=${date}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch slots');
+      const slots = await res.json();
+      setAvailableSlots(slots);
+    } catch (err) {
+      setAvailableSlots([]);
+    }
+  };
+
+  // Helper to open edit modal
+  const openEditBookingModal = (booking: any) => {
+    setActionBooking(booking);
+    setEditCustomerName(booking.customerName || '');
+    setEditCustomerPhone(booking.customerPhone || '');
+    setEditBookingLabel(booking.bookingLabel || '');
+    setEditCustomField1(booking.customField1Value || '');
+    setEditCustomField2(booking.customField2Value || '');
+    setEditBookingOpen(true);
+  };
+
+  // Helper to open reschedule modal
+  const openRescheduleModal = (booking: any) => {
+    setActionBooking(booking);
+    setRescheduleDate(booking.slotDate);
+    setRescheduleStaffId(String(booking.staffId));
+    setRescheduleSlot('');
+    setAvailableSlots([]);
+    setRescheduleBookingOpen(true);
+    // Fetch available slots for current date
+    fetchAvailableSlotsForReschedule(booking.staffId, booking.slotDate);
+  };
+
+  // Helper to open cancel modal
+  const openCancelModal = (booking: any) => {
+    setActionBooking(booking);
+    setSendCancelNotification(true);
+    setCancelBookingOpen(true);
+  };
+
+  // Helper to open confirm modal
+  const openConfirmModal = (booking: any) => {
+    setActionBooking(booking);
+    setSendConfirmNotification(true);
+    setConfirmBookingOpen(true);
+  };
 
   const handleSelectAll = () => {
     if (!bookingsData?.bookings) return;
@@ -934,21 +1074,53 @@ export default function BookingScheduler() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Select
-                            value={booking.status}
-                            onValueChange={(status) => updateBookingMutation.mutate({ id: booking.id, status })}
-                          >
-                            <SelectTrigger className="w-32" data-testid={`select-booking-status-${booking.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="confirmed">Confirmed</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                              <SelectItem value="cancelled">Cancelled</SelectItem>
-                              <SelectItem value="no_show">No Show</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-1">
+                            <Select
+                              value={booking.status}
+                              onValueChange={(status) => updateBookingMutation.mutate({ id: booking.id, status })}
+                            >
+                              <SelectTrigger className="w-28" data-testid={`select-booking-status-${booking.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="confirmed">Confirmed</SelectItem>
+                                <SelectItem value="completed">Completed</SelectItem>
+                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                                <SelectItem value="no_show">No Show</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" data-testid={`button-booking-actions-${booking.id}`}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openEditBookingModal(booking)} data-testid={`action-edit-${booking.id}`}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openRescheduleModal(booking)} data-testid={`action-reschedule-${booking.id}`}>
+                                  <CalendarClock className="h-4 w-4 mr-2" />
+                                  Reschedule
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                {booking.status === 'pending' && (
+                                  <DropdownMenuItem onClick={() => openConfirmModal(booking)} data-testid={`action-confirm-${booking.id}`}>
+                                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                                    Confirm Booking
+                                  </DropdownMenuItem>
+                                )}
+                                {booking.status !== 'cancelled' && (
+                                  <DropdownMenuItem onClick={() => openCancelModal(booking)} className="text-destructive" data-testid={`action-cancel-${booking.id}`}>
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                    Cancel Booking
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -990,6 +1162,285 @@ export default function BookingScheduler() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Edit Booking Dialog */}
+      <Dialog open={editBookingOpen} onOpenChange={setEditBookingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Booking</DialogTitle>
+            <DialogDescription>
+              Update booking details for {actionBooking?.customerName || actionBooking?.customerPhone}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="edit-customer-name">Customer Name</Label>
+              <Input
+                id="edit-customer-name"
+                value={editCustomerName}
+                onChange={(e) => setEditCustomerName(e.target.value)}
+                placeholder="Customer name"
+                data-testid="input-edit-customer-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-customer-phone">Customer Phone</Label>
+              <Input
+                id="edit-customer-phone"
+                value={editCustomerPhone}
+                onChange={(e) => setEditCustomerPhone(e.target.value)}
+                placeholder="Customer phone"
+                data-testid="input-edit-customer-phone"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-booking-label">Booking Label</Label>
+              <Input
+                id="edit-booking-label"
+                value={editBookingLabel}
+                onChange={(e) => setEditBookingLabel(e.target.value)}
+                placeholder="Label (optional)"
+                data-testid="input-edit-booking-label"
+              />
+            </div>
+            {actionBooking?.customField1Label && (
+              <div>
+                <Label htmlFor="edit-custom-field-1">{actionBooking.customField1Label}</Label>
+                <Input
+                  id="edit-custom-field-1"
+                  value={editCustomField1}
+                  onChange={(e) => setEditCustomField1(e.target.value)}
+                  placeholder={actionBooking.customField1Label}
+                  data-testid="input-edit-custom-field-1"
+                />
+              </div>
+            )}
+            {actionBooking?.customField2Label && (
+              <div>
+                <Label htmlFor="edit-custom-field-2">{actionBooking.customField2Label}</Label>
+                <Input
+                  id="edit-custom-field-2"
+                  value={editCustomField2}
+                  onChange={(e) => setEditCustomField2(e.target.value)}
+                  placeholder={actionBooking.customField2Label}
+                  data-testid="input-edit-custom-field-2"
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditBookingOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!actionBooking) return;
+                editBookingMutation.mutate({
+                  id: actionBooking.id,
+                  customerName: editCustomerName,
+                  customerPhone: editCustomerPhone,
+                  bookingLabel: editBookingLabel,
+                  customField1Value: editCustomField1,
+                  customField2Value: editCustomField2,
+                });
+              }}
+              disabled={editBookingMutation.isPending}
+              data-testid="button-save-edit"
+            >
+              {editBookingMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Booking Dialog */}
+      <Dialog open={confirmBookingOpen} onOpenChange={setConfirmBookingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Booking</DialogTitle>
+            <DialogDescription>
+              Confirm this booking for {actionBooking?.customerName || actionBooking?.customerPhone}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
+              <div><span className="font-medium">Date:</span> {actionBooking?.slotDate}</div>
+              <div><span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}</div>
+              <div><span className="font-medium">Department:</span> {actionBooking?.departmentName}</div>
+              <div><span className="font-medium">Staff:</span> {actionBooking?.staffName}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="send-confirm-notification">Send Notification</Label>
+                <p className="text-xs text-muted-foreground">Notify customer via WhatsApp</p>
+              </div>
+              <Switch
+                id="send-confirm-notification"
+                checked={sendConfirmNotification}
+                onCheckedChange={setSendConfirmNotification}
+                data-testid="switch-confirm-notification"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmBookingOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!actionBooking) return;
+                confirmBookingMutation.mutate({
+                  id: actionBooking.id,
+                  sendNotification: sendConfirmNotification,
+                });
+              }}
+              disabled={confirmBookingMutation.isPending}
+              data-testid="button-confirm-booking"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              {confirmBookingMutation.isPending ? 'Confirming...' : 'Confirm Booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Booking Dialog */}
+      <Dialog open={cancelBookingOpen} onOpenChange={setCancelBookingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel Booking</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel this booking?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
+              <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
+              <div><span className="font-medium">Date:</span> {actionBooking?.slotDate}</div>
+              <div><span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="send-cancel-notification">Send Notification</Label>
+                <p className="text-xs text-muted-foreground">Notify customer via WhatsApp</p>
+              </div>
+              <Switch
+                id="send-cancel-notification"
+                checked={sendCancelNotification}
+                onCheckedChange={setSendCancelNotification}
+                data-testid="switch-cancel-notification"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelBookingOpen(false)}>Keep Booking</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!actionBooking) return;
+                cancelBookingMutation.mutate({
+                  id: actionBooking.id,
+                  sendNotification: sendCancelNotification,
+                });
+              }}
+              disabled={cancelBookingMutation.isPending}
+              data-testid="button-cancel-booking"
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              {cancelBookingMutation.isPending ? 'Cancelling...' : 'Cancel Booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reschedule Booking Dialog */}
+      <Dialog open={rescheduleBookingOpen} onOpenChange={setRescheduleBookingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reschedule Booking</DialogTitle>
+            <DialogDescription>
+              Choose a new date and time for this booking
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
+              <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
+              <div><span className="font-medium">Current:</span> {actionBooking?.slotDate} at {actionBooking?.startTime}</div>
+            </div>
+            <div>
+              <Label htmlFor="reschedule-date">New Date</Label>
+              <Input
+                id="reschedule-date"
+                type="date"
+                value={rescheduleDate}
+                onChange={(e) => {
+                  setRescheduleDate(e.target.value);
+                  setRescheduleSlot('');
+                  if (rescheduleStaffId && e.target.value) {
+                    fetchAvailableSlotsForReschedule(parseInt(rescheduleStaffId), e.target.value);
+                  }
+                }}
+                min={new Date().toISOString().split('T')[0]}
+                data-testid="input-reschedule-date"
+              />
+            </div>
+            <div>
+              <Label htmlFor="reschedule-slot">Available Time Slots</Label>
+              {availableSlots.length === 0 ? (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {rescheduleDate ? 'No available slots for this date' : 'Select a date to see available slots'}
+                </p>
+              ) : (
+                <Select
+                  value={rescheduleSlot}
+                  onValueChange={setRescheduleSlot}
+                >
+                  <SelectTrigger data-testid="select-reschedule-slot">
+                    <SelectValue placeholder="Select a time slot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSlots.map((slot: any) => (
+                      <SelectItem key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}|${slot.endTime}`}>
+                        {slot.startTime} - {slot.endTime}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="send-reschedule-notification">Send Notification</Label>
+                <p className="text-xs text-muted-foreground">Notify customer via WhatsApp</p>
+              </div>
+              <Switch
+                id="send-reschedule-notification"
+                checked={sendRescheduleNotification}
+                onCheckedChange={setSendRescheduleNotification}
+                data-testid="switch-reschedule-notification"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleBookingOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!actionBooking || !rescheduleSlot) return;
+                const [newStartTime, newEndTime] = rescheduleSlot.split('|');
+                rescheduleBookingMutation.mutate({
+                  id: actionBooking.id,
+                  newDate: rescheduleDate,
+                  newStartTime,
+                  newEndTime,
+                  newStaffId: rescheduleStaffId ? parseInt(rescheduleStaffId) : undefined,
+                  sendNotification: sendRescheduleNotification,
+                });
+              }}
+              disabled={rescheduleBookingMutation.isPending || !rescheduleSlot}
+              data-testid="button-reschedule-booking"
+            >
+              <CalendarClock className="h-4 w-4 mr-2" />
+              {rescheduleBookingMutation.isPending ? 'Rescheduling...' : 'Reschedule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

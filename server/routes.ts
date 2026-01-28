@@ -4029,6 +4029,239 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Confirm booking with optional notification
+  app.post("/api/booking/bookings/:id/confirm", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      // Update status to confirmed
+      const updated = await storage.updateBooking(bookingId, { status: 'confirmed' });
+
+      // Send notification if requested
+      const { sendNotification } = req.body;
+      if (sendNotification) {
+        try {
+          const channels = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            
+            const message = `Your booking has been confirmed!\n\nDate: ${booking.slotDate}\nTime: ${booking.startTime}\nDepartment: ${dept?.name || ''}\nStaff: ${staff?.name || ''}\n\nWe look forward to seeing you!`;
+            
+            await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message,
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send confirmation notification:", notifyErr);
+        }
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Confirm booking error:", error);
+      res.status(500).json({ error: "Failed to confirm booking" });
+    }
+  });
+
+  // Cancel booking with optional notification
+  app.post("/api/booking/bookings/:id/cancel", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      // Update status to cancelled
+      const updated = await storage.updateBooking(bookingId, { status: 'cancelled' });
+
+      // Send notification if requested
+      const { sendNotification } = req.body;
+      if (sendNotification) {
+        try {
+          const channels = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            
+            const message = `Your booking has been cancelled.\n\nDate: ${booking.slotDate}\nTime: ${booking.startTime}\nDepartment: ${dept?.name || ''}\n\nIf you have questions, please contact us.`;
+            
+            await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message,
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send cancellation notification:", notifyErr);
+        }
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Cancel booking error:", error);
+      res.status(500).json({ error: "Failed to cancel booking" });
+    }
+  });
+
+  // Reschedule booking with optional notification
+  app.post("/api/booking/bookings/:id/reschedule", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const { newDate, newStartTime, newEndTime, newStaffId, sendNotification } = req.body;
+      
+      if (!newDate || !newStartTime || !newEndTime) {
+        return res.status(400).json({ error: "New date and time are required" });
+      }
+
+      // Check if new slot is available
+      const staffIdToUse = newStaffId || booking.staffId;
+      const isAvailable = await storage.checkSlotAvailability(staffIdToUse, newDate, newStartTime);
+      
+      if (!isAvailable) {
+        return res.status(400).json({ error: "The selected time slot is not available" });
+      }
+
+      // Store old booking info for notification
+      const oldDate = booking.slotDate;
+      const oldTime = booking.startTime;
+
+      // Update booking with new date/time
+      const updated = await storage.updateBooking(bookingId, {
+        slotDate: newDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        staffId: staffIdToUse,
+      });
+
+      // Send notification if requested
+      if (sendNotification) {
+        try {
+          const channels = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(staffIdToUse);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            
+            const message = `Your booking has been rescheduled.\n\nOld: ${oldDate} at ${oldTime}\nNew: ${newDate} at ${newStartTime}\nDepartment: ${dept?.name || ''}\nStaff: ${staff?.name || ''}\n\nWe look forward to seeing you!`;
+            
+            await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message,
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send reschedule notification:", notifyErr);
+        }
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Reschedule booking error:", error);
+      res.status(500).json({ error: "Failed to reschedule booking" });
+    }
+  });
+
+  // Get available slots for a staff member on a specific date (for reschedule UI)
+  app.get("/api/booking/staff/:staffId/available-slots", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      const { date } = req.query;
+      
+      if (isNaN(staffId) || !date) {
+        return res.status(400).json({ error: "Staff ID and date are required" });
+      }
+
+      const effectiveUserId = getEffectiveUserId(req);
+      const staff = await storage.getBookingStaff(staffId);
+      
+      if (!staff) {
+        return res.status(404).json({ error: "Staff not found" });
+      }
+
+      // Verify ownership - staff must belong to the requesting user (or admin)
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized to view this staff's slots" });
+      }
+
+      // Get the day of week for the requested date
+      const requestedDate = new Date(date as string);
+      const dayOfWeek = requestedDate.getDay();
+
+      // Get all slots for this staff on this day of week
+      const allSlots = await storage.getBookingStaffSlots(staffId);
+      const daySlots = allSlots.filter((s: any) => s.dayOfWeek === dayOfWeek && s.isActive);
+
+      // For each slot template, generate individual time slots
+      const availableSlots: { startTime: string; endTime: string }[] = [];
+      
+      for (const slotTemplate of daySlots) {
+        // Generate individual slots based on duration
+        let currentTime = slotTemplate.startTime;
+        
+        while (currentTime < slotTemplate.endTime) {
+          // Calculate end time for this slot
+          const [hours, mins] = currentTime.split(':').map(Number);
+          const startMins = hours * 60 + mins;
+          const endMins = startMins + slotTemplate.slotDuration;
+          const endHours = Math.floor(endMins / 60);
+          const endMinutes = endMins % 60;
+          const endTimeStr = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+          
+          if (endTimeStr <= slotTemplate.endTime) {
+            // Check if this slot is available (not already booked)
+            const isAvailable = await storage.checkSlotAvailability(staffId, date as string, currentTime);
+            
+            if (isAvailable) {
+              availableSlots.push({
+                startTime: currentTime,
+                endTime: endTimeStr,
+              });
+            }
+          }
+          
+          // Move to next slot
+          currentTime = endTimeStr;
+        }
+      }
+
+      res.json(availableSlots);
+    } catch (error: any) {
+      console.error("Get available slots error:", error);
+      res.status(500).json({ error: "Failed to get available slots" });
+    }
+  });
+
   // Bulk delete bookings (must be before :id route to avoid matching "bulk" as an id)
   app.delete("/api/booking/bookings/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -6663,7 +6896,7 @@ export function registerRoutes(app: Express) {
                   slotDate: slotDate,
                   startTime: slot.startTime,
                   endTime: slot.endTime,
-                  status: 'confirmed',
+                  status: bookingState.config?.defaultBookingStatus || 'confirmed',
                   nodeId: bookingState.nodeId,
                   bookingLabel: bookingState.bookingLabel,
                   reminderEnabled: bookingState.config?.reminderEnabled || false,
@@ -6676,9 +6909,19 @@ export function registerRoutes(app: Express) {
                 const staff = await storage.getBookingStaff(bookingState.staffId);
                 const dept = await storage.getBookingDepartment(bookingState.departmentId);
                 
-                let successMessage = bookingState.config?.successMessage || 
-                  'Your appointment has been booked for {{date}} at {{time}}.';
-                successMessage = successMessage
+                // Use pending message if status is pending, otherwise use success message
+                const bookingStatus = bookingState.config?.defaultBookingStatus || 'confirmed';
+                let messageToSend: string;
+                
+                if (bookingStatus === 'pending') {
+                  messageToSend = bookingState.config?.pendingMessage || 
+                    'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
+                } else {
+                  messageToSend = bookingState.config?.successMessage || 
+                    'Your appointment has been booked for {{date}} at {{time}}.';
+                }
+                
+                messageToSend = messageToSend
                   .replace(/\{\{date\}\}/g, slotDate)
                   .replace(/\{\{time\}\}/g, slot.startTime)
                   .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -6686,7 +6929,7 @@ export function registerRoutes(app: Express) {
                 
                 await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
                   to: phone,
-                  body: successMessage,
+                  body: messageToSend,
                 });
                 
                 // Clear booking state and continue workflow on "booked" path
@@ -7078,6 +7321,7 @@ export function registerRoutes(app: Express) {
             
             // No custom questions - create booking with the provided name
             try {
+              const bookingStatus = nameCheckBookingState.config?.defaultBookingStatus || 'confirmed';
               const booking = await storage.createBooking({
                 userId: activeWorkflow.userId,
                 staffId: nameCheckBookingState.staffId,
@@ -7087,7 +7331,7 @@ export function registerRoutes(app: Express) {
                 slotDate: nameCheckBookingState.selectedSlotDate,
                 startTime: nameCheckBookingState.selectedStartTime,
                 endTime: nameCheckBookingState.selectedEndTime,
-                status: 'confirmed',
+                status: bookingStatus,
                 nodeId: nameCheckBookingState.nodeId,
                 bookingLabel: nameCheckBookingState.bookingLabel,
                 reminderEnabled: nameCheckBookingState.config?.reminderEnabled || false,
@@ -7100,9 +7344,17 @@ export function registerRoutes(app: Express) {
               const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
               const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
               
-              let successMessage = nameCheckBookingState.config?.successMessage || 
-                'Your appointment has been booked for {{date}} at {{time}}.';
-              successMessage = successMessage
+              // Use pending message if status is pending, otherwise use success message
+              let messageToSend: string;
+              if (bookingStatus === 'pending') {
+                messageToSend = nameCheckBookingState.config?.pendingMessage || 
+                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
+              } else {
+                messageToSend = nameCheckBookingState.config?.successMessage || 
+                  'Your appointment has been booked for {{date}} at {{time}}.';
+              }
+              
+              messageToSend = messageToSend
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -7111,7 +7363,7 @@ export function registerRoutes(app: Express) {
               
               await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
                 to: phone,
-                body: successMessage,
+                body: messageToSend,
               });
               
               // Clear booking state and continue workflow on "booked" path
@@ -7180,6 +7432,7 @@ export function registerRoutes(app: Express) {
             
             // No second question - create booking
             try {
+              const bookingStatus = config.defaultBookingStatus || 'confirmed';
               const booking = await storage.createBooking({
                 userId: activeWorkflow.userId,
                 staffId: nameCheckBookingState.staffId,
@@ -7189,7 +7442,7 @@ export function registerRoutes(app: Express) {
                 slotDate: nameCheckBookingState.selectedSlotDate,
                 startTime: nameCheckBookingState.selectedStartTime,
                 endTime: nameCheckBookingState.selectedEndTime,
-                status: 'confirmed',
+                status: bookingStatus,
                 nodeId: nameCheckBookingState.nodeId,
                 bookingLabel: nameCheckBookingState.bookingLabel,
                 customField1Label: config.customQuestion1Label || 'Question 1',
@@ -7203,9 +7456,17 @@ export function registerRoutes(app: Express) {
               const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
               const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
               
-              let successMessage = config.successMessage || 
-                'Your appointment has been booked for {{date}} at {{time}}.';
-              successMessage = successMessage
+              // Use pending message if status is pending, otherwise use success message
+              let messageToSend: string;
+              if (bookingStatus === 'pending') {
+                messageToSend = config.pendingMessage || 
+                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
+              } else {
+                messageToSend = config.successMessage || 
+                  'Your appointment has been booked for {{date}} at {{time}}.';
+              }
+              
+              messageToSend = messageToSend
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -7214,7 +7475,7 @@ export function registerRoutes(app: Express) {
               
               await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
                 to: phone,
-                body: successMessage,
+                body: messageToSend,
               });
               
               const definition = activeWorkflow.definitionJson as any;
@@ -7259,6 +7520,7 @@ export function registerRoutes(app: Express) {
             
             // Create booking with both custom fields
             try {
+              const bookingStatus = config.defaultBookingStatus || 'confirmed';
               const booking = await storage.createBooking({
                 userId: activeWorkflow.userId,
                 staffId: nameCheckBookingState.staffId,
@@ -7268,7 +7530,7 @@ export function registerRoutes(app: Express) {
                 slotDate: nameCheckBookingState.selectedSlotDate,
                 startTime: nameCheckBookingState.selectedStartTime,
                 endTime: nameCheckBookingState.selectedEndTime,
-                status: 'confirmed',
+                status: bookingStatus,
                 nodeId: nameCheckBookingState.nodeId,
                 bookingLabel: nameCheckBookingState.bookingLabel,
                 customField1Label: nameCheckBookingState.customField1Label || 'Question 1',
@@ -7284,9 +7546,17 @@ export function registerRoutes(app: Express) {
               const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
               const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
               
-              let successMessage = config.successMessage || 
-                'Your appointment has been booked for {{date}} at {{time}}.';
-              successMessage = successMessage
+              // Use pending message if status is pending, otherwise use success message
+              let messageToSend: string;
+              if (bookingStatus === 'pending') {
+                messageToSend = config.pendingMessage || 
+                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
+              } else {
+                messageToSend = config.successMessage || 
+                  'Your appointment has been booked for {{date}} at {{time}}.';
+              }
+              
+              messageToSend = messageToSend
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -7295,7 +7565,7 @@ export function registerRoutes(app: Express) {
               
               await whapi.sendTextMessage(activeChannelForQ2.whapiChannelToken, {
                 to: phone,
-                body: successMessage,
+                body: messageToSend,
               });
               
               const definition = activeWorkflow.definitionJson as any;
