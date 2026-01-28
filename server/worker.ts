@@ -464,36 +464,26 @@ export class BackgroundWorker {
   // Send appointment reminders for upcoming bookings
   private async sendAppointmentReminders() {
     try {
-      console.log("[Reminder] Starting appointment reminder check...");
-      
       // Get all confirmed bookings with reminders enabled and not yet sent
       const bookingsNeedingReminders = await storage.getBookingsNeedingReminders();
       
       if (bookingsNeedingReminders.length === 0) {
-        console.log("[Reminder] No reminders to send.");
-        return;
+        return; // Silent return when no reminders pending
       }
-      
-      console.log(`[Reminder] Found ${bookingsNeedingReminders.length} potential reminders to check`);
       
       let sentCount = 0;
       let errorCount = 0;
       const nowInTz = dayjs().tz(APP_TIMEZONE);
-      console.log(`[Reminder] Current time in ${APP_TIMEZONE}: ${nowInTz.format('YYYY-MM-DD HH:mm:ss')}`);
       
       for (const booking of bookingsNeedingReminders) {
         try {
           // Parse appointment date and time in the app's timezone
-          // Format: slotDate = "2026-01-28", startTime = "10:00"
           const appointmentDateTimeStr = `${booking.slotDate} ${booking.startTime}`;
           const appointmentTime = dayjs.tz(appointmentDateTimeStr, "YYYY-MM-DD HH:mm", APP_TIMEZONE);
           
           // Calculate when reminder should be sent (hours before appointment)
           const reminderHours = booking.reminderHoursBefore || 24;
           const reminderTime = appointmentTime.subtract(reminderHours, 'hour');
-          
-          console.log(`[Reminder] Booking ${booking.id}: Appointment at ${appointmentTime.format('YYYY-MM-DD HH:mm')}, ` +
-            `Reminder time: ${reminderTime.format('YYYY-MM-DD HH:mm')}, Hours before: ${reminderHours}`);
           
           // Check if it's time to send the reminder (within 15 minute window after reminder time)
           // This prevents sending too early or re-sending on every cron run
@@ -541,7 +531,10 @@ export class BackgroundWorker {
         }
       }
       
-      console.log(`[Reminder] Completed. Sent: ${sentCount}, Errors: ${errorCount}`);
+      // Only log summary when there's activity
+      if (sentCount > 0 || errorCount > 0) {
+        console.log(`[Reminder] Sent: ${sentCount}, Errors: ${errorCount}`);
+      }
     } catch (error) {
       console.error("[Reminder] Error in appointment reminder job:", error);
     }
