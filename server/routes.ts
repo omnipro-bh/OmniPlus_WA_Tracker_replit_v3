@@ -4029,28 +4029,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/booking/bookings/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-    try {
-      const bookingId = parseInt(req.params.id);
-      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
-
-      const booking = await storage.getBooking(bookingId);
-      if (!booking) return res.status(404).json({ error: "Booking not found" });
-
-      const effectiveUserId = getEffectiveUserId(req);
-      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
-        return res.status(403).json({ error: "Not authorized" });
-      }
-
-      await storage.deleteBooking(bookingId);
-      res.json({ success: true });
-    } catch (error: any) {
-      console.error("Delete booking error:", error);
-      res.status(500).json({ error: "Failed to delete booking" });
-    }
-  });
-
-  // Bulk delete bookings
+  // Bulk delete bookings (must be before :id route to avoid matching "bulk" as an id)
   app.delete("/api/booking/bookings/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const { ids } = req.body;
@@ -4073,6 +4052,27 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Bulk delete bookings error:", error);
       res.status(500).json({ error: "Failed to delete bookings" });
+    }
+  });
+
+  app.delete("/api/booking/bookings/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      await storage.deleteBooking(bookingId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete booking error:", error);
+      res.status(500).json({ error: "Failed to delete booking" });
     }
   });
 
