@@ -4058,7 +4058,19 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(booking.staffId);
             const dept = await storage.getBookingDepartment(booking.departmentId);
             
-            const message = `Your booking has been confirmed!\n\nDate: ${booking.slotDate}\nTime: ${booking.startTime}\nDepartment: ${dept?.name || ''}\nStaff: ${staff?.name || ''}\n\nWe look forward to seeing you!`;
+            // Get customizable message from settings or use default
+            const confirmSetting = await storage.getSetting("booking_confirm_message");
+            let message = confirmSetting?.value || `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
+            
+            // Replace template variables
+            message = message
+              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
+              .replace(/\{\{date\}\}/g, booking.slotDate)
+              .replace(/\{\{time\}\}/g, booking.startTime)
+              .replace(/\{\{oldDate\}\}/g, '')
+              .replace(/\{\{oldTime\}\}/g, '')
+              .replace(/\{\{department\}\}/g, dept?.name || '')
+              .replace(/\{\{staff\}\}/g, staff?.name || '');
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
@@ -4105,7 +4117,19 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(booking.staffId);
             const dept = await storage.getBookingDepartment(booking.departmentId);
             
-            const message = `Your booking has been cancelled.\n\nDate: ${booking.slotDate}\nTime: ${booking.startTime}\nDepartment: ${dept?.name || ''}\n\nIf you have questions, please contact us.`;
+            // Get customizable message from settings or use default
+            const cancelSetting = await storage.getSetting("booking_cancel_message");
+            let message = cancelSetting?.value || `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
+            
+            // Replace template variables
+            message = message
+              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
+              .replace(/\{\{date\}\}/g, booking.slotDate)
+              .replace(/\{\{time\}\}/g, booking.startTime)
+              .replace(/\{\{oldDate\}\}/g, '')
+              .replace(/\{\{oldTime\}\}/g, '')
+              .replace(/\{\{department\}\}/g, dept?.name || '')
+              .replace(/\{\{staff\}\}/g, staff?.name || '');
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
@@ -4176,7 +4200,19 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(staffIdToUse);
             const dept = await storage.getBookingDepartment(departmentIdToUse);
             
-            const message = `Your booking has been rescheduled.\n\nOld: ${oldDate} at ${oldTime}\nNew: ${newDate} at ${newStartTime}\nDepartment: ${dept?.name || ''}\nStaff: ${staff?.name || ''}\n\nWe look forward to seeing you!`;
+            // Get customizable message from settings or use default
+            const rescheduleSetting = await storage.getSetting("booking_reschedule_message");
+            let message = rescheduleSetting?.value || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
+            
+            // Replace template variables
+            message = message
+              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
+              .replace(/\{\{date\}\}/g, newDate)
+              .replace(/\{\{time\}\}/g, newStartTime)
+              .replace(/\{\{oldDate\}\}/g, oldDate)
+              .replace(/\{\{oldTime\}\}/g, oldTime)
+              .replace(/\{\{department\}\}/g, dept?.name || '')
+              .replace(/\{\{staff\}\}/g, staff?.name || '');
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
@@ -9771,6 +9807,55 @@ export function registerRoutes(app: Express) {
       res.json({ success: true, allowedDomains });
     } catch (error: any) {
       console.error("Update HTTP allowlist settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Get booking notification settings
+  app.get("/api/admin/settings/booking-notifications", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const confirmSetting = await storage.getSetting("booking_confirm_message");
+      const rescheduleSetting = await storage.getSetting("booking_reschedule_message");
+      const cancelSetting = await storage.getSetting("booking_cancel_message");
+      
+      res.json({
+        bookingConfirmMessage: confirmSetting?.value || null,
+        bookingRescheduleMessage: rescheduleSetting?.value || null,
+        bookingCancelMessage: cancelSetting?.value || null,
+      });
+    } catch (error: any) {
+      console.error("Get booking notification settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update booking notification settings
+  app.put("/api/admin/settings/booking-notifications", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const { bookingConfirmMessage, bookingRescheduleMessage, bookingCancelMessage } = req.body;
+      
+      if (bookingConfirmMessage !== undefined) {
+        await storage.setSetting("booking_confirm_message", bookingConfirmMessage);
+      }
+      if (bookingRescheduleMessage !== undefined) {
+        await storage.setSetting("booking_reschedule_message", bookingRescheduleMessage);
+      }
+      if (bookingCancelMessage !== undefined) {
+        await storage.setSetting("booking_cancel_message", bookingCancelMessage);
+      }
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        action: "UPDATE_SETTINGS",
+        meta: {
+          entity: "booking_notifications",
+          adminId: req.userId
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update booking notification settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });
     }
   });

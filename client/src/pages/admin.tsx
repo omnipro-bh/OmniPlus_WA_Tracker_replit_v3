@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap, Copy, Pencil, Trash2, Eye, EyeOff, Upload } from "lucide-react";
+import { Shield, Plus, Minus, CheckCircle, XCircle, ChevronDown, ChevronRight, Zap, Copy, Pencil, Trash2, Eye, EyeOff, Upload, MessageSquare, RotateCcw } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -721,6 +721,187 @@ function HttpAllowlistSettings() {
       </div>
     </div>
   );
+}
+
+function BookingNotificationSettings() {
+  const { toast } = useToast();
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [rescheduleMessage, setRescheduleMessage] = useState("");
+  const [cancelMessage, setCancelMessage] = useState("");
+
+  const { data: settings, isLoading } = useQuery<{
+    bookingConfirmMessage?: string;
+    bookingRescheduleMessage?: string;
+    bookingCancelMessage?: string;
+  }>({
+    queryKey: ["/api/admin/settings/booking-notifications"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setConfirmMessage(settings.bookingConfirmMessage || getDefaultConfirmMessage());
+      setRescheduleMessage(settings.bookingRescheduleMessage || getDefaultRescheduleMessage());
+      setCancelMessage(settings.bookingCancelMessage || getDefaultCancelMessage());
+    }
+  }, [settings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: { bookingConfirmMessage: string; bookingRescheduleMessage: string; bookingCancelMessage: string }) => {
+      return await apiRequest("PUT", "/api/admin/settings/booking-notifications", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/booking-notifications"] });
+      toast({
+        title: "Settings updated",
+        description: "Booking notification messages have been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update settings",
+        description: error.error || error.message || "Could not update settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSave = () => {
+    updateSettingsMutation.mutate({
+      bookingConfirmMessage: confirmMessage,
+      bookingRescheduleMessage: rescheduleMessage,
+      bookingCancelMessage: cancelMessage,
+    });
+  };
+
+  const handleReset = (type: 'confirm' | 'reschedule' | 'cancel') => {
+    if (type === 'confirm') setConfirmMessage(getDefaultConfirmMessage());
+    if (type === 'reschedule') setRescheduleMessage(getDefaultRescheduleMessage());
+    if (type === 'cancel') setCancelMessage(getDefaultCancelMessage());
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-md">
+        <div className="flex items-start gap-2">
+          <MessageSquare className="w-4 h-4 text-blue-500 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-500">Template Variables</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Use these placeholders in your messages. They will be replaced with actual booking data:
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {['{{customerName}}', '{{date}}', '{{time}}', '{{department}}', '{{staff}}', '{{oldDate}}', '{{oldTime}}'].map((v) => (
+                <code key={v} className="text-xs bg-muted px-1.5 py-0.5 rounded">{v}</code>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Confirmation Message</Label>
+          <Button variant="ghost" size="sm" onClick={() => handleReset('confirm')} data-testid="button-reset-confirm">
+            <RotateCcw className="w-3 h-3 mr-1" /> Reset
+          </Button>
+        </div>
+        <Textarea
+          value={confirmMessage}
+          onChange={(e) => setConfirmMessage(e.target.value)}
+          placeholder="Your booking has been confirmed..."
+          rows={5}
+          data-testid="textarea-confirm-message"
+        />
+        <p className="text-xs text-muted-foreground">
+          Sent when a pending booking is confirmed by admin
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Reschedule Message</Label>
+          <Button variant="ghost" size="sm" onClick={() => handleReset('reschedule')} data-testid="button-reset-reschedule">
+            <RotateCcw className="w-3 h-3 mr-1" /> Reset
+          </Button>
+        </div>
+        <Textarea
+          value={rescheduleMessage}
+          onChange={(e) => setRescheduleMessage(e.target.value)}
+          placeholder="Your booking has been rescheduled..."
+          rows={5}
+          data-testid="textarea-reschedule-message"
+        />
+        <p className="text-xs text-muted-foreground">
+          Sent when a booking is rescheduled
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Cancellation Message</Label>
+          <Button variant="ghost" size="sm" onClick={() => handleReset('cancel')} data-testid="button-reset-cancel">
+            <RotateCcw className="w-3 h-3 mr-1" /> Reset
+          </Button>
+        </div>
+        <Textarea
+          value={cancelMessage}
+          onChange={(e) => setCancelMessage(e.target.value)}
+          placeholder="Your booking has been cancelled..."
+          rows={5}
+          data-testid="textarea-cancel-message"
+        />
+        <p className="text-xs text-muted-foreground">
+          Sent when a booking is cancelled
+        </p>
+      </div>
+
+      <Button
+        onClick={handleSave}
+        disabled={updateSettingsMutation.isPending}
+        data-testid="button-save-booking-notifications"
+      >
+        {updateSettingsMutation.isPending ? "Saving..." : "Save Messages"}
+      </Button>
+    </div>
+  );
+}
+
+function getDefaultConfirmMessage(): string {
+  return `Your booking has been confirmed!
+
+Date: {{date}}
+Time: {{time}}
+Department: {{department}}
+Staff: {{staff}}
+
+We look forward to seeing you!`;
+}
+
+function getDefaultRescheduleMessage(): string {
+  return `Your booking has been rescheduled.
+
+Old: {{oldDate}} at {{oldTime}}
+New: {{date}} at {{time}}
+Department: {{department}}
+Staff: {{staff}}
+
+We look forward to seeing you!`;
+}
+
+function getDefaultCancelMessage(): string {
+  return `Your booking has been cancelled.
+
+Date: {{date}}
+Time: {{time}}
+Department: {{department}}
+
+If you have questions, please contact us.`;
 }
 
 function BulkSpeedSettings() {
@@ -3553,6 +3734,18 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <HttpAllowlistSettings />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Booking Notification Messages</CardTitle>
+              <CardDescription>
+                Customize WhatsApp notification messages sent when bookings are confirmed, rescheduled, or cancelled
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BookingNotificationSettings />
             </CardContent>
           </Card>
         </TabsContent>
