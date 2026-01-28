@@ -2575,6 +2575,51 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           </Select>
         </div>
 
+        <div>
+          <Label htmlFor="statusFilter">Status Filter</Label>
+          <Select
+            value={config.statusFilter || 'upcoming'}
+            onValueChange={(value) => updateConfig('statusFilter', value)}
+          >
+            <SelectTrigger id="statusFilter" data-testid="select-status-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="upcoming">Upcoming Only (Confirmed)</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="confirmed">Confirmed Only</SelectItem>
+              <SelectItem value="completed">Completed Only</SelectItem>
+              <SelectItem value="cancelled">Cancelled Only</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Filter which bookings to show the customer
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="maxBookings">Max Bookings to Show</Label>
+          <Select
+            value={config.maxBookings?.toString() || '0'}
+            onValueChange={(value) => updateConfig('maxBookings', parseInt(value))}
+          >
+            <SelectTrigger id="maxBookings" data-testid="select-max-bookings">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">All Bookings</SelectItem>
+              <SelectItem value="1">Last 1</SelectItem>
+              <SelectItem value="2">Last 2</SelectItem>
+              <SelectItem value="3">Last 3</SelectItem>
+              <SelectItem value="5">Last 5</SelectItem>
+              <SelectItem value="10">Last 10</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Limit number of bookings shown (0 = no limit)
+          </p>
+        </div>
+
         <Separator />
 
         <div>

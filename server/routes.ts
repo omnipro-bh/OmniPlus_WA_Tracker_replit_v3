@@ -8130,8 +8130,38 @@ export function registerRoutes(app: Express) {
                   
                   console.log(`[Booking] Processing check_bookings node: ${currentNodeId}, type: ${checkType}`);
                   
-                  // Get customer bookings by phone (only confirmed ones for reschedule/cancel)
-                  const customerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
+                  // Get customer bookings by phone with optional filters
+                  const statusFilter = config.statusFilter || 'upcoming';
+                  const maxBookings = config.maxBookings || 0;
+                  
+                  let allCustomerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
+                  
+                  // Apply status filter
+                  let customerBookings = allCustomerBookings;
+                  if (statusFilter === 'upcoming') {
+                    // Upcoming = confirmed and date >= today
+                    const today = new Date().toISOString().split('T')[0];
+                    customerBookings = allCustomerBookings.filter((b: any) => 
+                      b.status === 'confirmed' && b.slotDate >= today
+                    );
+                  } else if (statusFilter === 'confirmed') {
+                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'confirmed');
+                  } else if (statusFilter === 'completed') {
+                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'completed');
+                  } else if (statusFilter === 'cancelled') {
+                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'cancelled');
+                  }
+                  // 'all' shows all statuses
+                  
+                  // Apply max bookings limit (sort by date desc, take last N)
+                  if (maxBookings > 0 && customerBookings.length > maxBookings) {
+                    // Sort by date descending and take last N
+                    customerBookings = customerBookings
+                      .sort((a: any, b: any) => new Date(b.slotDate).getTime() - new Date(a.slotDate).getTime())
+                      .slice(0, maxBookings);
+                  }
+                  
+                  // For reschedule/cancel, only show confirmed bookings
                   const activeBookings = customerBookings.filter((b: any) => b.status === 'confirmed');
                   
                   const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
