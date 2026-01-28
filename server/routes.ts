@@ -4058,9 +4058,9 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(booking.staffId);
             const dept = await storage.getBookingDepartment(booking.departmentId);
             
-            // Get customizable message from settings or use default
-            const confirmSetting = await storage.getSetting("booking_confirm_message");
-            let message = confirmSetting?.value || `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
+            // Get customizable message from per-user settings or use default
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.confirmMessage || `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
             
             // Replace template variables
             message = message
@@ -4117,9 +4117,9 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(booking.staffId);
             const dept = await storage.getBookingDepartment(booking.departmentId);
             
-            // Get customizable message from settings or use default
-            const cancelSetting = await storage.getSetting("booking_cancel_message");
-            let message = cancelSetting?.value || `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
+            // Get customizable message from per-user settings or use default
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.cancelMessage || `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
             
             // Replace template variables
             message = message
@@ -4145,6 +4145,47 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Cancel booking error:", error);
       res.status(500).json({ error: "Failed to cancel booking" });
+    }
+  });
+
+  // Get user's booking notification settings
+  app.get("/api/booking/notification-settings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const settings = await storage.getUserBookingSettings(effectiveUserId);
+      
+      res.json({
+        confirmMessage: settings?.confirmMessage || null,
+        rescheduleMessage: settings?.rescheduleMessage || null,
+        cancelMessage: settings?.cancelMessage || null,
+      });
+    } catch (error: any) {
+      console.error("Get booking notification settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Update user's booking notification settings
+  app.put("/api/booking/notification-settings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { confirmMessage, rescheduleMessage, cancelMessage } = req.body;
+      
+      const updated = await storage.updateUserBookingSettings(effectiveUserId, {
+        confirmMessage: confirmMessage || null,
+        rescheduleMessage: rescheduleMessage || null,
+        cancelMessage: cancelMessage || null,
+      });
+
+      res.json({
+        success: true,
+        confirmMessage: updated.confirmMessage,
+        rescheduleMessage: updated.rescheduleMessage,
+        cancelMessage: updated.cancelMessage,
+      });
+    } catch (error: any) {
+      console.error("Update booking notification settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
     }
   });
 
@@ -4200,9 +4241,9 @@ export function registerRoutes(app: Express) {
             const staff = await storage.getBookingStaff(staffIdToUse);
             const dept = await storage.getBookingDepartment(departmentIdToUse);
             
-            // Get customizable message from settings or use default
-            const rescheduleSetting = await storage.getSetting("booking_reschedule_message");
-            let message = rescheduleSetting?.value || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
+            // Get customizable message from per-user settings or use default
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.rescheduleMessage || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
             
             // Replace template variables
             message = message

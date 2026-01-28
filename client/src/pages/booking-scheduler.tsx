@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -585,6 +585,10 @@ export default function BookingScheduler() {
           <TabsTrigger value="bookings" data-testid="tab-bookings">
             <Calendar className="h-4 w-4 mr-2" />
             Bookings
+          </TabsTrigger>
+          <TabsTrigger value="settings" data-testid="tab-settings">
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
           </TabsTrigger>
         </TabsList>
 

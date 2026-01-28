@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, serial } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -994,6 +994,24 @@ export const bookingsRelations = relations(bookings, ({ one }) => ({
   }),
 }));
 
+// User-specific booking notification settings
+export const userBookingSettings = pgTable("user_booking_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  confirmMessage: text("confirm_message"),
+  rescheduleMessage: text("reschedule_message"),
+  cancelMessage: text("cancel_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const userBookingSettingsRelations = relations(userBookingSettings, ({ one }) => ({
+  user: one(users, {
+    fields: [userBookingSettings.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -1307,3 +1325,4 @@ export type BookingStaffSlot = typeof bookingStaffSlots.$inferSelect;
 export type InsertBookingStaffSlot = z.infer<typeof insertBookingStaffSlotSchema>;
 export type Booking = typeof bookings.$inferSelect;
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type UserBookingSettings = typeof userBookingSettings.$inferSelect;

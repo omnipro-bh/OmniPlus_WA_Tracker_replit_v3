@@ -262,6 +262,14 @@ export interface IStorage {
   // Appointment Reminders
   getBookingsNeedingReminders(): Promise<schema.Booking[]>;
   markBookingReminderSent(bookingId: number): Promise<void>;
+  
+  // User Booking Settings
+  getUserBookingSettings(userId: number): Promise<schema.UserBookingSettings | undefined>;
+  updateUserBookingSettings(userId: number, settings: Partial<{
+    confirmMessage: string | null;
+    rescheduleMessage: string | null;
+    cancelMessage: string | null;
+  }>): Promise<schema.UserBookingSettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1768,6 +1776,47 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date(),
       })
       .where(eq(schema.bookings.id, bookingId));
+  }
+
+  // User Booking Settings
+  async getUserBookingSettings(userId: number): Promise<schema.UserBookingSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(schema.userBookingSettings)
+      .where(eq(schema.userBookingSettings.userId, userId));
+    return settings || undefined;
+  }
+
+  async updateUserBookingSettings(userId: number, settings: Partial<{
+    confirmMessage: string | null;
+    rescheduleMessage: string | null;
+    cancelMessage: string | null;
+  }>): Promise<schema.UserBookingSettings> {
+    // Check if settings exist for this user
+    const existing = await this.getUserBookingSettings(userId);
+    
+    if (existing) {
+      // Update existing settings
+      const [updated] = await db
+        .update(schema.userBookingSettings)
+        .set({
+          ...settings,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.userBookingSettings.userId, userId))
+        .returning();
+      return updated;
+    } else {
+      // Create new settings
+      const [created] = await db
+        .insert(schema.userBookingSettings)
+        .values({
+          userId,
+          ...settings,
+        })
+        .returning();
+      return created;
+    }
   }
 }
 
