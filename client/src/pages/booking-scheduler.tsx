@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare, Upload, FileSpreadsheet } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -139,6 +139,120 @@ export default function BookingScheduler() {
   const getDefaultConfirmMessage = () => `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
   const getDefaultRescheduleMessage = () => `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
   const getDefaultCancelMessage = () => `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
+
+  // Import dialog states
+  const [importDeptOpen, setImportDeptOpen] = useState(false);
+  const [importStaffOpen, setImportStaffOpen] = useState(false);
+  const [importSlotsOpen, setImportSlotsOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importType, setImportType] = useState<'departments' | 'staff' | 'slots'>('departments');
+
+  // CSV parsing function with CRLF/BOM handling and header normalization
+  const parseCSV = (text: string): any[] => {
+    let cleanText = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = cleanText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const parseRow = (line: string): string[] => {
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim().replace(/^["']|["']$/g, ''));
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim().replace(/^["']|["']$/g, ''));
+      return values;
+    };
+    
+    const rawHeaders = parseRow(lines[0]);
+    const headers = rawHeaders.map(h => h.toLowerCase().trim());
+    
+    const headerAliases: Record<string, string[]> = {
+      name: ['name', 'department', 'staff', 'department_name', 'staff_name'],
+      description: ['description', 'desc', 'details'],
+      phone: ['phone', 'phone_number', 'phonenumber', 'tel', 'telephone'],
+      email: ['email', 'email_address', 'e-mail'],
+      day: ['day', 'dayofweek', 'day_of_week', 'weekday'],
+      starttime: ['starttime', 'start_time', 'start', 'from'],
+      endtime: ['endtime', 'end_time', 'end', 'to'],
+      slotduration: ['slotduration', 'slot_duration', 'duration', 'minutes'],
+      capacity: ['capacity', 'slots', 'max'],
+    };
+    
+    const normalizeHeader = (h: string): string => {
+      const lowerH = h.toLowerCase().trim();
+      for (const [canonical, aliases] of Object.entries(headerAliases)) {
+        if (aliases.includes(lowerH)) return canonical;
+      }
+      return lowerH;
+    };
+    
+    const normalizedHeaders = headers.map(normalizeHeader);
+    
+    return lines.slice(1).map(line => {
+      const values = parseRow(line);
+      const row: Record<string, string> = {};
+      normalizedHeaders.forEach((h, i) => { row[h] = values[i] || ''; });
+      rawHeaders.forEach((h, i) => { row[h] = values[i] || ''; });
+      return row;
+    });
+  };
+
+  // Download sample CSV
+  const downloadSampleCSV = (type: 'departments' | 'staff' | 'slots') => {
+    let content = '';
+    let filename = '';
+    if (type === 'departments') {
+      content = 'name,description\nCardiology,Heart and cardiovascular health\nGeneral Medicine,General health checkups\nDentistry,Dental care and treatment';
+      filename = 'departments_sample.csv';
+    } else if (type === 'staff') {
+      content = 'name,phone,email\nDr. John Smith,+1234567890,john@example.com\nDr. Sarah Johnson,,sarah@example.com\nDr. Mike Brown,+0987654321,';
+      filename = 'staff_sample.csv';
+    } else {
+      content = 'day,startTime,endTime,slotDuration,capacity\nMonday,09:00,12:00,30,1\nMonday,14:00,17:00,30,1\nTuesday,09:00,17:00,60,2\nWednesday,10:00,16:00,30,1';
+      filename = 'slots_sample.csv';
+    }
+    const blob = new Blob([content], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Handle file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'departments' | 'staff' | 'slots') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const rows = parseCSV(text);
+      setImportPreview(rows);
+      setImportType(type);
+      if (type === 'departments') setImportDeptOpen(true);
+      else if (type === 'staff') setImportStaffOpen(true);
+      else setImportSlotsOpen(true);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // Queries
   const { data: departments = [], isLoading: loadingDepts } = useQuery<BookingDepartment[]>({
@@ -304,6 +418,61 @@ export default function BookingScheduler() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to delete slot", variant: "destructive" });
+    },
+  });
+
+  // Import mutations
+  const importDeptMutation = useMutation({
+    mutationFn: async (rows: any[]) => {
+      return await apiRequest('POST', '/api/booking/import/departments', { rows });
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/departments'] });
+      setImportDeptOpen(false);
+      setImportPreview([]);
+      toast({ 
+        title: "Import complete", 
+        description: `${result.imported} department(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to import departments", variant: "destructive" });
+    },
+  });
+
+  const importStaffMutation = useMutation({
+    mutationFn: async ({ rows, departmentId }: { rows: any[]; departmentId: number }) => {
+      return await apiRequest('POST', '/api/booking/import/staff', { rows, departmentId });
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/departments', selectedDepartment?.id, 'staff'] });
+      setImportStaffOpen(false);
+      setImportPreview([]);
+      toast({ 
+        title: "Import complete", 
+        description: `${result.imported} staff member(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to import staff", variant: "destructive" });
+    },
+  });
+
+  const importSlotsMutation = useMutation({
+    mutationFn: async ({ rows, staffId }: { rows: any[]; staffId: number }) => {
+      return await apiRequest('POST', '/api/booking/import/slots', { rows, staffId });
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/staff', selectedStaff?.id, 'slots'] });
+      setImportSlotsOpen(false);
+      setImportPreview([]);
+      toast({ 
+        title: "Import complete", 
+        description: `${result.imported} time slot(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to import slots", variant: "destructive" });
     },
   });
 
@@ -642,13 +811,41 @@ export default function BookingScheduler() {
                   <CardTitle className="text-lg">Departments</CardTitle>
                   <CardDescription>Organize staff by department</CardDescription>
                 </div>
-                <Dialog open={newDeptOpen} onOpenChange={setNewDeptOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" data-testid="button-add-department">
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add
-                    </Button>
-                  </DialogTrigger>
+                <div className="flex gap-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" data-testid="button-import-department">
+                        <Upload className="h-4 w-4 mr-1" />
+                        Import
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => downloadSampleCSV('departments')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Sample CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <label className="cursor-pointer flex items-center">
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                          Upload CSV File
+                          <input 
+                            type="file" 
+                            accept=".csv" 
+                            className="hidden" 
+                            onChange={(e) => handleFileUpload(e, 'departments')}
+                          />
+                        </label>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Dialog open={newDeptOpen} onOpenChange={setNewDeptOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" data-testid="button-add-department">
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
+                    </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Create Department</DialogTitle>
@@ -687,6 +884,7 @@ export default function BookingScheduler() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+                </div>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[400px]">
@@ -746,18 +944,46 @@ export default function BookingScheduler() {
                   </CardDescription>
                 </div>
                 {selectedDepartment && (
-                  <Dialog open={newStaffOpen} onOpenChange={setNewStaffOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" data-testid="button-add-staff">
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add Staff Member</DialogTitle>
-                        <DialogDescription>Add a new staff member to {selectedDepartment.name}.</DialogDescription>
-                      </DialogHeader>
+                  <div className="flex gap-1">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" data-testid="button-import-staff">
+                          <Upload className="h-4 w-4 mr-1" />
+                          Import
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => downloadSampleCSV('staff')}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Sample CSV
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <label className="cursor-pointer flex items-center">
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                            Upload CSV File
+                            <input 
+                              type="file" 
+                              accept=".csv" 
+                              className="hidden" 
+                              onChange={(e) => handleFileUpload(e, 'staff')}
+                            />
+                          </label>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Dialog open={newStaffOpen} onOpenChange={setNewStaffOpen}>
+                      <DialogTrigger asChild>
+                        <Button size="sm" data-testid="button-add-staff">
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add Staff Member</DialogTitle>
+                          <DialogDescription>Add a new staff member to {selectedDepartment.name}.</DialogDescription>
+                        </DialogHeader>
                       <div className="space-y-4">
                         <div>
                           <Label htmlFor="staff-name">Name</Label>
@@ -806,6 +1032,7 @@ export default function BookingScheduler() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 )}
               </CardHeader>
               <CardContent>
@@ -878,18 +1105,46 @@ export default function BookingScheduler() {
                   </CardDescription>
                 </div>
                 {selectedStaff && (
-                  <Dialog open={newSlotOpen} onOpenChange={setNewSlotOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" data-testid="button-add-slot">
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add Time Slot</DialogTitle>
-                        <DialogDescription>Configure availability for {selectedStaff.name}.</DialogDescription>
-                      </DialogHeader>
+                  <div className="flex gap-1">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" data-testid="button-import-slots">
+                          <Upload className="h-4 w-4 mr-1" />
+                          Import
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => downloadSampleCSV('slots')}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Sample CSV
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <label className="cursor-pointer flex items-center">
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                            Upload CSV File
+                            <input 
+                              type="file" 
+                              accept=".csv" 
+                              className="hidden" 
+                              onChange={(e) => handleFileUpload(e, 'slots')}
+                            />
+                          </label>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Dialog open={newSlotOpen} onOpenChange={setNewSlotOpen}>
+                      <DialogTrigger asChild>
+                        <Button size="sm" data-testid="button-add-slot">
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add Time Slot</DialogTitle>
+                          <DialogDescription>Configure availability for {selectedStaff.name}.</DialogDescription>
+                        </DialogHeader>
                       <div className="space-y-4">
                         <div>
                           <Label>Day of Week</Label>
@@ -966,6 +1221,7 @@ export default function BookingScheduler() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 )}
               </CardHeader>
               <CardContent>
@@ -1368,6 +1624,161 @@ export default function BookingScheduler() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Import Departments Dialog */}
+      <Dialog open={importDeptOpen} onOpenChange={setImportDeptOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Departments</DialogTitle>
+            <DialogDescription>
+              Review the data before importing. {importPreview.length} department(s) found.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {importPreview.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importPreview.slice(0, 10).map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{row.name || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.description || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {importPreview.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    + {importPreview.length - 10} more rows
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportDeptOpen(false); setImportPreview([]); }}>Cancel</Button>
+            <Button
+              onClick={() => importDeptMutation.mutate(importPreview)}
+              disabled={importDeptMutation.isPending || importPreview.length === 0}
+              data-testid="button-confirm-import-departments"
+            >
+              {importDeptMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Department(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Staff Dialog */}
+      <Dialog open={importStaffOpen} onOpenChange={setImportStaffOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Staff to {selectedDepartment?.name}</DialogTitle>
+            <DialogDescription>
+              Review the data before importing. {importPreview.length} staff member(s) found.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {importPreview.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Email</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importPreview.slice(0, 10).map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{row.name || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.phone || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.email || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {importPreview.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    + {importPreview.length - 10} more rows
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportStaffOpen(false); setImportPreview([]); }}>Cancel</Button>
+            <Button
+              onClick={() => selectedDepartment && importStaffMutation.mutate({ rows: importPreview, departmentId: selectedDepartment.id })}
+              disabled={importStaffMutation.isPending || importPreview.length === 0 || !selectedDepartment}
+              data-testid="button-confirm-import-staff"
+            >
+              {importStaffMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Staff Member(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Slots Dialog */}
+      <Dialog open={importSlotsOpen} onOpenChange={setImportSlotsOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Time Slots for {selectedStaff?.name}</DialogTitle>
+            <DialogDescription>
+              Review the data before importing. {importPreview.length} time slot(s) found.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {importPreview.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Day</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>End</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Capacity</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importPreview.slice(0, 10).map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{row.day || '-'}</TableCell>
+                        <TableCell>{row.starttime || '-'}</TableCell>
+                        <TableCell>{row.endtime || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.slotduration || '30'} min</TableCell>
+                        <TableCell className="text-muted-foreground">{row.capacity || '1'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {importPreview.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    + {importPreview.length - 10} more rows
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportSlotsOpen(false); setImportPreview([]); }}>Cancel</Button>
+            <Button
+              onClick={() => selectedStaff && importSlotsMutation.mutate({ rows: importPreview, staffId: selectedStaff.id })}
+              disabled={importSlotsMutation.isPending || importPreview.length === 0 || !selectedStaff}
+              data-testid="button-confirm-import-slots"
+            >
+              {importSlotsMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Time Slot(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Booking Dialog */}
       <Dialog open={editBookingOpen} onOpenChange={setEditBookingOpen}>

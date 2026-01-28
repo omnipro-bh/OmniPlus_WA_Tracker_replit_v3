@@ -3930,6 +3930,179 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // --- CSV Import for Booking Data ---
+  const dayNameToNumber: Record<string, number> = {
+    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+    'thursday': 4, 'friday': 5, 'saturday': 6,
+    'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6,
+  };
+
+  app.post("/api/booking/import/departments", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows } = req.body;
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+
+      const created: any[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = (row.name || '').toString().trim();
+        const description = (row.description || '').toString().trim();
+
+        if (!name) {
+          errors.push(`Row ${i + 1}: Department name is required`);
+          continue;
+        }
+
+        try {
+          const dept = await storage.createBookingDepartment({
+            userId: effectiveUserId,
+            name,
+            description: description || null,
+          });
+          created.push(dept);
+        } catch (err: any) {
+          errors.push(`Row ${i + 1}: Failed to create department "${name}"`);
+        }
+      }
+
+      res.json({ imported: created.length, errors });
+    } catch (error: any) {
+      console.error("Import departments error:", error);
+      res.status(500).json({ error: "Failed to import departments" });
+    }
+  });
+
+  app.post("/api/booking/import/staff", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows, departmentId } = req.body;
+
+      if (!departmentId) {
+        return res.status(400).json({ error: "Department ID is required" });
+      }
+
+      const dept = await storage.getBookingDepartment(departmentId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+
+      const created: any[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = (row.name || '').toString().trim();
+        const phone = (row.phone || '').toString().trim();
+        const email = (row.email || '').toString().trim();
+
+        if (!name) {
+          errors.push(`Row ${i + 1}: Staff name is required`);
+          continue;
+        }
+
+        try {
+          const staff = await storage.createBookingStaff({
+            userId: effectiveUserId,
+            departmentId,
+            name,
+            phone: phone || null,
+            email: email || null,
+          });
+          created.push(staff);
+        } catch (err: any) {
+          errors.push(`Row ${i + 1}: Failed to create staff "${name}"`);
+        }
+      }
+
+      res.json({ imported: created.length, errors });
+    } catch (error: any) {
+      console.error("Import staff error:", error);
+      res.status(500).json({ error: "Failed to import staff" });
+    }
+  });
+
+  app.post("/api/booking/import/slots", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows, staffId } = req.body;
+
+      if (!staffId) {
+        return res.status(400).json({ error: "Staff ID is required" });
+      }
+
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+
+      const created: any[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        let dayOfWeek = row.day ?? row.dayOfWeek ?? row.dayofweek;
+        const startTime = (row.starttime || '').toString().trim();
+        const endTime = (row.endtime || '').toString().trim();
+        const slotDuration = parseInt(row.slotduration || '30');
+        const capacity = parseInt(row.capacity || '1');
+
+        if (typeof dayOfWeek === 'string') {
+          const lowerDay = dayOfWeek.toLowerCase();
+          if (dayNameToNumber[lowerDay] !== undefined) {
+            dayOfWeek = dayNameToNumber[lowerDay];
+          } else {
+            dayOfWeek = parseInt(dayOfWeek);
+          }
+        }
+
+        if (isNaN(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+          errors.push(`Row ${i + 1}: Invalid day of week`);
+          continue;
+        }
+
+        if (!startTime || !endTime) {
+          errors.push(`Row ${i + 1}: Start time and end time are required`);
+          continue;
+        }
+
+        try {
+          const slot = await storage.createBookingStaffSlot({
+            staffId,
+            dayOfWeek,
+            startTime,
+            endTime,
+            slotDuration: isNaN(slotDuration) ? 30 : slotDuration,
+            capacity: isNaN(capacity) ? 1 : capacity,
+          });
+          created.push(slot);
+        } catch (err: any) {
+          errors.push(`Row ${i + 1}: Failed to create slot`);
+        }
+      }
+
+      res.json({ imported: created.length, errors });
+    } catch (error: any) {
+      console.error("Import slots error:", error);
+      res.status(500).json({ error: "Failed to import slots" });
+    }
+  });
+
   // --- Bookings ---
   app.get("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
