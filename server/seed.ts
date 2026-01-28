@@ -44,49 +44,40 @@ export async function seedDatabase() {
       name: "Starter",
       price: 2900, // $29 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 1,
       dailyMessagesLimit: 100,
       bulkMessagesLimit: 500,
-      features: ["Basic templates", "Email support"],
     });
 
     await storage.createPlan({
       name: "Growth",
       price: 7900, // $79 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 3,
       dailyMessagesLimit: 500,
       bulkMessagesLimit: 5000,
-      features: ["Advanced templates", "Chatbot builder", "Priority support"],
     });
 
     await storage.createPlan({
       name: "Advanced",
       price: 19900, // $199 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 10,
       dailyMessagesLimit: 2000,
       bulkMessagesLimit: 50000,
-      features: ["Custom workflows", "API access", "Dedicated support"],
     });
 
     await storage.createPlan({
       name: "Enterprise",
       price: 49900, // $499 in cents (custom pricing in reality)
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 999,
       dailyMessagesLimit: 999999,
       bulkMessagesLimit: 999999,
-      features: [
-        "Custom integrations",
-        "SLA guarantee",
-        "Account manager",
-        "White-label option",
-      ],
     });
 
     console.log("✓ Sample plans created");
@@ -195,7 +186,6 @@ You may cancel your subscription at any time through your account settings. Acce
         userId: admin.id,
         departmentId: generalDept.id,
         name: "Dr. Sarah Smith",
-        specialty: "General Practitioner",
         isActive: true,
       });
       
@@ -203,7 +193,6 @@ You may cancel your subscription at any time through your account settings. Acce
         userId: admin.id,
         departmentId: cardioDept.id,
         name: "Dr. Michael Jones",
-        specialty: "Cardiologist",
         isActive: true,
       });
       
@@ -225,7 +214,8 @@ You may cancel your subscription at any time through your account settings. Acce
             dayOfWeek: day,
             startTime: slot.startTime,
             endTime: slot.endTime,
-            maxBookings: 2,
+            slotDuration: 60,
+            capacity: 2,
             isActive: true,
           });
         }
@@ -239,7 +229,8 @@ You may cancel your subscription at any time through your account settings. Acce
             dayOfWeek: day,
             startTime: slot.startTime,
             endTime: slot.endTime,
-            maxBookings: 1,
+            slotDuration: 60,
+            capacity: 1,
             isActive: true,
           });
         }
