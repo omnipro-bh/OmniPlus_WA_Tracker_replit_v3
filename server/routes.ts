@@ -8146,6 +8146,8 @@ export function registerRoutes(app: Express) {
                     );
                   } else if (statusFilter === 'confirmed') {
                     customerBookings = allCustomerBookings.filter((b: any) => b.status === 'confirmed');
+                  } else if (statusFilter === 'pending') {
+                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'pending');
                   } else if (statusFilter === 'completed') {
                     customerBookings = allCustomerBookings.filter((b: any) => b.status === 'completed');
                   } else if (statusFilter === 'cancelled') {

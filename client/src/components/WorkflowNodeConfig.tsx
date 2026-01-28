@@ -2588,6 +2588,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               <SelectItem value="upcoming">Upcoming Only (Confirmed)</SelectItem>
               <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="confirmed">Confirmed Only</SelectItem>
+              <SelectItem value="pending">Pending Only</SelectItem>
               <SelectItem value="completed">Completed Only</SelectItem>
               <SelectItem value="cancelled">Cancelled Only</SelectItem>
             </SelectContent>
