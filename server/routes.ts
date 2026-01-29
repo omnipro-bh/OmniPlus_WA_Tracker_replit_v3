@@ -3726,7 +3726,8 @@ export function registerRoutes(app: Express) {
       const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels(
         activeChannel.whapiChannelToken,
         user.chatbotLabelName,
-        user.inquiryLabelName
+        user.inquiryLabelName,
+        { userId: effectiveUserId, channelId: activeChannel.id }
       );
       
       console.log(`[Label Sync] WHAPI returned - chatbotLabelId: ${chatbotLabelId}, inquiryLabelId: ${inquiryLabelId}`);
@@ -4978,7 +4979,8 @@ export function registerRoutes(app: Express) {
           const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels(
             activeChannel.whapiChannelToken,
             user.chatbotLabelName || "Chatbot",
-            user.inquiryLabelName || "Inquiries"
+            user.inquiryLabelName || "Inquiries",
+            { userId: effectiveUserId, channelId: activeChannel.id }
           );
           
           // Save the label IDs to user
@@ -6880,7 +6882,12 @@ export function registerRoutes(app: Express) {
         chatId,
         labelType,
         user.chatbotLabelId,
-        user.inquiryLabelId
+        user.inquiryLabelId,
+        { 
+          userId, 
+          chatbotLabelName: user.chatbotLabelName || "Chatbot",
+          inquiryLabelName: user.inquiryLabelName || "Inquiries"
+        }
       );
     } catch (error: any) {
       console.error(`[Label Management] Error in handleChatLabelAsync: ${error.message}`);

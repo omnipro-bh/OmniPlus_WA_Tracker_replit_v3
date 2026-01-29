@@ -797,13 +797,21 @@ export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
 }
 
 // Create a new label with specific ID
-export async function createLabel(channelToken: string, name: string, color: string, labelId: string): Promise<WhapiLabel | null> {
+export async function createLabel(
+  channelToken: string, 
+  name: string, 
+  color: string, 
+  labelId: string,
+  logContext?: { userId: number; channelId?: number; labelType?: string }
+): Promise<WhapiLabel | null> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
-  try {
-    // WHAPI requires ID to match pattern ^([\d]{1,2})?$ (1-2 digit number)
-    const payload: any = { id: labelId, name, color };
+  // WHAPI requires ID to match pattern ^([\d]{1,2})?$ (1-2 digit number)
+  const payload: any = { id: labelId, name, color };
+  let responseData: any = null;
+  let responseText = "";
 
+  try {
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
     const response = await fetch("https://gate.whapi.cloud/api/labels", {
@@ -816,24 +824,83 @@ export async function createLabel(channelToken: string, name: string, color: str
       body: JSON.stringify(payload),
     });
 
-    const responseText = await response.text();
+    responseText = await response.text();
     console.log(`[WHAPI Labels] Create response status: ${response.status}, body: ${responseText}`);
 
     if (!response.ok) {
       console.error(`[WHAPI Labels] Failed to create label "${name}" with ID ${labelId}`);
+      
+      // Log to database if context provided (fire-and-forget, never block)
+      if (logContext) {
+        try {
+          await storage.createLabelLog({
+            userId: logContext.userId,
+            channelId: logContext.channelId,
+            operation: "create",
+            labelType: logContext.labelType,
+            labelId: labelId,
+            labelName: name,
+            status: "error",
+            requestPayload: payload,
+            responseData: { status: response.status, body: responseText },
+            errorMessage: responseText,
+          });
+        } catch (logErr: any) {
+          console.error(`[WHAPI Labels] Failed to log create error:`, logErr.message);
+        }
+      }
       return null;
     }
 
     try {
-      const data = JSON.parse(responseText);
-      console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(data));
-      return data;
+      responseData = JSON.parse(responseText);
+      console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(responseData));
     } catch {
       // If response is not JSON but status is OK, return a mock object with the ID we sent
-      return { id: labelId, name, color };
+      responseData = { id: labelId, name, color };
     }
+    
+    // Log success to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "create",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: name,
+          status: "success",
+          requestPayload: payload,
+          responseData: responseData,
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log create success:`, logErr.message);
+      }
+    }
+    
+    return responseData;
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error creating label:`, error.message);
+    
+    // Log error to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "create",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: name,
+          status: "error",
+          requestPayload: payload,
+          errorMessage: error.message,
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log create error:`, logErr.message);
+      }
+    }
     return null;
   }
 }
@@ -853,7 +920,12 @@ function findNextAvailableLabelId(existingLabels: WhapiLabel[]): string {
 }
 
 // Assign a label to a chat (fire-and-forget for performance)
-export async function assignLabelToChat(channelToken: string, labelId: string, chatId: string): Promise<boolean> {
+export async function assignLabelToChat(
+  channelToken: string, 
+  labelId: string, 
+  chatId: string,
+  logContext?: { userId: number; channelId?: number; labelType?: string; labelName?: string }
+): Promise<boolean> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
@@ -868,19 +940,83 @@ export async function assignLabelToChat(channelToken: string, labelId: string, c
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
       console.error(`[WHAPI Labels] Failed to assign label ${labelId} to chat ${chatId}:`, errorText);
+      
+      // Log error to database if context provided (fire-and-forget, never block)
+      if (logContext) {
+        try {
+          await storage.createLabelLog({
+            userId: logContext.userId,
+            channelId: logContext.channelId,
+            operation: "assign",
+            labelType: logContext.labelType,
+            labelId: labelId,
+            labelName: logContext.labelName,
+            chatId: chatId,
+            status: "error",
+            requestPayload: { labelId, chatId },
+            errorMessage: errorText,
+          });
+        } catch (logErr: any) {
+          console.error(`[WHAPI Labels] Failed to log assign error:`, logErr.message);
+        }
+      }
       return false;
     }
 
     console.log(`[WHAPI Labels] Successfully assigned label ${labelId} to chat ${chatId}`);
+    
+    // Log success to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "assign",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: logContext.labelName,
+          chatId: chatId,
+          status: "success",
+          requestPayload: { labelId, chatId },
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log assign success:`, logErr.message);
+      }
+    }
     return true;
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error assigning label:`, error.message);
+    
+    // Log error to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "assign",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: logContext.labelName,
+          chatId: chatId,
+          status: "error",
+          requestPayload: { labelId, chatId },
+          errorMessage: error.message,
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log assign error:`, logErr.message);
+      }
+    }
     return false;
   }
 }
 
 // Remove a label from a chat (fire-and-forget for performance)
-export async function removeLabelFromChat(channelToken: string, labelId: string, chatId: string): Promise<boolean> {
+export async function removeLabelFromChat(
+  channelToken: string, 
+  labelId: string, 
+  chatId: string,
+  logContext?: { userId: number; channelId?: number; labelType?: string; labelName?: string }
+): Promise<boolean> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
@@ -897,14 +1033,73 @@ export async function removeLabelFromChat(channelToken: string, labelId: string,
       // Don't log error if label wasn't assigned (expected behavior)
       if (!errorText.includes("not found") && !errorText.includes("not assigned")) {
         console.error(`[WHAPI Labels] Failed to remove label ${labelId} from chat ${chatId}:`, errorText);
+        
+        // Log error to database if context provided (fire-and-forget, never block)
+        if (logContext) {
+          try {
+            await storage.createLabelLog({
+              userId: logContext.userId,
+              channelId: logContext.channelId,
+              operation: "remove",
+              labelType: logContext.labelType,
+              labelId: labelId,
+              labelName: logContext.labelName,
+              chatId: chatId,
+              status: "error",
+              requestPayload: { labelId, chatId },
+              errorMessage: errorText,
+            });
+          } catch (logErr: any) {
+            console.error(`[WHAPI Labels] Failed to log remove error:`, logErr.message);
+          }
+        }
       }
       return false;
     }
 
     console.log(`[WHAPI Labels] Successfully removed label ${labelId} from chat ${chatId}`);
+    
+    // Log success to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "remove",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: logContext.labelName,
+          chatId: chatId,
+          status: "success",
+          requestPayload: { labelId, chatId },
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log remove success:`, logErr.message);
+      }
+    }
     return true;
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error removing label:`, error.message);
+    
+    // Log error to database if context provided (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "remove",
+          labelType: logContext.labelType,
+          labelId: labelId,
+          labelName: logContext.labelName,
+          chatId: chatId,
+          status: "error",
+          requestPayload: { labelId, chatId },
+          errorMessage: error.message,
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log remove error:`, logErr.message);
+      }
+    }
     return false;
   }
 }
@@ -916,23 +1111,32 @@ export function manageChatLabelAsync(
   chatId: string,
   labelType: 'chatbot' | 'inquiry',
   chatbotLabelId: string | null,
-  inquiryLabelId: string | null
+  inquiryLabelId: string | null,
+  logContext?: { userId: number; channelId?: number; chatbotLabelName?: string; inquiryLabelName?: string }
 ): void {
   // Fire and forget - don't await to avoid blocking the response
   Promise.resolve().then(async () => {
     try {
+      const baseLogContext = logContext ? { userId: logContext.userId, channelId: logContext.channelId } : undefined;
+      const chatbotLabelName = logContext?.chatbotLabelName || 'Chatbot';
+      const inquiryLabelName = logContext?.inquiryLabelName || 'Inquiries';
+      
       if (labelType === 'chatbot' && chatbotLabelId) {
         // Remove inquiry label if exists, then assign chatbot label
         if (inquiryLabelId) {
-          await removeLabelFromChat(channelToken, inquiryLabelId, chatId);
+          await removeLabelFromChat(channelToken, inquiryLabelId, chatId, 
+            baseLogContext ? { ...baseLogContext, labelType: 'inquiry', labelName: inquiryLabelName } : undefined);
         }
-        await assignLabelToChat(channelToken, chatbotLabelId, chatId);
+        await assignLabelToChat(channelToken, chatbotLabelId, chatId,
+          baseLogContext ? { ...baseLogContext, labelType: 'chatbot', labelName: chatbotLabelName } : undefined);
       } else if (labelType === 'inquiry' && inquiryLabelId) {
         // Remove chatbot label if exists, then assign inquiry label
         if (chatbotLabelId) {
-          await removeLabelFromChat(channelToken, chatbotLabelId, chatId);
+          await removeLabelFromChat(channelToken, chatbotLabelId, chatId,
+            baseLogContext ? { ...baseLogContext, labelType: 'chatbot', labelName: chatbotLabelName } : undefined);
         }
-        await assignLabelToChat(channelToken, inquiryLabelId, chatId);
+        await assignLabelToChat(channelToken, inquiryLabelId, chatId,
+          baseLogContext ? { ...baseLogContext, labelType: 'inquiry', labelName: inquiryLabelName } : undefined);
       }
     } catch (error: any) {
       console.error(`[WHAPI Labels] manageChatLabelAsync error:`, error.message);
@@ -944,7 +1148,8 @@ export function manageChatLabelAsync(
 export async function initializeUserLabels(
   channelToken: string,
   chatbotLabelName: string = "Chatbot",
-  inquiryLabelName: string = "Inquiries"
+  inquiryLabelName: string = "Inquiries",
+  logContext?: { userId: number; channelId?: number }
 ): Promise<{ chatbotLabelId: string | null; inquiryLabelId: string | null }> {
   console.log(`[WHAPI Labels] initializeUserLabels called with chatbot="${chatbotLabelName}", inquiry="${inquiryLabelName}"`);
   
@@ -969,7 +1174,8 @@ export async function initializeUserLabels(
       const nextId = findNextAvailableLabelId(existingLabels);
       console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with ID ${nextId} and color limegreen...`);
       // Valid WHAPI colors: salmon, lightskyblue, gold, plum, silver, mediumturquoise, violet, goldenrod, cornflowerblue, greenyellow, cyan, lightpink, mediumaquamarine, orangered, deepskyblue, limegreen, darkorange, lightsteelblue, mediumpurple, rebeccapurple
-      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen", nextId);
+      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen", nextId,
+        logContext ? { ...logContext, labelType: 'chatbot' } : undefined);
       console.log(`[WHAPI Labels] Create chatbot label result:`, newLabel);
       if (newLabel) {
         chatbotLabelId = newLabel.id;
@@ -989,15 +1195,50 @@ export async function initializeUserLabels(
       // Find the next available ID (after chatbot label was potentially created)
       const nextId = findNextAvailableLabelId(existingLabels);
       console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with ID ${nextId} and color gold...`);
-      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold", nextId);
+      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold", nextId,
+        logContext ? { ...logContext, labelType: 'inquiry' } : undefined);
       console.log(`[WHAPI Labels] Create inquiry label result:`, newLabel);
       if (newLabel) inquiryLabelId = newLabel.id;
     }
 
     console.log(`[WHAPI Labels] Final result - chatbotLabelId: ${chatbotLabelId}, inquiryLabelId: ${inquiryLabelId}`);
+    
+    // Log sync success after all operations complete (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "sync",
+          status: "success",
+          requestPayload: { chatbotLabelName, inquiryLabelName },
+          responseData: { chatbotLabelId, inquiryLabelId },
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log sync success:`, logErr.message);
+      }
+    }
+    
     return { chatbotLabelId, inquiryLabelId };
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error initializing user labels:`, error.message);
+    
+    // Log sync error (fire-and-forget, never block)
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "sync",
+          status: "error",
+          requestPayload: { chatbotLabelName, inquiryLabelName },
+          errorMessage: error.message,
+        });
+      } catch (logErr: any) {
+        console.error(`[WHAPI Labels] Failed to log sync error:`, logErr.message);
+      }
+    }
+    
     return { chatbotLabelId: null, inquiryLabelId: null };
   }
 }
