@@ -797,22 +797,13 @@ export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
 }
 
 // Create a new label
-export async function createLabel(channelToken: string, name: string, color?: string, existingLabelIds: string[] = []): Promise<WhapiLabel | null> {
+export async function createLabel(channelToken: string, name: string, color?: string): Promise<WhapiLabel | null> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    // WHAPI requires ID to be a 1-2 digit number (pattern: ^([\d]{1,2})?$)
-    // Find the next available ID that doesn't conflict with existing labels
-    let labelId = 10; // Start from 10 to avoid common IDs like 1-9
-    const existingIdNums = existingLabelIds.map(id => parseInt(id, 10)).filter(n => !isNaN(n));
-    while (existingIdNums.includes(labelId) && labelId < 100) {
-      labelId++;
-    }
-    
-    const payload: any = { 
-      id: String(labelId),
-      name 
-    };
+    // Let WHAPI auto-generate the ID by not including it in the payload
+    // The pattern ^([\d]{1,2})?$ means ID is optional
+    const payload: any = { name };
     if (color) payload.color = color;
 
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
@@ -944,9 +935,6 @@ export async function initializeUserLabels(
     const existingLabels = await getLabels(channelToken);
     console.log(`[WHAPI Labels] Found ${existingLabels.length} existing labels:`, existingLabels.map(l => ({ id: l.id, name: l.name })));
     
-    // Get all existing IDs to avoid conflicts
-    const existingIds = existingLabels.map(l => l.id);
-    
     let chatbotLabelId: string | null = null;
     let inquiryLabelId: string | null = null;
 
@@ -960,11 +948,10 @@ export async function initializeUserLabels(
     } else {
       console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with color limegreen...`);
       // Valid WHAPI colors: salmon, lightskyblue, gold, plum, silver, mediumturquoise, violet, goldenrod, cornflowerblue, greenyellow, cyan, lightpink, mediumaquamarine, orangered, deepskyblue, limegreen, darkorange, lightsteelblue, mediumpurple, rebeccapurple
-      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen", existingIds);
+      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen");
       console.log(`[WHAPI Labels] Create chatbot label result:`, newLabel);
       if (newLabel) {
         chatbotLabelId = newLabel.id;
-        existingIds.push(newLabel.id); // Add to existing IDs to avoid conflict with next label
       }
     }
 
@@ -977,7 +964,7 @@ export async function initializeUserLabels(
       inquiryLabelId = existingInquiryLabel.id;
     } else {
       console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with color gold...`);
-      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold", existingIds);
+      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold");
       console.log(`[WHAPI Labels] Create inquiry label result:`, newLabel);
       if (newLabel) inquiryLabelId = newLabel.id;
     }
