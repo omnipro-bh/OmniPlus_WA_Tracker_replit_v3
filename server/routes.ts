@@ -6730,6 +6730,47 @@ export function registerRoutes(app: Express) {
   // WEBHOOKS
   // ============================================================================
 
+  // Helper function to manage chat labels asynchronously (fire-and-forget)
+  async function handleChatLabelAsync(
+    userId: number,
+    workflowId: number,
+    channelToken: string,
+    chatId: string,
+    labelType: 'chatbot' | 'inquiry'
+  ) {
+    try {
+      // Get user settings
+      const user = await storage.getUser(userId);
+      if (!user || !user.labelManagementAllowed) {
+        return; // Label management disabled for this user by admin
+      }
+      
+      // Get workflow settings
+      const [workflow] = await db.select().from(workflows).where(eq(workflows.id, workflowId)).limit(1);
+      if (!workflow || !workflow.labelManagementEnabled) {
+        return; // Label management not enabled for this workflow
+      }
+      
+      // Check if labels are configured
+      if (!user.chatbotLabelId && !user.inquiryLabelId) {
+        return; // Labels not synced yet
+      }
+      
+      // Call the async label manager (fire-and-forget)
+      const { manageChatLabelAsync } = await import("./whapi");
+      manageChatLabelAsync(
+        channelToken,
+        chatId,
+        labelType,
+        user.chatbotLabelId,
+        user.inquiryLabelId
+      );
+    } catch (error: any) {
+      console.error(`[Label Management] Error in handleChatLabelAsync: ${error.message}`);
+      // Don't throw - label management should never block chatbot functionality
+    }
+  }
+
   // WHAPI incoming message webhook (user-specific)
   app.post("/webhooks/whapi/:userId/:webhookToken", async (req: Request, res: Response) => {
     try {
@@ -8047,6 +8088,26 @@ export function registerRoutes(app: Express) {
                   
                   console.log(`[Workflow ${workflow.id}: ${workflow.name}] Sent welcome message to ${phone} from entry node ${entryNodeId}`);
                   
+                  // Fire-and-forget: assign "Chatbot" label since chatbot sent a message
+                  (async () => {
+                    try {
+                      const userChannelsForLabel = await storage.getChannelsForUser(workflow.userId);
+                      const activeChannelForLabel = userChannelsForLabel.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                      if (activeChannelForLabel?.whapiChannelToken) {
+                        const chatId = `${phone}@s.whatsapp.net`;
+                        await handleChatLabelAsync(
+                          workflow.userId,
+                          workflow.id,
+                          activeChannelForLabel.whapiChannelToken,
+                          chatId,
+                          'chatbot'
+                        );
+                      }
+                    } catch (e) {
+                      // Ignore label errors silently
+                    }
+                  })();
+                  
                   // Log execution for this workflow
                   await db.insert(workflowExecutions).values({
                     workflowId: workflow.id,
@@ -8144,8 +8205,28 @@ export function registerRoutes(app: Express) {
               console.log(`[First Message of Day] No active workflows with entry nodes found for user ${activeWorkflow.userId}`);
             }
           } else {
-            // Not first message of day - do nothing (as per spec)
-            console.log("Not first message of day, no action taken");
+            // Not first message of day - this is an inquiry (customer sending text without chatbot response)
+            console.log("Not first message of day, marking as inquiry");
+            
+            // Fire-and-forget: assign "Inquiry" label since customer is sending unprompted text
+            (async () => {
+              try {
+                const userChannelsForLabel = await storage.getChannelsForUser(activeWorkflow.userId);
+                const activeChannelForLabel = userChannelsForLabel.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                if (activeChannelForLabel?.whapiChannelToken) {
+                  const chatId = `${phone}@s.whatsapp.net`;
+                  await handleChatLabelAsync(
+                    activeWorkflow.userId,
+                    activeWorkflow.id,
+                    activeChannelForLabel.whapiChannelToken,
+                    chatId,
+                    'inquiry'
+                  );
+                }
+              } catch (e) {
+                // Ignore label errors silently
+              }
+            })();
           }
         } else if (messageType === "button_reply") {
           console.log(`\n[BUTTON CLICK DEBUG] =============================================`);
@@ -9298,6 +9379,25 @@ export function registerRoutes(app: Express) {
             
             if (result.success) {
               console.log(`[Bulk Webhook] Successfully sent ${nodeType} to ${phone}`);
+              
+              // Fire-and-forget: assign "Chatbot" label since chatbot sent a message
+              if (channel?.whapiChannelToken) {
+                const channelTokenForLabel = channel.whapiChannelToken;
+                (async () => {
+                  try {
+                    const chatId = `${phone}@s.whatsapp.net`;
+                    await handleChatLabelAsync(
+                      workflowRecord.userId,
+                      workflowRecord.id,
+                      channelTokenForLabel,
+                      chatId,
+                      'chatbot'
+                    );
+                  } catch (e) {
+                    // Ignore label errors silently
+                  }
+                })();
+              }
               
               // Track sent message for ownership
               if (result.messageId) {
