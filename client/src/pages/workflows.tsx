@@ -152,6 +152,27 @@ export default function Workflows() {
       );
     }
   };
+  
+  const handleToggleLabelManagement = (enabled: boolean) => {
+    if (selectedWorkflow) {
+      // Store previous state for rollback on error
+      const previousState = selectedWorkflow.labelManagementEnabled;
+      
+      // Optimistically update local state
+      setSelectedWorkflow({ ...selectedWorkflow, labelManagementEnabled: enabled });
+      
+      // Make API call with error handling
+      toggleLabelManagement.mutate(
+        { id: selectedWorkflow.id, enabled },
+        {
+          onError: () => {
+            // Rollback on error
+            setSelectedWorkflow({ ...selectedWorkflow, labelManagementEnabled: previousState });
+          }
+        }
+      );
+    }
+  };
 
   const handleCreateWorkflow = () => {
     if (newWorkflowName.trim()) {
@@ -208,6 +229,10 @@ export default function Workflows() {
             onSave={handleSaveWorkflow}
             onToggleActive={handleToggleActive}
             workflowName={selectedWorkflow.name}
+            labelManagementEnabled={selectedWorkflow.labelManagementEnabled || false}
+            labelManagementAllowed={(user as any)?.labelManagementAllowed !== false}
+            planLabelManagementEnabled={(user as any)?.currentPlan?.labelManagementEnabled === true}
+            onToggleLabelManagement={handleToggleLabelManagement}
           />
         </div>
       </div>
@@ -329,21 +354,6 @@ export default function Workflows() {
                           <Copy className="h-3 w-3" />
                         </Button>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-3 w-3 text-muted-foreground" />
-                        <Label className="text-xs cursor-pointer" htmlFor={`label-toggle-${workflow.id}`}>
-                          Auto-label chats
-                        </Label>
-                      </div>
-                      <Switch
-                        id={`label-toggle-${workflow.id}`}
-                        checked={workflow.labelManagementEnabled || false}
-                        onCheckedChange={(checked) => toggleLabelManagement.mutate({ id: workflow.id, enabled: checked })}
-                        disabled={toggleLabelManagement.isPending}
-                        data-testid={`switch-label-management-${workflow.id}`}
-                      />
                     </div>
                   </CardContent>
                   <CardFooter className="flex gap-2">

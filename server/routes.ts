@@ -4914,6 +4914,17 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "labelManagementEnabled must be a boolean" });
       }
       
+      // Check if label management is enabled at plan level
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
+      if (subscription) {
+        const plan = await storage.getPlan(subscription.planId);
+        if (!plan || !(plan as any).labelManagementEnabled) {
+          return res.status(403).json({ error: "Label management feature is not available in your current plan." });
+        }
+      } else {
+        return res.status(403).json({ error: "Active subscription required to enable label management." });
+      }
+      
       // Check if admin has allowed label management for this user
       const user = await storage.getUser(effectiveUserId);
       if (!user?.labelManagementAllowed) {
@@ -6780,6 +6791,16 @@ export function registerRoutes(app: Express) {
       const user = await storage.getUser(userId);
       if (!user || !user.labelManagementAllowed) {
         return; // Label management disabled for this user by admin
+      }
+      
+      // Check if label management is enabled at plan level
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      if (!subscription) {
+        return; // No subscription
+      }
+      const plan = await storage.getPlan(subscription.planId);
+      if (!plan || !(plan as any).labelManagementEnabled) {
+        return; // Label management not enabled in plan
       }
       
       // Get workflow settings

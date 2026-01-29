@@ -2003,6 +2003,7 @@ export default function Admin() {
     enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"] as string[],
     isPopular: false,
     safetyMeterEnabled: false,
+    labelManagementEnabled: false,
     freeTrialEnabled: false,
     freeTrialDays: "7",
     // Individual checkboxes for each limit
@@ -2447,6 +2448,7 @@ export default function Admin() {
       enabledBillingPeriods: ["MONTHLY", "SEMI_ANNUAL", "ANNUAL"],
       isPopular: false,
       safetyMeterEnabled: false,
+      labelManagementEnabled: false,
       freeTrialEnabled: false,
       freeTrialDays: "7",
       enableDailyMessages: true,
@@ -2550,6 +2552,7 @@ export default function Admin() {
       enabledBillingPeriods: enabledBillingPeriods,
       isPopular: (plan as any).isPopular || false,
       safetyMeterEnabled: (plan as any).safetyMeterEnabled || false,
+      labelManagementEnabled: (plan as any).labelManagementEnabled || false,
       freeTrialEnabled: (plan as any).freeTrialEnabled || false,
       freeTrialDays: String((plan as any).freeTrialDays ?? 7),
       enableDailyMessages,
@@ -2723,6 +2726,7 @@ export default function Admin() {
       enabledBillingPeriods: planForm.enabledBillingPeriods,
       isPopular: planForm.isPopular,
       safetyMeterEnabled: planForm.safetyMeterEnabled,
+      labelManagementEnabled: planForm.labelManagementEnabled,
       freeTrialEnabled: planForm.freeTrialEnabled,
       freeTrialDays: parseInt(planForm.freeTrialDays) || 7,
       dailyMessagesLimit,
@@ -4219,6 +4223,20 @@ export default function Admin() {
                 />
                 <Label htmlFor="plan-safety-meter">Enable Safety Meter feature</Label>
               </div>
+              
+              {/* Label Management Toggle */}
+              <div className="space-y-2 flex items-center gap-3">
+                <Switch
+                  id="plan-label-management"
+                  checked={planForm.labelManagementEnabled}
+                  onCheckedChange={(checked) => setPlanForm({ ...planForm, labelManagementEnabled: checked })}
+                  data-testid="switch-plan-label-management"
+                />
+                <Label htmlFor="plan-label-management">Enable Chat Label Management</Label>
+              </div>
+              <p className="text-xs text-muted-foreground -mt-2 ml-11">
+                When enabled, workflows can automatically label WhatsApp chats as "Chatbot" or "Inquiries" based on the last message sender.
+              </p>
             </div>
 
             {/* Limits */}

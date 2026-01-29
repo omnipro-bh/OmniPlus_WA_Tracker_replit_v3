@@ -21,6 +21,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Tag, Info } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -218,6 +225,10 @@ interface WorkflowBuilderProps {
   onSave?: (nodes: Node[], edges: Edge[], entryNodeId?: string | null) => void;
   onToggleActive?: (isActive: boolean) => void;
   workflowName?: string;
+  labelManagementEnabled?: boolean;
+  labelManagementAllowed?: boolean;
+  planLabelManagementEnabled?: boolean;
+  onToggleLabelManagement?: (enabled: boolean) => void;
 }
 
 export default function WorkflowBuilder({
@@ -229,6 +240,10 @@ export default function WorkflowBuilder({
   onSave,
   onToggleActive,
   workflowName = 'Untitled Workflow',
+  labelManagementEnabled = false,
+  labelManagementAllowed = true,
+  planLabelManagementEnabled = true,
+  onToggleLabelManagement,
 }: WorkflowBuilderProps) {
   const { user } = useAuth();
   
@@ -994,6 +1009,44 @@ export default function WorkflowBuilder({
                     Save
                   </Button>
                 </div>
+                
+                {/* Label Management Settings - only show when feature is available at plan level */}
+                {planLabelManagementEnabled && (
+                  <div className="flex items-center gap-3 mt-2 pt-2 border-t">
+                    <Tag className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="label-management-toggle"
+                        checked={labelManagementEnabled}
+                        onCheckedChange={(checked) => onToggleLabelManagement?.(checked)}
+                        disabled={!labelManagementAllowed}
+                        data-testid="switch-workflow-label-management"
+                      />
+                      <Label htmlFor="label-management-toggle" className="cursor-pointer text-sm">
+                        Auto-label chats
+                      </Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <div className="space-y-2">
+                            <p className="font-medium">Chat Label Management</p>
+                            <p className="text-xs">When enabled, this workflow will automatically label WhatsApp chats:</p>
+                            <ul className="text-xs list-disc ml-4 space-y-1">
+                              <li><strong>"Chatbot"</strong> - Applied when the bot sends a message</li>
+                              <li><strong>"Inquiries"</strong> - Applied when a customer sends a message that doesn't trigger the chatbot</li>
+                            </ul>
+                            <p className="text-xs text-muted-foreground">Labels are mutually exclusive and help you track which chats are handled by the bot vs. need human attention.</p>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    {!labelManagementAllowed && (
+                      <span className="text-xs text-muted-foreground">(Disabled by admin)</span>
+                    )}
+                  </div>
+                )}
               </Panel>
 
               {/* Fullscreen Floating Add Node Button */}

@@ -115,6 +115,7 @@ export const plans = pgTable("plans", {
     captureList: false,
     bookingScheduler: false,
   }),
+  labelManagementEnabled: boolean("label_management_enabled").notNull().default(false), // Enable auto-labeling feature for this plan
   features: jsonb("features").notNull().default([]), // Array of feature strings
   // Pricing Controls
   quarterlyDiscountPercent: integer("quarterly_discount_percent").notNull().default(0), // 0-100
