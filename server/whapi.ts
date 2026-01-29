@@ -758,3 +758,202 @@ export async function buildAndSendNodeMessage(channel: any, phone: string, nodeT
   // Send the message using WHAPI
   return await sendInteractiveMessage(channelToken, payload);
 }
+
+// ============================================================================
+// LABEL MANAGEMENT API FUNCTIONS
+// ============================================================================
+
+export interface WhapiLabel {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+// Get all labels from WhatsApp account
+export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  try {
+    const response = await fetch("https://gate.whapi.cloud/labels", {
+      method: "GET",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(`[WHAPI Labels] Failed to get labels:`, errorText);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.labels || data || [];
+  } catch (error: any) {
+    console.error(`[WHAPI Labels] Error getting labels:`, error.message);
+    return [];
+  }
+}
+
+// Create a new label
+export async function createLabel(channelToken: string, name: string, color?: string): Promise<WhapiLabel | null> {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  try {
+    const payload: any = { name };
+    if (color) payload.color = color;
+
+    const response = await fetch("https://gate.whapi.cloud/labels", {
+      method: "POST",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(`[WHAPI Labels] Failed to create label "${name}":`, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    console.error(`[WHAPI Labels] Error creating label:`, error.message);
+    return null;
+  }
+}
+
+// Assign a label to a chat (fire-and-forget for performance)
+export async function assignLabelToChat(channelToken: string, labelId: string, chatId: string): Promise<boolean> {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  try {
+    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+      method: "POST",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(`[WHAPI Labels] Failed to assign label ${labelId} to chat ${chatId}:`, errorText);
+      return false;
+    }
+
+    console.log(`[WHAPI Labels] Successfully assigned label ${labelId} to chat ${chatId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`[WHAPI Labels] Error assigning label:`, error.message);
+    return false;
+  }
+}
+
+// Remove a label from a chat (fire-and-forget for performance)
+export async function removeLabelFromChat(channelToken: string, labelId: string, chatId: string): Promise<boolean> {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  try {
+    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      // Don't log error if label wasn't assigned (expected behavior)
+      if (!errorText.includes("not found") && !errorText.includes("not assigned")) {
+        console.error(`[WHAPI Labels] Failed to remove label ${labelId} from chat ${chatId}:`, errorText);
+      }
+      return false;
+    }
+
+    console.log(`[WHAPI Labels] Successfully removed label ${labelId} from chat ${chatId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`[WHAPI Labels] Error removing label:`, error.message);
+    return false;
+  }
+}
+
+// Async label management helper - handles the swap logic without blocking
+// This is the main function to call from webhook/message handlers
+export function manageChatLabelAsync(
+  channelToken: string,
+  chatId: string,
+  labelType: 'chatbot' | 'inquiry',
+  chatbotLabelId: string | null,
+  inquiryLabelId: string | null
+): void {
+  // Fire and forget - don't await to avoid blocking the response
+  Promise.resolve().then(async () => {
+    try {
+      if (labelType === 'chatbot' && chatbotLabelId) {
+        // Remove inquiry label if exists, then assign chatbot label
+        if (inquiryLabelId) {
+          await removeLabelFromChat(channelToken, inquiryLabelId, chatId);
+        }
+        await assignLabelToChat(channelToken, chatbotLabelId, chatId);
+      } else if (labelType === 'inquiry' && inquiryLabelId) {
+        // Remove chatbot label if exists, then assign inquiry label
+        if (chatbotLabelId) {
+          await removeLabelFromChat(channelToken, chatbotLabelId, chatId);
+        }
+        await assignLabelToChat(channelToken, inquiryLabelId, chatId);
+      }
+    } catch (error: any) {
+      console.error(`[WHAPI Labels] manageChatLabelAsync error:`, error.message);
+    }
+  });
+}
+
+// Initialize labels for a user's WhatsApp account
+export async function initializeUserLabels(
+  channelToken: string,
+  chatbotLabelName: string = "Chatbot",
+  inquiryLabelName: string = "Inquiries"
+): Promise<{ chatbotLabelId: string | null; inquiryLabelId: string | null }> {
+  try {
+    // Get existing labels
+    const existingLabels = await getLabels(channelToken);
+    
+    let chatbotLabelId: string | null = null;
+    let inquiryLabelId: string | null = null;
+
+    // Find or create chatbot label
+    const existingChatbotLabel = existingLabels.find(
+      l => l.name.toLowerCase() === chatbotLabelName.toLowerCase()
+    );
+    if (existingChatbotLabel) {
+      chatbotLabelId = existingChatbotLabel.id;
+    } else {
+      const newLabel = await createLabel(channelToken, chatbotLabelName, "lightgreen");
+      if (newLabel) chatbotLabelId = newLabel.id;
+    }
+
+    // Find or create inquiry label
+    const existingInquiryLabel = existingLabels.find(
+      l => l.name.toLowerCase() === inquiryLabelName.toLowerCase()
+    );
+    if (existingInquiryLabel) {
+      inquiryLabelId = existingInquiryLabel.id;
+    } else {
+      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold");
+      if (newLabel) inquiryLabelId = newLabel.id;
+    }
+
+    return { chatbotLabelId, inquiryLabelId };
+  } catch (error: any) {
+    console.error(`[WHAPI Labels] Error initializing user labels:`, error.message);
+    return { chatbotLabelId: null, inquiryLabelId: null };
+  }
+}
