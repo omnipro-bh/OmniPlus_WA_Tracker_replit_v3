@@ -774,7 +774,7 @@ export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch("https://gate.whapi.cloud/labels", {
+    const response = await fetch("https://gate.whapi.cloud/api/labels", {
       method: "GET",
       headers: {
         "Authorization": authToken,
@@ -806,7 +806,7 @@ export async function createLabel(channelToken: string, name: string, color: str
 
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
-    const response = await fetch("https://gate.whapi.cloud/labels", {
+    const response = await fetch("https://gate.whapi.cloud/api/labels", {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -839,13 +839,17 @@ export async function createLabel(channelToken: string, name: string, color: str
 }
 
 // Find the next available label ID that doesn't conflict with existing labels
-function findNextAvailableLabelId(existingLabels: WhapiLabel[], startFrom: number = 10): string {
-  const existingIds = new Set(existingLabels.map(l => parseInt(l.id, 10)));
-  let nextId = startFrom;
-  while (existingIds.has(nextId) && nextId < 100) {
-    nextId++;
+// WHAPI allows IDs from 1-99 (1-2 digit numbers)
+function findNextAvailableLabelId(existingLabels: WhapiLabel[]): string {
+  const existingIds = new Set(existingLabels.map(l => parseInt(l.id, 10)).filter(n => !isNaN(n)));
+  // Find any available ID from 1-99
+  for (let id = 1; id <= 99; id++) {
+    if (!existingIds.has(id)) {
+      return String(id);
+    }
   }
-  return String(nextId);
+  // Fallback (should never happen - 99 labels is a lot)
+  return String(99);
 }
 
 // Assign a label to a chat (fire-and-forget for performance)
@@ -853,7 +857,7 @@ export async function assignLabelToChat(channelToken: string, labelId: string, c
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+    const response = await fetch(`https://gate.whapi.cloud/api/labels/${labelId}/${chatId}`, {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -880,7 +884,7 @@ export async function removeLabelFromChat(channelToken: string, labelId: string,
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+    const response = await fetch(`https://gate.whapi.cloud/api/labels/${labelId}/${chatId}`, {
       method: "DELETE",
       headers: {
         "Authorization": authToken,
@@ -961,8 +965,8 @@ export async function initializeUserLabels(
       console.log(`[WHAPI Labels] Found existing chatbot label: ${existingChatbotLabel.id}`);
       chatbotLabelId = existingChatbotLabel.id;
     } else {
-      // Find the next available ID starting from 10
-      const nextId = findNextAvailableLabelId(existingLabels, 10);
+      // Find the next available ID that doesn't conflict with existing labels
+      const nextId = findNextAvailableLabelId(existingLabels);
       console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with ID ${nextId} and color limegreen...`);
       // Valid WHAPI colors: salmon, lightskyblue, gold, plum, silver, mediumturquoise, violet, goldenrod, cornflowerblue, greenyellow, cyan, lightpink, mediumaquamarine, orangered, deepskyblue, limegreen, darkorange, lightsteelblue, mediumpurple, rebeccapurple
       const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen", nextId);
@@ -983,7 +987,7 @@ export async function initializeUserLabels(
       inquiryLabelId = existingInquiryLabel.id;
     } else {
       // Find the next available ID (after chatbot label was potentially created)
-      const nextId = findNextAvailableLabelId(existingLabels, 10);
+      const nextId = findNextAvailableLabelId(existingLabels);
       console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with ID ${nextId} and color gold...`);
       const newLabel = await createLabel(channelToken, inquiryLabelName, "gold", nextId);
       console.log(`[WHAPI Labels] Create inquiry label result:`, newLabel);
