@@ -1974,6 +1974,7 @@ export default function Admin() {
     autoExtendEnabled: false,
     skipFriday: false,
     skipSaturday: false,
+    labelManagementEnabled: false,
   });
 
   // Proof viewer dialog state
@@ -2792,6 +2793,7 @@ export default function Admin() {
       autoExtendEnabled: subscription?.autoExtendEnabled || false,
       skipFriday: subscription?.skipFriday || false,
       skipSaturday: subscription?.skipSaturday || false,
+      labelManagementEnabled: user.labelManagementEnabled || false,
     });
     setIsUserDrawerOpen(true);
   };
@@ -2812,6 +2814,7 @@ export default function Admin() {
       autoExtendEnabled: userOverrides.autoExtendEnabled,
       skipFriday: userOverrides.skipFriday,
       skipSaturday: userOverrides.skipSaturday,
+      labelManagementEnabled: userOverrides.labelManagementEnabled,
     };
 
     updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
@@ -5107,6 +5110,35 @@ export default function Admin() {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Label Management Settings */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Label Management</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Enable automatic labeling of WhatsApp chats as "Chatbot" or "Inquiries" based on last message sender.
+                </p>
+                <div className="space-y-3 p-3 bg-card border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="label-management-enabled"
+                      checked={userOverrides.labelManagementEnabled}
+                      onCheckedChange={(checked) => {
+                        setUserOverrides({
+                          ...userOverrides,
+                          labelManagementEnabled: !!checked,
+                        });
+                      }}
+                      data-testid="checkbox-label-management-enabled"
+                    />
+                    <Label htmlFor="label-management-enabled" className="cursor-pointer">
+                      Enable label management for this user
+                    </Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-6">
+                    When enabled, workflows can auto-label chats. This is a master switch - individual workflows can still be disabled.
+                  </p>
                 </div>
               </div>
 

@@ -5843,7 +5843,8 @@ export function registerRoutes(app: Express) {
       const { 
         dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
         phonebookLimit, captureSequenceLimit, pageAccess,
-        autoExtendEnabled, skipFriday, skipSaturday 
+        autoExtendEnabled, skipFriday, skipSaturday,
+        labelManagementEnabled
       } = req.body;
 
       const user = await storage.getUser(userId);
@@ -5857,7 +5858,7 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "No active subscription found" });
       }
 
-      // Build overrides object
+      // Build overrides object for subscription
       const overrides: any = {};
       if (dailyMessagesLimit !== undefined) overrides.dailyMessagesLimit = dailyMessagesLimit;
       if (bulkMessagesLimit !== undefined) overrides.bulkMessagesLimit = bulkMessagesLimit;
@@ -5875,6 +5876,12 @@ export function registerRoutes(app: Express) {
 
       // Update subscription with overrides
       await storage.updateSubscription(subscription.id, overrides);
+      
+      // Update user-level settings (labelManagementEnabled is on users table)
+      if (labelManagementEnabled !== undefined) {
+        await storage.updateUser(userId, { labelManagementEnabled });
+        console.log(`[/api/admin/users/:id/overrides] Updated labelManagementEnabled to ${labelManagementEnabled} for user ${userId}`);
+      }
 
       await storage.createAuditLog({
         actorUserId: req.userId!,
