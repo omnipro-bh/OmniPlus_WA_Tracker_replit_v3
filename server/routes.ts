@@ -3774,6 +3774,26 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Get label operation logs for user
+  app.get("/api/label-logs", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { operation, status, limit } = req.query;
+      
+      const logs = await storage.getLabelLogs({
+        userId: effectiveUserId,
+        operation: operation as string | undefined,
+        status: status as string | undefined,
+        limit: limit ? parseInt(limit as string, 10) : 100,
+      });
+      
+      res.json(logs);
+    } catch (error: any) {
+      console.error("Get label logs error:", error);
+      res.status(500).json({ error: "Failed to fetch label logs" });
+    }
+  });
+
   // ============================================================================
   // BOOKING SCHEDULER
   // ============================================================================
