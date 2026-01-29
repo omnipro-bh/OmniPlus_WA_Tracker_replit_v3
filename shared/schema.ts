@@ -32,6 +32,8 @@ export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAY
 export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
 export const subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["pending", "confirmed", "cancelled", "completed", "no_show"]);
+export const labelLogOperationEnum = pgEnum("label_log_operation", ["sync", "create", "assign", "remove"]);
+export const labelLogStatusEnum = pgEnum("label_log_status", ["success", "error"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -561,6 +563,34 @@ export const workflowExecutionsRelations = relations(workflowExecutions, ({ one 
   workflow: one(workflows, {
     fields: [workflowExecutions.workflowId],
     references: [workflows.id],
+  }),
+}));
+
+// Label Logs table - tracks label sync, creation, and assignment operations
+export const labelLogs = pgTable("label_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  operation: labelLogOperationEnum("operation").notNull(), // sync, create, assign, remove
+  labelType: text("label_type"), // "chatbot" or "inquiry"
+  labelId: text("label_id"), // WHAPI label ID
+  labelName: text("label_name"), // Label name
+  chatId: text("chat_id"), // For assign/remove operations
+  status: labelLogStatusEnum("status").notNull(),
+  requestPayload: jsonb("request_payload").default({}), // API request payload
+  responseData: jsonb("response_data").default({}), // API response or error
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const labelLogsRelations = relations(labelLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [labelLogs.userId],
+    references: [users.id],
+  }),
+  channel: one(channels, {
+    fields: [labelLogs.channelId],
+    references: [channels.id],
   }),
 }));
 
@@ -1131,6 +1161,8 @@ export const insertWorkflowExecutionSchema = createInsertSchema(workflowExecutio
   phone: z.string().min(1),
 });
 
+export const insertLabelLogSchema = createInsertSchema(labelLogs).omit({ id: true, createdAt: true });
+
 export const insertBulkLogSchema = createInsertSchema(bulkLogs, {
   message: z.string().min(1),
 });
@@ -1287,6 +1319,8 @@ export type FirstMessageFlag = typeof firstMessageFlags.$inferSelect;
 export type InsertFirstMessageFlag = z.infer<typeof insertFirstMessageFlagSchema>;
 export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 export type InsertWorkflowExecution = z.infer<typeof insertWorkflowExecutionSchema>;
+export type LabelLog = typeof labelLogs.$inferSelect;
+export type InsertLabelLog = z.infer<typeof insertLabelLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type Setting = typeof settings.$inferSelect;
