@@ -45,6 +45,12 @@ export const users = pgTable("users", {
   whapiToken: text("whapi_token"), // Per-user WHAPI token if needed
   bulkWebhookToken: text("bulk_webhook_token").notNull().default(sql`gen_random_uuid()::text`),
   phonebookLimit: integer("phonebook_limit"), // Per-user override for phonebook contact limit (null = use plan limit)
+  // Label management settings (admin-controlled per-user override)
+  labelManagementAllowed: boolean("label_management_allowed").notNull().default(true), // Admin can disable for specific users
+  chatbotLabelId: text("chatbot_label_id"), // WHAPI label ID for "Chatbot" label
+  chatbotLabelName: text("chatbot_label_name").notNull().default("Chatbot"),
+  inquiryLabelId: text("inquiry_label_id"), // WHAPI label ID for "Inquiries" label
+  inquiryLabelName: text("inquiry_label_name").notNull().default("Inquiries"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -471,6 +477,7 @@ export const workflows = pgTable("workflows", {
   webhookToken: text("webhook_token").notNull().default(sql`gen_random_uuid()::text`),
   isActive: boolean("is_active").notNull().default(true),
   entryNodeId: text("entry_node_id"), // The "welcome" message node ID
+  labelManagementEnabled: boolean("label_management_enabled").notNull().default(false), // Per-workflow label assignment toggle
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
