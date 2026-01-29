@@ -936,7 +936,8 @@ export async function initializeUserLabels(
     if (existingChatbotLabel) {
       chatbotLabelId = existingChatbotLabel.id;
     } else {
-      const newLabel = await createLabel(channelToken, chatbotLabelName, "lightgreen");
+      // Valid WHAPI colors: salmon, lightskyblue, gold, plum, silver, mediumturquoise, violet, goldenrod, cornflowerblue, greenyellow, cyan, lightpink, mediumaquamarine, orangered, deepskyblue, limegreen, darkorange, lightsteelblue, mediumpurple, rebeccapurple
+      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen");
       if (newLabel) chatbotLabelId = newLabel.id;
     }
 

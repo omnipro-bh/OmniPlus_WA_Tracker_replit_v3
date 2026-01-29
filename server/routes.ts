@@ -4930,6 +4930,30 @@ export function registerRoutes(app: Express) {
       if (!user?.labelManagementAllowed) {
         return res.status(403).json({ error: "Label management is not allowed for your account. Contact your administrator." });
       }
+      
+      // Auto-sync labels if enabling and labels not yet configured
+      if (labelManagementEnabled && (!user.chatbotLabelId || !user.inquiryLabelId)) {
+        // Get an active channel with token for this user
+        const userChannels = await storage.getChannelsForUser(effectiveUserId);
+        const activeChannel = userChannels.find(c => c.whapiChannelToken && c.authStatus === 'AUTHORIZED');
+        
+        if (activeChannel?.whapiChannelToken) {
+          console.log(`[Label Management] Auto-syncing labels for user ${effectiveUserId}`);
+          const { initializeUserLabels } = await import("./whapi");
+          const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels(
+            activeChannel.whapiChannelToken,
+            user.chatbotLabelName || "Chatbot",
+            user.inquiryLabelName || "Inquiries"
+          );
+          
+          // Save the label IDs to user
+          await storage.updateUser(effectiveUserId, {
+            chatbotLabelId,
+            inquiryLabelId,
+          });
+          console.log(`[Label Management] Auto-synced labels - Chatbot: ${chatbotLabelId}, Inquiries: ${inquiryLabelId}`);
+        }
+      }
 
       const updated = await storage.updateWorkflow(workflowId, { labelManagementEnabled });
       res.json(updated);
