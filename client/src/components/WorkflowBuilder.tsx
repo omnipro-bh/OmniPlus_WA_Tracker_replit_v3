@@ -22,7 +22,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Tag, Info } from 'lucide-react';
+import { Tag, Info, RefreshCw } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -229,6 +229,8 @@ interface WorkflowBuilderProps {
   labelManagementAllowed?: boolean;
   planLabelManagementEnabled?: boolean;
   onToggleLabelManagement?: (enabled: boolean) => void;
+  onSyncLabels?: () => Promise<void>;
+  isSyncingLabels?: boolean;
 }
 
 export default function WorkflowBuilder({
@@ -244,6 +246,8 @@ export default function WorkflowBuilder({
   labelManagementAllowed = true,
   planLabelManagementEnabled = true,
   onToggleLabelManagement,
+  onSyncLabels,
+  isSyncingLabels = false,
 }: WorkflowBuilderProps) {
   const { user } = useAuth();
   
@@ -1044,6 +1048,19 @@ export default function WorkflowBuilder({
                     </div>
                     {!labelManagementAllowed && (
                       <span className="text-xs text-muted-foreground">(Disabled by admin)</span>
+                    )}
+                    {labelManagementAllowed && onSyncLabels && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onSyncLabels}
+                        disabled={isSyncingLabels}
+                        className="ml-auto"
+                        data-testid="button-sync-labels"
+                      >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${isSyncingLabels ? 'animate-spin' : ''}`} />
+                        {isSyncingLabels ? 'Syncing...' : 'Sync Labels'}
+                      </Button>
                     )}
                   </div>
                 )}

@@ -110,6 +110,26 @@ export default function Workflows() {
     },
   });
 
+  const syncLabels = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/label-settings/sync");
+    },
+    onSuccess: () => {
+      toast({ title: "Labels synced successfully", description: "Chatbot and Inquiries labels are now ready to use." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to sync labels", 
+        description: error?.message || "Make sure you have an active WhatsApp channel connected.",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleSyncLabels = async () => {
+    await syncLabels.mutateAsync();
+  };
+
   const getWebhookUrl = (workflow: Workflow) => {
     if (!user) return "";
     return `${window.location.origin}/webhooks/whapi/${user.id}/${workflow.webhookToken}`;
@@ -233,6 +253,8 @@ export default function Workflows() {
             labelManagementAllowed={(user as any)?.labelManagementAllowed !== false}
             planLabelManagementEnabled={(user as any)?.currentPlan?.labelManagementEnabled === true}
             onToggleLabelManagement={handleToggleLabelManagement}
+            onSyncLabels={handleSyncLabels}
+            isSyncingLabels={syncLabels.isPending}
           />
         </div>
       </div>
