@@ -30,6 +30,7 @@ import Subscribers from "@/pages/subscribers";
 import Outbox from "@/pages/outbox";
 import Logs from "@/pages/logs";
 import BulkLogs from "@/pages/bulk-logs";
+import LabelLogs from "@/pages/label-logs";
 import Pricing from "@/pages/pricing";
 import Admin from "@/pages/admin";
 import AdminBalances from "@/pages/admin-balances";
@@ -145,6 +146,13 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="bulkLogs">
             <BulkLogs />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/label-logs">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="workflows">
+            <LabelLogs />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>

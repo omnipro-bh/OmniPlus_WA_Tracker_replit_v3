@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Database,
   Calendar,
+  Tag,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -104,6 +105,12 @@ export function AppSidebar() {
       url: "/bulk-logs",
       icon: FileText,
       pageKey: "bulkLogs",
+    },
+    {
+      title: "Label Logs",
+      url: "/label-logs",
+      icon: Tag,
+      pageKey: "workflows",
     },
     {
       title: "Data Capture",
