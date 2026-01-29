@@ -801,8 +801,17 @@ export async function createLabel(channelToken: string, name: string, color?: st
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const payload: any = { name };
+    // WHAPI requires a unique numeric ID for labels (typically starts at 1 and increments)
+    // Generate a random ID in a high range to avoid conflicts with existing labels
+    const labelId = String(Math.floor(Math.random() * 1000000) + 100);
+    
+    const payload: any = { 
+      id: labelId,
+      name 
+    };
     if (color) payload.color = color;
+
+    console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
     const response = await fetch("https://gate.whapi.cloud/labels", {
       method: "POST",
@@ -821,6 +830,7 @@ export async function createLabel(channelToken: string, name: string, color?: st
     }
 
     const data = await response.json();
+    console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(data));
     return data;
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error creating label:`, error.message);
