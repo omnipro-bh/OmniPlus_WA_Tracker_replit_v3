@@ -805,16 +805,17 @@ export async function createLabel(
   logContext?: { userId: number; channelId?: number; labelType?: string }
 ): Promise<WhapiLabel | null> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = "https://gate.whapi.cloud/labels";
   
   // WHAPI requires ID to match pattern ^([\d]{1,2})?$ (1-2 digit number)
-  const payload: any = { id: labelId, name, color };
+  const payload: any = { endpoint, method: "POST", id: labelId, name, color };
   let responseData: any = null;
   let responseText = "";
 
   try {
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
-    const response = await fetch("https://gate.whapi.cloud/labels", {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -927,9 +928,11 @@ export async function assignLabelToChat(
   logContext?: { userId: number; channelId?: number; labelType?: string; labelName?: string }
 ): Promise<boolean> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = `https://gate.whapi.cloud/labels/${labelId}/${chatId}`;
+  const requestPayload = { endpoint, method: "POST", labelId, chatId };
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -937,9 +940,14 @@ export async function assignLabelToChat(
       },
     });
 
+    const responseText = await response.text().catch(() => "");
+    let responseData: any = { status: response.status, body: responseText };
+    try {
+      responseData = { status: response.status, body: JSON.parse(responseText) };
+    } catch {}
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      console.error(`[WHAPI Labels] Failed to assign label ${labelId} to chat ${chatId}:`, errorText);
+      console.error(`[WHAPI Labels] Failed to assign label ${labelId} to chat ${chatId}:`, responseText);
       
       // Log error to database if context provided (fire-and-forget, never block)
       if (logContext) {
@@ -953,8 +961,9 @@ export async function assignLabelToChat(
             labelName: logContext.labelName,
             chatId: chatId,
             status: "error",
-            requestPayload: { labelId, chatId },
-            errorMessage: errorText,
+            requestPayload,
+            responseData,
+            errorMessage: responseText,
           });
         } catch (logErr: any) {
           console.error(`[WHAPI Labels] Failed to log assign error:`, logErr.message);
@@ -977,7 +986,8 @@ export async function assignLabelToChat(
           labelName: logContext.labelName,
           chatId: chatId,
           status: "success",
-          requestPayload: { labelId, chatId },
+          requestPayload,
+          responseData,
         });
       } catch (logErr: any) {
         console.error(`[WHAPI Labels] Failed to log assign success:`, logErr.message);
@@ -999,7 +1009,8 @@ export async function assignLabelToChat(
           labelName: logContext.labelName,
           chatId: chatId,
           status: "error",
-          requestPayload: { labelId, chatId },
+          requestPayload,
+          responseData: { error: error.message },
           errorMessage: error.message,
         });
       } catch (logErr: any) {
@@ -1018,9 +1029,11 @@ export async function removeLabelFromChat(
   logContext?: { userId: number; channelId?: number; labelType?: string; labelName?: string }
 ): Promise<boolean> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = `https://gate.whapi.cloud/labels/${labelId}/${chatId}`;
+  const requestPayload = { endpoint, method: "DELETE", labelId, chatId };
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
+    const response = await fetch(endpoint, {
       method: "DELETE",
       headers: {
         "Authorization": authToken,
@@ -1028,11 +1041,16 @@ export async function removeLabelFromChat(
       },
     });
 
+    const responseText = await response.text().catch(() => "");
+    let responseData: any = { status: response.status, body: responseText };
+    try {
+      responseData = { status: response.status, body: JSON.parse(responseText) };
+    } catch {}
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
       // Don't log error if label wasn't assigned (expected behavior)
-      if (!errorText.includes("not found") && !errorText.includes("not assigned")) {
-        console.error(`[WHAPI Labels] Failed to remove label ${labelId} from chat ${chatId}:`, errorText);
+      if (!responseText.includes("not found") && !responseText.includes("not assigned")) {
+        console.error(`[WHAPI Labels] Failed to remove label ${labelId} from chat ${chatId}:`, responseText);
         
         // Log error to database if context provided (fire-and-forget, never block)
         if (logContext) {
@@ -1046,8 +1064,9 @@ export async function removeLabelFromChat(
               labelName: logContext.labelName,
               chatId: chatId,
               status: "error",
-              requestPayload: { labelId, chatId },
-              errorMessage: errorText,
+              requestPayload,
+              responseData,
+              errorMessage: responseText,
             });
           } catch (logErr: any) {
             console.error(`[WHAPI Labels] Failed to log remove error:`, logErr.message);
@@ -1071,7 +1090,8 @@ export async function removeLabelFromChat(
           labelName: logContext.labelName,
           chatId: chatId,
           status: "success",
-          requestPayload: { labelId, chatId },
+          requestPayload,
+          responseData,
         });
       } catch (logErr: any) {
         console.error(`[WHAPI Labels] Failed to log remove success:`, logErr.message);
@@ -1093,7 +1113,8 @@ export async function removeLabelFromChat(
           labelName: logContext.labelName,
           chatId: chatId,
           status: "error",
-          requestPayload: { labelId, chatId },
+          requestPayload,
+          responseData: { error: error.message },
           errorMessage: error.message,
         });
       } catch (logErr: any) {
