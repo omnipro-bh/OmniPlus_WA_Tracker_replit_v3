@@ -3693,10 +3693,15 @@ export function registerRoutes(app: Express) {
   app.post("/api/label-settings/sync", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
+      console.log(`[Label Sync] Starting sync for user ${effectiveUserId}`);
+      
       const user = await storage.getUser(effectiveUserId);
       if (!user) {
+        console.log(`[Label Sync] User ${effectiveUserId} not found`);
         return res.status(404).json({ error: "User not found" });
       }
+      
+      console.log(`[Label Sync] User ${effectiveUserId} labelManagementAllowed: ${user.labelManagementAllowed}`);
       
       if (!user.labelManagementAllowed) {
         return res.status(403).json({ error: "Label management is disabled for your account" });
@@ -3704,11 +3709,17 @@ export function registerRoutes(app: Express) {
       
       // Get an active channel with token for this user
       const userChannels = await storage.getChannelsForUser(effectiveUserId);
+      console.log(`[Label Sync] Found ${userChannels.length} channels for user ${effectiveUserId}`);
+      
       const activeChannel = userChannels.find(c => c.authStatus === "AUTHORIZED" && c.whapiChannelToken);
       
       if (!activeChannel?.whapiChannelToken) {
+        console.log(`[Label Sync] No active authorized channel with token found`);
         return res.status(400).json({ error: "No active WhatsApp channel found. Please authorize a channel first." });
       }
+      
+      console.log(`[Label Sync] Using channel ${activeChannel.id} with phone ${activeChannel.phone}`);
+      console.log(`[Label Sync] Label names - Chatbot: "${user.chatbotLabelName || 'Chatbot'}", Inquiry: "${user.inquiryLabelName || 'Inquiries'}"`);
       
       // Initialize labels using WHAPI
       const { initializeUserLabels } = await import("./whapi");
@@ -3718,11 +3729,15 @@ export function registerRoutes(app: Express) {
         user.inquiryLabelName
       );
       
+      console.log(`[Label Sync] WHAPI returned - chatbotLabelId: ${chatbotLabelId}, inquiryLabelId: ${inquiryLabelId}`);
+      
       // Save the label IDs to user
       await storage.updateUser(effectiveUserId, {
         chatbotLabelId,
         inquiryLabelId,
       });
+      
+      console.log(`[Label Sync] Saved label IDs to user ${effectiveUserId}`);
       
       res.json({
         success: true,
@@ -3731,7 +3746,7 @@ export function registerRoutes(app: Express) {
         message: "Labels synced successfully with WhatsApp",
       });
     } catch (error: any) {
-      console.error("Sync labels error:", error);
+      console.error("[Label Sync] Error:", error);
       res.status(500).json({ error: "Failed to sync labels" });
     }
   });
