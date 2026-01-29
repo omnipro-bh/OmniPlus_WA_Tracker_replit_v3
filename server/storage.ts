@@ -914,6 +914,50 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
+  // Label Logs
+  async createLabelLog(log: schema.InsertLabelLog): Promise<schema.LabelLog> {
+    const [newLog] = await db.insert(schema.labelLogs).values(log).returning();
+    return newLog;
+  }
+
+  async getLabelLogs(filters?: {
+    userId?: number;
+    channelId?: number;
+    operation?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<schema.LabelLog[]> {
+    let query = db.select().from(schema.labelLogs);
+
+    const conditions = [];
+    if (filters?.userId) {
+      conditions.push(eq(schema.labelLogs.userId, filters.userId));
+    }
+    if (filters?.channelId) {
+      conditions.push(eq(schema.labelLogs.channelId, filters.channelId));
+    }
+    if (filters?.operation) {
+      conditions.push(eq(schema.labelLogs.operation, filters.operation as any));
+    }
+    if (filters?.status) {
+      conditions.push(eq(schema.labelLogs.status, filters.status as any));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    query = query.orderBy(desc(schema.labelLogs.createdAt)) as any;
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as any;
+    } else {
+      query = query.limit(100) as any; // Default limit
+    }
+
+    return await query;
+  }
+
   // Terms & Conditions
   async getActiveTermsDocuments(): Promise<schema.TermsDocument[]> {
     return await db
