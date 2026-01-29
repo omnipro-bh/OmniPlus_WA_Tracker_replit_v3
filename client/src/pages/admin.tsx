@@ -1974,7 +1974,7 @@ export default function Admin() {
     autoExtendEnabled: false,
     skipFriday: false,
     skipSaturday: false,
-    labelManagementEnabled: false,
+    labelManagementAllowed: true,
   });
 
   // Proof viewer dialog state
@@ -2793,7 +2793,7 @@ export default function Admin() {
       autoExtendEnabled: subscription?.autoExtendEnabled || false,
       skipFriday: subscription?.skipFriday || false,
       skipSaturday: subscription?.skipSaturday || false,
-      labelManagementEnabled: user.labelManagementEnabled || false,
+      labelManagementAllowed: user.labelManagementAllowed !== false,
     });
     setIsUserDrawerOpen(true);
   };
@@ -2814,7 +2814,7 @@ export default function Admin() {
       autoExtendEnabled: userOverrides.autoExtendEnabled,
       skipFriday: userOverrides.skipFriday,
       skipSaturday: userOverrides.skipSaturday,
-      labelManagementEnabled: userOverrides.labelManagementEnabled,
+      labelManagementAllowed: userOverrides.labelManagementAllowed,
     };
 
     updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
@@ -5117,27 +5117,27 @@ export default function Admin() {
               <div>
                 <h3 className="text-sm font-semibold mb-3">Label Management</h3>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Enable automatic labeling of WhatsApp chats as "Chatbot" or "Inquiries" based on last message sender.
+                  Allow automatic labeling of WhatsApp chats as "Chatbot" or "Inquiries" based on last message sender.
                 </p>
                 <div className="space-y-3 p-3 bg-card border rounded-md">
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="label-management-enabled"
-                      checked={userOverrides.labelManagementEnabled}
+                      id="label-management-allowed"
+                      checked={userOverrides.labelManagementAllowed}
                       onCheckedChange={(checked) => {
                         setUserOverrides({
                           ...userOverrides,
-                          labelManagementEnabled: !!checked,
+                          labelManagementAllowed: !!checked,
                         });
                       }}
-                      data-testid="checkbox-label-management-enabled"
+                      data-testid="checkbox-label-management-allowed"
                     />
-                    <Label htmlFor="label-management-enabled" className="cursor-pointer">
-                      Enable label management for this user
+                    <Label htmlFor="label-management-allowed" className="cursor-pointer">
+                      Allow label management for this user
                     </Label>
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
-                    When enabled, workflows can auto-label chats. This is a master switch - individual workflows can still be disabled.
+                    When allowed, user can enable auto-labeling on individual workflows. This is an admin override switch.
                   </p>
                 </div>
               </div>

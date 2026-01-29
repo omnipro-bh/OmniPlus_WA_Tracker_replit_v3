@@ -4913,6 +4913,12 @@ export function registerRoutes(app: Express) {
       if (typeof labelManagementEnabled !== 'boolean') {
         return res.status(400).json({ error: "labelManagementEnabled must be a boolean" });
       }
+      
+      // Check if admin has allowed label management for this user
+      const user = await storage.getUser(effectiveUserId);
+      if (!user?.labelManagementAllowed) {
+        return res.status(403).json({ error: "Label management is not allowed for your account. Contact your administrator." });
+      }
 
       const updated = await storage.updateWorkflow(workflowId, { labelManagementEnabled });
       res.json(updated);
@@ -5868,7 +5874,7 @@ export function registerRoutes(app: Express) {
         dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
         phonebookLimit, captureSequenceLimit, pageAccess,
         autoExtendEnabled, skipFriday, skipSaturday,
-        labelManagementEnabled
+        labelManagementAllowed
       } = req.body;
 
       const user = await storage.getUser(userId);
@@ -5901,10 +5907,10 @@ export function registerRoutes(app: Express) {
       // Update subscription with overrides
       await storage.updateSubscription(subscription.id, overrides);
       
-      // Update user-level settings (labelManagementEnabled is on users table)
-      if (labelManagementEnabled !== undefined) {
-        await storage.updateUser(userId, { labelManagementEnabled });
-        console.log(`[/api/admin/users/:id/overrides] Updated labelManagementEnabled to ${labelManagementEnabled} for user ${userId}`);
+      // Update user-level settings (labelManagementAllowed is on users table)
+      if (labelManagementAllowed !== undefined) {
+        await storage.updateUser(userId, { labelManagementAllowed });
+        console.log(`[/api/admin/users/:id/overrides] Updated labelManagementAllowed to ${labelManagementAllowed} for user ${userId}`);
       }
 
       await storage.createAuditLog({
