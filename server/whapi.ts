@@ -796,15 +796,13 @@ export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
   }
 }
 
-// Create a new label
-export async function createLabel(channelToken: string, name: string, color?: string): Promise<WhapiLabel | null> {
+// Create a new label with specific ID
+export async function createLabel(channelToken: string, name: string, color: string, labelId: string): Promise<WhapiLabel | null> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    // Let WHAPI auto-generate the ID by not including it in the payload
-    // The pattern ^([\d]{1,2})?$ means ID is optional
-    const payload: any = { name };
-    if (color) payload.color = color;
+    // WHAPI requires ID to match pattern ^([\d]{1,2})?$ (1-2 digit number)
+    const payload: any = { id: labelId, name, color };
 
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
@@ -818,19 +816,36 @@ export async function createLabel(channelToken: string, name: string, color?: st
       body: JSON.stringify(payload),
     });
 
+    const responseText = await response.text();
+    console.log(`[WHAPI Labels] Create response status: ${response.status}, body: ${responseText}`);
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      console.error(`[WHAPI Labels] Failed to create label "${name}":`, errorText);
+      console.error(`[WHAPI Labels] Failed to create label "${name}" with ID ${labelId}`);
       return null;
     }
 
-    const data = await response.json();
-    console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(data));
-    return data;
+    try {
+      const data = JSON.parse(responseText);
+      console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(data));
+      return data;
+    } catch {
+      // If response is not JSON but status is OK, return a mock object with the ID we sent
+      return { id: labelId, name, color };
+    }
   } catch (error: any) {
     console.error(`[WHAPI Labels] Error creating label:`, error.message);
     return null;
   }
+}
+
+// Find the next available label ID that doesn't conflict with existing labels
+function findNextAvailableLabelId(existingLabels: WhapiLabel[], startFrom: number = 10): string {
+  const existingIds = new Set(existingLabels.map(l => parseInt(l.id, 10)));
+  let nextId = startFrom;
+  while (existingIds.has(nextId) && nextId < 100) {
+    nextId++;
+  }
+  return String(nextId);
 }
 
 // Assign a label to a chat (fire-and-forget for performance)
@@ -946,12 +961,16 @@ export async function initializeUserLabels(
       console.log(`[WHAPI Labels] Found existing chatbot label: ${existingChatbotLabel.id}`);
       chatbotLabelId = existingChatbotLabel.id;
     } else {
-      console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with color limegreen...`);
+      // Find the next available ID starting from 10
+      const nextId = findNextAvailableLabelId(existingLabels, 10);
+      console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with ID ${nextId} and color limegreen...`);
       // Valid WHAPI colors: salmon, lightskyblue, gold, plum, silver, mediumturquoise, violet, goldenrod, cornflowerblue, greenyellow, cyan, lightpink, mediumaquamarine, orangered, deepskyblue, limegreen, darkorange, lightsteelblue, mediumpurple, rebeccapurple
-      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen");
+      const newLabel = await createLabel(channelToken, chatbotLabelName, "limegreen", nextId);
       console.log(`[WHAPI Labels] Create chatbot label result:`, newLabel);
       if (newLabel) {
         chatbotLabelId = newLabel.id;
+        // Add to existing labels to avoid ID conflict with inquiry label
+        existingLabels.push(newLabel);
       }
     }
 
@@ -963,8 +982,10 @@ export async function initializeUserLabels(
       console.log(`[WHAPI Labels] Found existing inquiry label: ${existingInquiryLabel.id}`);
       inquiryLabelId = existingInquiryLabel.id;
     } else {
-      console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with color gold...`);
-      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold");
+      // Find the next available ID (after chatbot label was potentially created)
+      const nextId = findNextAvailableLabelId(existingLabels, 10);
+      console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with ID ${nextId} and color gold...`);
+      const newLabel = await createLabel(channelToken, inquiryLabelName, "gold", nextId);
       console.log(`[WHAPI Labels] Create inquiry label result:`, newLabel);
       if (newLabel) inquiryLabelId = newLabel.id;
     }
