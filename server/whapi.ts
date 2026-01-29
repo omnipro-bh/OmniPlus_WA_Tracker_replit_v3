@@ -774,7 +774,7 @@ export async function getLabels(channelToken: string): Promise<WhapiLabel[]> {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch("https://gate.whapi.cloud/api/labels", {
+    const response = await fetch("https://gate.whapi.cloud/labels", {
       method: "GET",
       headers: {
         "Authorization": authToken,
@@ -814,7 +814,7 @@ export async function createLabel(
   try {
     console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
 
-    const response = await fetch("https://gate.whapi.cloud/api/labels", {
+    const response = await fetch("https://gate.whapi.cloud/labels", {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -929,7 +929,7 @@ export async function assignLabelToChat(
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/api/labels/${labelId}/${chatId}`, {
+    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
       method: "POST",
       headers: {
         "Authorization": authToken,
@@ -1020,7 +1020,7 @@ export async function removeLabelFromChat(
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
   
   try {
-    const response = await fetch(`https://gate.whapi.cloud/api/labels/${labelId}/${chatId}`, {
+    const response = await fetch(`https://gate.whapi.cloud/labels/${labelId}/${chatId}`, {
       method: "DELETE",
       headers: {
         "Authorization": authToken,
