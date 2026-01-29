@@ -3638,6 +3638,128 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // LABEL MANAGEMENT
+  // ============================================================================
+
+  // Get user's label settings
+  app.get("/api/label-settings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({
+        labelManagementAllowed: user.labelManagementAllowed,
+        chatbotLabelId: user.chatbotLabelId,
+        chatbotLabelName: user.chatbotLabelName,
+        inquiryLabelId: user.inquiryLabelId,
+        inquiryLabelName: user.inquiryLabelName,
+      });
+    } catch (error: any) {
+      console.error("Get label settings error:", error);
+      res.status(500).json({ error: "Failed to fetch label settings" });
+    }
+  });
+
+  // Update user's label settings
+  app.post("/api/label-settings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { chatbotLabelName, inquiryLabelName } = req.body;
+      
+      const updateData: any = {};
+      if (chatbotLabelName) updateData.chatbotLabelName = chatbotLabelName;
+      if (inquiryLabelName) updateData.inquiryLabelName = inquiryLabelName;
+      
+      const updated = await storage.updateUser(effectiveUserId, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({
+        success: true,
+        chatbotLabelName: updated.chatbotLabelName,
+        inquiryLabelName: updated.inquiryLabelName,
+      });
+    } catch (error: any) {
+      console.error("Update label settings error:", error);
+      res.status(500).json({ error: "Failed to update label settings" });
+    }
+  });
+
+  // Sync labels with WhatsApp (create if not exists)
+  app.post("/api/label-settings/sync", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      if (!user.labelManagementAllowed) {
+        return res.status(403).json({ error: "Label management is disabled for your account" });
+      }
+      
+      // Get an active channel with token for this user
+      const userChannels = await storage.getChannelsForUser(effectiveUserId);
+      const activeChannel = userChannels.find(c => c.authStatus === "AUTHORIZED" && c.whapiChannelToken);
+      
+      if (!activeChannel?.whapiChannelToken) {
+        return res.status(400).json({ error: "No active WhatsApp channel found. Please authorize a channel first." });
+      }
+      
+      // Initialize labels using WHAPI
+      const { initializeUserLabels } = await import("./whapi");
+      const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels(
+        activeChannel.whapiChannelToken,
+        user.chatbotLabelName,
+        user.inquiryLabelName
+      );
+      
+      // Save the label IDs to user
+      await storage.updateUser(effectiveUserId, {
+        chatbotLabelId,
+        inquiryLabelId,
+      });
+      
+      res.json({
+        success: true,
+        chatbotLabelId,
+        inquiryLabelId,
+        message: "Labels synced successfully with WhatsApp",
+      });
+    } catch (error: any) {
+      console.error("Sync labels error:", error);
+      res.status(500).json({ error: "Failed to sync labels" });
+    }
+  });
+
+  // Get available labels from WhatsApp
+  app.get("/api/label-settings/labels", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      
+      // Get an active channel with token for this user
+      const userChannels = await storage.getChannelsForUser(effectiveUserId);
+      const activeChannel = userChannels.find(c => c.authStatus === "AUTHORIZED" && c.whapiChannelToken);
+      
+      if (!activeChannel?.whapiChannelToken) {
+        return res.status(400).json({ error: "No active WhatsApp channel found" });
+      }
+      
+      const { getLabels } = await import("./whapi");
+      const labels = await getLabels(activeChannel.whapiChannelToken);
+      
+      res.json(labels);
+    } catch (error: any) {
+      console.error("Get WhatsApp labels error:", error);
+      res.status(500).json({ error: "Failed to fetch labels" });
+    }
+  });
+
+  // ============================================================================
   // BOOKING SCHEDULER
   // ============================================================================
 
