@@ -4898,6 +4898,30 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Update workflow label management settings
+  app.patch("/api/workflows/:id/label-settings", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const { labelManagementEnabled } = req.body;
+      if (typeof labelManagementEnabled !== 'boolean') {
+        return res.status(400).json({ error: "labelManagementEnabled must be a boolean" });
+      }
+
+      const updated = await storage.updateWorkflow(workflowId, { labelManagementEnabled });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update workflow label settings error:", error);
+      res.status(500).json({ error: "Failed to update workflow label settings" });
+    }
+  });
+
   // Test send workflow node message
   app.post("/api/workflows/test-message", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

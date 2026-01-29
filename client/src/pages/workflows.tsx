@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { GitBranch, Plus, Pencil, Trash2, Copy, ArrowLeft, Link as LinkIcon } from "lucide-react";
+import { GitBranch, Plus, Pencil, Trash2, Copy, ArrowLeft, Link as LinkIcon, Tag } from "lucide-react";
 import type { Workflow } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
@@ -93,6 +94,19 @@ export default function Workflows() {
     },
     onError: () => {
       toast({ title: "Failed to delete workflow", variant: "destructive" });
+    },
+  });
+
+  const toggleLabelManagement = useMutation({
+    mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) => {
+      return apiRequest("PATCH", `/api/workflows/${id}/label-settings`, { labelManagementEnabled: enabled });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({ title: "Label management setting updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update label setting", variant: "destructive" });
     },
   });
 
@@ -315,6 +329,21 @@ export default function Workflows() {
                           <Copy className="h-3 w-3" />
                         </Button>
                       </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-3 w-3 text-muted-foreground" />
+                        <Label className="text-xs cursor-pointer" htmlFor={`label-toggle-${workflow.id}`}>
+                          Auto-label chats
+                        </Label>
+                      </div>
+                      <Switch
+                        id={`label-toggle-${workflow.id}`}
+                        checked={workflow.labelManagementEnabled || false}
+                        onCheckedChange={(checked) => toggleLabelManagement.mutate({ id: workflow.id, enabled: checked })}
+                        disabled={toggleLabelManagement.isPending}
+                        data-testid={`switch-label-management-${workflow.id}`}
+                      />
                     </div>
                   </CardContent>
                   <CardFooter className="flex gap-2">
