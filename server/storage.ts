@@ -277,6 +277,7 @@ export interface IStorage {
     confirmMessage: string | null;
     rescheduleMessage: string | null;
     cancelMessage: string | null;
+    customDayNames: string[] | null;
   }>): Promise<schema.UserBookingSettings>;
 }
 
@@ -1889,6 +1890,7 @@ export class DatabaseStorage implements IStorage {
     confirmMessage: string | null;
     rescheduleMessage: string | null;
     cancelMessage: string | null;
+    customDayNames: string[] | null;
   }>): Promise<schema.UserBookingSettings> {
     // Check if settings exist for this user
     const existing = await this.getUserBookingSettings(userId);

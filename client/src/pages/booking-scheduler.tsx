@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare, Upload, FileSpreadsheet } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -327,9 +327,19 @@ export default function BookingScheduler() {
     confirmMessage: string | null;
     rescheduleMessage: string | null;
     cancelMessage: string | null;
+    customDayNames: string[] | null;
   }>({
     queryKey: ['/api/booking/notification-settings'],
   });
+
+  // Custom day names state - default to English
+  const [customDayNames, setCustomDayNames] = useState<string[]>(DAY_NAMES);
+  const [useCustomDayNames, setUseCustomDayNames] = useState(false);
+
+  // Effective day names - use custom if enabled and valid, otherwise default
+  const effectiveDayNames = useCustomDayNames && customDayNames.length === 7 
+    ? customDayNames 
+    : DAY_NAMES;
 
   // Initialize notification message states when settings load
   useEffect(() => {
@@ -337,12 +347,16 @@ export default function BookingScheduler() {
       setConfirmMessage(notificationSettings.confirmMessage || getDefaultConfirmMessage());
       setRescheduleMessage(notificationSettings.rescheduleMessage || getDefaultRescheduleMessage());
       setCancelMessage(notificationSettings.cancelMessage || getDefaultCancelMessage());
+      if (notificationSettings.customDayNames && notificationSettings.customDayNames.length === 7) {
+        setCustomDayNames(notificationSettings.customDayNames);
+        setUseCustomDayNames(true);
+      }
     }
   }, [notificationSettings]);
 
   // Mutations
   const updateNotificationSettingsMutation = useMutation({
-    mutationFn: async (data: { confirmMessage: string; rescheduleMessage: string; cancelMessage: string }) => {
+    mutationFn: async (data: { confirmMessage: string; rescheduleMessage: string; cancelMessage: string; customDayNames?: string[] | null }) => {
       return await apiRequest('PUT', '/api/booking/notification-settings', data);
     },
     onSuccess: () => {
@@ -1331,7 +1345,7 @@ export default function BookingScheduler() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {DAY_NAMES.map((day, i) => (
+                              {effectiveDayNames.map((day, i) => (
                                 <SelectItem key={i} value={String(i)}>{day}</SelectItem>
                               ))}
                             </SelectContent>
@@ -1421,7 +1435,7 @@ export default function BookingScheduler() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{DAY_NAMES[slot.dayOfWeek]}</span>
+                              <span className="font-medium">{effectiveDayNames[slot.dayOfWeek]}</span>
                             </div>
                             <Button
                               variant="ghost"
@@ -1790,14 +1804,75 @@ export default function BookingScheduler() {
                       confirmMessage,
                       rescheduleMessage,
                       cancelMessage,
+                      customDayNames: useCustomDayNames ? customDayNames : null,
                     })}
                     disabled={updateNotificationSettingsMutation.isPending}
                     data-testid="button-save-notification-settings"
                   >
-                    {updateNotificationSettingsMutation.isPending ? "Saving..." : "Save Messages"}
+                    {updateNotificationSettingsMutation.isPending ? "Saving..." : "Save Settings"}
                   </Button>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Custom Day Names Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Day Names Customization</CardTitle>
+              <CardDescription>
+                Customize the weekday names shown in time slot dropdowns for different languages
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="use-custom-days"
+                  checked={useCustomDayNames}
+                  onCheckedChange={(checked) => setUseCustomDayNames(checked === true)}
+                  data-testid="checkbox-use-custom-days"
+                />
+                <Label htmlFor="use-custom-days">Use custom day names</Label>
+              </div>
+
+              {useCustomDayNames && (
+                <div className="space-y-4">
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-md">
+                    <p className="text-xs text-muted-foreground">
+                      Enter custom names for each day of the week. Leave as English or customize for Arabic/other languages.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {DAY_NAMES.map((defaultDay, i) => (
+                      <div key={i} className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">{defaultDay}</Label>
+                        <Input
+                          value={customDayNames[i] || ''}
+                          onChange={(e) => {
+                            const newNames = [...customDayNames];
+                            newNames[i] = e.target.value;
+                            setCustomDayNames(newNames);
+                          }}
+                          placeholder={defaultDay}
+                          data-testid={`input-custom-day-${i}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCustomDayNames([...DAY_NAMES])}
+                    data-testid="button-reset-day-names"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" /> Reset to English
+                  </Button>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                Custom day names will be reflected in the "Add Time Slot" dropdown and slot displays.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

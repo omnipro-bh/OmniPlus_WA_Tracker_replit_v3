@@ -4585,6 +4585,7 @@ export function registerRoutes(app: Express) {
         confirmMessage: settings?.confirmMessage || null,
         rescheduleMessage: settings?.rescheduleMessage || null,
         cancelMessage: settings?.cancelMessage || null,
+        customDayNames: settings?.customDayNames || null,
       });
     } catch (error: any) {
       console.error("Get booking notification settings error:", error);
@@ -4596,12 +4597,19 @@ export function registerRoutes(app: Express) {
   app.put("/api/booking/notification-settings", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { confirmMessage, rescheduleMessage, cancelMessage } = req.body;
+      const { confirmMessage, rescheduleMessage, cancelMessage, customDayNames } = req.body;
+      
+      // Validate customDayNames if provided - must be array of exactly 7 strings
+      let validatedDayNames: string[] | null = null;
+      if (customDayNames && Array.isArray(customDayNames) && customDayNames.length === 7) {
+        validatedDayNames = customDayNames.map((name: any) => String(name || ''));
+      }
       
       const updated = await storage.updateUserBookingSettings(effectiveUserId, {
         confirmMessage: confirmMessage || null,
         rescheduleMessage: rescheduleMessage || null,
         cancelMessage: cancelMessage || null,
+        customDayNames: validatedDayNames,
       });
 
       res.json({
@@ -4609,6 +4617,7 @@ export function registerRoutes(app: Express) {
         confirmMessage: updated.confirmMessage,
         rescheduleMessage: updated.rescheduleMessage,
         cancelMessage: updated.cancelMessage,
+        customDayNames: updated.customDayNames,
       });
     } catch (error: any) {
       console.error("Update booking notification settings error:", error);

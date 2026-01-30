@@ -1063,6 +1063,7 @@ export const userBookingSettings = pgTable("user_booking_settings", {
   confirmMessage: text("confirm_message"),
   rescheduleMessage: text("reschedule_message"),
   cancelMessage: text("cancel_message"),
+  customDayNames: text("custom_day_names").array(), // Array of 7 custom day names (Sunday-Saturday)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
