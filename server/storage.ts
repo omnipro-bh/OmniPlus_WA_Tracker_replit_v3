@@ -215,8 +215,16 @@ export interface IStorage {
   deleteCapturedData(id: number): Promise<void>;
   countCapturedDataForSequence(sequenceId: number): Promise<number>;
 
+  // Booking Scheduler - Services (groups departments)
+  getBookingServicesForUser(userId: number): Promise<schema.BookingService[]>;
+  getBookingService(id: number): Promise<schema.BookingService | undefined>;
+  createBookingService(service: schema.InsertBookingService): Promise<schema.BookingService>;
+  updateBookingService(id: number, data: Partial<schema.BookingService>): Promise<schema.BookingService | undefined>;
+  deleteBookingService(id: number): Promise<void>;
+
   // Booking Scheduler - Departments
   getBookingDepartmentsForUser(userId: number): Promise<schema.BookingDepartment[]>;
+  getBookingDepartmentsForService(serviceId: number): Promise<schema.BookingDepartment[]>;
   getBookingDepartment(id: number): Promise<schema.BookingDepartment | undefined>;
   createBookingDepartment(dept: schema.InsertBookingDepartment): Promise<schema.BookingDepartment>;
   updateBookingDepartment(id: number, data: Partial<schema.BookingDepartment>): Promise<schema.BookingDepartment | undefined>;
@@ -1467,12 +1475,58 @@ export class DatabaseStorage implements IStorage {
   // BOOKING SCHEDULER METHODS
   // ============================================================================
 
+  // Services (groups departments)
+  async getBookingServicesForUser(userId: number): Promise<schema.BookingService[]> {
+    return await db
+      .select()
+      .from(schema.bookingServices)
+      .where(eq(schema.bookingServices.userId, userId))
+      .orderBy(schema.bookingServices.name);
+  }
+
+  async getBookingService(id: number): Promise<schema.BookingService | undefined> {
+    const [service] = await db
+      .select()
+      .from(schema.bookingServices)
+      .where(eq(schema.bookingServices.id, id));
+    return service || undefined;
+  }
+
+  async createBookingService(service: schema.InsertBookingService): Promise<schema.BookingService> {
+    const [newService] = await db
+      .insert(schema.bookingServices)
+      .values(service)
+      .returning();
+    return newService;
+  }
+
+  async updateBookingService(id: number, data: Partial<schema.BookingService>): Promise<schema.BookingService | undefined> {
+    const [updated] = await db
+      .update(schema.bookingServices)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.bookingServices.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBookingService(id: number): Promise<void> {
+    await db.delete(schema.bookingServices).where(eq(schema.bookingServices.id, id));
+  }
+
   // Departments
   async getBookingDepartmentsForUser(userId: number): Promise<schema.BookingDepartment[]> {
     return await db
       .select()
       .from(schema.bookingDepartments)
       .where(eq(schema.bookingDepartments.userId, userId))
+      .orderBy(schema.bookingDepartments.name);
+  }
+
+  async getBookingDepartmentsForService(serviceId: number): Promise<schema.BookingDepartment[]> {
+    return await db
+      .select()
+      .from(schema.bookingDepartments)
+      .where(eq(schema.bookingDepartments.serviceId, serviceId))
       .orderBy(schema.bookingDepartments.name);
   }
 

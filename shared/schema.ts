@@ -902,10 +902,30 @@ export const capturedDataRelations = relations(capturedData, ({ one }) => ({
 // BOOKING SCHEDULER TABLES
 // ============================================================================
 
+// Booking Services table - Groups departments by service/context (e.g., "Saloon", "Hospital", "Arabic", "English")
+export const bookingServices = pgTable("booking_services", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const bookingServicesRelations = relations(bookingServices, ({ one, many }) => ({
+  user: one(users, {
+    fields: [bookingServices.userId],
+    references: [users.id],
+  }),
+  departments: many(bookingDepartments),
+}));
+
 // Departments table - Groups staff by department
 export const bookingDepartments = pgTable("booking_departments", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  serviceId: integer("service_id").references(() => bookingServices.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
@@ -917,6 +937,10 @@ export const bookingDepartmentsRelations = relations(bookingDepartments, ({ one,
   user: one(users, {
     fields: [bookingDepartments.userId],
     references: [users.id],
+  }),
+  service: one(bookingServices, {
+    fields: [bookingDepartments.serviceId],
+    references: [bookingServices.id],
   }),
   staff: many(bookingStaff),
 }));
@@ -1260,9 +1284,15 @@ export const insertCapturedDataSchema = createInsertSchema(capturedData, {
 });
 
 // Booking Scheduler Schemas
+export const insertBookingServiceSchema = createInsertSchema(bookingServices, {
+  name: z.string().min(1, "Service name is required"),
+  description: z.string().optional(),
+});
+
 export const insertBookingDepartmentSchema = createInsertSchema(bookingDepartments, {
   name: z.string().min(1, "Department name is required"),
   description: z.string().optional(),
+  serviceId: z.number().optional(),
 });
 
 export const insertBookingStaffSchema = createInsertSchema(bookingStaff, {
@@ -1359,6 +1389,8 @@ export type CapturedData = typeof capturedData.$inferSelect;
 export type InsertCapturedData = z.infer<typeof insertCapturedDataSchema>;
 
 // Booking Scheduler Types
+export type BookingService = typeof bookingServices.$inferSelect;
+export type InsertBookingService = z.infer<typeof insertBookingServiceSchema>;
 export type BookingDepartment = typeof bookingDepartments.$inferSelect;
 export type InsertBookingDepartment = z.infer<typeof insertBookingDepartmentSchema>;
 export type BookingStaff = typeof bookingStaff.$inferSelect;

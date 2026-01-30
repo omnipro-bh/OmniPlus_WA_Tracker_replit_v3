@@ -20,9 +20,19 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
+interface BookingService {
+  id: number;
+  userId: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 interface BookingDepartment {
   id: number;
   userId: number;
+  serviceId: number | null;
   name: string;
   description: string | null;
   isActive: boolean;
@@ -70,15 +80,19 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 export default function BookingScheduler() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("departments");
+  const [selectedService, setSelectedService] = useState<BookingService | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<BookingDepartment | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<BookingStaff | null>(null);
   
   // Dialog states
+  const [newServiceOpen, setNewServiceOpen] = useState(false);
   const [newDeptOpen, setNewDeptOpen] = useState(false);
   const [newStaffOpen, setNewStaffOpen] = useState(false);
   const [newSlotOpen, setNewSlotOpen] = useState(false);
   
   // Form states
+  const [serviceName, setServiceName] = useState("");
+  const [serviceDesc, setServiceDesc] = useState("");
   const [deptName, setDeptName] = useState("");
   const [deptDesc, setDeptDesc] = useState("");
   const [staffName, setStaffName] = useState("");
@@ -255,9 +269,18 @@ export default function BookingScheduler() {
   };
 
   // Queries
+  const { data: services = [], isLoading: loadingServices } = useQuery<BookingService[]>({
+    queryKey: ['/api/booking/services'],
+  });
+
   const { data: departments = [], isLoading: loadingDepts } = useQuery<BookingDepartment[]>({
     queryKey: ['/api/booking/departments'],
   });
+
+  // Filter departments by selected service
+  const filteredDepartments = selectedService 
+    ? departments.filter(d => d.serviceId === selectedService.id)
+    : departments;
 
   const { data: staff = [], isLoading: loadingStaff } = useQuery<BookingStaff[]>({
     queryKey: ['/api/booking/departments', selectedDepartment?.id, 'staff'],
@@ -331,8 +354,40 @@ export default function BookingScheduler() {
     },
   });
 
-  const createDeptMutation = useMutation({
+  // Service mutations
+  const createServiceMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string }) => {
+      return await apiRequest('POST', '/api/booking/services', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/services'] });
+      setNewServiceOpen(false);
+      setServiceName("");
+      setServiceDesc("");
+      toast({ title: "Service created", description: "Booking service has been created successfully." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to create service", variant: "destructive" });
+    },
+  });
+
+  const deleteServiceMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest('DELETE', `/api/booking/services/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/services'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/departments'] });
+      setSelectedService(null);
+      toast({ title: "Service deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete service", variant: "destructive" });
+    },
+  });
+
+  const createDeptMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string; serviceId?: number }) => {
       return await apiRequest('POST', '/api/booking/departments', data);
     },
     onSuccess: () => {
@@ -803,13 +858,125 @@ export default function BookingScheduler() {
         </TabsList>
 
         <TabsContent value="departments" className="space-y-4">
+          {/* Services Section */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-lg">Booking Services</CardTitle>
+                <CardDescription>Group departments by service context (e.g., different branches, languages)</CardDescription>
+              </div>
+              <Dialog open={newServiceOpen} onOpenChange={setNewServiceOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" data-testid="button-add-service">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Service
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Booking Service</DialogTitle>
+                    <DialogDescription>Add a new service to group related departments.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="service-name">Name</Label>
+                      <Input
+                        id="service-name"
+                        value={serviceName}
+                        onChange={(e) => setServiceName(e.target.value)}
+                        placeholder="e.g., English Branch, Arabic Saloon"
+                        data-testid="input-service-name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="service-desc">Description (optional)</Label>
+                      <Textarea
+                        id="service-desc"
+                        value={serviceDesc}
+                        onChange={(e) => setServiceDesc(e.target.value)}
+                        placeholder="Describe this service..."
+                        data-testid="input-service-description"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={() => createServiceMutation.mutate({ name: serviceName, description: serviceDesc || undefined })}
+                      disabled={!serviceName.trim() || createServiceMutation.isPending}
+                      data-testid="button-submit-service"
+                    >
+                      {createServiceMutation.isPending ? "Creating..." : "Create Service"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              {loadingServices ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : services.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <p className="text-sm">No services created yet.</p>
+                  <p className="text-xs mt-1">Services help organize departments for different contexts (branches, languages, etc.)</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={selectedService === null ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedService(null);
+                      setSelectedDepartment(null);
+                      setSelectedStaff(null);
+                    }}
+                    data-testid="button-service-all"
+                  >
+                    All Services
+                  </Button>
+                  {services.map((service) => (
+                    <div key={service.id} className="flex items-center gap-1">
+                      <Button
+                        variant={selectedService?.id === service.id ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setSelectedService(service);
+                          setSelectedDepartment(null);
+                          setSelectedStaff(null);
+                        }}
+                        data-testid={`button-service-${service.id}`}
+                      >
+                        {service.name}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          if (confirm(`Delete service "${service.name}"? This will unlink all associated departments.`)) {
+                            deleteServiceMutation.mutate(service.id);
+                          }
+                        }}
+                        data-testid={`button-delete-service-${service.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Departments List */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div>
                   <CardTitle className="text-lg">Departments</CardTitle>
-                  <CardDescription>Organize staff by department</CardDescription>
+                  <CardDescription>
+                    {selectedService ? `Departments in ${selectedService.name}` : "All departments across services"}
+                  </CardDescription>
                 </div>
                 <div className="flex gap-1">
                   <DropdownMenu>
@@ -875,7 +1042,11 @@ export default function BookingScheduler() {
                     </div>
                     <DialogFooter>
                       <Button
-                        onClick={() => createDeptMutation.mutate({ name: deptName, description: deptDesc || undefined })}
+                        onClick={() => createDeptMutation.mutate({ 
+                          name: deptName, 
+                          description: deptDesc || undefined,
+                          serviceId: selectedService?.id 
+                        })}
                         disabled={!deptName.trim() || createDeptMutation.isPending}
                         data-testid="button-submit-department"
                       >
@@ -888,11 +1059,13 @@ export default function BookingScheduler() {
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[400px]">
-                  {departments.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">No departments yet</p>
+                  {filteredDepartments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      {selectedService ? `No departments in ${selectedService.name}` : "No departments yet"}
+                    </p>
                   ) : (
                     <div className="space-y-2">
-                      {departments.map((dept) => (
+                      {filteredDepartments.map((dept) => (
                         <div
                           key={dept.id}
                           className={`p-3 rounded-lg border cursor-pointer transition-colors ${
@@ -908,6 +1081,11 @@ export default function BookingScheduler() {
                             <div className="flex items-center gap-2">
                               <Building2 className="h-4 w-4 text-muted-foreground" />
                               <span className="font-medium">{dept.name}</span>
+                              {!selectedService && dept.serviceId && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {services.find(s => s.id === dept.serviceId)?.name || 'Unknown Service'}
+                                </Badge>
+                              )}
                             </div>
                             <Button
                               variant="ghost"

@@ -44,6 +44,12 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     enabled: testDialogOpen,
   });
 
+  // Fetch booking services for book_appointment nodes
+  const { data: bookingServices = [] } = useQuery<any[]>({
+    queryKey: ['/api/booking/services'],
+    enabled: nodeType === 'booking.book_appointment' || nodeType === 'booking.check_bookings',
+  });
+
   // Filter for ACTIVE and AUTHORIZED channels only
   const activeChannels = channels.filter(
     (ch) => ch.status === 'ACTIVE' && ch.authStatus === 'AUTHORIZED'
@@ -2197,6 +2203,34 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   if (nodeType === 'booking.book_appointment') {
     return (
       <div className="space-y-4">
+        <div>
+          <Label htmlFor="serviceId">Booking Service *</Label>
+          <Select
+            value={config.serviceId ? String(config.serviceId) : ''}
+            onValueChange={(value) => updateConfig('serviceId', parseInt(value))}
+          >
+            <SelectTrigger data-testid="select-booking-service">
+              <SelectValue placeholder="Select a booking service" />
+            </SelectTrigger>
+            <SelectContent>
+              {bookingServices.length === 0 ? (
+                <SelectItem value="no-services" disabled>
+                  No services available - create one in Booking Scheduler
+                </SelectItem>
+              ) : (
+                bookingServices.map((service: any) => (
+                  <SelectItem key={service.id} value={String(service.id)}>
+                    {service.name}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Select which booking service this node uses (create services in Booking Scheduler page)
+          </p>
+        </div>
+
         <div>
           <Label htmlFor="bookingLabel">Booking Label *</Label>
           <Input

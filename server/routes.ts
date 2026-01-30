@@ -3799,6 +3799,93 @@ export function registerRoutes(app: Express) {
   // BOOKING SCHEDULER
   // ============================================================================
 
+  // --- Services (groups of departments) ---
+  app.get("/api/booking/services", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const services = await storage.getBookingServicesForUser(effectiveUserId);
+      res.json(services);
+    } catch (error: any) {
+      console.error("Get services error:", error);
+      res.status(500).json({ error: "Failed to fetch services" });
+    }
+  });
+
+  app.post("/api/booking/services", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { name, description } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Service name is required" });
+      }
+
+      const service = await storage.createBookingService({
+        userId: effectiveUserId,
+        name: name.trim(),
+        description: description || null,
+      });
+      res.json(service);
+    } catch (error: any) {
+      console.error("Create service error:", error);
+      res.status(500).json({ error: "Failed to create service" });
+    }
+  });
+
+  app.put("/api/booking/services/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const serviceId = parseInt(req.params.id);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const service = await storage.getBookingService(serviceId);
+      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (service.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateBookingService(serviceId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update service error:", error);
+      res.status(500).json({ error: "Failed to update service" });
+    }
+  });
+
+  app.delete("/api/booking/services/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const serviceId = parseInt(req.params.id);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const service = await storage.getBookingService(serviceId);
+      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (service.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteBookingService(serviceId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete service error:", error);
+      res.status(500).json({ error: "Failed to delete service" });
+    }
+  });
+
+  // Get departments for a specific service
+  app.get("/api/booking/services/:serviceId/departments", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const serviceId = parseInt(req.params.serviceId);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid service ID" });
+
+      const departments = await storage.getBookingDepartmentsForService(serviceId);
+      res.json(departments);
+    } catch (error: any) {
+      console.error("Get departments for service error:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+
   // --- Departments ---
   app.get("/api/booking/departments", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -3814,16 +3901,25 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/departments", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { name, description } = req.body;
+      const { name, description, serviceId } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Department name is required" });
+      }
+
+      // Validate serviceId if provided
+      if (serviceId) {
+        const service = await storage.getBookingService(serviceId);
+        if (!service || service.userId !== effectiveUserId) {
+          return res.status(400).json({ error: "Invalid service ID" });
+        }
       }
 
       const department = await storage.createBookingDepartment({
         userId: effectiveUserId,
         name: name.trim(),
         description: description || null,
+        serviceId: serviceId || null,
       });
       res.json(department);
     } catch (error: any) {
