@@ -3814,16 +3814,24 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/services", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { name, description } = req.body;
+      const { name, description, slotLabels } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Service name is required" });
+      }
+
+      // Validate slotLabels if provided - must be array of strings
+      let validatedSlotLabels: string[] | null = null;
+      if (slotLabels && Array.isArray(slotLabels) && slotLabels.length > 0) {
+        validatedSlotLabels = slotLabels.map((label: any) => String(label || '').trim()).filter(Boolean);
+        if (validatedSlotLabels.length === 0) validatedSlotLabels = null;
       }
 
       const service = await storage.createBookingService({
         userId: effectiveUserId,
         name: name.trim(),
         description: description || null,
+        slotLabels: validatedSlotLabels,
       });
       res.json(service);
     } catch (error: any) {

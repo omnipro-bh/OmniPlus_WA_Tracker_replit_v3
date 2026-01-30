@@ -25,6 +25,7 @@ interface BookingService {
   userId: number;
   name: string;
   description: string | null;
+  slotLabels: string[] | null; // Custom labels for time slots (e.g., weekdays or Morning/Evening/Night)
   isActive: boolean;
   createdAt: string;
 }
@@ -93,6 +94,8 @@ export default function BookingScheduler() {
   // Form states
   const [serviceName, setServiceName] = useState("");
   const [serviceDesc, setServiceDesc] = useState("");
+  const [serviceSlotLabels, setServiceSlotLabels] = useState<string[]>([...DAY_NAMES]); // Default to weekdays
+  const [useCustomSlotLabels, setUseCustomSlotLabels] = useState(false);
   const [deptName, setDeptName] = useState("");
   const [deptDesc, setDeptDesc] = useState("");
   const [staffName, setStaffName] = useState("");
@@ -282,6 +285,14 @@ export default function BookingScheduler() {
     ? departments.filter(d => d.serviceId === selectedService.id)
     : departments;
 
+  // Get effective slot labels for time slot operations
+  // Priority: selectedService (if filtered) > selectedDepartment's service > default weekdays
+  const activeServiceForSlots = selectedService 
+    || (selectedDepartment?.serviceId ? services.find(s => s.id === selectedDepartment.serviceId) : null);
+  const serviceSlotLabelsForDropdown = activeServiceForSlots?.slotLabels?.length 
+    ? activeServiceForSlots.slotLabels 
+    : DAY_NAMES;
+
   const { data: staff = [], isLoading: loadingStaff } = useQuery<BookingStaff[]>({
     queryKey: ['/api/booking/departments', selectedDepartment?.id, 'staff'],
     enabled: !!selectedDepartment,
@@ -370,7 +381,7 @@ export default function BookingScheduler() {
 
   // Service mutations
   const createServiceMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string }) => {
+    mutationFn: async (data: { name: string; description?: string; slotLabels?: string[] | null }) => {
       return await apiRequest('POST', '/api/booking/services', data);
     },
     onSuccess: () => {
@@ -378,6 +389,8 @@ export default function BookingScheduler() {
       setNewServiceOpen(false);
       setServiceName("");
       setServiceDesc("");
+      setServiceSlotLabels([...DAY_NAMES]);
+      setUseCustomSlotLabels(false);
       toast({ title: "Service created", description: "Booking service has been created successfully." });
     },
     onError: (error: any) => {
@@ -886,7 +899,7 @@ export default function BookingScheduler() {
                     Add Service
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>Create Booking Service</DialogTitle>
                     <DialogDescription>Add a new service to group related departments.</DialogDescription>
@@ -912,10 +925,83 @@ export default function BookingScheduler() {
                         data-testid="input-service-description"
                       />
                     </div>
+                    
+                    {/* Custom Slot Labels */}
+                    <div className="border-t pt-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Checkbox
+                          id="use-custom-slots"
+                          checked={useCustomSlotLabels}
+                          onCheckedChange={(checked) => setUseCustomSlotLabels(checked === true)}
+                          data-testid="checkbox-use-custom-slots"
+                        />
+                        <Label htmlFor="use-custom-slots">Customize time slot labels</Label>
+                      </div>
+                      
+                      {useCustomSlotLabels && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            Define custom labels for time slots (e.g., weekdays in Arabic, or "Morning", "Evening", "Night").
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {serviceSlotLabels.map((label, i) => (
+                              <div key={i} className="flex items-center gap-1">
+                                <Input
+                                  value={label}
+                                  onChange={(e) => {
+                                    const newLabels = [...serviceSlotLabels];
+                                    newLabels[i] = e.target.value;
+                                    setServiceSlotLabels(newLabels);
+                                  }}
+                                  className="w-28"
+                                  placeholder={`Label ${i + 1}`}
+                                  data-testid={`input-slot-label-${i}`}
+                                />
+                                {serviceSlotLabels.length > 1 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      const newLabels = serviceSlotLabels.filter((_, idx) => idx !== i);
+                                      setServiceSlotLabels(newLabels);
+                                    }}
+                                    data-testid={`button-remove-label-${i}`}
+                                  >
+                                    <Trash2 className="h-3 w-3 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setServiceSlotLabels([...serviceSlotLabels, ''])}
+                              data-testid="button-add-label"
+                            >
+                              <Plus className="h-3 w-3 mr-1" /> Add
+                            </Button>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setServiceSlotLabels([...DAY_NAMES])}
+                              data-testid="button-reset-weekdays"
+                            >
+                              Reset to Weekdays
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button
-                      onClick={() => createServiceMutation.mutate({ name: serviceName, description: serviceDesc || undefined })}
+                      onClick={() => createServiceMutation.mutate({ 
+                        name: serviceName, 
+                        description: serviceDesc || undefined,
+                        slotLabels: useCustomSlotLabels ? serviceSlotLabels.filter(l => l.trim()) : null
+                      })}
                       disabled={!serviceName.trim() || createServiceMutation.isPending}
                       data-testid="button-submit-service"
                     >
@@ -1339,17 +1425,22 @@ export default function BookingScheduler() {
                         </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label>Day of Week</Label>
+                          <Label>Time Slot</Label>
                           <Select value={slotDay} onValueChange={setSlotDay}>
                             <SelectTrigger data-testid="select-slot-day">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {effectiveDayNames.map((day, i) => (
-                                <SelectItem key={i} value={String(i)}>{day}</SelectItem>
+                              {serviceSlotLabelsForDropdown.map((label, i) => (
+                                <SelectItem key={i} value={String(i)}>{label}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
+                          {activeServiceForSlots?.slotLabels?.length && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Using custom labels from "{activeServiceForSlots.name}"
+                            </p>
+                          )}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -1435,7 +1526,7 @@ export default function BookingScheduler() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{effectiveDayNames[slot.dayOfWeek]}</span>
+                              <span className="font-medium">{serviceSlotLabelsForDropdown[slot.dayOfWeek] || `Slot ${slot.dayOfWeek}`}</span>
                             </div>
                             <Button
                               variant="ghost"
