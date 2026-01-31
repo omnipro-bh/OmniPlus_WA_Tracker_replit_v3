@@ -7352,9 +7352,11 @@ export function registerRoutes(app: Express) {
                   phone, activeWorkflow.userId, bookingState.nodeId
                 );
                 if (existingCount > 0) {
+                  const existingBookingMessage = bookingState.config?.existingBookingMessage || 
+                    'You already have an active appointment. Please cancel your existing booking first.';
                   await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
                     to: phone,
-                    body: 'You already have an active appointment. Please cancel your existing booking first.',
+                    body: existingBookingMessage,
                   });
                   await db.update(conversationStates).set({
                     context: { ...context, bookingState: undefined },

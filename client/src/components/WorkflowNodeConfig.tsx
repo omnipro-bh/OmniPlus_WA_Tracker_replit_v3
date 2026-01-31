@@ -2500,6 +2500,22 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           />
         </div>
 
+        {!config.allowMultiple && (
+          <div>
+            <Label htmlFor="existingBookingMessage">Existing Booking Message</Label>
+            <Textarea
+              id="existingBookingMessage"
+              placeholder="You already have an active appointment. Please cancel your existing booking first."
+              value={config.existingBookingMessage || ''}
+              onChange={(e) => updateConfig('existingBookingMessage', e.target.value)}
+              data-testid="textarea-existing-booking-message"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Message shown when customer already has a booking
+            </p>
+          </div>
+        )}
+
         <div>
           <Label htmlFor="maxAdvanceDays">Max Slots to Show</Label>
           <Input
