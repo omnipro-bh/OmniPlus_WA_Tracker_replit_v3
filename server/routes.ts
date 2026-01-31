@@ -4383,9 +4383,12 @@ export function registerRoutes(app: Express) {
     try {
       const effectiveUserId = getEffectiveUserId(req);
       const { status, fromDate, toDate, staffId, departmentId, page, pageSize, search } = req.query;
+      
+      // Handle special "outdated_confirmed" filter at storage level
+      const isOutdatedFilter = status === 'outdated_confirmed';
 
       const result = await storage.getBookingsForUser(effectiveUserId, {
-        status: status as string,
+        status: isOutdatedFilter ? undefined : status as string,
         fromDate: fromDate as string,
         toDate: toDate as string,
         staffId: staffId ? parseInt(staffId as string) : undefined,
@@ -4393,6 +4396,7 @@ export function registerRoutes(app: Express) {
         page: page ? parseInt(page as string) : 1,
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
         search: search as string,
+        outdatedConfirmed: isOutdatedFilter,
       });
       
       // Enrich bookings with department and staff names
@@ -4822,6 +4826,30 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Bulk delete bookings error:", error);
       res.status(500).json({ error: "Failed to delete bookings" });
+    }
+  });
+
+  // Bulk complete outdated bookings (confirmed bookings with past dates)
+  app.post("/api/booking/bookings/complete-outdated", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const updatedCount = await storage.bulkCompleteOutdatedBookings(effectiveUserId);
+      res.json({ success: true, updated: updatedCount });
+    } catch (error: any) {
+      console.error("Bulk complete outdated bookings error:", error);
+      res.status(500).json({ error: "Failed to complete outdated bookings" });
+    }
+  });
+
+  // Get count of outdated confirmed bookings
+  app.get("/api/booking/bookings/outdated-count", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const count = await storage.countOutdatedConfirmedBookings(effectiveUserId);
+      res.json({ count });
+    } catch (error: any) {
+      console.error("Get outdated count error:", error);
+      res.status(500).json({ error: "Failed to get outdated count" });
     }
   });
 

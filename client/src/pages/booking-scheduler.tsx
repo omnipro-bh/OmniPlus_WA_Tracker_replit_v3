@@ -602,6 +602,27 @@ export default function BookingScheduler() {
     },
   });
 
+  // Query for outdated confirmed bookings count
+  const { data: outdatedCount, refetch: refetchOutdatedCount } = useQuery<{ count: number }>({
+    queryKey: ['/api/booking/bookings/outdated-count'],
+    enabled: activeTab === 'bookings',
+  });
+
+  // Bulk complete outdated bookings mutation
+  const bulkCompleteOutdatedMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('POST', '/api/booking/bookings/complete-outdated', {});
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      refetchOutdatedCount();
+      toast({ title: `${data.updated} outdated booking(s) marked as completed` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to complete outdated bookings", variant: "destructive" });
+    },
+  });
+
   // Edit booking mutation
   const editBookingMutation = useMutation({
     mutationFn: async (data: { 
@@ -1596,6 +1617,7 @@ export default function BookingScheduler() {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="outdated_confirmed">Outdated Confirmed</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="no_show">No Show</SelectItem>
@@ -1627,6 +1649,22 @@ export default function BookingScheduler() {
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete ({selectedBookings.size})
+                </Button>
+              )}
+              {(outdatedCount?.count || 0) > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm(`Mark ${outdatedCount?.count} outdated confirmed booking(s) as completed?`)) {
+                      bulkCompleteOutdatedMutation.mutate();
+                    }
+                  }}
+                  disabled={bulkCompleteOutdatedMutation.isPending}
+                  data-testid="button-complete-outdated"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Complete Outdated ({outdatedCount?.count})
                 </Button>
               )}
               <Button

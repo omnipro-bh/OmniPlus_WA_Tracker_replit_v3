@@ -255,6 +255,7 @@ export interface IStorage {
     page?: number; 
     pageSize?: number;
     search?: string;
+    outdatedConfirmed?: boolean; // Special filter for confirmed bookings with past dates
   }): Promise<{ bookings: schema.Booking[]; total: number }>;
   getBookingsForCustomer(customerPhone: string, userId: number, options?: { 
     status?: string; 
@@ -266,6 +267,8 @@ export interface IStorage {
   deleteBooking(id: number): Promise<void>;
   checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
+  countOutdatedConfirmedBookings(userId: number): Promise<number>;
+  bulkCompleteOutdatedBookings(userId: number): Promise<number>;
   
   // Appointment Reminders
   getBookingsNeedingReminders(): Promise<schema.Booking[]>;
@@ -1656,23 +1659,32 @@ export class DatabaseStorage implements IStorage {
       page?: number;
       pageSize?: number;
       search?: string;
+      outdatedConfirmed?: boolean;
     }
   ): Promise<{ bookings: schema.Booking[]; total: number }> {
     const page = filters?.page || 1;
     const pageSize = filters?.pageSize || 20;
     const offset = (page - 1) * pageSize;
+    const today = new Date().toISOString().split('T')[0];
 
     const conditions = [eq(schema.bookings.userId, userId)];
 
-    if (filters?.status) {
-      conditions.push(eq(schema.bookings.status, filters.status as any));
+    // Handle special outdated confirmed filter at DB level
+    if (filters?.outdatedConfirmed) {
+      conditions.push(eq(schema.bookings.status, 'confirmed' as any));
+      conditions.push(sql`${schema.bookings.slotDate} < ${today}`);
+    } else {
+      if (filters?.status) {
+        conditions.push(eq(schema.bookings.status, filters.status as any));
+      }
+      if (filters?.fromDate) {
+        conditions.push(sql`${schema.bookings.slotDate} >= ${filters.fromDate}`);
+      }
+      if (filters?.toDate) {
+        conditions.push(sql`${schema.bookings.slotDate} <= ${filters.toDate}`);
+      }
     }
-    if (filters?.fromDate) {
-      conditions.push(sql`${schema.bookings.slotDate} >= ${filters.fromDate}`);
-    }
-    if (filters?.toDate) {
-      conditions.push(sql`${schema.bookings.slotDate} <= ${filters.toDate}`);
-    }
+    
     if (filters?.staffId) {
       conditions.push(eq(schema.bookings.staffId, filters.staffId));
     }
@@ -1705,6 +1717,33 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions));
 
     return { bookings: bookingsList, total: countResult?.count || 0 };
+  }
+
+  async countOutdatedConfirmedBookings(userId: number): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookings)
+      .where(and(
+        eq(schema.bookings.userId, userId),
+        eq(schema.bookings.status, 'confirmed' as any),
+        sql`${schema.bookings.slotDate} < ${today}`
+      ));
+    return result?.count || 0;
+  }
+
+  async bulkCompleteOutdatedBookings(userId: number): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const result = await db
+      .update(schema.bookings)
+      .set({ status: 'completed' })
+      .where(and(
+        eq(schema.bookings.userId, userId),
+        eq(schema.bookings.status, 'confirmed' as any),
+        sql`${schema.bookings.slotDate} < ${today}`
+      ))
+      .returning({ id: schema.bookings.id });
+    return result.length;
   }
 
   async getBookingsForCustomer(
