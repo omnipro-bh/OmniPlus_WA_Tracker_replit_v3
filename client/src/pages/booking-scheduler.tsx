@@ -239,7 +239,8 @@ export default function BookingScheduler() {
       content = 'name,phone,email\nDr. John Smith,+1234567890,john@example.com\nDr. Sarah Johnson,,sarah@example.com\nDr. Mike Brown,+0987654321,';
       filename = 'staff_sample.csv';
     } else {
-      content = 'day,startTime,endTime,slotDuration,capacity\nMonday,09:00,12:00,30,1\nMonday,14:00,17:00,30,1\nTuesday,09:00,17:00,60,2\nWednesday,10:00,16:00,30,1';
+      // Sample shows multiple formats: English name, Arabic name, and numeric (0=Sunday)
+      content = 'day,startTime,endTime,slotDuration,capacity\nMonday,09:00,12:00,30,1\nالثلاثاء,09:00,17:00,60,2\n3,10:00,16:00,30,1';
       filename = 'slots_sample.csv';
     }
     const blob = new Blob([content], { type: 'text/csv' });
@@ -1398,13 +1399,14 @@ export default function BookingScheduler() {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
-                          <label className="cursor-pointer flex items-center">
+                          <label className="cursor-pointer flex items-center" data-testid="label-upload-slots-csv">
                             <FileSpreadsheet className="h-4 w-4 mr-2" />
                             Upload CSV File
                             <input 
                               type="file" 
                               accept=".csv" 
                               className="hidden" 
+                              data-testid="input-upload-slots-csv"
                               onChange={(e) => handleFileUpload(e, 'slots')}
                             />
                           </label>

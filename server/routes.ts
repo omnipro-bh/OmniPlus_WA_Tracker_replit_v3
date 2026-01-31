@@ -4193,10 +4193,19 @@ export function registerRoutes(app: Express) {
   });
 
   // --- CSV Import for Booking Data ---
+  // Day name mappings - supports English, Arabic, and numeric (0-6)
   const dayNameToNumber: Record<string, number> = {
+    // English full names
     'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
     'thursday': 4, 'friday': 5, 'saturday': 6,
+    // English short names
     'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6,
+    // Arabic day names
+    'الأحد': 0, 'الاثنين': 1, 'الثلاثاء': 2, 'الأربعاء': 3,
+    'الخميس': 4, 'الجمعة': 5, 'السبت': 6,
+    // Arabic short/alternate forms
+    'احد': 0, 'اثنين': 1, 'ثلاثاء': 2, 'اربعاء': 3,
+    'خميس': 4, 'جمعة': 5, 'سبت': 6,
   };
 
   app.post("/api/booking/import/departments", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -4325,11 +4334,15 @@ export function registerRoutes(app: Express) {
         const capacity = parseInt(row.capacity || '1');
 
         if (typeof dayOfWeek === 'string') {
-          const lowerDay = dayOfWeek.toLowerCase();
-          if (dayNameToNumber[lowerDay] !== undefined) {
+          const trimmedDay = dayOfWeek.trim();
+          const lowerDay = trimmedDay.toLowerCase();
+          // Check both original (for Arabic) and lowercase (for English)
+          if (dayNameToNumber[trimmedDay] !== undefined) {
+            dayOfWeek = dayNameToNumber[trimmedDay];
+          } else if (dayNameToNumber[lowerDay] !== undefined) {
             dayOfWeek = dayNameToNumber[lowerDay];
           } else {
-            dayOfWeek = parseInt(dayOfWeek);
+            dayOfWeek = parseInt(trimmedDay);
           }
         }
 
