@@ -602,6 +602,29 @@ export default function BookingScheduler() {
     },
   });
 
+  // Bulk change status mutation
+  const bulkChangeStatusMutation = useMutation({
+    mutationFn: async ({ ids, status }: { ids: number[]; status: string }) => {
+      return await apiRequest('PATCH', '/api/booking/bookings/bulk-status', { ids, status });
+    },
+    onSuccess: (data: any, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      refetchOutdatedCount();
+      setSelectedBookings(new Set());
+      toast({ title: `${data.updated} booking(s) changed to ${variables.status}` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update statuses", variant: "destructive" });
+    },
+  });
+
+  const handleBulkStatusChange = (status: string) => {
+    if (selectedBookings.size === 0) return;
+    if (confirm(`Change status of ${selectedBookings.size} booking(s) to "${status}"?`)) {
+      bulkChangeStatusMutation.mutate({ ids: Array.from(selectedBookings), status });
+    }
+  };
+
   // Query for outdated confirmed bookings count
   const { data: outdatedCount, refetch: refetchOutdatedCount } = useQuery<{ count: number }>({
     queryKey: ['/api/booking/bookings/outdated-count'],
@@ -1640,16 +1663,55 @@ export default function BookingScheduler() {
             </div>
             <div className="flex items-center gap-2">
               {selectedBookings.size > 0 && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                  disabled={bulkDeleteBookingsMutation.isPending}
-                  data-testid="button-delete-selected"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete ({selectedBookings.size})
-                </Button>
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={bulkChangeStatusMutation.isPending}
+                        data-testid="button-bulk-status"
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Change Status ({selectedBookings.size})
+                        <ChevronDown className="h-4 w-4 ml-2" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleBulkStatusChange('pending')} data-testid="menu-status-pending">
+                        <Clock className="h-4 w-4 mr-2 text-amber-500" />
+                        Pending
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkStatusChange('confirmed')} data-testid="menu-status-confirmed">
+                        <CheckCircle className="h-4 w-4 mr-2 text-blue-500" />
+                        Confirmed
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkStatusChange('completed')} data-testid="menu-status-completed">
+                        <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                        Completed
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleBulkStatusChange('cancelled')} data-testid="menu-status-cancelled">
+                        <XCircle className="h-4 w-4 mr-2 text-red-500" />
+                        Cancelled
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleBulkStatusChange('no_show')} data-testid="menu-status-noshow">
+                        <XCircle className="h-4 w-4 mr-2 text-gray-500" />
+                        No Show
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={bulkDeleteBookingsMutation.isPending}
+                    data-testid="button-delete-selected"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete ({selectedBookings.size})
+                  </Button>
+                </>
               )}
               {(outdatedCount?.count || 0) > 0 && (
                 <Button

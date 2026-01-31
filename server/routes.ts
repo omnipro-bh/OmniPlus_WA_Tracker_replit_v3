@@ -4829,6 +4829,27 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Bulk change status for selected bookings
+  app.patch("/api/booking/bookings/bulk-status", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { ids, status } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "No booking IDs provided" });
+      }
+      const validStatuses = ['pending', 'confirmed', 'cancelled', 'completed', 'no_show'];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be one of: " + validStatuses.join(', ') });
+      }
+
+      const effectiveUserId = getEffectiveUserId(req);
+      const updatedCount = await storage.bulkUpdateBookingStatus(effectiveUserId, ids, status);
+      res.json({ success: true, updated: updatedCount });
+    } catch (error: any) {
+      console.error("Bulk status change error:", error);
+      res.status(500).json({ error: "Failed to update booking statuses" });
+    }
+  });
+
   // Bulk complete outdated bookings (confirmed bookings with past dates)
   app.post("/api/booking/bookings/complete-outdated", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

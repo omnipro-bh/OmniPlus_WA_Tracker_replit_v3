@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, or, desc, sql, like } from "drizzle-orm";
+import { eq, and, or, desc, sql, like, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type {
   User,
@@ -269,6 +269,7 @@ export interface IStorage {
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
   countOutdatedConfirmedBookings(userId: number): Promise<number>;
   bulkCompleteOutdatedBookings(userId: number): Promise<number>;
+  bulkUpdateBookingStatus(userId: number, ids: number[], status: string): Promise<number>;
   
   // Appointment Reminders
   getBookingsNeedingReminders(): Promise<schema.Booking[]>;
@@ -1741,6 +1742,19 @@ export class DatabaseStorage implements IStorage {
         eq(schema.bookings.userId, userId),
         eq(schema.bookings.status, 'confirmed' as any),
         sql`${schema.bookings.slotDate} < ${today}`
+      ))
+      .returning({ id: schema.bookings.id });
+    return result.length;
+  }
+
+  async bulkUpdateBookingStatus(userId: number, ids: number[], status: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await db
+      .update(schema.bookings)
+      .set({ status: status as any })
+      .where(and(
+        eq(schema.bookings.userId, userId),
+        inArray(schema.bookings.id, ids)
       ))
       .returning({ id: schema.bookings.id });
     return result.length;
