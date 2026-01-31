@@ -9005,9 +9005,24 @@ export function registerRoutes(app: Express) {
                   
                   console.log(`[Booking] Processing book_appointment node: ${currentNodeId}`);
                   console.log(`[Booking] Node config:`, JSON.stringify(config));
+                  console.log(`[Booking] Existing bookingState:`, context.bookingState ? JSON.stringify(context.bookingState) : 'none');
+                  console.log(`[Booking] state.currentNodeId: ${state.currentNodeId}, currentNodeId: ${currentNodeId}`);
+                  
+                  // Determine if we should start a fresh booking flow
+                  // Start fresh if:
+                  // 1. No existing bookingState, OR
+                  // 2. Existing bookingState is for a DIFFERENT booking node, OR
+                  // 3. We're navigating TO this booking node from a DIFFERENT node (i.e., user clicked button to start booking)
+                  const existingBookingNodeId = context.bookingState?.nodeId;
+                  const isNavigatingToBookingNode = state.currentNodeId !== currentNodeId;
+                  const shouldStartFresh = !context.bookingState || 
+                    existingBookingNodeId !== currentNodeId ||
+                    isNavigatingToBookingNode;
+                  
+                  console.log(`[Booking] existingBookingNodeId: ${existingBookingNodeId}, isNavigatingToBookingNode: ${isNavigatingToBookingNode}, shouldStartFresh: ${shouldStartFresh}`);
                   
                   // Check if we're in a booking flow already
-                  if (!context.bookingState) {
+                  if (shouldStartFresh) {
                     // Start new booking flow - send department list
                     // Filter by serviceId if configured
                     let departments;
