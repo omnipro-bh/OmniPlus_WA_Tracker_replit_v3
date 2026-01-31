@@ -1,0 +1,15 @@
+day,startTime,endTime,slotDuration,capacity
+Sunday,9:00,12:00,30,3
+Sunday,15:00,18:00,30,3
+Monday,9:00,12:00,30,3
+Monday,15:00,18:00,30,3
+Tuesday,9:00,12:00,30,3
+Tuesday,15:00,18:00,30,3
+Wednesday,9:00,12:00,30,3
+Wednesday,15:00,18:00,30,3
+Thursday,9:00,12:00,30,3
+Thursday,15:00,18:00,30,3
+Friday,9:00,12:00,30,3
+Friday,15:00,18:00,30,3
+Saturday,9:00,12:00,30,3
+Saturday,15:00,18:00,30,3

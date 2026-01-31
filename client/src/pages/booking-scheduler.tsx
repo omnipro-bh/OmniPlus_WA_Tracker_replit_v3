@@ -261,14 +261,25 @@ export default function BookingScheduler() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
+      console.log('[CSV Import] Raw text length:', text.length, 'First 200 chars:', text.substring(0, 200));
       const rows = parseCSV(text);
+      console.log('[CSV Import] Parsed rows:', rows.length, 'Type:', type, 'First row:', rows[0]);
+      if (rows.length === 0) {
+        toast({ title: "Error", description: "No data found in CSV file. Please check the format.", variant: "destructive" });
+        return;
+      }
       setImportPreview(rows);
       setImportType(type);
       if (type === 'departments') setImportDeptOpen(true);
       else if (type === 'staff') setImportStaffOpen(true);
       else setImportSlotsOpen(true);
     };
-    reader.readAsText(file);
+    reader.onerror = () => {
+      console.error('[CSV Import] File read error');
+      toast({ title: "Error", description: "Failed to read the CSV file.", variant: "destructive" });
+    };
+    // Read as UTF-8 to support Arabic and other languages
+    reader.readAsText(file, 'UTF-8');
     e.target.value = '';
   };
 
