@@ -15,7 +15,7 @@ import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, Che
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -163,6 +163,11 @@ export default function BookingScheduler() {
   const [importSlotsOpen, setImportSlotsOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importType, setImportType] = useState<'departments' | 'staff' | 'slots'>('departments');
+  
+  // File input refs for CSV upload
+  const deptFileInputRef = useRef<HTMLInputElement>(null);
+  const staffFileInputRef = useRef<HTMLInputElement>(null);
+  const slotsFileInputRef = useRef<HTMLInputElement>(null);
 
   // CSV parsing function with CRLF/BOM handling and header normalization
   const parseCSV = (text: string): any[] => {
@@ -1104,20 +1109,20 @@ export default function BookingScheduler() {
                         Download Sample CSV
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <label className="cursor-pointer flex items-center">
-                          <FileSpreadsheet className="h-4 w-4 mr-2" />
-                          Upload CSV File
-                          <input 
-                            type="file" 
-                            accept=".csv" 
-                            className="hidden" 
-                            onChange={(e) => handleFileUpload(e, 'departments')}
-                          />
-                        </label>
+                      <DropdownMenuItem onClick={() => deptFileInputRef.current?.click()}>
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Upload CSV File
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  <input 
+                    ref={deptFileInputRef}
+                    type="file" 
+                    accept=".csv" 
+                    className="hidden" 
+                    data-testid="input-upload-dept-csv"
+                    onChange={(e) => handleFileUpload(e, 'departments')}
+                  />
                   <Dialog open={newDeptOpen} onOpenChange={setNewDeptOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm" data-testid="button-add-department">
@@ -1248,20 +1253,20 @@ export default function BookingScheduler() {
                           Download Sample CSV
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                          <label className="cursor-pointer flex items-center">
-                            <FileSpreadsheet className="h-4 w-4 mr-2" />
-                            Upload CSV File
-                            <input 
-                              type="file" 
-                              accept=".csv" 
-                              className="hidden" 
-                              onChange={(e) => handleFileUpload(e, 'staff')}
-                            />
-                          </label>
+                        <DropdownMenuItem onClick={() => staffFileInputRef.current?.click()}>
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                          Upload CSV File
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    <input 
+                      ref={staffFileInputRef}
+                      type="file" 
+                      accept=".csv" 
+                      className="hidden" 
+                      data-testid="input-upload-staff-csv"
+                      onChange={(e) => handleFileUpload(e, 'staff')}
+                    />
                     <Dialog open={newStaffOpen} onOpenChange={setNewStaffOpen}>
                       <DialogTrigger asChild>
                         <Button size="sm" data-testid="button-add-staff">
@@ -1409,21 +1414,20 @@ export default function BookingScheduler() {
                           Download Sample CSV
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                          <label className="cursor-pointer flex items-center" data-testid="label-upload-slots-csv">
-                            <FileSpreadsheet className="h-4 w-4 mr-2" />
-                            Upload CSV File
-                            <input 
-                              type="file" 
-                              accept=".csv" 
-                              className="hidden" 
-                              data-testid="input-upload-slots-csv"
-                              onChange={(e) => handleFileUpload(e, 'slots')}
-                            />
-                          </label>
+                        <DropdownMenuItem onClick={() => slotsFileInputRef.current?.click()}>
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                          Upload CSV File
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    <input 
+                      ref={slotsFileInputRef}
+                      type="file" 
+                      accept=".csv" 
+                      className="hidden" 
+                      data-testid="input-upload-slots-csv"
+                      onChange={(e) => handleFileUpload(e, 'slots')}
+                    />
                     <Dialog open={newSlotOpen} onOpenChange={setNewSlotOpen}>
                       <DialogTrigger asChild>
                         <Button size="sm" data-testid="button-add-slot">
