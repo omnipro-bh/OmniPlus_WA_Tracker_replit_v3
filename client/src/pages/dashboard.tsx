@@ -41,7 +41,9 @@ export default function Dashboard() {
 
   const hasActivePlan = user?.currentSubscription?.status === "ACTIVE";
   const daysRemaining = user?.daysBalance || 0;
-  const isExpired = user?.status === "expired";
+  // User is expired only if status is "expired" AND they have no days remaining
+  // This handles the case where admin adds days to an expired account
+  const isExpired = user?.status === "expired" && (user?.daysBalance ?? 0) <= 0;
 
   return (
     <div className="space-y-8">
