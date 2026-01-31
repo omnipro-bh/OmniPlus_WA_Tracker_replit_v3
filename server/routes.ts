@@ -9004,11 +9004,20 @@ export function registerRoutes(app: Express) {
                   const context = (state.context || {}) as any;
                   
                   console.log(`[Booking] Processing book_appointment node: ${currentNodeId}`);
+                  console.log(`[Booking] Node config:`, JSON.stringify(config));
                   
                   // Check if we're in a booking flow already
                   if (!context.bookingState) {
                     // Start new booking flow - send department list
-                    const departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
+                    // Filter by serviceId if configured
+                    let departments;
+                    if (config.serviceId) {
+                      console.log(`[Booking] Filtering departments by serviceId: ${config.serviceId}`);
+                      departments = await storage.getBookingDepartmentsForService(config.serviceId);
+                    } else {
+                      console.log(`[Booking] No serviceId configured, getting all departments for user`);
+                      departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
+                    }
                     
                     if (departments.length === 0) {
                       // No departments configured - go to no_slots path
