@@ -8995,15 +8995,14 @@ export function registerRoutes(app: Express) {
                       departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
                     }
                     
+                    // Fetch channels once for reuse
+                    const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                    const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                    
                     if (departments.length === 0) {
                       // No departments configured - go to no_slots path
-                      console.log(`[Booking] No departments configured for user ${activeWorkflow.userId}`);
-                      
                       const noSlotsMessage = config.noSlotsMessage || 'Sorry, booking is not available at this time.';
                       
-                      // Send no slots message
-                      const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-                      const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
                       if (activeChannel?.whapiChannelToken) {
                         await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
                           to: phone,
@@ -9020,10 +9019,6 @@ export function registerRoutes(app: Express) {
                       currentNodeId = noSlotsNodeId;
                       continue;
                     }
-                    
-                    // Send department selection as list message
-                    const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-                    const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
                     
                     if (activeChannel?.whapiChannelToken) {
                       const promptMessage = config.promptMessage || 'Please select a department for your appointment:';
@@ -9141,12 +9136,20 @@ export function registerRoutes(app: Express) {
                         });
                       } else {
                         const bookingListFormat = config.bookingListFormat || '{{date}} at {{time}}\n{{department}} - {{staff}}\nStatus: {{status}}';
-                        let bookingsText = 'Your appointments:\n\n';
                         
+                        // Batch fetch all staff and departments in parallel for speed
+                        const staffIds = Array.from(new Set(customerBookings.map((b: any) => b.staffId)));
+                        const staffList = await Promise.all(staffIds.map(id => storage.getBookingStaff(id)));
+                        const staffMap = new Map(staffList.filter(Boolean).map((s: any) => [s.id, s]));
+                        
+                        const deptIds = Array.from(new Set(staffList.filter(Boolean).map((s: any) => s.departmentId)));
+                        const deptList = await Promise.all(deptIds.map(id => storage.getBookingDepartment(id)));
+                        const deptMap = new Map(deptList.filter(Boolean).map((d: any) => [d.id, d]));
+                        
+                        let bookingsText = 'Your appointments:\n\n';
                         for (const booking of customerBookings) {
-                          // Get department and staff names
-                          const staff = await storage.getBookingStaff(booking.staffId);
-                          const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                          const staff = staffMap.get(booking.staffId);
+                          const dept = staff ? deptMap.get(staff.departmentId) : null;
                           
                           let formatted = bookingListFormat
                             .replace(/\{\{date\}\}/g, booking.slotDate)
@@ -9197,17 +9200,25 @@ export function registerRoutes(app: Express) {
                           ? (config.rescheduleButtonLabel || 'Select Appointment')
                           : (config.cancelButtonLabel || 'Select Appointment');
                         
+                        // Batch fetch all staff and departments in parallel for speed
+                        const staffIdsForAction = Array.from(new Set(activeBookings.map((b: any) => b.staffId)));
+                        const staffListForAction = await Promise.all(staffIdsForAction.map(id => storage.getBookingStaff(id)));
+                        const staffMapForAction = new Map(staffListForAction.filter(Boolean).map((s: any) => [s.id, s]));
+                        
+                        const deptIdsForAction = Array.from(new Set(staffListForAction.filter(Boolean).map((s: any) => s.departmentId)));
+                        const deptListForAction = await Promise.all(deptIdsForAction.map(id => storage.getBookingDepartment(id)));
+                        const deptMapForAction = new Map(deptListForAction.filter(Boolean).map((d: any) => [d.id, d]));
+                        
                         // Build rows with booking info
-                        const bookingRows = [];
-                        for (const booking of activeBookings) {
-                          const staff = await storage.getBookingStaff(booking.staffId);
-                          const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
-                          bookingRows.push({
+                        const bookingRows = activeBookings.map((booking: any) => {
+                          const staff = staffMapForAction.get(booking.staffId);
+                          const dept = staff ? deptMapForAction.get(staff.departmentId) : null;
+                          return {
                             id: `booking_${actionType}_${booking.id}`,
                             title: `${booking.slotDate} at ${booking.startTime}`,
                             description: `${dept?.name || ''} - ${staff?.name || ''}`.trim() || 'Appointment',
-                          });
-                        }
+                          };
+                        });
                         
                         const listPayload = {
                           to: phone,
