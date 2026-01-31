@@ -8006,21 +8006,16 @@ export function registerRoutes(app: Express) {
                 reminderSent: false,
               });
               
-              // Get staff and department names for success message
-              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
-              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              // Get staff and department names in parallel for speed
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
               
               // Use pending message if status is pending, otherwise use success message
-              let messageToSend: string;
-              if (bookingStatus === 'pending') {
-                messageToSend = nameCheckBookingState.config?.pendingMessage || 
-                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
-              } else {
-                messageToSend = nameCheckBookingState.config?.successMessage || 
-                  'Your appointment has been booked for {{date}} at {{time}}.';
-              }
-              
-              messageToSend = messageToSend
+              const messageToSend = (bookingStatus === 'pending' 
+                ? (nameCheckBookingState.config?.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
+                : (nameCheckBookingState.config?.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -8119,20 +8114,16 @@ export function registerRoutes(app: Express) {
                 reminderSent: false,
               });
               
-              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
-              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              // Parallel lookups for speed
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
               
               // Use pending message if status is pending, otherwise use success message
-              let messageToSend: string;
-              if (bookingStatus === 'pending') {
-                messageToSend = config.pendingMessage || 
-                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
-              } else {
-                messageToSend = config.successMessage || 
-                  'Your appointment has been booked for {{date}} at {{time}}.';
-              }
-              
-              messageToSend = messageToSend
+              const messageToSend = (bookingStatus === 'pending' 
+                ? (config.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
+                : (config.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -8152,8 +8143,6 @@ export function registerRoutes(app: Express) {
                 context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
                 updatedAt: new Date(),
               }).where(eq(conversationStates.id, nameCheckState.id));
-              
-              console.log(`[Booking] Created booking ${booking.id} with custom field 1`);
               
             } catch (bookingError: any) {
               console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
@@ -8209,20 +8198,16 @@ export function registerRoutes(app: Express) {
                 reminderSent: false,
               });
               
-              const staff = await storage.getBookingStaff(nameCheckBookingState.staffId);
-              const dept = await storage.getBookingDepartment(nameCheckBookingState.departmentId);
+              // Parallel lookups for speed
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
               
               // Use pending message if status is pending, otherwise use success message
-              let messageToSend: string;
-              if (bookingStatus === 'pending') {
-                messageToSend = config.pendingMessage || 
-                  'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
-              } else {
-                messageToSend = config.successMessage || 
-                  'Your appointment has been booked for {{date}} at {{time}}.';
-              }
-              
-              messageToSend = messageToSend
+              const messageToSend = (bookingStatus === 'pending' 
+                ? (config.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
+                : (config.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
                 .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
                 .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
                 .replace(/\{\{department\}\}/g, dept?.name || '')
@@ -8242,8 +8227,6 @@ export function registerRoutes(app: Express) {
                 context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
                 updatedAt: new Date(),
               }).where(eq(conversationStates.id, nameCheckState.id));
-              
-              console.log(`[Booking] Created booking ${booking.id} with both custom fields`);
               
             } catch (bookingError: any) {
               console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
@@ -8479,51 +8462,28 @@ export function registerRoutes(app: Express) {
             })();
           }
         } else if (messageType === "button_reply") {
-          console.log(`\n[BUTTON CLICK DEBUG] =============================================`);
-          console.log(`[BUTTON CLICK DEBUG] Button click received for workflow ${activeWorkflow.id} (${activeWorkflow.name})`);
-          console.log(`[BUTTON CLICK DEBUG] Raw button ID: "${rawButtonId}"`);
-          console.log(`[BUTTON CLICK DEBUG] Extracted button ID: "${buttonId}"`);
-          console.log(`[BUTTON CLICK DEBUG] Reply type: ${incomingMessage.reply?.type}`);
-          console.log(`[BUTTON CLICK DEBUG] context.quoted_id: ${incomingMessage.context?.quoted_id || 'MISSING'}`);
-          console.log(`[BUTTON CLICK DEBUG] Full context:`, JSON.stringify(incomingMessage.context, null, 2));
+          // Minimal logging for performance
+          console.log(`[Button] workflow:${activeWorkflow.id} btn:${buttonId}`);
           
           // CRITICAL: Check if this button reply belongs to THIS workflow
-          // Multiple workflows may have the same webhook registered in WHAPI, so we need to verify ownership
           const quotedId = incomingMessage.context?.quoted_id;
           
           if (quotedId) {
-            console.log(`[BUTTON CLICK DEBUG] Looking up quotedId "${quotedId}" in sent_messages table...`);
             try {
-              // First, check if ANY workflow owns this message
               const anyOwnership = await db
                 .select()
                 .from(sentMessages)
                 .where(eq(sentMessages.messageId, quotedId))
                 .limit(1);
               
-              console.log(`[BUTTON CLICK DEBUG] sent_messages lookup result:`, JSON.stringify(anyOwnership, null, 2));
-              
               if (anyOwnership && anyOwnership.length > 0) {
-                // Message is tracked - check if it belongs to THIS workflow
-                console.log(`[BUTTON CLICK DEBUG] Found ownership record: workflowId=${anyOwnership[0].workflowId}, messageType=${anyOwnership[0].messageType}`);
                 if (anyOwnership[0].workflowId !== activeWorkflow.id) {
-                  // This button click is for a DIFFERENT workflow - ignore it
-                  console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
                   return res.json({ success: true, message: "Button click belongs to different workflow" });
                 }
-                console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
-              } else {
-                // Message is NOT tracked (test message, old message before tracking was added)
-                // Allow all workflows to process for backward compatibility
-                console.log(`[BUTTON CLICK DEBUG] No record found in sent_messages for quotedId "${quotedId}"`);
-                console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
               }
             } catch (ownershipError: any) {
-              // If sent_messages table doesn't exist or query fails, allow processing (backward compatible)
-              console.warn(`[Button Reply] Ownership check failed (table may not exist): ${ownershipError.message} - allowing processing for backward compatibility`);
+              // Allow processing for backward compatibility
             }
-          } else {
-            console.log(`[BUTTON CLICK DEBUG] No context.quoted_id in the webhook - cannot verify ownership`);
           }
           
           // Find the node linked to this button_id using workflow edges
@@ -9003,10 +8963,8 @@ export function registerRoutes(app: Express) {
                   const config = currentNode.data?.config || {};
                   const context = (state.context || {}) as any;
                   
-                  console.log(`[Booking] Processing book_appointment node: ${currentNodeId}`);
-                  console.log(`[Booking] Node config:`, JSON.stringify(config));
-                  console.log(`[Booking] Existing bookingState:`, context.bookingState ? JSON.stringify(context.bookingState) : 'none');
-                  console.log(`[Booking] state.currentNodeId: ${state.currentNodeId}, currentNodeId: ${currentNodeId}`);
+                  // Minimal logging for performance - only log key info
+                  console.log(`[Booking] book_appointment node: ${currentNodeId}, state.currentNodeId: ${state.currentNodeId}`);
                   
                   // Determine if we should start a fresh booking flow
                   // Start fresh if:
@@ -9019,7 +8977,8 @@ export function registerRoutes(app: Express) {
                     existingBookingNodeId !== currentNodeId ||
                     isNavigatingToBookingNode;
                   
-                  console.log(`[Booking] existingBookingNodeId: ${existingBookingNodeId}, isNavigatingToBookingNode: ${isNavigatingToBookingNode}, shouldStartFresh: ${shouldStartFresh}`);
+                  // Debug log only when starting fresh (important state transition)
+                  if (shouldStartFresh) console.log(`[Booking] Starting fresh booking flow`);
                   
                   // Check if we're in a booking flow already
                   if (shouldStartFresh) {
