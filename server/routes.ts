@@ -7959,6 +7959,9 @@ export function registerRoutes(app: Express) {
           }
         } catch (bookingError: any) {
           console.error(`[Booking] Error processing booking flow: ${bookingError.message}`);
+          // Return success to prevent falling through to button routing
+          // The error is logged but we don't want to process this as a regular button click
+          return res.status(200).json({ success: true, error: "Booking flow error" });
         }
       }
 
