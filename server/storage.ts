@@ -266,6 +266,7 @@ export interface IStorage {
   updateBooking(id: number, data: Partial<schema.Booking>): Promise<schema.Booking | undefined>;
   deleteBooking(id: number): Promise<void>;
   checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
+  getBulkBookingCounts(staffId: number, dateRange: { startDate: string; endDate: string }): Promise<Map<string, number>>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
   countOutdatedConfirmedBookings(userId: number): Promise<number>;
   bulkCompleteOutdatedBookings(userId: number): Promise<number>;
@@ -1871,6 +1872,33 @@ export class DatabaseStorage implements IStorage {
       existingCount,
       capacity,
     };
+  }
+
+  async getBulkBookingCounts(
+    staffId: number, 
+    dateRange: { startDate: string; endDate: string }
+  ): Promise<Map<string, number>> {
+    const results = await db
+      .select({
+        slotDate: schema.bookings.slotDate,
+        startTime: schema.bookings.startTime,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(schema.bookings)
+      .where(and(
+        eq(schema.bookings.staffId, staffId),
+        sql`${schema.bookings.slotDate} >= ${dateRange.startDate}`,
+        sql`${schema.bookings.slotDate} <= ${dateRange.endDate}`,
+        sql`${schema.bookings.status} NOT IN ('cancelled')`
+      ))
+      .groupBy(schema.bookings.slotDate, schema.bookings.startTime);
+
+    const countMap = new Map<string, number>();
+    for (const row of results) {
+      const key = `${row.slotDate}_${row.startTime}`;
+      countMap.set(key, row.count);
+    }
+    return countMap;
   }
 
   // Count active bookings for a customer (for duplicate prevention)

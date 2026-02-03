@@ -7380,12 +7380,19 @@ export function registerRoutes(app: Express) {
               
               return res.status(200).json({ success: true });
               
-            } else if (bookingState.step === 'select_staff' && buttonId.startsWith("booking_staff_")) {
-              // User selected staff - show available dates
+            } else if ((bookingState.step === 'select_staff' || bookingState.step === 'select_slot') && buttonId.startsWith("booking_staff_")) {
+              // User selected staff - show available dates (also allow retry from select_slot step)
               const staffId = parseInt(buttonId.replace("booking_staff_", ""));
               
-              // Verify staff belongs to user (security check)
-              const staffMember = await storage.getBookingStaff(staffId);
+              // Parallelize: verify staff + check existing booking + get slots
+              const [staffMember, existingCountResult, staffSlots] = await Promise.all([
+                storage.getBookingStaff(staffId),
+                !bookingState.config?.allowMultiple 
+                  ? storage.countActiveBookingsForCustomer(phone, activeWorkflow.userId, bookingState.nodeId)
+                  : Promise.resolve(0),
+                storage.getBookingStaffSlots(staffId)
+              ]);
+              
               if (!staffMember || staffMember.departmentId !== bookingState.departmentId) {
                 console.error(`[Booking] Invalid staff selection: ${staffId}`);
                 await db.update(conversationStates).set({
@@ -7395,28 +7402,21 @@ export function registerRoutes(app: Express) {
                 return res.status(200).json({ success: true });
               }
               
-              // Check if customer already has booking (if allowMultiple is false)
-              if (!bookingState.config?.allowMultiple) {
-                const existingCount = await storage.countActiveBookingsForCustomer(
-                  phone, activeWorkflow.userId, bookingState.nodeId
-                );
-                if (existingCount > 0) {
-                  const existingBookingMessage = bookingState.config?.existingBookingMessage || 
-                    'You already have an active appointment. Please cancel your existing booking first.';
-                  await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                    to: phone,
-                    body: existingBookingMessage,
-                  });
-                  await db.update(conversationStates).set({
-                    context: { ...context, bookingState: undefined },
-                    updatedAt: new Date(),
-                  }).where(eq(conversationStates.id, currentState.id));
-                  return res.status(200).json({ success: true });
-                }
+              // Check if customer already has booking
+              if (existingCountResult > 0) {
+                const existingBookingMessage = bookingState.config?.existingBookingMessage || 
+                  'You already have an active appointment. Please cancel your existing booking first.';
+                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: existingBookingMessage,
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: undefined },
+                  updatedAt: new Date(),
+                }).where(eq(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
               }
               
-              // Get staff recurring slots (dayOfWeek based)
-              const staffSlots = await storage.getBookingStaffSlots(staffId);
               const activeSlots = staffSlots.filter((s: any) => s.isActive);
               
               if (activeSlots.length === 0) {
@@ -7431,27 +7431,36 @@ export function registerRoutes(app: Express) {
                 return res.status(200).json({ success: true });
               }
               
-              // Generate available date/time combinations for next N days
+              // Generate available date/time combinations - OPTIMIZED with batch query
               const maxSlots = bookingState.config?.maxAdvanceDays || 30;
               const startToday = bookingState.config?.startToday !== false;
               const startOffset = startToday ? 0 : 1;
+              
+              // Calculate date range for batch query
+              const startDate = dayjs().tz("Asia/Bahrain").add(startOffset, "day").format("YYYY-MM-DD");
+              const endDate = dayjs().tz("Asia/Bahrain").add(365, "day").format("YYYY-MM-DD");
+              
+              // Get all booking counts in one query
+              const bookingCounts = await storage.getBulkBookingCounts(staffId, { startDate, endDate });
+              
+              // Build slot-capacity map from activeSlots
+              const slotCapacityMap = new Map<number, number>();
+              for (const slot of activeSlots) {
+                slotCapacityMap.set(slot.dayOfWeek, slot.capacity);
+              }
+              
               const availableDateTimes: { date: string; startTime: string; endTime: string; slotId: number }[] = [];
               
-              for (let i = startOffset; availableDateTimes.length < maxSlots; i++) {
+              for (let i = startOffset; availableDateTimes.length < maxSlots && i <= 365; i++) {
                 const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
-                // Prevent infinite loop - stop after 365 days
-                if (i > 365) break;
                 const dateStr = checkDate.format("YYYY-MM-DD");
                 const dayOfWeek = checkDate.day();
                 
-                // Find slots for this day of week
                 for (const slot of activeSlots) {
                   if (slot.dayOfWeek === dayOfWeek) {
-                    // Check availability using proper method
-                    const availability = await storage.checkSlotAvailability(
-                      staffId, dateStr, slot.startTime
-                    );
-                    if (availability.available) {
+                    const key = `${dateStr}_${slot.startTime}`;
+                    const existingCount = bookingCounts.get(key) || 0;
+                    if (existingCount < slot.capacity) {
                       availableDateTimes.push({
                         date: dateStr,
                         startTime: slot.startTime,
@@ -7460,6 +7469,7 @@ export function registerRoutes(app: Express) {
                       });
                     }
                   }
+                  if (availableDateTimes.length >= maxSlots) break;
                 }
               }
               
@@ -7476,7 +7486,7 @@ export function registerRoutes(app: Express) {
               }
               
               // Build slot rows with date-time combinations
-              const slotRows = availableDateTimes.map((slot, idx) => ({
+              const slotRows = availableDateTimes.map((slot) => ({
                 id: `booking_slot_${slot.slotId}_${slot.date}`,
                 title: `${slot.date} at ${slot.startTime}`,
                 description: `${slot.startTime} - ${slot.endTime}`,
@@ -7508,7 +7518,7 @@ export function registerRoutes(app: Express) {
               
               return res.status(200).json({ success: true });
               
-            } else if (bookingState.step === 'select_slot' && buttonId.startsWith("booking_slot_")) {
+            } else if ((bookingState.step === 'select_slot' || bookingState.step === 'enter_name') && buttonId.startsWith("booking_slot_")) {
               // User selected slot
               // Parse ID format: booking_slot_${slotId}_${date}
               const slotParts = buttonId.replace("booking_slot_", "").split("_");
