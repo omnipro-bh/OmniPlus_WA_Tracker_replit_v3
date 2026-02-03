@@ -7438,22 +7438,17 @@ export function registerRoutes(app: Express) {
               const startToday = bookingState.config?.startToday !== false;
               const startOffset = startToday ? 0 : 1;
               
-              // Calculate date range for batch query
+              // Calculate date range for batch query - limit to reasonable range
+              const maxDaysToCheck = Math.min(365, maxSlots * 7); // Check ~7 days per slot needed
               const startDate = dayjs().tz("Asia/Bahrain").add(startOffset, "day").format("YYYY-MM-DD");
-              const endDate = dayjs().tz("Asia/Bahrain").add(365, "day").format("YYYY-MM-DD");
+              const endDate = dayjs().tz("Asia/Bahrain").add(startOffset + maxDaysToCheck, "day").format("YYYY-MM-DD");
               
               // Get all booking counts in one query
               const bookingCounts = await storage.getBulkBookingCounts(staffId, { startDate, endDate });
               
-              // Build slot-capacity map from activeSlots
-              const slotCapacityMap = new Map<number, number>();
-              for (const slot of activeSlots) {
-                slotCapacityMap.set(slot.dayOfWeek, slot.capacity);
-              }
-              
               const availableDateTimes: { date: string; startTime: string; endTime: string; slotId: number }[] = [];
               
-              for (let i = startOffset; availableDateTimes.length < maxSlots && i <= 365; i++) {
+              for (let i = startOffset; availableDateTimes.length < maxSlots && i <= startOffset + maxDaysToCheck; i++) {
                 const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
                 const dateStr = checkDate.format("YYYY-MM-DD");
                 const dayOfWeek = checkDate.day();
