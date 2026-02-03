@@ -7319,12 +7319,16 @@ export function registerRoutes(app: Express) {
               return res.status(200).json({ success: true });
             }
             
-            if (bookingState.step === 'select_department' && buttonId.startsWith("booking_dept_")) {
-              // User selected a department - show staff list
+            if ((bookingState.step === 'select_department' || bookingState.step === 'select_staff') && buttonId.startsWith("booking_dept_")) {
+              // User selected a department - show staff list (also allow retry from select_staff step)
               const deptId = parseInt(buttonId.replace("booking_dept_", ""));
               
-              // SECURITY: Verify department belongs to workflow owner
-              const department = await storage.getBookingDepartment(deptId);
+              // Parallelize: verify department + get staff
+              const [department, staff] = await Promise.all([
+                storage.getBookingDepartment(deptId),
+                storage.getBookingStaffForDepartment(deptId)
+              ]);
+              
               if (!department || department.userId !== activeWorkflow.userId) {
                 console.error(`[Booking] Invalid department selection: ${deptId} for user ${activeWorkflow.userId}`);
                 await db.update(conversationStates).set({
@@ -7333,8 +7337,6 @@ export function registerRoutes(app: Express) {
                 }).where(eq(conversationStates.id, currentState.id));
                 return res.status(200).json({ success: true });
               }
-              
-              const staff = await storage.getBookingStaffForDepartment(deptId);
               
               if (staff.length === 0) {
                 await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
@@ -7519,13 +7521,13 @@ export function registerRoutes(app: Express) {
               return res.status(200).json({ success: true });
               
             } else if ((bookingState.step === 'select_slot' || bookingState.step === 'enter_name') && buttonId.startsWith("booking_slot_")) {
-              // User selected slot
+              // User selected slot (also allow retry from enter_name step)
               // Parse ID format: booking_slot_${slotId}_${date}
               const slotParts = buttonId.replace("booking_slot_", "").split("_");
               const slotId = parseInt(slotParts[0]);
               const slotDate = slotParts.slice(1).join("_"); // Handle dates with underscores
               
-              // Get slot details (recurring slot configuration)
+              // Get slot details first to get startTime for availability check
               const slot = await storage.getBookingStaffSlot(slotId);
               
               if (!slot || slot.staffId !== bookingState.staffId) {
