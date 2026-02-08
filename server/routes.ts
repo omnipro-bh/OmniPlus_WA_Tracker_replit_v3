@@ -2659,18 +2659,17 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "User not found" });
       }
 
+      // contactExportAllowed on user is an admin override - if enabled, skip plan check
       if (!user.contactExportAllowed) {
-        return res.status(403).json({ error: "Contact export is disabled for your account." });
-      }
-
-      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
-      if (subscription) {
+        // Fall back to plan-level check
+        const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
+        if (!subscription) {
+          return res.status(403).json({ error: "Active subscription required for contact export." });
+        }
         const plan = await storage.getPlan(subscription.planId);
         if (!plan || !(plan as any).contactExportEnabled) {
           return res.status(403).json({ error: "Contact export is not available in your current plan." });
         }
-      } else {
-        return res.status(403).json({ error: "Active subscription required for contact export." });
       }
 
       const channels = await storage.getChannelsForUser(effectiveUserId);

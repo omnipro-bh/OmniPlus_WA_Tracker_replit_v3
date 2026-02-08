@@ -51,7 +51,7 @@ export default function PhonebooksPage() {
     queryKey: ["/api/me"],
   });
 
-  const contactExportEnabled = currentUser?.currentPlan?.contactExportEnabled && currentUser?.contactExportAllowed;
+  const contactExportEnabled = currentUser?.contactExportAllowed || currentUser?.currentPlan?.contactExportEnabled;
 
   const handleExportContacts = async () => {
     setIsExporting(true);

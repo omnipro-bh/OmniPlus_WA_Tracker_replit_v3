@@ -5205,7 +5205,7 @@ export default function Admin() {
                     </Label>
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
-                    When allowed and plan has contact export enabled, user can export WhatsApp contacts from the Phonebooks page.
+                    When enabled, this overrides the plan setting and allows the user to export WhatsApp contacts regardless of plan configuration.
                   </p>
                 </div>
               </div>
