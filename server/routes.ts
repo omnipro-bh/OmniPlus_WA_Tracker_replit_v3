@@ -2688,12 +2688,13 @@ export function registerRoutes(app: Express) {
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error("[Export Contacts] WHAPI error:", errText);
-        return res.status(500).json({ error: "Failed to fetch contacts from WhatsApp." });
+        console.error("[Export Contacts] WHAPI error:", response.status, errText);
+        return res.status(500).json({ error: "Failed to fetch contacts from WhatsApp. WHAPI returned: " + response.status });
       }
 
       const data = await response.json() as any;
-      const contacts = data.contacts || [];
+      console.log("[Export Contacts] WHAPI response keys:", Object.keys(data));
+      const contacts = data.contacts || (Array.isArray(data) ? data : []);
 
       let csv = "id,name,saved\n";
       for (const contact of contacts) {
