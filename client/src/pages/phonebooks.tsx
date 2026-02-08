@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
 import { Link } from "wouter";
-import { Plus, Book, Trash2, Users, Edit } from "lucide-react";
+import { Plus, Book, Trash2, Users, Edit, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,6 +44,36 @@ export default function PhonebooksPage() {
   const [newPhonebookDescription, setNewPhonebookDescription] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [phonebookToDelete, setPhonebookToDelete] = useState<Phonebook | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Fetch current user info for feature flags
+  const { data: currentUser } = useQuery<any>({
+    queryKey: ["/api/me"],
+  });
+
+  const contactExportEnabled = currentUser?.currentPlan?.contactExportEnabled && currentUser?.contactExportAllowed;
+
+  const handleExportContacts = async () => {
+    setIsExporting(true);
+    try {
+      const res = await apiRequest("GET", "/api/phonebooks/export-contacts");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "whatsapp-contacts.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Contacts exported successfully" });
+    } catch (error: any) {
+      const errorMsg = error?.message || "Failed to export contacts";
+      toast({ title: "Export failed", description: errorMsg, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Fetch phonebooks
   const { data: phonebooks = [], isLoading } = useQuery<Phonebook[]>({
@@ -134,13 +164,26 @@ export default function PhonebooksPage() {
             <h1 className="text-3xl font-semibold mb-2" data-testid="text-page-title">Phonebooks</h1>
             <p className="text-sm text-muted-foreground">Manage your contact phonebooks and send messages to groups</p>
           </div>
-          <Button
-            onClick={() => setCreateDialogOpen(true)}
-            data-testid="button-create-phonebook"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            New Phonebook
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {contactExportEnabled && (
+              <Button
+                variant="outline"
+                onClick={handleExportContacts}
+                disabled={isExporting}
+                data-testid="button-export-contacts"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? "Exporting..." : "Export Contacts"}
+              </Button>
+            )}
+            <Button
+              onClick={() => setCreateDialogOpen(true)}
+              data-testid="button-create-phonebook"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Phonebook
+            </Button>
+          </div>
         </div>
 
         {/* Loading State */}

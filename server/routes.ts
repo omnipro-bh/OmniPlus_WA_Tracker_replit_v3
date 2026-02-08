@@ -2650,6 +2650,69 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Export contacts from WHAPI channel as CSV (must be before :id route)
+  app.get("/api/phonebooks/export-contacts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (!user.contactExportAllowed) {
+        return res.status(403).json({ error: "Contact export is disabled for your account." });
+      }
+
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
+      if (subscription) {
+        const plan = await storage.getPlan(subscription.planId);
+        if (!plan || !(plan as any).contactExportEnabled) {
+          return res.status(403).json({ error: "Contact export is not available in your current plan." });
+        }
+      } else {
+        return res.status(403).json({ error: "Active subscription required for contact export." });
+      }
+
+      const channels = await storage.getChannelsForUser(effectiveUserId);
+      const activeChannel = channels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+      if (!activeChannel?.whapiChannelToken) {
+        return res.status(400).json({ error: "No active authorized channel found." });
+      }
+
+      const response = await fetch("https://gate.whapi.cloud/api/contacts?count=500", {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "Authorization": `Bearer ${activeChannel.whapiChannelToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("[Export Contacts] WHAPI error:", errText);
+        return res.status(500).json({ error: "Failed to fetch contacts from WhatsApp." });
+      }
+
+      const data = await response.json() as any;
+      const contacts = data.contacts || [];
+
+      let csv = "id,name,saved\n";
+      for (const contact of contacts) {
+        const id = (contact.id || "").replace(/"/g, '""');
+        const name = (contact.name || "").replace(/"/g, '""');
+        const saved = contact.saved ? "true" : "false";
+        csv += `"${id}","${name}","${saved}"\n`;
+      }
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="whatsapp-contacts.csv"');
+      res.send(csv);
+    } catch (error: any) {
+      console.error("Export contacts error:", error);
+      res.status(500).json({ error: "Failed to export contacts" });
+    }
+  });
+
   // Get sample CSV template (must be before :id route)
   app.get("/api/phonebooks/sample-csv", requireAuth, async (req: AuthRequest, res: Response) => {
     const sampleCSV = `phone_number,name,email,header,body,footer,button1_text,button2_text,button3_text,button1_id,button2_id,button3_id
@@ -6121,7 +6184,7 @@ export function registerRoutes(app: Express) {
         dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
         phonebookLimit, captureSequenceLimit, pageAccess,
         autoExtendEnabled, skipFriday, skipSaturday,
-        labelManagementAllowed
+        labelManagementAllowed, contactExportAllowed
       } = req.body;
 
       const user = await storage.getUser(userId);
@@ -6154,10 +6217,17 @@ export function registerRoutes(app: Express) {
       // Update subscription with overrides
       await storage.updateSubscription(subscription.id, overrides);
       
-      // Update user-level settings (labelManagementAllowed is on users table)
+      // Update user-level settings (labelManagementAllowed, contactExportAllowed are on users table)
+      const userUpdates: any = {};
       if (labelManagementAllowed !== undefined) {
-        await storage.updateUser(userId, { labelManagementAllowed });
-        console.log(`[/api/admin/users/:id/overrides] Updated labelManagementAllowed to ${labelManagementAllowed} for user ${userId}`);
+        userUpdates.labelManagementAllowed = labelManagementAllowed;
+      }
+      if (contactExportAllowed !== undefined) {
+        userUpdates.contactExportAllowed = contactExportAllowed;
+      }
+      if (Object.keys(userUpdates).length > 0) {
+        await storage.updateUser(userId, userUpdates);
+        console.log(`[/api/admin/users/:id/overrides] Updated user settings for user ${userId}:`, JSON.stringify(userUpdates));
       }
 
       await storage.createAuditLog({

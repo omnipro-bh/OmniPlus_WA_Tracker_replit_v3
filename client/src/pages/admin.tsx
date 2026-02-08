@@ -1975,6 +1975,7 @@ export default function Admin() {
     skipFriday: false,
     skipSaturday: false,
     labelManagementAllowed: true,
+    contactExportAllowed: true,
   });
 
   // Proof viewer dialog state
@@ -2004,6 +2005,7 @@ export default function Admin() {
     isPopular: false,
     safetyMeterEnabled: false,
     labelManagementEnabled: false,
+    contactExportEnabled: false,
     freeTrialEnabled: false,
     freeTrialDays: "7",
     // Individual checkboxes for each limit
@@ -2449,6 +2451,7 @@ export default function Admin() {
       isPopular: false,
       safetyMeterEnabled: false,
       labelManagementEnabled: false,
+      contactExportEnabled: false,
       freeTrialEnabled: false,
       freeTrialDays: "7",
       enableDailyMessages: true,
@@ -2553,6 +2556,7 @@ export default function Admin() {
       isPopular: (plan as any).isPopular || false,
       safetyMeterEnabled: (plan as any).safetyMeterEnabled || false,
       labelManagementEnabled: (plan as any).labelManagementEnabled || false,
+      contactExportEnabled: (plan as any).contactExportEnabled || false,
       freeTrialEnabled: (plan as any).freeTrialEnabled || false,
       freeTrialDays: String((plan as any).freeTrialDays ?? 7),
       enableDailyMessages,
@@ -2727,6 +2731,7 @@ export default function Admin() {
       isPopular: planForm.isPopular,
       safetyMeterEnabled: planForm.safetyMeterEnabled,
       labelManagementEnabled: planForm.labelManagementEnabled,
+      contactExportEnabled: planForm.contactExportEnabled,
       freeTrialEnabled: planForm.freeTrialEnabled,
       freeTrialDays: parseInt(planForm.freeTrialDays) || 7,
       dailyMessagesLimit,
@@ -2798,6 +2803,7 @@ export default function Admin() {
       skipFriday: subscription?.skipFriday || false,
       skipSaturday: subscription?.skipSaturday || false,
       labelManagementAllowed: user.labelManagementAllowed !== false,
+      contactExportAllowed: user.contactExportAllowed !== false,
     });
     setIsUserDrawerOpen(true);
   };
@@ -2819,6 +2825,7 @@ export default function Admin() {
       skipFriday: userOverrides.skipFriday,
       skipSaturday: userOverrides.skipSaturday,
       labelManagementAllowed: userOverrides.labelManagementAllowed,
+      contactExportAllowed: userOverrides.contactExportAllowed,
     };
 
     updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
@@ -4237,6 +4244,20 @@ export default function Admin() {
               <p className="text-xs text-muted-foreground -mt-2 ml-11">
                 When enabled, workflows can automatically label WhatsApp chats as "Chatbot" or "Inquiries" based on the last message sender.
               </p>
+
+              {/* Contact Export Toggle */}
+              <div className="space-y-2 flex items-center gap-3">
+                <Switch
+                  id="plan-contact-export"
+                  checked={planForm.contactExportEnabled}
+                  onCheckedChange={(checked) => setPlanForm({ ...planForm, contactExportEnabled: checked })}
+                  data-testid="switch-plan-contact-export"
+                />
+                <Label htmlFor="plan-contact-export">Enable Contact Export</Label>
+              </div>
+              <p className="text-xs text-muted-foreground -mt-2 ml-11">
+                When enabled, users can export up to 500 WhatsApp contacts as a CSV file from the Phonebooks page.
+              </p>
             </div>
 
             {/* Limits */}
@@ -5156,6 +5177,35 @@ export default function Admin() {
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
                     When allowed, user can enable auto-labeling on individual workflows. This is an admin override switch.
+                  </p>
+                </div>
+              </div>
+
+              {/* Contact Export Override */}
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Contact Export</h3>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Allow exporting up to 500 WhatsApp contacts as CSV from the Phonebooks page.
+                </p>
+                <div className="space-y-3 p-3 bg-card border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="contact-export-allowed"
+                      checked={userOverrides.contactExportAllowed}
+                      onCheckedChange={(checked) => {
+                        setUserOverrides({
+                          ...userOverrides,
+                          contactExportAllowed: !!checked,
+                        });
+                      }}
+                      data-testid="checkbox-contact-export-allowed"
+                    />
+                    <Label htmlFor="contact-export-allowed" className="cursor-pointer">
+                      Allow contact export for this user
+                    </Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-6">
+                    When allowed and plan has contact export enabled, user can export WhatsApp contacts from the Phonebooks page.
                   </p>
                 </div>
               </div>
