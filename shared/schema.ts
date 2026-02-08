@@ -49,6 +49,7 @@ export const users = pgTable("users", {
   phonebookLimit: integer("phonebook_limit"), // Per-user override for phonebook contact limit (null = use plan limit)
   // Label management settings (admin-controlled per-user override)
   labelManagementAllowed: boolean("label_management_allowed").notNull().default(true), // Admin can disable for specific users
+  contactExportAllowed: boolean("contact_export_allowed").notNull().default(true), // Admin can disable contact export for specific users
   chatbotLabelId: text("chatbot_label_id"), // WHAPI label ID for "Chatbot" label
   chatbotLabelName: text("chatbot_label_name").notNull().default("Chatbot"),
   inquiryLabelId: text("inquiry_label_id"), // WHAPI label ID for "Inquiries" label
@@ -118,6 +119,7 @@ export const plans = pgTable("plans", {
     bookingScheduler: false,
   }),
   labelManagementEnabled: boolean("label_management_enabled").notNull().default(false), // Enable auto-labeling feature for this plan
+  contactExportEnabled: boolean("contact_export_enabled").notNull().default(false), // Enable contact export from WHAPI for this plan
   features: jsonb("features").notNull().default([]), // Array of feature strings
   // Pricing Controls
   quarterlyDiscountPercent: integer("quarterly_discount_percent").notNull().default(0), // 0-100
