@@ -2678,7 +2678,7 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "No active authorized channel found." });
       }
 
-      const response = await fetch("https://gate.whapi.cloud/api/contacts?count=500", {
+      const response = await fetch("https://gate.whapi.cloud/contacts?count=500", {
         method: "GET",
         headers: {
           "accept": "application/json",
