@@ -110,7 +110,6 @@ export function AppSidebar() {
       title: "Label Logs",
       url: "/label-logs",
       icon: Tag,
-      pageKey: "workflows",
     },
     {
       title: "Data Capture",
