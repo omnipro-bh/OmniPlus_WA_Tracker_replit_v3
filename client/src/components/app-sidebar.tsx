@@ -141,7 +141,11 @@ export function AppSidebar() {
   const effectivePageAccess = (user as any)?.effectivePageAccess || {};
   const isImpersonating = (user as any)?.impersonation?.isImpersonating;
   
+  const labelManagementAllowed = (user as any)?.labelManagementAllowed;
+
   const mainItems = allMainItems.filter(item => {
+    // Hide Label Logs when label management is not allowed for this user
+    if (item.title === "Label Logs" && !labelManagementAllowed) return false;
     // Admins see all pages unless impersonating
     if (user?.role === "admin" && !isImpersonating) return true;
     if (!item.pageKey) return true;

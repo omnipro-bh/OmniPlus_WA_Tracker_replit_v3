@@ -494,6 +494,11 @@ export function registerRoutes(app: Express) {
             };
       }
 
+      // If user has safetyMeterAllowed override, force safetyMeter page access on
+      if (user.safetyMeterAllowed && effectivePageAccess) {
+        (effectivePageAccess as any).safetyMeter = true;
+      }
+
       // Get channels count for the effective user
       const channels = await storage.getChannelsForUser(user.id);
       const channelsUsed = channels.length;
@@ -1446,14 +1451,18 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
-      // Check if user has access to Safety Meter feature from their plan
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
-      let hasSafetyMeterAccess = false;
+      // Check if user has access to Safety Meter feature
+      // safetyMeterAllowed on user is an admin override - if enabled, skip plan check
+      const safetyUser = await storage.getUser(effectiveUserId);
+      let hasSafetyMeterAccess = safetyUser?.safetyMeterAllowed === true;
 
-      if (subscription) {
-        const plan = await storage.getPlan(subscription.planId);
-        if (plan) {
-          hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+      if (!hasSafetyMeterAccess) {
+        const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+        if (subscription) {
+          const plan = await storage.getPlan(subscription.planId);
+          if (plan) {
+            hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+          }
         }
       }
 
@@ -1511,14 +1520,18 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Channel not found" });
       }
 
-      // Check if user has access to Safety Meter feature from their plan
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
-      let hasSafetyMeterAccess = false;
+      // Check if user has access to Safety Meter feature
+      // safetyMeterAllowed on user is an admin override - if enabled, skip plan check
+      const safetyUser2 = await storage.getUser(effectiveUserId);
+      let hasSafetyMeterAccess = safetyUser2?.safetyMeterAllowed === true;
 
-      if (subscription) {
-        const plan = await storage.getPlan(subscription.planId);
-        if (plan) {
-          hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+      if (!hasSafetyMeterAccess) {
+        const subscription = await storage.getActiveSubscriptionForUser(req.userId!);
+        if (subscription) {
+          const plan = await storage.getPlan(subscription.planId);
+          if (plan) {
+            hasSafetyMeterAccess = (plan as any).safetyMeterEnabled === true;
+          }
         }
       }
 
@@ -6184,7 +6197,7 @@ export function registerRoutes(app: Express) {
         dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
         phonebookLimit, captureSequenceLimit, pageAccess,
         autoExtendEnabled, skipFriday, skipSaturday,
-        labelManagementAllowed, contactExportAllowed
+        labelManagementAllowed, contactExportAllowed, safetyMeterAllowed
       } = req.body;
 
       const user = await storage.getUser(userId);
@@ -6224,6 +6237,9 @@ export function registerRoutes(app: Express) {
       }
       if (contactExportAllowed !== undefined) {
         userUpdates.contactExportAllowed = contactExportAllowed;
+      }
+      if (safetyMeterAllowed !== undefined) {
+        userUpdates.safetyMeterAllowed = safetyMeterAllowed;
       }
       if (Object.keys(userUpdates).length > 0) {
         await storage.updateUser(userId, userUpdates);

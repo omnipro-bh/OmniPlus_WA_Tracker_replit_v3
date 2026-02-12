@@ -50,6 +50,7 @@ export const users = pgTable("users", {
   // Label management settings (admin-controlled per-user override)
   labelManagementAllowed: boolean("label_management_allowed").notNull().default(true), // Admin can disable for specific users
   contactExportAllowed: boolean("contact_export_allowed").notNull().default(true), // Admin can disable contact export for specific users
+  safetyMeterAllowed: boolean("safety_meter_allowed").notNull().default(false), // Admin override to enable Safety Meter for specific users
   chatbotLabelId: text("chatbot_label_id"), // WHAPI label ID for "Chatbot" label
   chatbotLabelName: text("chatbot_label_name").notNull().default("Chatbot"),
   inquiryLabelId: text("inquiry_label_id"), // WHAPI label ID for "Inquiries" label

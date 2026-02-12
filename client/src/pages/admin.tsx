@@ -1976,6 +1976,7 @@ export default function Admin() {
     skipSaturday: false,
     labelManagementAllowed: true,
     contactExportAllowed: true,
+    safetyMeterAllowed: false,
   });
 
   // Proof viewer dialog state
@@ -2804,6 +2805,7 @@ export default function Admin() {
       skipSaturday: subscription?.skipSaturday || false,
       labelManagementAllowed: user.labelManagementAllowed !== false,
       contactExportAllowed: user.contactExportAllowed !== false,
+      safetyMeterAllowed: user.safetyMeterAllowed === true,
     });
     setIsUserDrawerOpen(true);
   };
@@ -2826,6 +2828,7 @@ export default function Admin() {
       skipSaturday: userOverrides.skipSaturday,
       labelManagementAllowed: userOverrides.labelManagementAllowed,
       contactExportAllowed: userOverrides.contactExportAllowed,
+      safetyMeterAllowed: userOverrides.safetyMeterAllowed,
     };
 
     updateOverridesMutation.mutate({ userId: selectedUserForDrawer.id, overrides });
@@ -5206,6 +5209,35 @@ export default function Admin() {
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
                     When enabled, this overrides the plan setting and allows the user to export WhatsApp contacts regardless of plan configuration.
+                  </p>
+                </div>
+              </div>
+
+              {/* Safety Meter Override */}
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Safety Meter</h3>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Enable WhatsApp Safety Meter feature for this user.
+                </p>
+                <div className="space-y-3 p-3 bg-card border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="safety-meter-allowed"
+                      checked={userOverrides.safetyMeterAllowed}
+                      onCheckedChange={(checked) => {
+                        setUserOverrides({
+                          ...userOverrides,
+                          safetyMeterAllowed: !!checked,
+                        });
+                      }}
+                      data-testid="checkbox-safety-meter-allowed"
+                    />
+                    <Label htmlFor="safety-meter-allowed" className="cursor-pointer">
+                      Allow Safety Meter for this user
+                    </Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-6">
+                    When enabled, this overrides the plan setting and allows the user to access Safety Meter regardless of plan configuration.
                   </p>
                 </div>
               </div>
