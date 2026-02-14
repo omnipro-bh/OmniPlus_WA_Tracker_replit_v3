@@ -1063,7 +1063,7 @@ export const bookingsRelations = relations(bookings, ({ one }) => ({
 // User-specific booking notification settings
 export const userBookingSettings = pgTable("user_booking_settings", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   confirmMessage: text("confirm_message"),
   rescheduleMessage: text("reschedule_message"),
   cancelMessage: text("cancel_message"),
