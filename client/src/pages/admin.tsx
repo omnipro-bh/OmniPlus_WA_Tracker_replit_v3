@@ -263,6 +263,7 @@ function DefaultPageAccessSettings() {
     subscribers: false,
     safetyMeter: false,
     bookingScheduler: false,
+    labelLogs: false,
   });
 
   const { data: settings, isLoading } = useQuery<{pageAccess: typeof pageAccess}>({
@@ -327,6 +328,7 @@ function DefaultPageAccessSettings() {
     { key: "balances", label: "Balances", description: "View balance information" },
     { key: "whapiSettings", label: "WHAPI Settings", description: "WHAPI configuration" },
     { key: "bookingScheduler", label: "Booking Scheduler", description: "Appointment booking system" },
+    { key: "labelLogs", label: "Label Logs", description: "View label management logs" },
   ];
 
   return (

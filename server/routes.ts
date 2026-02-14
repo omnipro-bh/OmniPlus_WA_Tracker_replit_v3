@@ -491,12 +491,17 @@ export function registerRoutes(app: Express) {
               balances: false,
               whapiSettings: false,
               bookingScheduler: false,
+              labelLogs: false,
             };
       }
 
       // If user has safetyMeterAllowed override, force safetyMeter page access on
       if (user.safetyMeterAllowed && effectivePageAccess) {
         (effectivePageAccess as any).safetyMeter = true;
+      }
+      // If user has labelManagementAllowed override, force labelLogs page access on
+      if (user.labelManagementAllowed && effectivePageAccess) {
+        (effectivePageAccess as any).labelLogs = true;
       }
 
       // Get channels count for the effective user
