@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { storage } from "./storage";
-import { logoutChannel, extendWhapiChannel, sendTextMessage } from "./whapi";
+import { logoutChannel, extendWhapiChannel, sendTextMessage, getChannelHealth } from "./whapi";
 import fs from "fs";
 import path from "path";
 import dayjs from "dayjs";
@@ -348,15 +348,46 @@ export class BackgroundWorker {
           
           for (const channel of extendableChannels) {
             try {
-              // Check if channel has WHAPI channel ID for API call
-              if (!channel.whapiChannelId) {
-                console.log(`[AutoExtend] Channel "${channel.label}" (ID: ${channel.id}) has no WHAPI channel ID, skipping`);
+              // Check if channel has WHAPI channel ID and token for API call
+              if (!channel.whapiChannelId || !channel.whapiChannelToken) {
+                console.log(`[AutoExtend] Channel "${channel.label}" (ID: ${channel.id}) is missing WHAPI ID or Token, skipping`);
                 userFailedCount++;
                 errorCount++;
                 failedChannels.push({
                   id: channel.id,
                   label: channel.label,
-                  error: "No WHAPI channel ID configured",
+                  error: !channel.whapiChannelId ? "No WHAPI channel ID" : "No WHAPI channel token",
+                });
+                continue;
+              }
+
+              // Check channel health before extending
+              try {
+                const health = await getChannelHealth(channel.whapiChannelToken);
+                const statusText = health.status?.text;
+                
+                if (statusText === "QR") {
+                  console.log(`[AutoExtend] Skipping channel "${channel.label}" - Status is QR (Not Authorized)`);
+                  skippedCount++;
+                  continue;
+                }
+                
+                if (statusText !== "AUTH") {
+                  console.log(`[AutoExtend] Skipping channel "${channel.label}" - Unexpected status: ${statusText}`);
+                  skippedCount++;
+                  continue;
+                }
+                
+                console.log(`[AutoExtend] Channel "${channel.label}" is AUTHORIZED, proceeding with extension`);
+              } catch (healthError) {
+                console.error(`[AutoExtend] Health check failed for channel ${channel.id}:`, healthError);
+                // If health check fails, we skip to be safe
+                userFailedCount++;
+                errorCount++;
+                failedChannels.push({
+                  id: channel.id,
+                  label: channel.label,
+                  error: `Health check failed: ${healthError instanceof Error ? healthError.message : String(healthError)}`,
                 });
                 continue;
               }

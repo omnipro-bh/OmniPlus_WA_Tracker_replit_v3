@@ -139,6 +139,27 @@ export async function getChannelQRCode(channelToken: string) {
   };
 }
 
+// Get channel health from WHAPI Gate API
+export async function getChannelHealth(channelToken: string) {
+  // Ensure token has Bearer prefix (add if missing)
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  
+  const response = await fetch("https://gate.whapi.cloud/health?wakeup=true&channel_type=web", {
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Failed to get channel health (status ${response.status})`);
+  }
+
+  // Response: { status: { code: 4, text: "AUTH" }, ... } or { status: { code: 3, text: "QR" }, ... }
+  return await response.json();
+}
+
 // Get channel status from WHAPI Gate API
 // Uses channel token (not partner token) via gate.whapi.cloud
 export async function getChannelStatus(whapiChannelId: string, channelToken: string) {
