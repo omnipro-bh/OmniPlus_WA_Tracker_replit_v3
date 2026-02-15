@@ -6664,6 +6664,41 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Delete user (admin only)
+  app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role === "admin") {
+        return res.status(400).json({ error: "Cannot delete admin users" });
+      }
+
+      await storage.deleteUser(userId);
+
+      await storage.createAuditLog({
+        actorUserId: req.userId!,
+        targetType: "user",
+        targetId: userId,
+        action: "DELETE_USER",
+        meta: { 
+          email: user.email, 
+          name: user.name,
+          adminId: req.userId 
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete user error:", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
   // ============================================================================
   // WHAPI SETTINGS
   // ============================================================================
