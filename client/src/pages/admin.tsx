@@ -2785,7 +2785,6 @@ export default function Admin() {
     // Build complete pageAccess object with all keys
     const completePageAccess: Record<string, boolean> = {};
     for (const key of allPageKeys) {
-      // If subscription has explicit override, use it; otherwise use plan value
       if (subscriptionPageAccess.hasOwnProperty(key)) {
         completePageAccess[key] = subscriptionPageAccess[key];
       } else {
@@ -5277,55 +5276,11 @@ export default function Admin() {
                     <Minus className="h-3 w-3 mr-1" />
                     Remove Days
                   </Button>
-                  {selectedUserForDrawer.status === "active" ? (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => {
-                        if (confirm(`Ban user ${selectedUserForDrawer.email}? They will be unable to access the platform.`)) {
-                          banUserMutation.mutate(selectedUserForDrawer.id);
-                        }
-                      }}
-                      data-testid="button-ban-user"
-                    >
-                      <XCircle className="h-3 w-3 mr-1" />
-                      Ban User
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (confirm(`Unban user ${selectedUserForDrawer.email}?`)) {
-                          unbanUserMutation.mutate(selectedUserForDrawer.id);
-                        }
-                      }}
-                      data-testid="button-unban-user"
-                    >
-                      <CheckCircle className="h-3 w-3 mr-1 text-success" />
-                      Unban User
-                    </Button>
-                  )}
-                  {selectedUserForDrawer.currentSubscription?.status === "ACTIVE" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (confirm(`Cancel subscription for ${selectedUserForDrawer.email}? Their subscription will be marked as cancelled.`)) {
-                          cancelSubscriptionMutation.mutate(selectedUserForDrawer.id);
-                        }
-                      }}
-                      data-testid="button-cancel-subscription"
-                    >
-                      <XCircle className="h-3 w-3 mr-1" />
-                      Cancel Subscription
-                    </Button>
-                  )}
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
-                      if (confirm(`DELETE user ${selectedUserForDrawer.email}? This will permanently delete all their data including channels, messages, workflows, and subscriptions. This action CANNOT be undone!`)) {
+                      if (confirm(`ARE YOU SURE? This will permanently delete user ${selectedUserForDrawer.email} and ALL their data (channels, workflows, bookings, etc). This action CANNOT be undone!`)) {
                         deleteUserMutation.mutate(selectedUserForDrawer.id);
                       }
                     }}
