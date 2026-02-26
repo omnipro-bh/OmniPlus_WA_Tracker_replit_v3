@@ -6682,6 +6682,7 @@ export function registerRoutes(app: Express) {
 
       // Create audit log with target user ID BEFORE deletion for history
       try {
+        console.log(`[Admin] Creating audit log for deletion of user ${userId}`);
         await storage.createAuditLog({
           actorUserId: req.userId!,
           targetUserId: userId,
@@ -6698,13 +6699,18 @@ export function registerRoutes(app: Express) {
         console.error("[Admin] Audit log failed, proceeding with deletion:", auditError);
       }
 
+      console.log(`[Admin] Executing deletion for user ${userId}`);
       await storage.deleteUser(userId);
       console.log(`[Admin] Successfully deleted user ${userId}`);
 
       res.json({ success: true, message: "User deleted successfully" });
     } catch (error: any) {
-      console.error("Delete user error:", error);
-      res.status(500).json({ error: "Failed to delete user" });
+      console.error("[Admin] Delete user error:", error);
+      res.status(500).json({ 
+        error: "Failed to delete user", 
+        message: error.message,
+        details: error.stack 
+      });
     }
   });
 

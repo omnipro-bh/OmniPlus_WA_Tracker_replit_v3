@@ -313,7 +313,60 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: number): Promise<void> {
-    await db.delete(schema.users).where(eq(schema.users.id, id));
+    await db.transaction(async (tx) => {
+      console.log(`[Storage] Starting manual cleanup for user ${id}`);
+      
+      // 1. Delete dependent data first (backward dependency chain)
+      
+      // Messages and Logs
+      await tx.delete(schema.messages).where(sql`${schema.messages.jobId} IN (SELECT id FROM ${schema.jobs} WHERE user_id = ${id})`);
+      await tx.delete(schema.bulkLogs).where(eq(schema.bulkLogs.userId, id));
+      await tx.delete(schema.jobs).where(eq(schema.jobs.userId, id));
+      
+      // Workflows and their states
+      await tx.delete(schema.workflowExecutions).where(sql`${schema.workflowExecutions.workflowId} IN (SELECT id FROM ${schema.workflows} WHERE user_id = ${id})`);
+      await tx.delete(schema.conversationStates).where(sql`${schema.conversationStates.workflowId} IN (SELECT id FROM ${schema.workflows} WHERE user_id = ${id})`);
+      await tx.delete(schema.sentMessages).where(sql`${schema.sentMessages.workflowId} IN (SELECT id FROM ${schema.workflows} WHERE user_id = ${id})`);
+      await tx.delete(schema.captureSequences).where(eq(schema.captureSequences.userId, id));
+      await tx.delete(schema.capturedData).where(eq(schema.capturedData.userId, id));
+      await tx.delete(schema.workflows).where(eq(schema.workflows.userId, id));
+      
+      // Bookings
+      await tx.delete(schema.bookingStaffSlots).where(sql`${schema.bookingStaffSlots.staffId} IN (SELECT id FROM ${schema.bookingStaff} WHERE user_id = ${id})`);
+      await tx.delete(schema.bookings).where(eq(schema.bookings.userId, id));
+      await tx.delete(schema.bookingStaff).where(eq(schema.bookingStaff.userId, id));
+      await tx.delete(schema.bookingDepartments).where(eq(schema.bookingDepartments.userId, id));
+      await tx.delete(schema.bookingServices).where(eq(schema.bookingServices.userId, id));
+      await tx.delete(schema.userBookingSettings).where(eq(schema.userBookingSettings.userId, id));
+      
+      // Phonebooks
+      await tx.delete(schema.phonebookContacts).where(sql`${schema.phonebookContacts.phonebookId} IN (SELECT id FROM ${schema.phonebooks} WHERE user_id = ${id})`);
+      await tx.delete(schema.phonebooks).where(eq(schema.phonebooks.userId, id));
+      
+      // Finance and Channels
+      await tx.delete(schema.channelDaysLedger).where(sql`${schema.channelDaysLedger.channelId} IN (SELECT id FROM ${schema.channels} WHERE user_id = ${id})`);
+      await tx.delete(schema.balanceTransactions).where(eq(schema.balanceTransactions.userId, id));
+      await tx.delete(schema.ledger).where(eq(schema.ledger.userId, id));
+      await tx.delete(schema.subscriptions).where(eq(schema.subscriptions.userId, id));
+      await tx.delete(schema.offlinePayments).where(eq(schema.offlinePayments.userId, id));
+      await tx.delete(schema.channels).where(eq(schema.channels.userId, id));
+      
+      // Misc
+      await tx.delete(schema.subscribers).where(eq(schema.subscribers.userId, id));
+      await tx.delete(schema.mediaUploads).where(eq(schema.mediaUploads.userId, id));
+      await tx.delete(schema.templates).where(eq(schema.templates.userId, id));
+      await tx.delete(schema.labelLogs).where(eq(schema.labelLogs.userId, id));
+      await tx.delete(schema.userCustomPlans).where(eq(schema.userCustomPlans.userId, id));
+      
+      // Audit Logs - set actor to null and delete where target
+      await tx.update(schema.auditLogs).set({ actorUserId: null }).where(eq(schema.auditLogs.actorUserId, id));
+      await tx.delete(schema.auditLogs).where(eq(schema.auditLogs.targetUserId, id));
+      
+      // Finally delete the user
+      await tx.delete(schema.users).where(eq(schema.users.id, id));
+      
+      console.log(`[Storage] Manual cleanup complete for user ${id}`);
+    });
   }
 
   async getAllUsers(): Promise<User[]> {

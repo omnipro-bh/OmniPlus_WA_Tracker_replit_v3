@@ -18,11 +18,26 @@ __export(schema_exports, {
   balanceTransactions: () => balanceTransactions,
   balanceTransactionsRelations: () => balanceTransactionsRelations,
   billingPeriodEnum: () => billingPeriodEnum,
+  bookingDepartments: () => bookingDepartments,
+  bookingDepartmentsRelations: () => bookingDepartmentsRelations,
+  bookingServices: () => bookingServices,
+  bookingServicesRelations: () => bookingServicesRelations,
+  bookingStaff: () => bookingStaff,
+  bookingStaffRelations: () => bookingStaffRelations,
+  bookingStaffSlots: () => bookingStaffSlots,
+  bookingStaffSlotsRelations: () => bookingStaffSlotsRelations,
+  bookingStatusEnum: () => bookingStatusEnum,
+  bookings: () => bookings,
+  bookingsRelations: () => bookingsRelations,
   bulkLogCategoryEnum: () => bulkLogCategoryEnum,
   bulkLogLevelEnum: () => bulkLogLevelEnum,
   bulkLogs: () => bulkLogs,
   bulkLogsRelations: () => bulkLogsRelations,
   buttonSchema: () => buttonSchema,
+  captureSequences: () => captureSequences,
+  captureSequencesRelations: () => captureSequencesRelations,
+  capturedData: () => capturedData,
+  capturedDataRelations: () => capturedDataRelations,
   channelDaysLedger: () => channelDaysLedger,
   channelDaysLedgerRelations: () => channelDaysLedgerRelations,
   channelDaysSourceEnum: () => channelDaysSourceEnum,
@@ -40,7 +55,14 @@ __export(schema_exports, {
   incomingMessageTypeEnum: () => incomingMessageTypeEnum,
   insertAuditLogSchema: () => insertAuditLogSchema,
   insertBalanceTransactionSchema: () => insertBalanceTransactionSchema,
+  insertBookingDepartmentSchema: () => insertBookingDepartmentSchema,
+  insertBookingSchema: () => insertBookingSchema,
+  insertBookingServiceSchema: () => insertBookingServiceSchema,
+  insertBookingStaffSchema: () => insertBookingStaffSchema,
+  insertBookingStaffSlotSchema: () => insertBookingStaffSlotSchema,
   insertBulkLogSchema: () => insertBulkLogSchema,
+  insertCaptureSequenceSchema: () => insertCaptureSequenceSchema,
+  insertCapturedDataSchema: () => insertCapturedDataSchema,
   insertChannelDaysLedgerSchema: () => insertChannelDaysLedgerSchema,
   insertChannelSchema: () => insertChannelSchema,
   insertConversationStateSchema: () => insertConversationStateSchema,
@@ -48,6 +70,7 @@ __export(schema_exports, {
   insertFirstMessageFlagSchema: () => insertFirstMessageFlagSchema,
   insertHomepageFeatureSchema: () => insertHomepageFeatureSchema,
   insertJobSchema: () => insertJobSchema,
+  insertLabelLogSchema: () => insertLabelLogSchema,
   insertLedgerSchema: () => insertLedgerSchema,
   insertMediaUploadSchema: () => insertMediaUploadSchema,
   insertMessageSchema: () => insertMessageSchema,
@@ -71,6 +94,10 @@ __export(schema_exports, {
   jobTypeEnum: () => jobTypeEnum,
   jobs: () => jobs,
   jobsRelations: () => jobsRelations,
+  labelLogOperationEnum: () => labelLogOperationEnum,
+  labelLogStatusEnum: () => labelLogStatusEnum,
+  labelLogs: () => labelLogs,
+  labelLogsRelations: () => labelLogsRelations,
   lastReplyTypeEnum: () => lastReplyTypeEnum,
   ledger: () => ledger,
   ledgerRelations: () => ledgerRelations,
@@ -109,6 +136,8 @@ __export(schema_exports, {
   templatesRelations: () => templatesRelations,
   termsDocuments: () => termsDocuments,
   useCases: () => useCases,
+  userBookingSettings: () => userBookingSettings,
+  userBookingSettingsRelations: () => userBookingSettingsRelations,
   userCustomPlans: () => userCustomPlans,
   userCustomPlansRelations: () => userCustomPlansRelations,
   userRoleEnum: () => userRoleEnum,
@@ -123,11 +152,11 @@ __export(schema_exports, {
   workflowsRelations: () => workflowsRelations
 });
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, serial } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-var userRoleEnum, userStatusEnum, channelStatusEnum, authStatusEnum, subscriptionStatusEnum, durationTypeEnum, billingPeriodEnum, requestTypeEnum, offlinePaymentStatusEnum, offlinePaymentTypeEnum, jobTypeEnum, jobStatusEnum, messageStatusEnum, balanceTransactionTypeEnum, channelDaysSourceEnum, workflowExecutionStatusEnum, incomingMessageTypeEnum, lastReplyTypeEnum, planRequestStatusEnum, bulkLogLevelEnum, bulkLogCategoryEnum, planTypeEnum, couponStatusEnum, ledgerTransactionTypeEnum, outgoingMessageTypeEnum, subscriberStatusEnum, users, usersRelations, plans, plansRelations, coupons, subscriptions, subscriptionsRelations, offlinePayments, offlinePaymentsRelations, planRequests, planRequestsRelations, userCustomPlans, userCustomPlansRelations, termsDocuments, ledger, ledgerRelations, webhookEvents, couponsRelations, channels, channelsRelations, templates, templatesRelations, jobs, jobsRelations, messages, messagesRelations, workflows, workflowsRelations, sentMessages, sentMessagesRelations, conversationStates, firstMessageFlags, conversationStatesRelations, workflowExecutions, workflowExecutionsRelations, auditLogs, auditLogsRelations, bulkLogs, bulkLogsRelations, settings, balanceTransactions, channelDaysLedger, balanceTransactionsRelations, channelDaysLedgerRelations, useCases, homepageFeatures, phonebooks, phonebooksRelations, phonebookContacts, phonebookContactsRelations, mediaUploads, mediaUploadsRelations, subscribers, subscribersRelations, insertUserSchema, insertPlanSchema, insertSubscriptionSchema, insertOfflinePaymentSchema, insertPlanRequestSchema, insertChannelSchema, buttonSchema, insertTemplateSchema, insertJobSchema, insertMessageSchema, insertWorkflowSchema, insertAuditLogSchema, insertSettingSchema, insertBalanceTransactionSchema, insertChannelDaysLedgerSchema, insertConversationStateSchema, insertFirstMessageFlagSchema, insertWorkflowExecutionSchema, insertBulkLogSchema, insertCouponSchema, insertUserCustomPlanSchema, insertTermsDocumentSchema, insertLedgerSchema, insertWebhookEventSchema, insertUseCaseSchema, insertHomepageFeatureSchema, insertPhonebookSchema, insertPhonebookContactSchema, insertMediaUploadSchema, insertSubscriberSchema;
+var userRoleEnum, userStatusEnum, channelStatusEnum, authStatusEnum, subscriptionStatusEnum, durationTypeEnum, billingPeriodEnum, requestTypeEnum, offlinePaymentStatusEnum, offlinePaymentTypeEnum, jobTypeEnum, jobStatusEnum, messageStatusEnum, balanceTransactionTypeEnum, channelDaysSourceEnum, workflowExecutionStatusEnum, incomingMessageTypeEnum, lastReplyTypeEnum, planRequestStatusEnum, bulkLogLevelEnum, bulkLogCategoryEnum, planTypeEnum, couponStatusEnum, ledgerTransactionTypeEnum, outgoingMessageTypeEnum, subscriberStatusEnum, bookingStatusEnum, labelLogOperationEnum, labelLogStatusEnum, users, usersRelations, plans, plansRelations, coupons, subscriptions, subscriptionsRelations, offlinePayments, offlinePaymentsRelations, planRequests, planRequestsRelations, userCustomPlans, userCustomPlansRelations, termsDocuments, ledger, ledgerRelations, webhookEvents, couponsRelations, channels, channelsRelations, templates, templatesRelations, jobs, jobsRelations, messages, messagesRelations, workflows, workflowsRelations, sentMessages, sentMessagesRelations, conversationStates, firstMessageFlags, conversationStatesRelations, workflowExecutions, workflowExecutionsRelations, labelLogs, labelLogsRelations, auditLogs, auditLogsRelations, bulkLogs, bulkLogsRelations, settings, balanceTransactions, channelDaysLedger, balanceTransactionsRelations, channelDaysLedgerRelations, useCases, homepageFeatures, phonebooks, phonebooksRelations, phonebookContacts, phonebookContactsRelations, mediaUploads, mediaUploadsRelations, subscribers, subscribersRelations, captureSequences, captureSequencesRelations, capturedData, capturedDataRelations, bookingServices, bookingServicesRelations, bookingDepartments, bookingDepartmentsRelations, bookingStaff, bookingStaffRelations, bookingStaffSlots, bookingStaffSlotsRelations, bookings, bookingsRelations, userBookingSettings, userBookingSettingsRelations, insertUserSchema, insertPlanSchema, insertSubscriptionSchema, insertOfflinePaymentSchema, insertPlanRequestSchema, insertChannelSchema, buttonSchema, insertTemplateSchema, insertJobSchema, insertMessageSchema, insertWorkflowSchema, insertAuditLogSchema, insertSettingSchema, insertBalanceTransactionSchema, insertChannelDaysLedgerSchema, insertConversationStateSchema, insertFirstMessageFlagSchema, insertWorkflowExecutionSchema, insertLabelLogSchema, insertBulkLogSchema, insertCouponSchema, insertUserCustomPlanSchema, insertTermsDocumentSchema, insertLedgerSchema, insertWebhookEventSchema, insertUseCaseSchema, insertHomepageFeatureSchema, insertPhonebookSchema, insertPhonebookContactSchema, insertMediaUploadSchema, insertSubscriberSchema, insertCaptureSequenceSchema, insertCapturedDataSchema, insertBookingServiceSchema, insertBookingDepartmentSchema, insertBookingStaffSchema, insertBookingStaffSlotSchema, insertBookingSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -142,7 +171,7 @@ var init_schema = __esm({
     offlinePaymentStatusEnum = pgEnum("offline_payment_status", ["PENDING", "APPROVED", "REJECTED"]);
     offlinePaymentTypeEnum = pgEnum("offline_payment_type", ["OFFLINE_PAYMENT", "FREE_TRIAL"]);
     jobTypeEnum = pgEnum("job_type", ["SINGLE", "BULK"]);
-    jobStatusEnum = pgEnum("job_status", ["QUEUED", "PROCESSING", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "PARTIAL", "COMPLETED"]);
+    jobStatusEnum = pgEnum("job_status", ["QUEUED", "PROCESSING", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "PARTIAL", "COMPLETED", "PAUSED"]);
     messageStatusEnum = pgEnum("message_status", ["QUEUED", "PENDING", "SENT", "DELIVERED", "READ", "FAILED", "REPLIED"]);
     balanceTransactionTypeEnum = pgEnum("balance_transaction_type", ["topup", "allocate", "refund", "sync", "adjustment"]);
     channelDaysSourceEnum = pgEnum("channel_days_source", ["ADMIN_MANUAL", "PAYPAL", "OFFLINE", "MIGRATION"]);
@@ -157,6 +186,9 @@ var init_schema = __esm({
     ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAYMENT_IN", "PAYMENT_IN_OFFLINE", "DAYS_GRANTED", "DAYS_REFUND", "ADJUSTMENT"]);
     outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
     subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
+    bookingStatusEnum = pgEnum("booking_status", ["pending", "confirmed", "cancelled", "completed", "no_show"]);
+    labelLogOperationEnum = pgEnum("label_log_operation", ["sync", "create", "assign", "remove"]);
+    labelLogStatusEnum = pgEnum("label_log_status", ["success", "error"]);
     users = pgTable("users", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       name: text("name").notNull(),
@@ -171,6 +203,19 @@ var init_schema = __esm({
       bulkWebhookToken: text("bulk_webhook_token").notNull().default(sql`gen_random_uuid()::text`),
       phonebookLimit: integer("phonebook_limit"),
       // Per-user override for phonebook contact limit (null = use plan limit)
+      // Label management settings (admin-controlled per-user override)
+      labelManagementAllowed: boolean("label_management_allowed").notNull().default(true),
+      // Admin can disable for specific users
+      contactExportAllowed: boolean("contact_export_allowed").notNull().default(true),
+      // Admin can disable contact export for specific users
+      safetyMeterAllowed: boolean("safety_meter_allowed").notNull().default(false),
+      // Admin override to enable Safety Meter for specific users
+      chatbotLabelId: text("chatbot_label_id"),
+      // WHAPI label ID for "Chatbot" label
+      chatbotLabelName: text("chatbot_label_name").notNull().default("Chatbot"),
+      inquiryLabelId: text("inquiry_label_id"),
+      // WHAPI label ID for "Inquiries" label
+      inquiryLabelName: text("inquiry_label_name").notNull().default("Inquiries"),
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     });
@@ -219,6 +264,8 @@ var init_schema = __esm({
       chatbotsLimit: integer("chatbots_limit").notNull().default(-1),
       phonebookLimit: integer("phonebook_limit").notNull().default(-1),
       // Max contacts per phonebook (-1 = unlimited)
+      captureSequenceLimit: integer("capture_sequence_limit").notNull().default(-1),
+      // Max capture sequences user can create (-1 = unlimited)
       // File Upload Limits (in MB)
       maxImageSizeMB: integer("max_image_size_mb").notNull().default(5),
       // Default 5MB (WhatsApp limit: 5MB)
@@ -241,8 +288,14 @@ var init_schema = __esm({
         balances: false,
         whapiSettings: false,
         phonebooks: false,
-        subscribers: false
+        subscribers: false,
+        captureList: false,
+        bookingScheduler: false
       }),
+      labelManagementEnabled: boolean("label_management_enabled").notNull().default(false),
+      // Enable auto-labeling feature for this plan
+      contactExportEnabled: boolean("contact_export_enabled").notNull().default(false),
+      // Enable contact export from WHAPI for this plan
       features: jsonb("features").notNull().default([]),
       // Array of feature strings
       // Pricing Controls
@@ -322,8 +375,17 @@ var init_schema = __esm({
       // null = use plan default
       phonebookLimit: integer("phonebook_limit_override"),
       // null = use plan default
+      captureSequenceLimit: integer("capture_sequence_limit_override"),
+      // null = use plan default
       pageAccess: jsonb("page_access_override"),
       // null = use plan default, object = override specific pages
+      // Auto-extend settings
+      autoExtendEnabled: boolean("auto_extend_enabled").notNull().default(false),
+      // Auto-add 1 day daily from main balance
+      skipFriday: boolean("skip_friday").notNull().default(false),
+      // Skip auto-extend on Fridays
+      skipSaturday: boolean("skip_saturday").notNull().default(false),
+      // Skip auto-extend on Saturdays
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     });
@@ -437,8 +499,8 @@ var init_schema = __esm({
     ledger = pgTable("ledger", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-      subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
-      channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+      subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }),
+      channelId: integer("channel_id").references(() => channels.id, { onDelete: "cascade" }),
       transactionType: ledgerTransactionTypeEnum("transaction_type").notNull(),
       amount: integer("amount").notNull(),
       // Amount in cents (positive or negative)
@@ -636,6 +698,8 @@ var init_schema = __esm({
       isActive: boolean("is_active").notNull().default(true),
       entryNodeId: text("entry_node_id"),
       // The "welcome" message node ID
+      labelManagementEnabled: boolean("label_management_enabled").notNull().default(false),
+      // Per-workflow label assignment toggle
       createdAt: timestamp("created_at").notNull().defaultNow(),
       updatedAt: timestamp("updated_at").notNull().defaultNow()
     });
@@ -720,6 +784,38 @@ var init_schema = __esm({
         references: [workflows.id]
       })
     }));
+    labelLogs = pgTable("label_logs", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+      operation: labelLogOperationEnum("operation").notNull(),
+      // sync, create, assign, remove
+      labelType: text("label_type"),
+      // "chatbot" or "inquiry"
+      labelId: text("label_id"),
+      // WHAPI label ID
+      labelName: text("label_name"),
+      // Label name
+      chatId: text("chat_id"),
+      // For assign/remove operations
+      status: labelLogStatusEnum("status").notNull(),
+      requestPayload: jsonb("request_payload").default({}),
+      // API request payload
+      responseData: jsonb("response_data").default({}),
+      // API response or error
+      errorMessage: text("error_message"),
+      createdAt: timestamp("created_at").notNull().defaultNow()
+    });
+    labelLogsRelations = relations(labelLogs, ({ one }) => ({
+      user: one(users, {
+        fields: [labelLogs.userId],
+        references: [users.id]
+      }),
+      channel: one(channels, {
+        fields: [labelLogs.channelId],
+        references: [channels.id]
+      })
+    }));
     auditLogs = pgTable("audit_logs", {
       id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
       actorUserId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -728,6 +824,8 @@ var init_schema = __esm({
       // user, channel, plan, payment, etc.
       targetId: integer("target_id"),
       // ID of the target
+      targetUserId: integer("target_user_id").references(() => users.id, { onDelete: "cascade" }),
+      // User the action was performed on
       action: text("action").notNull(),
       // ban_user, approve_payment, delete_channel, etc.
       reason: text("reason"),
@@ -776,8 +874,8 @@ var init_schema = __esm({
       type: balanceTransactionTypeEnum("type").notNull(),
       days: integer("days").notNull(),
       // Positive integer
-      channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
-      userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+      channelId: integer("channel_id").references(() => channels.id, { onDelete: "cascade" }),
+      userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
       note: text("note").notNull(),
       createdAt: timestamp("created_at").notNull().defaultNow()
     });
@@ -946,6 +1044,222 @@ var init_schema = __esm({
         references: [users.id]
       })
     }));
+    captureSequences = pgTable("capture_sequences", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+      // Sequence Configuration
+      sequenceName: varchar("sequence_name", { length: 255 }).notNull(),
+      startNodeId: text("start_node_id").notNull(),
+      // Node ID where capture starts
+      endNodeId: text("end_node_id").notNull(),
+      // Node ID where capture ends (must have save/cancel buttons)
+      createdAt: timestamp("created_at").notNull().defaultNow(),
+      updatedAt: timestamp("updated_at").notNull().defaultNow()
+    });
+    captureSequencesRelations = relations(captureSequences, ({ one, many }) => ({
+      user: one(users, {
+        fields: [captureSequences.userId],
+        references: [users.id]
+      }),
+      workflow: one(workflows, {
+        fields: [captureSequences.workflowId],
+        references: [workflows.id]
+      }),
+      entries: many(capturedData)
+    }));
+    capturedData = pgTable("captured_data", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      sequenceId: integer("sequence_id").notNull().references(() => captureSequences.id, { onDelete: "cascade" }),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+      // Contact Info
+      phone: varchar("phone", { length: 50 }).notNull(),
+      // Captured Data (JSON array of button clicks)
+      clicksJson: jsonb("clicks_json").notNull().default([]),
+      // [{nodeId, nodeName, buttonText, buttonId, timestamp}]
+      // Metadata
+      workflowName: varchar("workflow_name", { length: 255 }),
+      sequenceName: varchar("sequence_name", { length: 255 }),
+      savedAt: timestamp("saved_at").notNull().defaultNow()
+    });
+    capturedDataRelations = relations(capturedData, ({ one }) => ({
+      sequence: one(captureSequences, {
+        fields: [capturedData.sequenceId],
+        references: [captureSequences.id]
+      }),
+      user: one(users, {
+        fields: [capturedData.userId],
+        references: [users.id]
+      }),
+      channel: one(channels, {
+        fields: [capturedData.channelId],
+        references: [channels.id]
+      })
+    }));
+    bookingServices = pgTable("booking_services", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      name: varchar("name", { length: 255 }).notNull(),
+      description: text("description"),
+      slotLabels: text("slot_labels").array(),
+      // Custom labels for time slots (e.g., weekdays or Morning/Evening/Night)
+      isActive: boolean("is_active").notNull().default(true),
+      createdAt: timestamp("created_at").notNull().defaultNow(),
+      updatedAt: timestamp("updated_at").notNull().defaultNow()
+    });
+    bookingServicesRelations = relations(bookingServices, ({ one, many }) => ({
+      user: one(users, {
+        fields: [bookingServices.userId],
+        references: [users.id]
+      }),
+      departments: many(bookingDepartments)
+    }));
+    bookingDepartments = pgTable("booking_departments", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      serviceId: integer("service_id").references(() => bookingServices.id, { onDelete: "cascade" }),
+      name: varchar("name", { length: 255 }).notNull(),
+      description: text("description"),
+      isActive: boolean("is_active").notNull().default(true),
+      createdAt: timestamp("created_at").notNull().defaultNow(),
+      updatedAt: timestamp("updated_at").notNull().defaultNow()
+    });
+    bookingDepartmentsRelations = relations(bookingDepartments, ({ one, many }) => ({
+      user: one(users, {
+        fields: [bookingDepartments.userId],
+        references: [users.id]
+      }),
+      service: one(bookingServices, {
+        fields: [bookingDepartments.serviceId],
+        references: [bookingServices.id]
+      }),
+      staff: many(bookingStaff)
+    }));
+    bookingStaff = pgTable("booking_staff", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      departmentId: integer("department_id").notNull().references(() => bookingDepartments.id, { onDelete: "cascade" }),
+      name: varchar("name", { length: 255 }).notNull(),
+      phone: varchar("phone", { length: 50 }),
+      email: varchar("email", { length: 255 }),
+      isActive: boolean("is_active").notNull().default(true),
+      createdAt: timestamp("created_at").notNull().defaultNow(),
+      updatedAt: timestamp("updated_at").notNull().defaultNow()
+    });
+    bookingStaffRelations = relations(bookingStaff, ({ one, many }) => ({
+      user: one(users, {
+        fields: [bookingStaff.userId],
+        references: [users.id]
+      }),
+      department: one(bookingDepartments, {
+        fields: [bookingStaff.departmentId],
+        references: [bookingDepartments.id]
+      }),
+      slots: many(bookingStaffSlots),
+      bookings: many(bookings)
+    }));
+    bookingStaffSlots = pgTable("booking_staff_slots", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      staffId: integer("staff_id").notNull().references(() => bookingStaff.id, { onDelete: "cascade" }),
+      dayOfWeek: integer("day_of_week").notNull(),
+      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      startTime: varchar("start_time", { length: 10 }).notNull(),
+      // Format: "HH:MM" (24hr)
+      endTime: varchar("end_time", { length: 10 }).notNull(),
+      // Format: "HH:MM" (24hr)
+      slotDuration: integer("slot_duration").notNull().default(30),
+      // Duration in minutes
+      capacity: integer("capacity").notNull().default(1),
+      // Max bookings per slot
+      isActive: boolean("is_active").notNull().default(true),
+      createdAt: timestamp("created_at").notNull().defaultNow()
+    });
+    bookingStaffSlotsRelations = relations(bookingStaffSlots, ({ one }) => ({
+      staff: one(bookingStaff, {
+        fields: [bookingStaffSlots.staffId],
+        references: [bookingStaff.id]
+      })
+    }));
+    bookings = pgTable("bookings", {
+      id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      workflowId: integer("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+      departmentId: integer("department_id").notNull().references(() => bookingDepartments.id, { onDelete: "cascade" }),
+      staffId: integer("staff_id").notNull().references(() => bookingStaff.id, { onDelete: "cascade" }),
+      // Booking Node Configuration (for differentiating multiple schedulers in same workflow)
+      nodeId: varchar("node_id", { length: 100 }),
+      // Workflow node ID
+      bookingLabel: varchar("booking_label", { length: 255 }),
+      // User-defined label (e.g., "Doctor Visit", "Consultation")
+      // Booking Details
+      slotDate: varchar("slot_date", { length: 10 }).notNull(),
+      // Format: "YYYY-MM-DD"
+      startTime: varchar("start_time", { length: 10 }).notNull(),
+      // Format: "HH:MM"
+      endTime: varchar("end_time", { length: 10 }).notNull(),
+      // Format: "HH:MM"
+      // Customer Info
+      customerPhone: varchar("customer_phone", { length: 50 }).notNull(),
+      // Phone number from chatbot
+      customerName: varchar("customer_name", { length: 255 }),
+      customField1Label: varchar("custom_field1_label", { length: 255 }),
+      customField1Value: varchar("custom_field1_value", { length: 500 }),
+      customField2Label: varchar("custom_field2_label", { length: 255 }),
+      customField2Value: varchar("custom_field2_value", { length: 500 }),
+      // Status
+      status: bookingStatusEnum("status").notNull().default("pending"),
+      // Additional Data
+      metadata: jsonb("metadata"),
+      // Extra fields collected from chatbot
+      // Reminder Settings (copied from workflow config at booking creation)
+      reminderEnabled: boolean("reminder_enabled").default(false),
+      reminderHoursBefore: integer("reminder_hours_before").default(24),
+      reminderMessage: text("reminder_message"),
+      reminderSent: boolean("reminder_sent").default(false),
+      createdAt: timestamp("created_at").notNull().defaultNow(),
+      updatedAt: timestamp("updated_at").notNull().defaultNow()
+    }, (table) => ({
+      // Index for fast lookup by customer phone (for "Check Bookings" feature)
+      customerPhoneIdx: uniqueIndex("bookings_customer_phone_date_idx").on(table.customerPhone, table.slotDate, table.staffId, table.startTime),
+      // Index for availability checks (most common query path)
+      availabilityIdx: uniqueIndex("bookings_availability_idx").on(table.staffId, table.slotDate, table.startTime, table.status)
+    }));
+    bookingsRelations = relations(bookings, ({ one }) => ({
+      user: one(users, {
+        fields: [bookings.userId],
+        references: [users.id]
+      }),
+      workflow: one(workflows, {
+        fields: [bookings.workflowId],
+        references: [workflows.id]
+      }),
+      department: one(bookingDepartments, {
+        fields: [bookings.departmentId],
+        references: [bookingDepartments.id]
+      }),
+      staff: one(bookingStaff, {
+        fields: [bookings.staffId],
+        references: [bookingStaff.id]
+      })
+    }));
+    userBookingSettings = pgTable("user_booking_settings", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      confirmMessage: text("confirm_message"),
+      rescheduleMessage: text("reschedule_message"),
+      cancelMessage: text("cancel_message"),
+      customDayNames: text("custom_day_names").array(),
+      // Array of 7 custom day names (Sunday-Saturday)
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    userBookingSettingsRelations = relations(userBookingSettings, ({ one }) => ({
+      user: one(users, {
+        fields: [userBookingSettings.userId],
+        references: [users.id]
+      })
+    }));
     insertUserSchema = createInsertSchema(users, {
       email: z.string().email(),
       name: z.string().min(1),
@@ -1037,6 +1351,7 @@ var init_schema = __esm({
     insertWorkflowExecutionSchema = createInsertSchema(workflowExecutions, {
       phone: z.string().min(1)
     });
+    insertLabelLogSchema = createInsertSchema(labelLogs).omit({ id: true, createdAt: true });
     insertBulkLogSchema = createInsertSchema(bulkLogs, {
       message: z.string().min(1)
     });
@@ -1104,6 +1419,54 @@ var init_schema = __esm({
       name: z.string().default(""),
       status: z.enum(["subscribed", "unsubscribed"]).optional()
     });
+    insertCaptureSequenceSchema = createInsertSchema(captureSequences, {
+      sequenceName: z.string().min(1, "Sequence name is required"),
+      startNodeId: z.string().min(1, "Start node ID is required"),
+      endNodeId: z.string().min(1, "End node ID is required")
+    });
+    insertCapturedDataSchema = createInsertSchema(capturedData, {
+      phone: z.string().min(1, "Phone number is required"),
+      clicksJson: z.array(z.object({
+        nodeId: z.string(),
+        nodeName: z.string().optional(),
+        buttonText: z.string(),
+        buttonId: z.string().optional(),
+        timestamp: z.string()
+      })).default([])
+    });
+    insertBookingServiceSchema = createInsertSchema(bookingServices, {
+      name: z.string().min(1, "Service name is required"),
+      description: z.string().optional()
+    });
+    insertBookingDepartmentSchema = createInsertSchema(bookingDepartments, {
+      name: z.string().min(1, "Department name is required"),
+      description: z.string().optional(),
+      serviceId: z.number().optional()
+    });
+    insertBookingStaffSchema = createInsertSchema(bookingStaff, {
+      name: z.string().min(1, "Staff name is required"),
+      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal(""))
+    });
+    insertBookingStaffSlotSchema = createInsertSchema(bookingStaffSlots, {
+      dayOfWeek: z.number().int().min(0).max(6),
+      startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+      endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+      slotDuration: z.number().int().min(5).max(480).default(30),
+      capacity: z.number().int().min(1).max(100).default(1)
+    });
+    insertBookingSchema = createInsertSchema(bookings, {
+      slotDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+      startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+      endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+      customerPhone: z.string().min(1, "Customer phone is required"),
+      customerName: z.string().optional(),
+      customField1Label: z.string().optional(),
+      customField1Value: z.string().optional(),
+      customField2Label: z.string().optional(),
+      customField2Value: z.string().optional(),
+      status: z.enum(["pending", "confirmed", "cancelled", "completed", "no_show"]).default("pending")
+    });
   }
 });
 
@@ -1133,7 +1496,7 @@ __export(storage_exports, {
   DatabaseStorage: () => DatabaseStorage,
   storage: () => storage
 });
-import { eq, and, desc, sql as sql2, like } from "drizzle-orm";
+import { eq, and, or, desc, sql as sql2, like, inArray } from "drizzle-orm";
 var DatabaseStorage, storage;
 var init_storage = __esm({
   "server/storage.ts"() {
@@ -1159,7 +1522,41 @@ var init_storage = __esm({
         return user || void 0;
       }
       async deleteUser(id) {
-        await db.delete(users).where(eq(users.id, id));
+        await db.transaction(async (tx) => {
+          console.log(`[Storage] Starting manual cleanup for user ${id}`);
+          await tx.delete(messages).where(sql2`${messages.jobId} IN (SELECT id FROM ${jobs} WHERE user_id = ${id})`);
+          await tx.delete(bulkLogs).where(eq(bulkLogs.userId, id));
+          await tx.delete(jobs).where(eq(jobs.userId, id));
+          await tx.delete(workflowExecutions).where(sql2`${workflowExecutions.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
+          await tx.delete(conversationStates).where(sql2`${conversationStates.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
+          await tx.delete(sentMessages).where(sql2`${sentMessages.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
+          await tx.delete(captureSequences).where(eq(captureSequences.userId, id));
+          await tx.delete(capturedData).where(eq(capturedData.userId, id));
+          await tx.delete(workflows).where(eq(workflows.userId, id));
+          await tx.delete(bookingStaffSlots).where(sql2`${bookingStaffSlots.staffId} IN (SELECT id FROM ${bookingStaff} WHERE user_id = ${id})`);
+          await tx.delete(bookings).where(eq(bookings.userId, id));
+          await tx.delete(bookingStaff).where(eq(bookingStaff.userId, id));
+          await tx.delete(bookingDepartments).where(eq(bookingDepartments.userId, id));
+          await tx.delete(bookingServices).where(eq(bookingServices.userId, id));
+          await tx.delete(userBookingSettings).where(eq(userBookingSettings.userId, id));
+          await tx.delete(phonebookContacts).where(sql2`${phonebookContacts.phonebookId} IN (SELECT id FROM ${phonebooks} WHERE user_id = ${id})`);
+          await tx.delete(phonebooks).where(eq(phonebooks.userId, id));
+          await tx.delete(channelDaysLedger).where(sql2`${channelDaysLedger.channelId} IN (SELECT id FROM ${channels} WHERE user_id = ${id})`);
+          await tx.delete(balanceTransactions).where(eq(balanceTransactions.userId, id));
+          await tx.delete(ledger).where(eq(ledger.userId, id));
+          await tx.delete(subscriptions).where(eq(subscriptions.userId, id));
+          await tx.delete(offlinePayments).where(eq(offlinePayments.userId, id));
+          await tx.delete(channels).where(eq(channels.userId, id));
+          await tx.delete(subscribers).where(eq(subscribers.userId, id));
+          await tx.delete(mediaUploads).where(eq(mediaUploads.userId, id));
+          await tx.delete(templates).where(eq(templates.userId, id));
+          await tx.delete(labelLogs).where(eq(labelLogs.userId, id));
+          await tx.delete(userCustomPlans).where(eq(userCustomPlans.userId, id));
+          await tx.update(auditLogs).set({ actorUserId: null }).where(eq(auditLogs.actorUserId, id));
+          await tx.delete(auditLogs).where(eq(auditLogs.targetUserId, id));
+          await tx.delete(users).where(eq(users.id, id));
+          console.log(`[Storage] Manual cleanup complete for user ${id}`);
+        });
       }
       async getAllUsers() {
         return await db.select().from(users).orderBy(desc(users.createdAt));
@@ -1242,6 +1639,14 @@ var init_storage = __esm({
         const [subscription] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "ACTIVE"))).orderBy(desc(subscriptions.createdAt)).limit(1);
         return subscription || void 0;
       }
+      async getSubscriptionsWithAutoExtend() {
+        return await db.select().from(subscriptions).where(
+          and(
+            eq(subscriptions.status, "ACTIVE"),
+            eq(subscriptions.autoExtendEnabled, true)
+          )
+        );
+      }
       async createSubscription(insertSubscription) {
         const [subscription] = await db.insert(subscriptions).values(insertSubscription).returning();
         return subscription;
@@ -1303,6 +1708,9 @@ var init_storage = __esm({
       async updateJob(id, data) {
         const [job] = await db.update(jobs).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(jobs.id, id)).returning();
         return job || void 0;
+      }
+      async deleteJob(id) {
+        await db.delete(jobs).where(eq(jobs.id, id));
       }
       // Messages
       async getMessagesForJob(jobId) {
@@ -1536,6 +1944,37 @@ var init_storage = __esm({
         }
         return await query;
       }
+      // Label Logs
+      async createLabelLog(log2) {
+        const [newLog] = await db.insert(labelLogs).values(log2).returning();
+        return newLog;
+      }
+      async getLabelLogs(filters) {
+        let query = db.select().from(labelLogs);
+        const conditions = [];
+        if (filters?.userId) {
+          conditions.push(eq(labelLogs.userId, filters.userId));
+        }
+        if (filters?.channelId) {
+          conditions.push(eq(labelLogs.channelId, filters.channelId));
+        }
+        if (filters?.operation) {
+          conditions.push(eq(labelLogs.operation, filters.operation));
+        }
+        if (filters?.status) {
+          conditions.push(eq(labelLogs.status, filters.status));
+        }
+        if (conditions.length > 0) {
+          query = query.where(and(...conditions));
+        }
+        query = query.orderBy(desc(labelLogs.createdAt));
+        if (filters?.limit) {
+          query = query.limit(filters.limit);
+        } else {
+          query = query.limit(100);
+        }
+        return await query;
+      }
       // Terms & Conditions
       async getActiveTermsDocuments() {
         return await db.select().from(termsDocuments).where(eq(termsDocuments.isActive, true)).orderBy(termsDocuments.type);
@@ -1634,6 +2073,21 @@ var init_storage = __esm({
         const [newContact] = await db.insert(phonebookContacts).values(contact).returning();
         return newContact;
       }
+      async createContactsBatch(contacts) {
+        if (contacts.length === 0) return 0;
+        const BATCH_SIZE = 100;
+        let insertedCount = 0;
+        for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+          const batch = contacts.slice(i, i + BATCH_SIZE);
+          try {
+            await db.insert(phonebookContacts).values(batch);
+            insertedCount += batch.length;
+          } catch (error) {
+            console.error(`Error inserting batch ${i / BATCH_SIZE + 1}:`, error);
+          }
+        }
+        return insertedCount;
+      }
       async updateContact(id, data) {
         const [contact] = await db.update(phonebookContacts).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(phonebookContacts.id, id)).returning();
         return contact || void 0;
@@ -1719,6 +2173,366 @@ var init_storage = __esm({
       async deleteSubscriber(id) {
         await db.delete(subscribers).where(eq(subscribers.id, id));
       }
+      // Capture Sequences
+      async getCaptureSequencesForUser(userId) {
+        return await db.select().from(captureSequences).where(eq(captureSequences.userId, userId)).orderBy(desc(captureSequences.createdAt));
+      }
+      async getCaptureSequencesForWorkflow(workflowId) {
+        return await db.select().from(captureSequences).where(eq(captureSequences.workflowId, workflowId)).orderBy(captureSequences.sequenceName);
+      }
+      async getCaptureSequence(id) {
+        const [sequence] = await db.select().from(captureSequences).where(eq(captureSequences.id, id));
+        return sequence || void 0;
+      }
+      async getCaptureSequenceByNodeId(workflowId, nodeId) {
+        const [sequence] = await db.select().from(captureSequences).where(
+          and(
+            eq(captureSequences.workflowId, workflowId),
+            or(
+              eq(captureSequences.startNodeId, nodeId),
+              eq(captureSequences.endNodeId, nodeId)
+            )
+          )
+        );
+        return sequence || void 0;
+      }
+      async createCaptureSequence(sequence) {
+        const [newSequence] = await db.insert(captureSequences).values(sequence).returning();
+        return newSequence;
+      }
+      async updateCaptureSequence(id, data) {
+        const [sequence] = await db.update(captureSequences).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(captureSequences.id, id)).returning();
+        return sequence || void 0;
+      }
+      async deleteCaptureSequence(id) {
+        await db.delete(captureSequences).where(eq(captureSequences.id, id));
+      }
+      async countCaptureSequencesForUser(userId) {
+        const result = await db.select({ count: sql2`count(*)::int` }).from(captureSequences).where(eq(captureSequences.userId, userId));
+        return result[0]?.count || 0;
+      }
+      // Captured Data
+      async getCapturedDataForSequence(sequenceId, page = 1, pageSize = 20) {
+        const offset = (page - 1) * pageSize;
+        const entries = await db.select().from(capturedData).where(eq(capturedData.sequenceId, sequenceId)).orderBy(desc(capturedData.savedAt)).limit(pageSize).offset(offset);
+        const [countResult] = await db.select({ count: sql2`count(*)::int` }).from(capturedData).where(eq(capturedData.sequenceId, sequenceId));
+        return { entries, total: countResult?.count || 0 };
+      }
+      async getCapturedDataForUser(userId, filters) {
+        const page = filters?.page || 1;
+        const pageSize = filters?.pageSize || 20;
+        const offset = (page - 1) * pageSize;
+        let whereClause = eq(capturedData.userId, userId);
+        const entries = await db.select().from(capturedData).where(whereClause).orderBy(desc(capturedData.savedAt)).limit(pageSize).offset(offset);
+        const [countResult] = await db.select({ count: sql2`count(*)::int` }).from(capturedData).where(whereClause);
+        return { entries, total: countResult?.count || 0 };
+      }
+      async getCapturedDataEntry(id) {
+        const [entry] = await db.select().from(capturedData).where(eq(capturedData.id, id));
+        return entry || void 0;
+      }
+      async createCapturedData(data) {
+        const [newEntry] = await db.insert(capturedData).values(data).returning();
+        return newEntry;
+      }
+      async deleteCapturedData(id) {
+        await db.delete(capturedData).where(eq(capturedData.id, id));
+      }
+      async countCapturedDataForSequence(sequenceId) {
+        const result = await db.select({ count: sql2`count(*)::int` }).from(capturedData).where(eq(capturedData.sequenceId, sequenceId));
+        return result[0]?.count || 0;
+      }
+      // ============================================================================
+      // BOOKING SCHEDULER METHODS
+      // ============================================================================
+      // Services (groups departments)
+      async getBookingServicesForUser(userId) {
+        return await db.select().from(bookingServices).where(eq(bookingServices.userId, userId)).orderBy(bookingServices.name);
+      }
+      async getBookingService(id) {
+        const [service] = await db.select().from(bookingServices).where(eq(bookingServices.id, id));
+        return service || void 0;
+      }
+      async createBookingService(service) {
+        const [newService] = await db.insert(bookingServices).values(service).returning();
+        return newService;
+      }
+      async updateBookingService(id, data) {
+        const [updated] = await db.update(bookingServices).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(bookingServices.id, id)).returning();
+        return updated || void 0;
+      }
+      async deleteBookingService(id) {
+        await db.delete(bookingServices).where(eq(bookingServices.id, id));
+      }
+      // Departments
+      async getBookingDepartmentsForUser(userId) {
+        return await db.select().from(bookingDepartments).where(eq(bookingDepartments.userId, userId)).orderBy(bookingDepartments.name);
+      }
+      async getBookingDepartmentsForService(serviceId) {
+        return await db.select().from(bookingDepartments).where(eq(bookingDepartments.serviceId, serviceId)).orderBy(bookingDepartments.name);
+      }
+      async getBookingDepartment(id) {
+        const [dept] = await db.select().from(bookingDepartments).where(eq(bookingDepartments.id, id));
+        return dept || void 0;
+      }
+      async createBookingDepartment(dept) {
+        const [newDept] = await db.insert(bookingDepartments).values(dept).returning();
+        return newDept;
+      }
+      async updateBookingDepartment(id, data) {
+        const [updated] = await db.update(bookingDepartments).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(bookingDepartments.id, id)).returning();
+        return updated || void 0;
+      }
+      async deleteBookingDepartment(id) {
+        await db.delete(bookingDepartments).where(eq(bookingDepartments.id, id));
+      }
+      // Staff
+      async getBookingStaffForDepartment(departmentId) {
+        return await db.select().from(bookingStaff).where(eq(bookingStaff.departmentId, departmentId)).orderBy(bookingStaff.name);
+      }
+      async getBookingStaffForUser(userId) {
+        return await db.select().from(bookingStaff).where(eq(bookingStaff.userId, userId)).orderBy(bookingStaff.name);
+      }
+      async getBookingStaff(id) {
+        const [staff] = await db.select().from(bookingStaff).where(eq(bookingStaff.id, id));
+        return staff || void 0;
+      }
+      async createBookingStaff(staff) {
+        const [newStaff] = await db.insert(bookingStaff).values(staff).returning();
+        return newStaff;
+      }
+      async updateBookingStaff(id, data) {
+        const [updated] = await db.update(bookingStaff).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(bookingStaff.id, id)).returning();
+        return updated || void 0;
+      }
+      async deleteBookingStaff(id) {
+        await db.delete(bookingStaff).where(eq(bookingStaff.id, id));
+      }
+      // Slots
+      async getBookingStaffSlots(staffId) {
+        return await db.select().from(bookingStaffSlots).where(eq(bookingStaffSlots.staffId, staffId)).orderBy(bookingStaffSlots.dayOfWeek, bookingStaffSlots.startTime);
+      }
+      async getBookingStaffSlot(id) {
+        const [slot] = await db.select().from(bookingStaffSlots).where(eq(bookingStaffSlots.id, id));
+        return slot || void 0;
+      }
+      async createBookingStaffSlot(slot) {
+        const [newSlot] = await db.insert(bookingStaffSlots).values(slot).returning();
+        return newSlot;
+      }
+      async updateBookingStaffSlot(id, data) {
+        const [updated] = await db.update(bookingStaffSlots).set(data).where(eq(bookingStaffSlots.id, id)).returning();
+        return updated || void 0;
+      }
+      async deleteBookingStaffSlot(id) {
+        await db.delete(bookingStaffSlots).where(eq(bookingStaffSlots.id, id));
+      }
+      // Bookings - Optimized for fast chatbot response
+      async getBookingsForUser(userId, filters) {
+        const page = filters?.page || 1;
+        const pageSize = filters?.pageSize || 20;
+        const offset = (page - 1) * pageSize;
+        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const conditions = [eq(bookings.userId, userId)];
+        if (filters?.outdatedConfirmed) {
+          conditions.push(eq(bookings.status, "confirmed"));
+          conditions.push(sql2`${bookings.slotDate} < ${today}`);
+        } else {
+          if (filters?.status) {
+            conditions.push(eq(bookings.status, filters.status));
+          }
+          if (filters?.fromDate) {
+            conditions.push(sql2`${bookings.slotDate} >= ${filters.fromDate}`);
+          }
+          if (filters?.toDate) {
+            conditions.push(sql2`${bookings.slotDate} <= ${filters.toDate}`);
+          }
+        }
+        if (filters?.staffId) {
+          conditions.push(eq(bookings.staffId, filters.staffId));
+        }
+        if (filters?.departmentId) {
+          conditions.push(eq(bookings.departmentId, filters.departmentId));
+        }
+        if (filters?.search) {
+          const searchTerm = `%${filters.search.toLowerCase()}%`;
+          conditions.push(sql2`(
+        LOWER(${bookings.customerName}) LIKE ${searchTerm} OR 
+        ${bookings.customerPhone} LIKE ${searchTerm} OR 
+        LOWER(${bookings.bookingLabel}) LIKE ${searchTerm} OR
+        ${bookings.slotDate} LIKE ${searchTerm} OR
+        LOWER(${bookings.customField1Value}) LIKE ${searchTerm} OR
+        LOWER(${bookings.customField2Value}) LIKE ${searchTerm}
+      )`);
+        }
+        const bookingsList = await db.select().from(bookings).where(and(...conditions)).orderBy(desc(bookings.slotDate), desc(bookings.startTime)).limit(pageSize).offset(offset);
+        const [countResult] = await db.select({ count: sql2`count(*)::int` }).from(bookings).where(and(...conditions));
+        return { bookings: bookingsList, total: countResult?.count || 0 };
+      }
+      async countOutdatedConfirmedBookings(userId) {
+        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const [result] = await db.select({ count: sql2`count(*)::int` }).from(bookings).where(and(
+          eq(bookings.userId, userId),
+          eq(bookings.status, "confirmed"),
+          sql2`${bookings.slotDate} < ${today}`
+        ));
+        return result?.count || 0;
+      }
+      async bulkCompleteOutdatedBookings(userId) {
+        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const result = await db.update(bookings).set({ status: "completed" }).where(and(
+          eq(bookings.userId, userId),
+          eq(bookings.status, "confirmed"),
+          sql2`${bookings.slotDate} < ${today}`
+        )).returning({ id: bookings.id });
+        return result.length;
+      }
+      async bulkUpdateBookingStatus(userId, ids, status) {
+        if (ids.length === 0) return 0;
+        const result = await db.update(bookings).set({ status }).where(and(
+          eq(bookings.userId, userId),
+          inArray(bookings.id, ids)
+        )).returning({ id: bookings.id });
+        return result.length;
+      }
+      async getBookingsForCustomer(customerPhone, userId, options) {
+        const conditions = [
+          eq(bookings.customerPhone, customerPhone),
+          eq(bookings.userId, userId)
+        ];
+        if (options?.status) {
+          conditions.push(eq(bookings.status, options.status));
+        }
+        if (options?.upcoming) {
+          const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+          conditions.push(sql2`${bookings.slotDate} >= ${today}`);
+          conditions.push(sql2`${bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`);
+        }
+        return await db.select().from(bookings).where(and(...conditions)).orderBy(bookings.slotDate, bookings.startTime).limit(10);
+      }
+      async getBooking(id) {
+        const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
+        return booking || void 0;
+      }
+      async createBooking(booking) {
+        const [newBooking] = await db.insert(bookings).values(booking).returning();
+        return newBooking;
+      }
+      async updateBooking(id, data) {
+        const [updated] = await db.update(bookings).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(bookings.id, id)).returning();
+        return updated || void 0;
+      }
+      async deleteBooking(id) {
+        await db.delete(bookings).where(eq(bookings.id, id));
+      }
+      // OPTIMIZED: Single query to check slot availability (critical path for chatbot response)
+      async checkSlotAvailability(staffId, slotDate, startTime, excludeBookingId) {
+        const today = new Date(slotDate);
+        const dayOfWeek = today.getDay();
+        const [slotConfig] = await db.select().from(bookingStaffSlots).where(
+          and(
+            eq(bookingStaffSlots.staffId, staffId),
+            eq(bookingStaffSlots.dayOfWeek, dayOfWeek),
+            eq(bookingStaffSlots.isActive, true),
+            sql2`${bookingStaffSlots.startTime} <= ${startTime}`,
+            sql2`${bookingStaffSlots.endTime} > ${startTime}`
+          )
+        ).limit(1);
+        if (!slotConfig) {
+          return { available: false, existingCount: 0, capacity: 0 };
+        }
+        const conditions = [
+          eq(bookings.staffId, staffId),
+          eq(bookings.slotDate, slotDate),
+          eq(bookings.startTime, startTime),
+          sql2`${bookings.status} NOT IN ('cancelled')`
+        ];
+        if (excludeBookingId) {
+          conditions.push(sql2`${bookings.id} != ${excludeBookingId}`);
+        }
+        const [countResult] = await db.select({ count: sql2`count(*)::int` }).from(bookings).where(and(...conditions));
+        const existingCount = countResult?.count || 0;
+        const capacity = slotConfig.capacity;
+        return {
+          available: existingCount < capacity,
+          existingCount,
+          capacity
+        };
+      }
+      async getBulkBookingCounts(staffId, dateRange) {
+        const results = await db.select({
+          slotDate: bookings.slotDate,
+          startTime: bookings.startTime,
+          count: sql2`count(*)::int`
+        }).from(bookings).where(and(
+          eq(bookings.staffId, staffId),
+          sql2`${bookings.slotDate} >= ${dateRange.startDate}`,
+          sql2`${bookings.slotDate} <= ${dateRange.endDate}`,
+          sql2`${bookings.status} NOT IN ('cancelled')`
+        )).groupBy(bookings.slotDate, bookings.startTime);
+        const countMap = /* @__PURE__ */ new Map();
+        for (const row of results) {
+          const key = `${row.slotDate}_${row.startTime}`;
+          countMap.set(key, row.count);
+        }
+        return countMap;
+      }
+      // Count active bookings for a customer (for duplicate prevention)
+      async countActiveBookingsForCustomer(customerPhone, userId, nodeId) {
+        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const conditions = [
+          eq(bookings.customerPhone, customerPhone),
+          eq(bookings.userId, userId),
+          sql2`${bookings.slotDate} >= ${today}`,
+          sql2`${bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`
+        ];
+        if (nodeId) {
+          conditions.push(eq(bookings.nodeId, nodeId));
+        }
+        const [result] = await db.select({ count: sql2`count(*)::int` }).from(bookings).where(and(...conditions));
+        return result?.count || 0;
+      }
+      // Get confirmed bookings that need reminders sent
+      async getBookingsNeedingReminders() {
+        const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const results = await db.select().from(bookings).where(
+          and(
+            eq(bookings.status, "confirmed"),
+            eq(bookings.reminderEnabled, true),
+            eq(bookings.reminderSent, false),
+            sql2`${bookings.slotDate} >= ${today}`
+          )
+        );
+        return results;
+      }
+      // Mark a booking's reminder as sent
+      async markBookingReminderSent(bookingId) {
+        await db.update(bookings).set({
+          reminderSent: true,
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(bookings.id, bookingId));
+      }
+      // User Booking Settings
+      async getUserBookingSettings(userId) {
+        const [settings2] = await db.select().from(userBookingSettings).where(eq(userBookingSettings.userId, userId));
+        return settings2 || void 0;
+      }
+      async updateUserBookingSettings(userId, settings2) {
+        const existing = await this.getUserBookingSettings(userId);
+        if (existing) {
+          const [updated] = await db.update(userBookingSettings).set({
+            ...settings2,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(userBookingSettings.userId, userId)).returning();
+          return updated;
+        } else {
+          const [created] = await db.insert(userBookingSettings).values({
+            userId,
+            ...settings2
+          }).returning();
+          return created;
+        }
+      }
     };
     storage = new DatabaseStorage();
   }
@@ -1727,15 +2541,22 @@ var init_storage = __esm({
 // server/whapi.ts
 var whapi_exports = {};
 __export(whapi_exports, {
+  assignLabelToChat: () => assignLabelToChat,
   buildAndSendNodeMessage: () => buildAndSendNodeMessage,
+  createLabel: () => createLabel,
   createWhapiChannel: () => createWhapiChannel,
   deleteWhapiChannel: () => deleteWhapiChannel,
   extendWhapiChannel: () => extendWhapiChannel,
+  getChannelHealth: () => getChannelHealth,
   getChannelQRCode: () => getChannelQRCode,
   getChannelStatus: () => getChannelStatus,
+  getLabels: () => getLabels,
   getWhapiChannel: () => getWhapiChannel,
   getWhapiConfig: () => getWhapiConfig,
+  initializeUserLabels: () => initializeUserLabels,
   logoutChannel: () => logoutChannel,
+  manageChatLabelAsync: () => manageChatLabelAsync,
+  removeLabelFromChat: () => removeLabelFromChat,
   sendCarouselMessage: () => sendCarouselMessage,
   sendInteractiveMessage: () => sendInteractiveMessage,
   sendLocationMessage: () => sendLocationMessage,
@@ -1840,6 +2661,20 @@ async function getChannelQRCode(channelToken) {
     httpStatus: 200,
     ...data
   };
+}
+async function getChannelHealth(channelToken) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const response = await fetch("https://gate.whapi.cloud/health?wakeup=true&channel_type=web", {
+    headers: {
+      "Authorization": authToken,
+      "Accept": "application/json"
+    }
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Failed to get channel health (status ${response.status})`);
+  }
+  return await response.json();
 }
 async function getChannelStatus(whapiChannelId, channelToken) {
   const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
@@ -1953,8 +2788,19 @@ async function sendInteractiveMessage(channelToken, payload) {
       errorData: JSON.stringify(errorData),
       payloadSent: JSON.stringify(payload, null, 2).substring(0, 500)
     });
-    const errorMessage = errorData?.error?.message || errorData?.error || errorData?.message || errorData?.rawError || `WHAPI send failed (status ${response.status})`;
-    throw new Error(errorMessage || "Unknown WHAPI error");
+    let errorMessage = `WHAPI send failed (status ${response.status})`;
+    if (errorData?.error?.message && typeof errorData.error.message === "string") {
+      errorMessage = errorData.error.message;
+    } else if (errorData?.error && typeof errorData.error === "string") {
+      errorMessage = errorData.error;
+    } else if (errorData?.error && typeof errorData.error === "object") {
+      errorMessage = JSON.stringify(errorData.error);
+    } else if (errorData?.message && typeof errorData.message === "string") {
+      errorMessage = errorData.message;
+    } else if (errorData?.rawError && typeof errorData.rawError === "string") {
+      errorMessage = errorData.rawError;
+    }
+    throw new Error(errorMessage);
   }
   return await response.json();
 }
@@ -2255,6 +3101,422 @@ async function buildAndSendNodeMessage(channel, phone, nodeType, config) {
   }
   return await sendInteractiveMessage(channelToken, payload);
 }
+async function getLabels(channelToken) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  try {
+    const response = await fetch("https://gate.whapi.cloud/labels", {
+      method: "GET",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json"
+      }
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(`[WHAPI Labels] Failed to get labels:`, errorText);
+      return [];
+    }
+    const data = await response.json();
+    return data.labels || data || [];
+  } catch (error) {
+    console.error(`[WHAPI Labels] Error getting labels:`, error.message);
+    return [];
+  }
+}
+async function createLabel(channelToken, name, color, labelId, logContext) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = "https://gate.whapi.cloud/labels";
+  const payload = { endpoint, method: "POST", id: labelId, name, color };
+  let responseData = null;
+  let responseText = "";
+  try {
+    console.log(`[WHAPI Labels] Creating label with payload:`, JSON.stringify(payload));
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    responseText = await response.text();
+    console.log(`[WHAPI Labels] Create response status: ${response.status}, body: ${responseText}`);
+    if (!response.ok) {
+      console.error(`[WHAPI Labels] Failed to create label "${name}" with ID ${labelId}`);
+      if (logContext) {
+        try {
+          await storage.createLabelLog({
+            userId: logContext.userId,
+            channelId: logContext.channelId,
+            operation: "create",
+            labelType: logContext.labelType,
+            labelId,
+            labelName: name,
+            status: "error",
+            requestPayload: payload,
+            responseData: { status: response.status, body: responseText },
+            errorMessage: responseText
+          });
+        } catch (logErr) {
+          console.error(`[WHAPI Labels] Failed to log create error:`, logErr.message);
+        }
+      }
+      return null;
+    }
+    try {
+      responseData = JSON.parse(responseText);
+      console.log(`[WHAPI Labels] Label created successfully:`, JSON.stringify(responseData));
+    } catch {
+      responseData = { id: labelId, name, color };
+    }
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "create",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: name,
+          status: "success",
+          requestPayload: payload,
+          responseData
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log create success:`, logErr.message);
+      }
+    }
+    return responseData;
+  } catch (error) {
+    console.error(`[WHAPI Labels] Error creating label:`, error.message);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "create",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: name,
+          status: "error",
+          requestPayload: payload,
+          errorMessage: error.message
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log create error:`, logErr.message);
+      }
+    }
+    return null;
+  }
+}
+function findNextAvailableLabelId(existingLabels) {
+  const existingIds = new Set(existingLabels.map((l) => parseInt(l.id, 10)).filter((n) => !isNaN(n)));
+  for (let id = 1; id <= 99; id++) {
+    if (!existingIds.has(id)) {
+      return String(id);
+    }
+  }
+  return String(99);
+}
+async function assignLabelToChat(channelToken, labelId, chatId, logContext) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = `https://gate.whapi.cloud/labels/${labelId}/${chatId}`;
+  const requestPayload = { endpoint, method: "POST", labelId, chatId };
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json"
+      }
+    });
+    const responseText = await response.text().catch(() => "");
+    let responseData = { status: response.status, body: responseText };
+    try {
+      responseData = { status: response.status, body: JSON.parse(responseText) };
+    } catch {
+    }
+    if (!response.ok) {
+      console.error(`[WHAPI Labels] Failed to assign label ${labelId} to chat ${chatId}:`, responseText);
+      if (logContext) {
+        try {
+          await storage.createLabelLog({
+            userId: logContext.userId,
+            channelId: logContext.channelId,
+            operation: "assign",
+            labelType: logContext.labelType,
+            labelId,
+            labelName: logContext.labelName,
+            chatId,
+            status: "error",
+            requestPayload,
+            responseData,
+            errorMessage: responseText
+          });
+        } catch (logErr) {
+          console.error(`[WHAPI Labels] Failed to log assign error:`, logErr.message);
+        }
+      }
+      return false;
+    }
+    console.log(`[WHAPI Labels] Successfully assigned label ${labelId} to chat ${chatId}`);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "assign",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: logContext.labelName,
+          chatId,
+          status: "success",
+          requestPayload,
+          responseData
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log assign success:`, logErr.message);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error(`[WHAPI Labels] Error assigning label:`, error.message);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "assign",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: logContext.labelName,
+          chatId,
+          status: "error",
+          requestPayload,
+          responseData: { error: error.message },
+          errorMessage: error.message
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log assign error:`, logErr.message);
+      }
+    }
+    return false;
+  }
+}
+async function removeLabelFromChat(channelToken, labelId, chatId, logContext) {
+  const authToken = channelToken.startsWith("Bearer ") ? channelToken : `Bearer ${channelToken}`;
+  const endpoint = `https://gate.whapi.cloud/labels/${labelId}/${chatId}`;
+  const requestPayload = { endpoint, method: "DELETE", labelId, chatId };
+  try {
+    const response = await fetch(endpoint, {
+      method: "DELETE",
+      headers: {
+        "Authorization": authToken,
+        "Accept": "application/json"
+      }
+    });
+    const responseText = await response.text().catch(() => "");
+    let responseData = { status: response.status, body: responseText };
+    try {
+      responseData = { status: response.status, body: JSON.parse(responseText) };
+    } catch {
+    }
+    if (!response.ok) {
+      if (!responseText.includes("not found") && !responseText.includes("not assigned")) {
+        console.error(`[WHAPI Labels] Failed to remove label ${labelId} from chat ${chatId}:`, responseText);
+        if (logContext) {
+          try {
+            await storage.createLabelLog({
+              userId: logContext.userId,
+              channelId: logContext.channelId,
+              operation: "remove",
+              labelType: logContext.labelType,
+              labelId,
+              labelName: logContext.labelName,
+              chatId,
+              status: "error",
+              requestPayload,
+              responseData,
+              errorMessage: responseText
+            });
+          } catch (logErr) {
+            console.error(`[WHAPI Labels] Failed to log remove error:`, logErr.message);
+          }
+        }
+      }
+      return false;
+    }
+    console.log(`[WHAPI Labels] Successfully removed label ${labelId} from chat ${chatId}`);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "remove",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: logContext.labelName,
+          chatId,
+          status: "success",
+          requestPayload,
+          responseData
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log remove success:`, logErr.message);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error(`[WHAPI Labels] Error removing label:`, error.message);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "remove",
+          labelType: logContext.labelType,
+          labelId,
+          labelName: logContext.labelName,
+          chatId,
+          status: "error",
+          requestPayload,
+          responseData: { error: error.message },
+          errorMessage: error.message
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log remove error:`, logErr.message);
+      }
+    }
+    return false;
+  }
+}
+function manageChatLabelAsync(channelToken, chatId, labelType, chatbotLabelId, inquiryLabelId, logContext) {
+  Promise.resolve().then(async () => {
+    try {
+      const baseLogContext = logContext ? { userId: logContext.userId, channelId: logContext.channelId } : void 0;
+      const chatbotLabelName = logContext?.chatbotLabelName || "Chatbot";
+      const inquiryLabelName = logContext?.inquiryLabelName || "Inquiries";
+      if (labelType === "chatbot" && chatbotLabelId) {
+        if (inquiryLabelId) {
+          await removeLabelFromChat(
+            channelToken,
+            inquiryLabelId,
+            chatId,
+            baseLogContext ? { ...baseLogContext, labelType: "inquiry", labelName: inquiryLabelName } : void 0
+          );
+        }
+        await assignLabelToChat(
+          channelToken,
+          chatbotLabelId,
+          chatId,
+          baseLogContext ? { ...baseLogContext, labelType: "chatbot", labelName: chatbotLabelName } : void 0
+        );
+      } else if (labelType === "inquiry" && inquiryLabelId) {
+        if (chatbotLabelId) {
+          await removeLabelFromChat(
+            channelToken,
+            chatbotLabelId,
+            chatId,
+            baseLogContext ? { ...baseLogContext, labelType: "chatbot", labelName: chatbotLabelName } : void 0
+          );
+        }
+        await assignLabelToChat(
+          channelToken,
+          inquiryLabelId,
+          chatId,
+          baseLogContext ? { ...baseLogContext, labelType: "inquiry", labelName: inquiryLabelName } : void 0
+        );
+      }
+    } catch (error) {
+      console.error(`[WHAPI Labels] manageChatLabelAsync error:`, error.message);
+    }
+  });
+}
+async function initializeUserLabels(channelToken, chatbotLabelName = "Chatbot", inquiryLabelName = "Inquiries", logContext) {
+  console.log(`[WHAPI Labels] initializeUserLabels called with chatbot="${chatbotLabelName}", inquiry="${inquiryLabelName}"`);
+  try {
+    console.log(`[WHAPI Labels] Fetching existing labels...`);
+    const existingLabels = await getLabels(channelToken);
+    console.log(`[WHAPI Labels] Found ${existingLabels.length} existing labels:`, existingLabels.map((l) => ({ id: l.id, name: l.name })));
+    let chatbotLabelId = null;
+    let inquiryLabelId = null;
+    const existingChatbotLabel = existingLabels.find(
+      (l) => l.name.toLowerCase() === chatbotLabelName.toLowerCase()
+    );
+    if (existingChatbotLabel) {
+      console.log(`[WHAPI Labels] Found existing chatbot label: ${existingChatbotLabel.id}`);
+      chatbotLabelId = existingChatbotLabel.id;
+    } else {
+      const nextId = findNextAvailableLabelId(existingLabels);
+      console.log(`[WHAPI Labels] Creating new chatbot label "${chatbotLabelName}" with ID ${nextId} and color limegreen...`);
+      const newLabel = await createLabel(
+        channelToken,
+        chatbotLabelName,
+        "limegreen",
+        nextId,
+        logContext ? { ...logContext, labelType: "chatbot" } : void 0
+      );
+      console.log(`[WHAPI Labels] Create chatbot label result:`, newLabel);
+      if (newLabel) {
+        chatbotLabelId = newLabel.id;
+        existingLabels.push(newLabel);
+      }
+    }
+    const existingInquiryLabel = existingLabels.find(
+      (l) => l.name.toLowerCase() === inquiryLabelName.toLowerCase()
+    );
+    if (existingInquiryLabel) {
+      console.log(`[WHAPI Labels] Found existing inquiry label: ${existingInquiryLabel.id}`);
+      inquiryLabelId = existingInquiryLabel.id;
+    } else {
+      const nextId = findNextAvailableLabelId(existingLabels);
+      console.log(`[WHAPI Labels] Creating new inquiry label "${inquiryLabelName}" with ID ${nextId} and color gold...`);
+      const newLabel = await createLabel(
+        channelToken,
+        inquiryLabelName,
+        "gold",
+        nextId,
+        logContext ? { ...logContext, labelType: "inquiry" } : void 0
+      );
+      console.log(`[WHAPI Labels] Create inquiry label result:`, newLabel);
+      if (newLabel) inquiryLabelId = newLabel.id;
+    }
+    console.log(`[WHAPI Labels] Final result - chatbotLabelId: ${chatbotLabelId}, inquiryLabelId: ${inquiryLabelId}`);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "sync",
+          status: "success",
+          requestPayload: { chatbotLabelName, inquiryLabelName },
+          responseData: { chatbotLabelId, inquiryLabelId }
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log sync success:`, logErr.message);
+      }
+    }
+    return { chatbotLabelId, inquiryLabelId };
+  } catch (error) {
+    console.error(`[WHAPI Labels] Error initializing user labels:`, error.message);
+    if (logContext) {
+      try {
+        await storage.createLabelLog({
+          userId: logContext.userId,
+          channelId: logContext.channelId,
+          operation: "sync",
+          status: "error",
+          requestPayload: { chatbotLabelName, inquiryLabelName },
+          errorMessage: error.message
+        });
+      } catch (logErr) {
+        console.error(`[WHAPI Labels] Failed to log sync error:`, logErr.message);
+      }
+    }
+    return { chatbotLabelId: null, inquiryLabelId: null };
+  }
+}
 var DEFAULT_WHAPI_PROJECT_ID;
 var init_whapi = __esm({
   "server/whapi.ts"() {
@@ -2495,7 +3757,7 @@ init_storage();
 init_db();
 init_schema();
 init_schema();
-import { eq as eq2, and as and2, inArray, desc as desc2, gte, sql as sql3 } from "drizzle-orm";
+import { eq as eq2, and as and2, inArray as inArray2, desc as desc2, gte, sql as sql3 } from "drizzle-orm";
 
 // server/auth.ts
 init_storage();
@@ -3212,10 +4474,15 @@ function registerRoutes(app2) {
       if (subscription) {
         currentPlan = await storage.getPlan(subscription.planId);
         if (currentPlan) {
+          const planPageAccess = typeof currentPlan.pageAccess === "object" && currentPlan.pageAccess !== null ? currentPlan.pageAccess : {};
+          const subscriptionPageAccess = typeof subscription.pageAccess === "object" && subscription.pageAccess !== null ? subscription.pageAccess : {};
           effectivePageAccess = {
-            ...typeof currentPlan.pageAccess === "object" && currentPlan.pageAccess !== null ? currentPlan.pageAccess : {},
-            ...typeof subscription.pageAccess === "object" && subscription.pageAccess !== null ? subscription.pageAccess : {}
+            ...planPageAccess,
+            ...subscriptionPageAccess
           };
+          console.log(`[/api/me] User ${user.id} - Plan pageAccess:`, JSON.stringify(planPageAccess));
+          console.log(`[/api/me] User ${user.id} - Subscription pageAccess:`, JSON.stringify(subscriptionPageAccess));
+          console.log(`[/api/me] User ${user.id} - Effective pageAccess:`, JSON.stringify(effectivePageAccess));
         }
       } else {
         const pageAccessSetting = await storage.getSetting("default_page_access");
@@ -3233,8 +4500,16 @@ function registerRoutes(app2) {
           phonebooks: false,
           settings: false,
           balances: false,
-          whapiSettings: false
+          whapiSettings: false,
+          bookingScheduler: false,
+          labelLogs: false
         };
+      }
+      if (user.safetyMeterAllowed && effectivePageAccess) {
+        effectivePageAccess.safetyMeter = true;
+      }
+      if (user.labelManagementAllowed && effectivePageAccess) {
+        effectivePageAccess.labelLogs = true;
       }
       const channels2 = await storage.getChannelsForUser(user.id);
       const channelsUsed = channels2.length;
@@ -3557,38 +4832,17 @@ function registerRoutes(app2) {
         return res.status(404).json({ error: "Plan not found" });
       }
       const durationType = submittedDurationType || "MONTHLY";
-      const planData = plan;
-      const hasDisplayPricing = planData.displayPrice && planData.displayCurrency;
-      const basePlanPrice = currency === planData.displayCurrency && hasDisplayPricing ? planData.displayPrice : plan.price || 0;
-      let expectedBasePrice = basePlanPrice;
-      if (durationType === "SEMI_ANNUAL") {
-        expectedBasePrice = basePlanPrice * 6 * 0.95;
-      } else if (durationType === "ANNUAL") {
-        expectedBasePrice = basePlanPrice * 12 * 0.9;
-      }
       if (paymentType !== "FREE_TRIAL") {
+        if (!amount || amount <= 0) {
+          return res.status(400).json({ error: "Amount must be a positive number" });
+        }
         if (couponCode) {
           const couponValidation = await storage.validateCoupon(couponCode, req.userId, planId);
           if (!couponValidation.valid) {
             return res.status(400).json({ error: couponValidation.message });
           }
-          const discountPercent = couponValidation.coupon?.discountPercent || 0;
-          const expectedAmount = Math.round(expectedBasePrice * (100 - discountPercent) / 100);
-          if (Math.abs(amount - expectedAmount) > 1) {
-            return res.status(400).json({
-              error: "Amount mismatch",
-              details: `Expected ${expectedAmount} cents (${durationType} with ${discountPercent}% coupon), received ${amount} cents`
-            });
-          }
-        } else {
-          const expectedAmount = Math.round(expectedBasePrice);
-          if (Math.abs(amount - expectedAmount) > 1) {
-            return res.status(400).json({
-              error: "Amount mismatch",
-              details: `Expected ${expectedAmount} cents (${durationType}), received ${amount} cents`
-            });
-          }
         }
+        console.log(`[OfflinePayment] Submitted: planId=${planId}, amount=${amount}, currency=${currency}, durationType=${durationType}, couponCode=${couponCode || "none"}`);
       }
       const payment = await storage.createOfflinePayment({
         userId: req.userId,
@@ -3745,7 +4999,8 @@ function registerRoutes(app2) {
     try {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (channel.expiresAt && new Date(channel.expiresAt) <= /* @__PURE__ */ new Date()) {
@@ -3777,7 +5032,8 @@ function registerRoutes(app2) {
     try {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (channel.expiresAt && new Date(channel.expiresAt) <= /* @__PURE__ */ new Date()) {
@@ -3833,7 +5089,8 @@ function registerRoutes(app2) {
     try {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (!channel.whapiChannelToken) {
@@ -3868,7 +5125,8 @@ function registerRoutes(app2) {
     try {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (!channel.whapiChannelId) {
@@ -3923,7 +5181,10 @@ function registerRoutes(app2) {
     try {
       const channelId = parseInt(req.params.id);
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
+      console.log(`[DELETE /api/channels/${channelId}] userId=${req.userId}, impersonatedId=${req.impersonatedUser?.id}, effectiveUserId=${effectiveUserId}, channel.userId=${channel?.userId}`);
+      if (!channel || channel.userId !== effectiveUserId) {
+        console.log(`[DELETE /api/channels/${channelId}] Channel not found or ownership mismatch`);
         return res.status(404).json({ error: "Channel not found" });
       }
       let remainingDays = 0;
@@ -3976,16 +5237,20 @@ function registerRoutes(app2) {
   app2.get("/api/channels/:id/safety-meter", requireAuth, async (req, res) => {
     try {
       const channelId = parseInt(req.params.id);
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId);
-      let hasSafetyMeterAccess = false;
-      if (subscription) {
-        const plan = await storage.getPlan(subscription.planId);
-        if (plan) {
-          hasSafetyMeterAccess = plan.safetyMeterEnabled === true;
+      const safetyUser = await storage.getUser(effectiveUserId);
+      let hasSafetyMeterAccess = safetyUser?.safetyMeterAllowed === true;
+      if (!hasSafetyMeterAccess) {
+        const subscription = await storage.getActiveSubscriptionForUser(req.userId);
+        if (subscription) {
+          const plan = await storage.getPlan(subscription.planId);
+          if (plan) {
+            hasSafetyMeterAccess = plan.safetyMeterEnabled === true;
+          }
         }
       }
       if (!hasSafetyMeterAccess) {
@@ -4026,16 +5291,20 @@ function registerRoutes(app2) {
   app2.post("/api/channels/:id/safety-meter/refresh", requireAuth, async (req, res) => {
     try {
       const channelId = parseInt(req.params.id);
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId);
-      let hasSafetyMeterAccess = false;
-      if (subscription) {
-        const plan = await storage.getPlan(subscription.planId);
-        if (plan) {
-          hasSafetyMeterAccess = plan.safetyMeterEnabled === true;
+      const safetyUser2 = await storage.getUser(effectiveUserId);
+      let hasSafetyMeterAccess = safetyUser2?.safetyMeterAllowed === true;
+      if (!hasSafetyMeterAccess) {
+        const subscription = await storage.getActiveSubscriptionForUser(req.userId);
+        if (subscription) {
+          const plan = await storage.getPlan(subscription.planId);
+          if (plan) {
+            hasSafetyMeterAccess = plan.safetyMeterEnabled === true;
+          }
         }
       }
       if (!hasSafetyMeterAccess) {
@@ -4100,8 +5369,9 @@ function registerRoutes(app2) {
           error: `Media file is required for ${messageType} messages. Please upload a file before sending.`
         });
       }
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Channel not found" });
       }
       if (channel.status !== "ACTIVE" || channel.authStatus !== "AUTHORIZED") {
@@ -4308,8 +5578,9 @@ function registerRoutes(app2) {
       if (!user || user.status !== "active") {
         return res.status(403).json({ error: "Account is not active" });
       }
+      const effectiveUserId = req.impersonatedUser?.id || req.userId;
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId || channel.status !== "ACTIVE") {
+      if (!channel || channel.userId !== effectiveUserId || channel.status !== "ACTIVE") {
         return res.status(403).json({ error: "Channel not available" });
       }
       if (!channel.whapiChannelToken) {
@@ -4324,6 +5595,16 @@ function registerRoutes(app2) {
       const plan = await storage.getPlan(subscription.planId);
       if (!plan) {
         return res.status(404).json({ error: "Plan not found" });
+      }
+      const existingJobs = await storage.getJobsForUser(req.userId);
+      const runningJob = existingJobs.find(
+        (j) => j.type === "BULK" && (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
       }
       if (plan.bulkMessagesLimit !== -1 && rows.length > plan.bulkMessagesLimit) {
         return res.status(403).json({
@@ -4418,6 +5699,32 @@ function registerRoutes(app2) {
       let sentCount = messages2.filter((m) => m.status === "SENT").length;
       let failedCount = messages2.filter((m) => m.status === "FAILED").length;
       for (const message of queuedMessages) {
+        const currentJob = await storage.getJob(jobId);
+        if (!currentJob || currentJob.status === "PAUSED") {
+          console.log(`[Job ${jobId}] Job was paused, stopping processing`);
+          return;
+        }
+        const job = await storage.getJob(jobId);
+        if (job) {
+          const user = await storage.getUser(job.userId);
+          if (user) {
+            const subscription = await storage.getActiveSubscriptionForUser(job.userId);
+            if (subscription) {
+              const plan = await storage.getPlan(subscription.planId);
+              if (plan && plan.bulkMessagesLimit !== -1) {
+                const jobs2 = await storage.getJobsForUser(job.userId);
+                const today = /* @__PURE__ */ new Date();
+                today.setHours(0, 0, 0, 0);
+                const bulkMessagesSentToday = jobs2.filter((j) => new Date(j.createdAt) >= today && j.type === "BULK").reduce((sum, j) => sum + j.sent + j.delivered + j.read, 0);
+                if (bulkMessagesSentToday >= plan.bulkMessagesLimit) {
+                  console.log(`[Job ${jobId}] Daily bulk limit reached (${bulkMessagesSentToday}/${plan.bulkMessagesLimit}), pausing job`);
+                  await storage.updateJob(jobId, { status: "PAUSED" });
+                  return;
+                }
+              }
+            }
+          }
+        }
         try {
           console.log(`[Bulk Send] Processing message ${message.id} to ${message.to}`);
           console.log(`[Bulk Send] Raw message data:`, JSON.stringify({
@@ -4859,6 +6166,59 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to fetch phonebooks" });
     }
   });
+  app2.get("/api/phonebooks/export-contacts", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!user.contactExportAllowed) {
+        const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
+        if (!subscription) {
+          return res.status(403).json({ error: "Active subscription required for contact export." });
+        }
+        const plan = await storage.getPlan(subscription.planId);
+        if (!plan || !plan.contactExportEnabled) {
+          return res.status(403).json({ error: "Contact export is not available in your current plan." });
+        }
+      }
+      const channels2 = await storage.getChannelsForUser(effectiveUserId);
+      const activeChannel = channels2.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+      if (!activeChannel?.whapiChannelToken) {
+        return res.status(400).json({ error: "No active authorized channel found." });
+      }
+      const response = await fetch("https://gate.whapi.cloud/contacts?count=500", {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "Authorization": `Bearer ${activeChannel.whapiChannelToken}`
+        }
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("[Export Contacts] WHAPI error:", response.status, errText);
+        return res.status(500).json({ error: "Failed to fetch contacts from WhatsApp. WHAPI returned: " + response.status });
+      }
+      const data = await response.json();
+      console.log("[Export Contacts] WHAPI response keys:", Object.keys(data));
+      const contacts = data.contacts || (Array.isArray(data) ? data : []);
+      let csv = "id,name,saved\n";
+      for (const contact of contacts) {
+        const id = (contact.id || "").replace(/"/g, '""');
+        const name = (contact.name || "").replace(/"/g, '""');
+        const saved = contact.saved ? "true" : "false";
+        csv += `"${id}","${name}","${saved}"
+`;
+      }
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="whatsapp-contacts.csv"');
+      res.send(csv);
+    } catch (error) {
+      console.error("Export contacts error:", error);
+      res.status(500).json({ error: "Failed to export contacts" });
+    }
+  });
   app2.get("/api/phonebooks/sample-csv", requireAuth, async (req, res) => {
     const sampleCSV = `phone_number,name,email,header,body,footer,button1_text,button2_text,button3_text,button1_id,button2_id,button3_id
 +97312345678,John Doe,john@example.com,Hello!,This is a test message,Thank you,Option 1,Option 2,Option 3,btn1_custom,btn2_custom,btn3_custom
@@ -5168,25 +6528,36 @@ function registerRoutes(app2) {
   });
   app2.post("/api/phonebooks/:id/send", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const { channelId } = req.body;
       if (!channelId) {
         return res.status(400).json({ error: "Channel ID is required" });
       }
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(403).json({ error: "Channel not found or access denied" });
+      }
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
+      const runningJob = existingJobs.find(
+        (j) => j.type === "BULK" && (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
       }
       const contacts = await storage.getContactsForPhonebook(phonebookId);
       if (contacts.length === 0) {
         return res.status(400).json({ error: "Phonebook has no contacts" });
       }
       const job = await storage.createJob({
-        userId: req.userId,
+        userId: effectiveUserId,
         channelId,
         type: "BULK",
         status: "PENDING",
@@ -5263,6 +6634,7 @@ function registerRoutes(app2) {
   });
   app2.post("/api/phonebooks/:id/send-uniform", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const phonebookId = parseInt(req.params.id);
       const { channelId, header, body, footer, buttons, messageType, mediaUrl } = req.body;
       console.log(`[Send Uniform] Received buttons from frontend:`, JSON.stringify(buttons && Array.isArray(buttons) ? buttons.slice(0, 1) : buttons, null, 2));
@@ -5276,12 +6648,22 @@ function registerRoutes(app2) {
         });
       }
       const phonebook = await storage.getPhonebook(phonebookId);
-      if (!phonebook || phonebook.userId !== req.userId) {
+      if (!phonebook || phonebook.userId !== effectiveUserId) {
         return res.status(404).json({ error: "Phonebook not found" });
       }
       const channel = await storage.getChannel(channelId);
-      if (!channel || channel.userId !== req.userId) {
+      if (!channel || channel.userId !== effectiveUserId) {
         return res.status(403).json({ error: "Channel not found or access denied" });
+      }
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
+      const runningJob = existingJobs.find(
+        (j) => j.type === "BULK" && (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({
+          error: "You already have a running bulk campaign. Please wait for it to complete or stop it before starting a new one.",
+          runningJobId: runningJob.id
+        });
       }
       const contacts = await storage.getContactsForPhonebook(phonebookId);
       if (contacts.length === 0) {
@@ -5298,7 +6680,7 @@ function registerRoutes(app2) {
         }
       }
       const job = await storage.createJob({
-        userId: req.userId,
+        userId: effectiveUserId,
         channelId,
         type: "BULK",
         status: "PENDING",
@@ -5418,15 +6800,9 @@ function registerRoutes(app2) {
           console.log(`[PhonebookLimit] Trimming CSV import: ${validContacts.length} valid rows, only importing ${availableSlots}, skipping ${contactsSkipped}`);
         }
       }
-      let insertedCount = 0;
-      for (const contact of contactsToImport) {
-        try {
-          await storage.createContact(contact);
-          insertedCount++;
-        } catch (error) {
-          console.error("Error inserting contact:", error);
-        }
-      }
+      console.log(`[CSV Import] Starting batch insert of ${contactsToImport.length} contacts`);
+      const insertedCount = await storage.createContactsBatch(contactsToImport);
+      console.log(`[CSV Import] Batch insert completed: ${insertedCount} contacts inserted`);
       res.json({
         success: true,
         summary: {
@@ -5534,6 +6910,1146 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to export subscribers" });
     }
   });
+  app2.get("/api/capture-sequences", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const sequences = await storage.getCaptureSequencesForUser(effectiveUserId);
+      const sequencesWithData = await Promise.all(
+        sequences.map(async (seq) => {
+          const { entries } = await storage.getCapturedDataForSequence(seq.id);
+          return {
+            ...seq,
+            capturedData: entries
+          };
+        })
+      );
+      res.json(sequencesWithData);
+    } catch (error) {
+      console.error("Get capture sequences error:", error);
+      res.status(500).json({ error: "Failed to fetch capture sequences" });
+    }
+  });
+  app2.delete("/api/capture-sequences/:id", requireAuth, async (req, res) => {
+    try {
+      const sequenceId = parseInt(req.params.id);
+      if (isNaN(sequenceId)) {
+        return res.status(400).json({ error: "Invalid sequence ID" });
+      }
+      const sequence = await storage.getCaptureSequence(sequenceId);
+      if (!sequence) {
+        return res.status(404).json({ error: "Sequence not found" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      if (sequence.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const capturedEntries = await storage.getCapturedDataForSequence(sequenceId);
+      for (const entry of capturedEntries.entries) {
+        await storage.deleteCapturedData(entry.id);
+      }
+      await storage.deleteCaptureSequence(sequenceId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete capture sequence error:", error);
+      res.status(500).json({ error: "Failed to delete sequence" });
+    }
+  });
+  app2.delete("/api/captured-data/:id", requireAuth, async (req, res) => {
+    try {
+      const dataId = parseInt(req.params.id);
+      if (isNaN(dataId)) {
+        return res.status(400).json({ error: "Invalid data ID" });
+      }
+      const data = await storage.getCapturedDataEntry(dataId);
+      if (!data) {
+        return res.status(404).json({ error: "Data not found" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      if (data.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      await storage.deleteCapturedData(dataId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete captured data error:", error);
+      res.status(500).json({ error: "Failed to delete data" });
+    }
+  });
+  app2.get("/api/label-settings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({
+        labelManagementAllowed: user.labelManagementAllowed,
+        chatbotLabelId: user.chatbotLabelId,
+        chatbotLabelName: user.chatbotLabelName,
+        inquiryLabelId: user.inquiryLabelId,
+        inquiryLabelName: user.inquiryLabelName
+      });
+    } catch (error) {
+      console.error("Get label settings error:", error);
+      res.status(500).json({ error: "Failed to fetch label settings" });
+    }
+  });
+  app2.post("/api/label-settings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { chatbotLabelName, inquiryLabelName } = req.body;
+      const updateData = {};
+      if (chatbotLabelName) updateData.chatbotLabelName = chatbotLabelName;
+      if (inquiryLabelName) updateData.inquiryLabelName = inquiryLabelName;
+      const updated = await storage.updateUser(effectiveUserId, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({
+        success: true,
+        chatbotLabelName: updated.chatbotLabelName,
+        inquiryLabelName: updated.inquiryLabelName
+      });
+    } catch (error) {
+      console.error("Update label settings error:", error);
+      res.status(500).json({ error: "Failed to update label settings" });
+    }
+  });
+  app2.post("/api/label-settings/sync", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      console.log(`[Label Sync] Starting sync for user ${effectiveUserId}`);
+      const user = await storage.getUser(effectiveUserId);
+      if (!user) {
+        console.log(`[Label Sync] User ${effectiveUserId} not found`);
+        return res.status(404).json({ error: "User not found" });
+      }
+      console.log(`[Label Sync] User ${effectiveUserId} labelManagementAllowed: ${user.labelManagementAllowed}`);
+      if (!user.labelManagementAllowed) {
+        return res.status(403).json({ error: "Label management is disabled for your account" });
+      }
+      const userChannels = await storage.getChannelsForUser(effectiveUserId);
+      console.log(`[Label Sync] Found ${userChannels.length} channels for user ${effectiveUserId}`);
+      const activeChannel = userChannels.find((c) => c.authStatus === "AUTHORIZED" && c.whapiChannelToken);
+      if (!activeChannel?.whapiChannelToken) {
+        console.log(`[Label Sync] No active authorized channel with token found`);
+        return res.status(400).json({ error: "No active WhatsApp channel found. Please authorize a channel first." });
+      }
+      console.log(`[Label Sync] Using channel ${activeChannel.id} with phone ${activeChannel.phone}`);
+      console.log(`[Label Sync] Label names - Chatbot: "${user.chatbotLabelName || "Chatbot"}", Inquiry: "${user.inquiryLabelName || "Inquiries"}"`);
+      const { initializeUserLabels: initializeUserLabels2 } = await Promise.resolve().then(() => (init_whapi(), whapi_exports));
+      const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels2(
+        activeChannel.whapiChannelToken,
+        user.chatbotLabelName,
+        user.inquiryLabelName,
+        { userId: effectiveUserId, channelId: activeChannel.id }
+      );
+      console.log(`[Label Sync] WHAPI returned - chatbotLabelId: ${chatbotLabelId}, inquiryLabelId: ${inquiryLabelId}`);
+      await storage.updateUser(effectiveUserId, {
+        chatbotLabelId,
+        inquiryLabelId
+      });
+      console.log(`[Label Sync] Saved label IDs to user ${effectiveUserId}`);
+      res.json({
+        success: true,
+        chatbotLabelId,
+        inquiryLabelId,
+        message: "Labels synced successfully with WhatsApp"
+      });
+    } catch (error) {
+      console.error("[Label Sync] Error:", error);
+      res.status(500).json({ error: "Failed to sync labels" });
+    }
+  });
+  app2.get("/api/label-settings/labels", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const userChannels = await storage.getChannelsForUser(effectiveUserId);
+      const activeChannel = userChannels.find((c) => c.authStatus === "AUTHORIZED" && c.whapiChannelToken);
+      if (!activeChannel?.whapiChannelToken) {
+        return res.status(400).json({ error: "No active WhatsApp channel found" });
+      }
+      const { getLabels: getLabels2 } = await Promise.resolve().then(() => (init_whapi(), whapi_exports));
+      const labels = await getLabels2(activeChannel.whapiChannelToken);
+      res.json(labels);
+    } catch (error) {
+      console.error("Get WhatsApp labels error:", error);
+      res.status(500).json({ error: "Failed to fetch labels" });
+    }
+  });
+  app2.get("/api/label-logs", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { operation, status, limit } = req.query;
+      const logs = await storage.getLabelLogs({
+        userId: effectiveUserId,
+        operation,
+        status,
+        limit: limit ? parseInt(limit, 10) : 100
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error("Get label logs error:", error);
+      res.status(500).json({ error: "Failed to fetch label logs" });
+    }
+  });
+  app2.get("/api/booking/services", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const services = await storage.getBookingServicesForUser(effectiveUserId);
+      res.json(services);
+    } catch (error) {
+      console.error("Get services error:", error);
+      res.status(500).json({ error: "Failed to fetch services" });
+    }
+  });
+  app2.post("/api/booking/services", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { name, description, slotLabels } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Service name is required" });
+      }
+      let validatedSlotLabels = null;
+      if (slotLabels && Array.isArray(slotLabels) && slotLabels.length > 0) {
+        validatedSlotLabels = slotLabels.map((label) => String(label || "").trim()).filter(Boolean);
+        if (validatedSlotLabels.length === 0) validatedSlotLabels = null;
+      }
+      const service = await storage.createBookingService({
+        userId: effectiveUserId,
+        name: name.trim(),
+        description: description || null,
+        slotLabels: validatedSlotLabels
+      });
+      res.json(service);
+    } catch (error) {
+      console.error("Create service error:", error);
+      res.status(500).json({ error: "Failed to create service" });
+    }
+  });
+  app2.put("/api/booking/services/:id", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const serviceId = parseInt(req.params.id);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid ID" });
+      const service = await storage.getBookingService(serviceId);
+      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (service.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const updated = await storage.updateBookingService(serviceId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update service error:", error);
+      res.status(500).json({ error: "Failed to update service" });
+    }
+  });
+  app2.delete("/api/booking/services/:id", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const serviceId = parseInt(req.params.id);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid ID" });
+      const service = await storage.getBookingService(serviceId);
+      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (service.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteBookingService(serviceId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete service error:", error);
+      res.status(500).json({ error: "Failed to delete service" });
+    }
+  });
+  app2.get("/api/booking/services/:serviceId/departments", requireAuth, async (req, res) => {
+    try {
+      const serviceId = parseInt(req.params.serviceId);
+      if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid service ID" });
+      const departments = await storage.getBookingDepartmentsForService(serviceId);
+      res.json(departments);
+    } catch (error) {
+      console.error("Get departments for service error:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+  app2.get("/api/booking/departments", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const departments = await storage.getBookingDepartmentsForUser(effectiveUserId);
+      res.json(departments);
+    } catch (error) {
+      console.error("Get departments error:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+  app2.post("/api/booking/departments", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { name, description, serviceId } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Department name is required" });
+      }
+      if (serviceId) {
+        const service = await storage.getBookingService(serviceId);
+        if (!service || service.userId !== effectiveUserId) {
+          return res.status(400).json({ error: "Invalid service ID" });
+        }
+      }
+      const department = await storage.createBookingDepartment({
+        userId: effectiveUserId,
+        name: name.trim(),
+        description: description || null,
+        serviceId: serviceId || null
+      });
+      res.json(department);
+    } catch (error) {
+      console.error("Create department error:", error);
+      res.status(500).json({ error: "Failed to create department" });
+    }
+  });
+  app2.put("/api/booking/departments/:id", requireAuth, async (req, res) => {
+    try {
+      const deptId = parseInt(req.params.id);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBookingDepartment(deptId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update department error:", error);
+      res.status(500).json({ error: "Failed to update department" });
+    }
+  });
+  app2.delete("/api/booking/departments/:id", requireAuth, async (req, res) => {
+    try {
+      const deptId = parseInt(req.params.id);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      await storage.deleteBookingDepartment(deptId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete department error:", error);
+      res.status(500).json({ error: "Failed to delete department" });
+    }
+  });
+  app2.get("/api/booking/departments/:deptId/staff", requireAuth, async (req, res) => {
+    try {
+      const deptId = parseInt(req.params.deptId);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const staff = await storage.getBookingStaffForDepartment(deptId);
+      res.json(staff);
+    } catch (error) {
+      console.error("Get staff error:", error);
+      res.status(500).json({ error: "Failed to fetch staff" });
+    }
+  });
+  app2.get("/api/booking/staff", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const staff = await storage.getBookingStaffForUser(effectiveUserId);
+      res.json(staff);
+    } catch (error) {
+      console.error("Get all staff error:", error);
+      res.status(500).json({ error: "Failed to fetch staff" });
+    }
+  });
+  app2.post("/api/booking/departments/:deptId/staff", requireAuth, async (req, res) => {
+    try {
+      const deptId = parseInt(req.params.deptId);
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const { name, phone, email } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Staff name is required" });
+      }
+      const staff = await storage.createBookingStaff({
+        userId: effectiveUserId,
+        departmentId: deptId,
+        name: name.trim(),
+        phone: phone || null,
+        email: email || null
+      });
+      res.json(staff);
+    } catch (error) {
+      console.error("Create staff error:", error);
+      res.status(500).json({ error: "Failed to create staff" });
+    }
+  });
+  app2.put("/api/booking/staff/:id", requireAuth, async (req, res) => {
+    try {
+      const staffId = parseInt(req.params.id);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBookingStaff(staffId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update staff error:", error);
+      res.status(500).json({ error: "Failed to update staff" });
+    }
+  });
+  app2.delete("/api/booking/staff/:id", requireAuth, async (req, res) => {
+    try {
+      const staffId = parseInt(req.params.id);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      await storage.deleteBookingStaff(staffId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete staff error:", error);
+      res.status(500).json({ error: "Failed to delete staff" });
+    }
+  });
+  app2.get("/api/booking/staff/:staffId/slots", requireAuth, async (req, res) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const slots = await storage.getBookingStaffSlots(staffId);
+      res.json(slots);
+    } catch (error) {
+      console.error("Get slots error:", error);
+      res.status(500).json({ error: "Failed to fetch slots" });
+    }
+  });
+  app2.post("/api/booking/staff/:staffId/slots", requireAuth, async (req, res) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const { dayOfWeek, startTime, endTime, slotDuration, capacity } = req.body;
+      if (dayOfWeek === void 0 || dayOfWeek < 0 || dayOfWeek > 6) {
+        return res.status(400).json({ error: "Invalid day of week (0-6)" });
+      }
+      if (!startTime || !endTime) {
+        return res.status(400).json({ error: "Start time and end time are required" });
+      }
+      const slot = await storage.createBookingStaffSlot({
+        staffId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        slotDuration: slotDuration || 30,
+        capacity: capacity || 1
+      });
+      res.json(slot);
+    } catch (error) {
+      console.error("Create slot error:", error);
+      res.status(500).json({ error: "Failed to create slot" });
+    }
+  });
+  app2.put("/api/booking/slots/:id", requireAuth, async (req, res) => {
+    try {
+      const slotId = parseInt(req.params.id);
+      if (isNaN(slotId)) return res.status(400).json({ error: "Invalid ID" });
+      const slot = await storage.getBookingStaffSlot(slotId);
+      if (!slot) return res.status(404).json({ error: "Slot not found" });
+      const staff = await storage.getBookingStaff(slot.staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBookingStaffSlot(slotId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update slot error:", error);
+      res.status(500).json({ error: "Failed to update slot" });
+    }
+  });
+  app2.delete("/api/booking/slots/:id", requireAuth, async (req, res) => {
+    try {
+      const slotId = parseInt(req.params.id);
+      if (isNaN(slotId)) return res.status(400).json({ error: "Invalid ID" });
+      const slot = await storage.getBookingStaffSlot(slotId);
+      if (!slot) return res.status(404).json({ error: "Slot not found" });
+      const staff = await storage.getBookingStaff(slot.staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      await storage.deleteBookingStaffSlot(slotId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete slot error:", error);
+      res.status(500).json({ error: "Failed to delete slot" });
+    }
+  });
+  const dayNameToNumber = {
+    // English full names
+    "sunday": 0,
+    "monday": 1,
+    "tuesday": 2,
+    "wednesday": 3,
+    "thursday": 4,
+    "friday": 5,
+    "saturday": 6,
+    // English short names
+    "sun": 0,
+    "mon": 1,
+    "tue": 2,
+    "wed": 3,
+    "thu": 4,
+    "fri": 5,
+    "sat": 6,
+    // Arabic day names
+    "\u0627\u0644\u0623\u062D\u062F": 0,
+    "\u0627\u0644\u0627\u062B\u0646\u064A\u0646": 1,
+    "\u0627\u0644\u062B\u0644\u0627\u062B\u0627\u0621": 2,
+    "\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621": 3,
+    "\u0627\u0644\u062E\u0645\u064A\u0633": 4,
+    "\u0627\u0644\u062C\u0645\u0639\u0629": 5,
+    "\u0627\u0644\u0633\u0628\u062A": 6,
+    // Arabic short/alternate forms
+    "\u0627\u062D\u062F": 0,
+    "\u0627\u062B\u0646\u064A\u0646": 1,
+    "\u062B\u0644\u0627\u062B\u0627\u0621": 2,
+    "\u0627\u0631\u0628\u0639\u0627\u0621": 3,
+    "\u062E\u0645\u064A\u0633": 4,
+    "\u062C\u0645\u0639\u0629": 5,
+    "\u0633\u0628\u062A": 6
+  };
+  app2.post("/api/booking/import/departments", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows } = req.body;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+      const created = [];
+      const errors = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = (row.name || "").toString().trim();
+        const description = (row.description || "").toString().trim();
+        if (!name) {
+          errors.push(`Row ${i + 1}: Department name is required`);
+          continue;
+        }
+        try {
+          const dept = await storage.createBookingDepartment({
+            userId: effectiveUserId,
+            name,
+            description: description || null
+          });
+          created.push(dept);
+        } catch (err) {
+          errors.push(`Row ${i + 1}: Failed to create department "${name}"`);
+        }
+      }
+      res.json({ imported: created.length, errors });
+    } catch (error) {
+      console.error("Import departments error:", error);
+      res.status(500).json({ error: "Failed to import departments" });
+    }
+  });
+  app2.post("/api/booking/import/staff", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows, departmentId } = req.body;
+      if (!departmentId) {
+        return res.status(400).json({ error: "Department ID is required" });
+      }
+      const dept = await storage.getBookingDepartment(departmentId);
+      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+      const created = [];
+      const errors = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = (row.name || "").toString().trim();
+        const phone = (row.phone || "").toString().trim();
+        const email = (row.email || "").toString().trim();
+        if (!name) {
+          errors.push(`Row ${i + 1}: Staff name is required`);
+          continue;
+        }
+        try {
+          const staff = await storage.createBookingStaff({
+            userId: effectiveUserId,
+            departmentId,
+            name,
+            phone: phone || null,
+            email: email || null
+          });
+          created.push(staff);
+        } catch (err) {
+          errors.push(`Row ${i + 1}: Failed to create staff "${name}"`);
+        }
+      }
+      res.json({ imported: created.length, errors });
+    } catch (error) {
+      console.error("Import staff error:", error);
+      res.status(500).json({ error: "Failed to import staff" });
+    }
+  });
+  app2.post("/api/booking/import/slots", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { rows, staffId } = req.body;
+      if (!staffId) {
+        return res.status(400).json({ error: "Staff ID is required" });
+      }
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No data to import" });
+      }
+      const created = [];
+      const errors = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        let dayOfWeek = row.day ?? row.dayOfWeek ?? row.dayofweek;
+        const startTime = (row.starttime || "").toString().trim();
+        const endTime = (row.endtime || "").toString().trim();
+        const slotDuration = parseInt(row.slotduration || "30");
+        const capacity = parseInt(row.capacity || "1");
+        if (typeof dayOfWeek === "string") {
+          const trimmedDay = dayOfWeek.trim();
+          const lowerDay = trimmedDay.toLowerCase();
+          if (dayNameToNumber[trimmedDay] !== void 0) {
+            dayOfWeek = dayNameToNumber[trimmedDay];
+          } else if (dayNameToNumber[lowerDay] !== void 0) {
+            dayOfWeek = dayNameToNumber[lowerDay];
+          } else {
+            dayOfWeek = parseInt(trimmedDay);
+          }
+        }
+        if (isNaN(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+          errors.push(`Row ${i + 1}: Invalid day of week`);
+          continue;
+        }
+        if (!startTime || !endTime) {
+          errors.push(`Row ${i + 1}: Start time and end time are required`);
+          continue;
+        }
+        try {
+          const slot = await storage.createBookingStaffSlot({
+            staffId,
+            dayOfWeek,
+            startTime,
+            endTime,
+            slotDuration: isNaN(slotDuration) ? 30 : slotDuration,
+            capacity: isNaN(capacity) ? 1 : capacity
+          });
+          created.push(slot);
+        } catch (err) {
+          errors.push(`Row ${i + 1}: Failed to create slot`);
+        }
+      }
+      res.json({ imported: created.length, errors });
+    } catch (error) {
+      console.error("Import slots error:", error);
+      res.status(500).json({ error: "Failed to import slots" });
+    }
+  });
+  app2.get("/api/booking/bookings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { status, fromDate, toDate, staffId, departmentId, page, pageSize, search } = req.query;
+      const isOutdatedFilter = status === "outdated_confirmed";
+      const result = await storage.getBookingsForUser(effectiveUserId, {
+        status: isOutdatedFilter ? void 0 : status,
+        fromDate,
+        toDate,
+        staffId: staffId ? parseInt(staffId) : void 0,
+        departmentId: departmentId ? parseInt(departmentId) : void 0,
+        page: page ? parseInt(page) : 1,
+        pageSize: pageSize ? parseInt(pageSize) : 20,
+        search,
+        outdatedConfirmed: isOutdatedFilter
+      });
+      const enrichedBookings = await Promise.all(
+        result.bookings.map(async (booking) => {
+          const [department, staff] = await Promise.all([
+            booking.departmentId ? storage.getBookingDepartment(booking.departmentId) : null,
+            booking.staffId ? storage.getBookingStaff(booking.staffId) : null
+          ]);
+          return {
+            ...booking,
+            departmentName: department?.name || null,
+            staffName: staff?.name || null
+          };
+        })
+      );
+      res.json({ bookings: enrichedBookings, total: result.total });
+    } catch (error) {
+      console.error("Get bookings error:", error);
+      res.status(500).json({ error: "Failed to fetch bookings" });
+    }
+  });
+  app2.post("/api/booking/bookings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { departmentId, staffId, slotDate, startTime, endTime, customerPhone, customerName, nodeId, bookingLabel, metadata } = req.body;
+      if (!departmentId || !staffId || !slotDate || !startTime || !endTime || !customerPhone) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const availability = await storage.checkSlotAvailability(staffId, slotDate, startTime);
+      if (!availability.available) {
+        return res.status(409).json({
+          error: "Slot not available",
+          existingCount: availability.existingCount,
+          capacity: availability.capacity
+        });
+      }
+      const booking = await storage.createBooking({
+        userId: effectiveUserId,
+        departmentId,
+        staffId,
+        slotDate,
+        startTime,
+        endTime,
+        customerPhone,
+        customerName: customerName || null,
+        nodeId: nodeId || null,
+        bookingLabel: bookingLabel || null,
+        metadata: metadata || null,
+        status: "confirmed"
+      });
+      res.json(booking);
+    } catch (error) {
+      console.error("Create booking error:", error);
+      res.status(500).json({ error: "Failed to create booking" });
+    }
+  });
+  app2.put("/api/booking/bookings/:id", requireAuth, async (req, res) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBooking(bookingId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update booking error:", error);
+      res.status(500).json({ error: "Failed to update booking" });
+    }
+  });
+  app2.post("/api/booking/bookings/:id/confirm", requireAuth, async (req, res) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBooking(bookingId, { status: "confirmed" });
+      const { sendNotification } = req.body;
+      if (sendNotification) {
+        try {
+          const channels2 = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels2.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.confirmMessage || `Your booking has been confirmed!
+
+Date: {{date}}
+Time: {{time}}
+Department: {{department}}
+Staff: {{staff}}
+
+We look forward to seeing you!`;
+            message = message.replace(/\{\{customerName\}\}/g, booking.customerName || "").replace(/\{\{date\}\}/g, booking.slotDate).replace(/\{\{time\}\}/g, booking.startTime).replace(/\{\{oldDate\}\}/g, "").replace(/\{\{oldTime\}\}/g, "").replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+            await sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send confirmation notification:", notifyErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Confirm booking error:", error);
+      res.status(500).json({ error: "Failed to confirm booking" });
+    }
+  });
+  app2.post("/api/booking/bookings/:id/cancel", requireAuth, async (req, res) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const updated = await storage.updateBooking(bookingId, { status: "cancelled" });
+      const { sendNotification } = req.body;
+      if (sendNotification) {
+        try {
+          const channels2 = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels2.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.cancelMessage || `Your booking has been cancelled.
+
+Date: {{date}}
+Time: {{time}}
+Department: {{department}}
+
+If you have questions, please contact us.`;
+            message = message.replace(/\{\{customerName\}\}/g, booking.customerName || "").replace(/\{\{date\}\}/g, booking.slotDate).replace(/\{\{time\}\}/g, booking.startTime).replace(/\{\{oldDate\}\}/g, "").replace(/\{\{oldTime\}\}/g, "").replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+            await sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send cancellation notification:", notifyErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Cancel booking error:", error);
+      res.status(500).json({ error: "Failed to cancel booking" });
+    }
+  });
+  app2.get("/api/booking/notification-settings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const settings2 = await storage.getUserBookingSettings(effectiveUserId);
+      res.json({
+        confirmMessage: settings2?.confirmMessage || null,
+        rescheduleMessage: settings2?.rescheduleMessage || null,
+        cancelMessage: settings2?.cancelMessage || null,
+        customDayNames: settings2?.customDayNames || null
+      });
+    } catch (error) {
+      console.error("Get booking notification settings error:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+  app2.put("/api/booking/notification-settings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { confirmMessage, rescheduleMessage, cancelMessage, customDayNames } = req.body;
+      let validatedDayNames = null;
+      if (customDayNames && Array.isArray(customDayNames) && customDayNames.length === 7) {
+        validatedDayNames = customDayNames.map((name) => String(name || ""));
+      }
+      const updated = await storage.updateUserBookingSettings(effectiveUserId, {
+        confirmMessage: confirmMessage || null,
+        rescheduleMessage: rescheduleMessage || null,
+        cancelMessage: cancelMessage || null,
+        customDayNames: validatedDayNames
+      });
+      res.json({
+        success: true,
+        confirmMessage: updated.confirmMessage,
+        rescheduleMessage: updated.rescheduleMessage,
+        cancelMessage: updated.cancelMessage,
+        customDayNames: updated.customDayNames
+      });
+    } catch (error) {
+      console.error("Update booking notification settings error:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+  app2.post("/api/booking/bookings/:id/reschedule", requireAuth, async (req, res) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const { newDate, newStartTime, newEndTime, newStaffId, newDepartmentId, sendNotification } = req.body;
+      if (!newDate || !newStartTime || !newEndTime) {
+        return res.status(400).json({ error: "New date and time are required" });
+      }
+      const staffIdToUse = newStaffId || booking.staffId;
+      const departmentIdToUse = newDepartmentId || booking.departmentId;
+      const isAvailable = await storage.checkSlotAvailability(staffIdToUse, newDate, newStartTime);
+      if (!isAvailable) {
+        return res.status(400).json({ error: "The selected time slot is not available" });
+      }
+      const oldDate = booking.slotDate;
+      const oldTime = booking.startTime;
+      const updated = await storage.updateBooking(bookingId, {
+        slotDate: newDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        staffId: staffIdToUse,
+        departmentId: departmentIdToUse
+      });
+      if (sendNotification) {
+        try {
+          const channels2 = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels2.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(staffIdToUse);
+            const dept = await storage.getBookingDepartment(departmentIdToUse);
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.rescheduleMessage || `Your booking has been rescheduled.
+
+Old: {{oldDate}} at {{oldTime}}
+New: {{date}} at {{time}}
+Department: {{department}}
+Staff: {{staff}}
+
+We look forward to seeing you!`;
+            message = message.replace(/\{\{customerName\}\}/g, booking.customerName || "").replace(/\{\{date\}\}/g, newDate).replace(/\{\{time\}\}/g, newStartTime).replace(/\{\{oldDate\}\}/g, oldDate).replace(/\{\{oldTime\}\}/g, oldTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+            await sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send reschedule notification:", notifyErr);
+        }
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Reschedule booking error:", error);
+      res.status(500).json({ error: "Failed to reschedule booking" });
+    }
+  });
+  app2.get("/api/booking/staff/:staffId/available-slots", requireAuth, async (req, res) => {
+    try {
+      const staffId = parseInt(req.params.staffId);
+      const { date } = req.query;
+      if (isNaN(staffId) || !date) {
+        return res.status(400).json({ error: "Staff ID and date are required" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const staff = await storage.getBookingStaff(staffId);
+      if (!staff) {
+        return res.status(404).json({ error: "Staff not found" });
+      }
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized to view this staff's slots" });
+      }
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      const allSlots = await storage.getBookingStaffSlots(staffId);
+      const daySlots = allSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
+      const availableSlots = [];
+      for (const slotTemplate of daySlots) {
+        let currentTime = slotTemplate.startTime;
+        while (currentTime < slotTemplate.endTime) {
+          const [hours, mins] = currentTime.split(":").map(Number);
+          const startMins = hours * 60 + mins;
+          const endMins = startMins + slotTemplate.slotDuration;
+          const endHours = Math.floor(endMins / 60);
+          const endMinutes = endMins % 60;
+          const endTimeStr = `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`;
+          if (endTimeStr <= slotTemplate.endTime) {
+            const isAvailable = await storage.checkSlotAvailability(staffId, date, currentTime);
+            if (isAvailable) {
+              availableSlots.push({
+                startTime: currentTime,
+                endTime: endTimeStr
+              });
+            }
+          }
+          currentTime = endTimeStr;
+        }
+      }
+      res.json(availableSlots);
+    } catch (error) {
+      console.error("Get available slots error:", error);
+      res.status(500).json({ error: "Failed to get available slots" });
+    }
+  });
+  app2.delete("/api/booking/bookings/bulk", requireAuth, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "No booking IDs provided" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      let deletedCount = 0;
+      for (const id of ids) {
+        const booking = await storage.getBooking(id);
+        if (booking && (booking.userId === effectiveUserId || req.user?.role === "admin")) {
+          await storage.deleteBooking(id);
+          deletedCount++;
+        }
+      }
+      res.json({ success: true, deleted: deletedCount });
+    } catch (error) {
+      console.error("Bulk delete bookings error:", error);
+      res.status(500).json({ error: "Failed to delete bookings" });
+    }
+  });
+  app2.patch("/api/booking/bookings/bulk-status", requireAuth, async (req, res) => {
+    try {
+      const { ids, status } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "No booking IDs provided" });
+      }
+      const validStatuses = ["pending", "confirmed", "cancelled", "completed", "no_show"];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be one of: " + validStatuses.join(", ") });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const updatedCount = await storage.bulkUpdateBookingStatus(effectiveUserId, ids, status);
+      res.json({ success: true, updated: updatedCount });
+    } catch (error) {
+      console.error("Bulk status change error:", error);
+      res.status(500).json({ error: "Failed to update booking statuses" });
+    }
+  });
+  app2.post("/api/booking/bookings/complete-outdated", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const updatedCount = await storage.bulkCompleteOutdatedBookings(effectiveUserId);
+      res.json({ success: true, updated: updatedCount });
+    } catch (error) {
+      console.error("Bulk complete outdated bookings error:", error);
+      res.status(500).json({ error: "Failed to complete outdated bookings" });
+    }
+  });
+  app2.get("/api/booking/bookings/outdated-count", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const count = await storage.countOutdatedConfirmedBookings(effectiveUserId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Get outdated count error:", error);
+      res.status(500).json({ error: "Failed to get outdated count" });
+    }
+  });
+  app2.delete("/api/booking/bookings/:id", requireAuth, async (req, res) => {
+    try {
+      const bookingId = parseInt(req.params.id);
+      if (isNaN(bookingId)) return res.status(400).json({ error: "Invalid ID" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (booking.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      await storage.deleteBooking(bookingId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete booking error:", error);
+      res.status(500).json({ error: "Failed to delete booking" });
+    }
+  });
+  app2.get("/api/booking/availability", requireAuth, async (req, res) => {
+    try {
+      const { staffId, slotDate, startTime } = req.query;
+      if (!staffId || !slotDate || !startTime) {
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+      const result = await storage.checkSlotAvailability(
+        parseInt(staffId),
+        slotDate,
+        startTime
+      );
+      res.json(result);
+    } catch (error) {
+      console.error("Check availability error:", error);
+      res.status(500).json({ error: "Failed to check availability" });
+    }
+  });
+  app2.get("/api/booking/available-slots", requireAuth, async (req, res) => {
+    try {
+      const { staffId, date } = req.query;
+      if (!staffId || !date) {
+        return res.status(400).json({ error: "staffId and date are required" });
+      }
+      const staff = await storage.getBookingStaff(parseInt(staffId));
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      const effectiveUserId = getEffectiveUserId(req);
+      if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const dateObj = new Date(date);
+      const dayOfWeek = dateObj.getDay();
+      const allSlots = await storage.getBookingStaffSlots(staff.id);
+      const daySlots = allSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
+      const availableSlots = [];
+      for (const slot of daySlots) {
+        const [startHour, startMin] = slot.startTime.split(":").map(Number);
+        const [endHour, endMin] = slot.endTime.split(":").map(Number);
+        const slotDuration = slot.slotDuration;
+        let currentMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+        while (currentMinutes + slotDuration <= endMinutes) {
+          const slotStartTime = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
+          const slotEndMinutes = currentMinutes + slotDuration;
+          const slotEndTime = `${String(Math.floor(slotEndMinutes / 60)).padStart(2, "0")}:${String(slotEndMinutes % 60).padStart(2, "0")}`;
+          const availability = await storage.checkSlotAvailability(staff.id, date, slotStartTime);
+          availableSlots.push({
+            startTime: slotStartTime,
+            endTime: slotEndTime,
+            available: availability.available,
+            remainingCapacity: availability.capacity - availability.existingCount
+          });
+          currentMinutes += slotDuration;
+        }
+      }
+      res.json(availableSlots);
+    } catch (error) {
+      console.error("Get available slots error:", error);
+      res.status(500).json({ error: "Failed to get available slots" });
+    }
+  });
   app2.get("/api/workflows", requireAuth, async (req, res) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
@@ -5635,6 +8151,57 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to toggle workflow status" });
     }
   });
+  app2.patch("/api/workflows/:id/label-settings", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      const { labelManagementEnabled } = req.body;
+      if (typeof labelManagementEnabled !== "boolean") {
+        return res.status(400).json({ error: "labelManagementEnabled must be a boolean" });
+      }
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
+      if (subscription) {
+        const plan = await storage.getPlan(subscription.planId);
+        if (!plan || !plan.labelManagementEnabled) {
+          return res.status(403).json({ error: "Label management feature is not available in your current plan." });
+        }
+      } else {
+        return res.status(403).json({ error: "Active subscription required to enable label management." });
+      }
+      const user = await storage.getUser(effectiveUserId);
+      if (!user?.labelManagementAllowed) {
+        return res.status(403).json({ error: "Label management is not allowed for your account. Contact your administrator." });
+      }
+      if (labelManagementEnabled && (!user.chatbotLabelId || !user.inquiryLabelId)) {
+        const userChannels = await storage.getChannelsForUser(effectiveUserId);
+        const activeChannel = userChannels.find((c) => c.whapiChannelToken && c.authStatus === "AUTHORIZED");
+        if (activeChannel?.whapiChannelToken) {
+          console.log(`[Label Management] Auto-syncing labels for user ${effectiveUserId}`);
+          const { initializeUserLabels: initializeUserLabels2 } = await Promise.resolve().then(() => (init_whapi(), whapi_exports));
+          const { chatbotLabelId, inquiryLabelId } = await initializeUserLabels2(
+            activeChannel.whapiChannelToken,
+            user.chatbotLabelName || "Chatbot",
+            user.inquiryLabelName || "Inquiries",
+            { userId: effectiveUserId, channelId: activeChannel.id }
+          );
+          await storage.updateUser(effectiveUserId, {
+            chatbotLabelId,
+            inquiryLabelId
+          });
+          console.log(`[Label Management] Auto-synced labels - Chatbot: ${chatbotLabelId}, Inquiries: ${inquiryLabelId}`);
+        }
+      }
+      const updated = await storage.updateWorkflow(workflowId, { labelManagementEnabled });
+      res.json(updated);
+    } catch (error) {
+      console.error("Update workflow label settings error:", error);
+      res.status(500).json({ error: "Failed to update workflow label settings" });
+    }
+  });
   app2.post("/api/workflows/test-message", requireAuth, async (req, res) => {
     try {
       const { nodeType, config, phone, channelId } = req.body;
@@ -5675,7 +8242,7 @@ function registerRoutes(app2) {
         status: workflowExecutions.status,
         errorMessage: workflowExecutions.errorMessage,
         executedAt: workflowExecutions.executedAt
-      }).from(workflowExecutions).leftJoin(workflows, eq2(workflowExecutions.workflowId, workflows.id)).where(inArray(workflowExecutions.workflowId, workflowIds)).orderBy(desc2(workflowExecutions.executedAt)).limit(100);
+      }).from(workflowExecutions).leftJoin(workflows, eq2(workflowExecutions.workflowId, workflows.id)).where(inArray2(workflowExecutions.workflowId, workflowIds)).orderBy(desc2(workflowExecutions.executedAt)).limit(100);
       res.json(logs);
     } catch (error) {
       console.error("Get workflow logs error:", error);
@@ -5729,7 +8296,11 @@ function registerRoutes(app2) {
       }
       let jobStatus = "QUEUED";
       const total = messages2.length;
-      if (failed === total) {
+      if (job.status === "PAUSED") {
+        jobStatus = "PAUSED";
+      } else if (queued > 0 || pending > 0) {
+        jobStatus = "PROCESSING";
+      } else if (failed === total) {
         jobStatus = "FAILED";
       } else if (failed > 0 && delivered + read + replied + failed === total) {
         jobStatus = "PARTIAL";
@@ -5739,20 +8310,23 @@ function registerRoutes(app2) {
         jobStatus = "DELIVERED";
       } else if (sent > 0 || delivered > 0 || read > 0) {
         jobStatus = "SENT";
-      } else if (pending > 0) {
-        jobStatus = "PENDING";
       }
-      if (job.queued !== queued || job.pending !== pending || job.sent !== sent || job.delivered !== delivered || job.read !== read || job.failed !== failed || job.replied !== replied || job.status !== jobStatus) {
-        await storage.updateJob(jobId, {
+      const statsChanged = job.queued !== queued || job.pending !== pending || job.sent !== sent || job.delivered !== delivered || job.read !== read || job.failed !== failed || job.replied !== replied;
+      const statusChanged = job.status !== jobStatus && job.status !== "PAUSED";
+      if (statsChanged || statusChanged) {
+        const updateData = {
           queued,
           pending,
           sent,
           delivered,
           read,
           failed,
-          replied,
-          status: jobStatus
-        });
+          replied
+        };
+        if (job.status !== "PAUSED") {
+          updateData.status = jobStatus;
+        }
+        await storage.updateJob(jobId, updateData);
       }
       console.log(`[Job ${jobId}] Recalculated statistics:`, {
         queued,
@@ -5780,6 +8354,89 @@ function registerRoutes(app2) {
     } catch (error) {
       console.error("Get job error:", error);
       res.status(500).json({ error: "Failed to fetch job" });
+    }
+  });
+  app2.patch("/api/jobs/:id/stop", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      if (job.type !== "BULK") {
+        return res.status(400).json({ error: "Only bulk jobs can be stopped" });
+      }
+      const messages2 = await storage.getMessagesForJob(jobId);
+      const hasQueuedOrPending = messages2.some((m) => m.status === "QUEUED" || m.status === "PENDING");
+      const isRunningStatus = job.status === "PROCESSING" || job.status === "QUEUED" || job.status === "PENDING";
+      if (!hasQueuedOrPending && !isRunningStatus) {
+        return res.status(400).json({ error: "Job is not running - all messages have been processed" });
+      }
+      await storage.updateJob(jobId, { status: "PAUSED" });
+      console.log(`[Job ${jobId}] Paused by user ${effectiveUserId}`);
+      res.json({ success: true, message: "Job paused successfully" });
+    } catch (error) {
+      console.error("Stop job error:", error);
+      res.status(500).json({ error: "Failed to stop job" });
+    }
+  });
+  app2.patch("/api/jobs/:id/resume", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      if (job.type !== "BULK") {
+        return res.status(400).json({ error: "Only bulk jobs can be resumed" });
+      }
+      if (job.status !== "PAUSED") {
+        return res.status(400).json({ error: "Job is not paused" });
+      }
+      const existingJobs = await storage.getJobsForUser(effectiveUserId);
+      const runningJob = existingJobs.find(
+        (j) => j.id !== jobId && j.type === "BULK" && (j.status === "PROCESSING" || j.status === "QUEUED" || j.status === "PENDING")
+      );
+      if (runningJob) {
+        return res.status(409).json({
+          error: "You already have another running bulk campaign. Please stop it first.",
+          runningJobId: runningJob.id
+        });
+      }
+      const channel = await storage.getChannel(job.channelId);
+      if (!channel || channel.status !== "ACTIVE" || !channel.whapiChannelToken) {
+        return res.status(400).json({ error: "Channel is not available" });
+      }
+      await storage.updateJob(jobId, { status: "PROCESSING" });
+      console.log(`[Job ${jobId}] Resumed by user ${effectiveUserId}`);
+      processBulkJob(jobId, channel).catch((err) => {
+        console.error(`Bulk job ${jobId} resume processing error:`, err);
+      });
+      res.json({ success: true, message: "Job resumed successfully" });
+    } catch (error) {
+      console.error("Resume job error:", error);
+      res.status(500).json({ error: "Failed to resume job" });
+    }
+  });
+  app2.delete("/api/jobs/:id", requireAuth, async (req, res) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      if (!job || job.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      if (job.status === "PROCESSING" || job.status === "PENDING") {
+        return res.status(400).json({ error: "Cannot delete a running job. Please stop it first." });
+      }
+      await storage.deleteJob(jobId);
+      console.log(`[Job ${jobId}] Deleted by user ${effectiveUserId}`);
+      res.json({ success: true, message: "Job deleted successfully" });
+    } catch (error) {
+      console.error("Delete job error:", error);
+      res.status(500).json({ error: "Failed to delete job" });
     }
   });
   app2.get("/api/admin/balance", requireAuth, requireAdmin, async (req, res) => {
@@ -5956,6 +8613,8 @@ function registerRoutes(app2) {
             status: calculatedStatus,
             // Override active/expired based on channels, preserve manual overrides
             currentPlan,
+            activeSubscription: subscription,
+            // Include subscription for page access overrides
             channelsUsed: channels2.length,
             channelsLimit: currentPlan?.channelsLimit || 0
           };
@@ -6276,7 +8935,21 @@ function registerRoutes(app2) {
   app2.patch("/api/admin/users/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
-      const { dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, phonebookLimit, pageAccess } = req.body;
+      const {
+        dailyMessagesLimit,
+        bulkMessagesLimit,
+        channelsLimit,
+        chatbotsLimit,
+        phonebookLimit,
+        captureSequenceLimit,
+        pageAccess,
+        autoExtendEnabled,
+        skipFriday,
+        skipSaturday,
+        labelManagementAllowed,
+        contactExportAllowed,
+        safetyMeterAllowed
+      } = req.body;
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -6291,8 +8964,28 @@ function registerRoutes(app2) {
       if (channelsLimit !== void 0) overrides.channelsLimit = channelsLimit;
       if (chatbotsLimit !== void 0) overrides.chatbotsLimit = chatbotsLimit;
       if (phonebookLimit !== void 0) overrides.phonebookLimit = phonebookLimit;
+      if (captureSequenceLimit !== void 0) overrides.captureSequenceLimit = captureSequenceLimit;
       if (pageAccess !== void 0) overrides.pageAccess = pageAccess;
+      if (autoExtendEnabled !== void 0) overrides.autoExtendEnabled = autoExtendEnabled;
+      if (skipFriday !== void 0) overrides.skipFriday = skipFriday;
+      if (skipSaturday !== void 0) overrides.skipSaturday = skipSaturday;
+      console.log(`[/api/admin/users/:id/overrides] Saving pageAccess for user ${userId}:`, JSON.stringify(pageAccess));
+      console.log(`[/api/admin/users/:id/overrides] Full overrides object:`, JSON.stringify(overrides));
       await storage.updateSubscription(subscription.id, overrides);
+      const userUpdates = {};
+      if (labelManagementAllowed !== void 0) {
+        userUpdates.labelManagementAllowed = labelManagementAllowed;
+      }
+      if (contactExportAllowed !== void 0) {
+        userUpdates.contactExportAllowed = contactExportAllowed;
+      }
+      if (safetyMeterAllowed !== void 0) {
+        userUpdates.safetyMeterAllowed = safetyMeterAllowed;
+      }
+      if (Object.keys(userUpdates).length > 0) {
+        await storage.updateUser(userId, userUpdates);
+        console.log(`[/api/admin/users/:id/overrides] Updated user settings for user ${userId}:`, JSON.stringify(userUpdates));
+      }
       await storage.createAuditLog({
         actorUserId: req.userId,
         targetType: "subscription",
@@ -6622,6 +9315,47 @@ function registerRoutes(app2) {
     } catch (error) {
       console.error("Update plan request error:", error);
       res.status(500).json({ error: "Failed to update request" });
+    }
+  });
+  app2.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (user.role === "admin") {
+        return res.status(400).json({ error: "Cannot delete admin users" });
+      }
+      console.log(`[Admin] Deleting user ${userId} and all related data...`);
+      try {
+        console.log(`[Admin] Creating audit log for deletion of user ${userId}`);
+        await storage.createAuditLog({
+          actorUserId: req.userId,
+          targetUserId: userId,
+          targetType: "user",
+          targetId: userId,
+          action: "DELETE_USER",
+          meta: {
+            email: user.email,
+            name: user.name,
+            adminId: req.userId
+          }
+        });
+      } catch (auditError) {
+        console.error("[Admin] Audit log failed, proceeding with deletion:", auditError);
+      }
+      console.log(`[Admin] Executing deletion for user ${userId}`);
+      await storage.deleteUser(userId);
+      console.log(`[Admin] Successfully deleted user ${userId}`);
+      res.json({ success: true, message: "User deleted successfully" });
+    } catch (error) {
+      console.error("[Admin] Delete user error:", error);
+      res.status(500).json({
+        error: "Failed to delete user",
+        message: error.message,
+        details: error.stack
+      });
     }
   });
   app2.get("/api/whapi/settings", requireAuth, requireAdmin, async (req, res) => {
@@ -6969,6 +9703,44 @@ function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to validate coupon" });
     }
   });
+  async function handleChatLabelAsync(userId, workflowId, channelToken, chatId, labelType) {
+    try {
+      const user = await storage.getUser(userId);
+      if (!user || !user.labelManagementAllowed) {
+        return;
+      }
+      const subscription = await storage.getActiveSubscriptionForUser(userId);
+      if (!subscription) {
+        return;
+      }
+      const plan = await storage.getPlan(subscription.planId);
+      if (!plan || !plan.labelManagementEnabled) {
+        return;
+      }
+      const [workflow] = await db.select().from(workflows).where(eq2(workflows.id, workflowId)).limit(1);
+      if (!workflow || !workflow.labelManagementEnabled) {
+        return;
+      }
+      if (!user.chatbotLabelId && !user.inquiryLabelId) {
+        return;
+      }
+      const { manageChatLabelAsync: manageChatLabelAsync2 } = await Promise.resolve().then(() => (init_whapi(), whapi_exports));
+      manageChatLabelAsync2(
+        channelToken,
+        chatId,
+        labelType,
+        user.chatbotLabelId,
+        user.inquiryLabelId,
+        {
+          userId,
+          chatbotLabelName: user.chatbotLabelName || "Chatbot",
+          inquiryLabelName: user.inquiryLabelName || "Inquiries"
+        }
+      );
+    } catch (error) {
+      console.error(`[Label Management] Error in handleChatLabelAsync: ${error.message}`);
+    }
+  }
   app2.post("/webhooks/whapi/:userId/:webhookToken", async (req, res) => {
     try {
       const { userId, webhookToken } = req.params;
@@ -7109,6 +9881,520 @@ ${"=".repeat(80)}`);
           console.error(`[Subscriber] Error processing subscriber: ${subscriberError.message}`);
         }
       }
+      if (messageType === "button_reply" && buttonId.startsWith("booking_")) {
+        try {
+          console.log(`[Booking] Processing booking response: ${buttonId}`);
+          const [currentState] = await db.select().from(conversationStates).where(and2(
+            eq2(conversationStates.phone, phone),
+            eq2(conversationStates.workflowId, activeWorkflow.id)
+          )).limit(1);
+          if (currentState?.context && currentState.context.bookingState) {
+            const context = currentState.context;
+            const bookingState = context.bookingState;
+            const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannel = userChannels.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            if (!activeChannel?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for user ${activeWorkflow.userId}`);
+              return res.status(200).json({ success: true });
+            }
+            if ((bookingState.step === "select_department" || bookingState.step === "select_staff") && buttonId.startsWith("booking_dept_")) {
+              const deptId = parseInt(buttonId.replace("booking_dept_", ""));
+              const [department, staff] = await Promise.all([
+                storage.getBookingDepartment(deptId),
+                storage.getBookingStaffForDepartment(deptId)
+              ]);
+              if (!department || department.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid department selection: ${deptId} for user ${activeWorkflow.userId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              if (staff.length === 0) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, no staff available for this department."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const staffPromptMsg = bookingState.config?.staffPromptMessage || "Please select a staff member:";
+              const listPayload = {
+                to: phone,
+                type: "list",
+                body: { text: staffPromptMsg },
+                action: {
+                  list: {
+                    sections: [{
+                      title: "Staff",
+                      rows: staff.map((s) => ({
+                        id: `booking_staff_${s.id}`,
+                        title: s.name,
+                        description: s.specialty || ""
+                      }))
+                    }],
+                    label: bookingState.config?.staffButtonLabel || "Select Staff"
+                  }
+                }
+              };
+              await sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+              await db.update(conversationStates).set({
+                context: { ...context, bookingState: { ...bookingState, step: "select_staff", departmentId: deptId } },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, currentState.id));
+              return res.status(200).json({ success: true });
+            } else if ((bookingState.step === "select_staff" || bookingState.step === "select_slot") && buttonId.startsWith("booking_staff_")) {
+              const staffId = parseInt(buttonId.replace("booking_staff_", ""));
+              const [staffMember, existingCountResult, staffSlots] = await Promise.all([
+                storage.getBookingStaff(staffId),
+                !bookingState.config?.allowMultiple ? storage.countActiveBookingsForCustomer(phone, activeWorkflow.userId, bookingState.nodeId) : Promise.resolve(0),
+                storage.getBookingStaffSlots(staffId)
+              ]);
+              if (!staffMember || staffMember.departmentId !== bookingState.departmentId) {
+                console.error(`[Booking] Invalid staff selection: ${staffId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              if (existingCountResult > 0) {
+                const existingBookingMessage = bookingState.config?.existingBookingMessage || "You already have an active appointment. Please cancel your existing booking first.";
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: existingBookingMessage
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const activeSlots = staffSlots.filter((s) => s.isActive);
+              if (activeSlots.length === 0) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: bookingState.config?.noSlotsMessage || "Sorry, no available time slots."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const maxSlots = bookingState.config?.maxAdvanceDays || 30;
+              const startToday = bookingState.config?.startToday !== false;
+              const startOffset = startToday ? 0 : 1;
+              const maxDaysToCheck = Math.min(365, maxSlots * 7);
+              const startDate = dayjs().tz("Asia/Bahrain").add(startOffset, "day").format("YYYY-MM-DD");
+              const endDate = dayjs().tz("Asia/Bahrain").add(startOffset + maxDaysToCheck, "day").format("YYYY-MM-DD");
+              const bookingCounts = await storage.getBulkBookingCounts(staffId, { startDate, endDate });
+              const availableDateTimes = [];
+              for (let i = startOffset; availableDateTimes.length < maxSlots && i <= startOffset + maxDaysToCheck; i++) {
+                const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
+                const dateStr = checkDate.format("YYYY-MM-DD");
+                const dayOfWeek = checkDate.day();
+                for (const slot of activeSlots) {
+                  if (slot.dayOfWeek === dayOfWeek) {
+                    const key = `${dateStr}_${slot.startTime}`;
+                    const existingCount = bookingCounts.get(key) || 0;
+                    if (existingCount < slot.capacity) {
+                      availableDateTimes.push({
+                        date: dateStr,
+                        startTime: slot.startTime,
+                        endTime: slot.endTime,
+                        slotId: slot.id
+                      });
+                    }
+                  }
+                  if (availableDateTimes.length >= maxSlots) break;
+                }
+              }
+              if (availableDateTimes.length === 0) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: bookingState.config?.noSlotsMessage || "Sorry, no available time slots."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const slotRows = availableDateTimes.map((slot) => ({
+                id: `booking_slot_${slot.slotId}_${slot.date}`,
+                title: `${slot.date} at ${slot.startTime}`,
+                description: `${slot.startTime} - ${slot.endTime}`
+              }));
+              const slotPromptMsg = bookingState.config?.slotPromptMessage || "Please select an available time slot:";
+              const listPayload = {
+                to: phone,
+                type: "list",
+                body: { text: slotPromptMsg },
+                action: {
+                  list: {
+                    sections: [{
+                      title: "Available Times",
+                      rows: slotRows
+                    }],
+                    label: bookingState.config?.slotButtonLabel || "Select Time"
+                  }
+                }
+              };
+              await sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+              await db.update(conversationStates).set({
+                context: { ...context, bookingState: { ...bookingState, step: "select_slot", staffId } },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, currentState.id));
+              return res.status(200).json({ success: true });
+            } else if ((bookingState.step === "select_slot" || bookingState.step === "enter_name") && buttonId.startsWith("booking_slot_")) {
+              const slotParts = buttonId.replace("booking_slot_", "").split("_");
+              const slotId = parseInt(slotParts[0]);
+              const slotDate = slotParts.slice(1).join("_");
+              const slot = await storage.getBookingStaffSlot(slotId);
+              if (!slot || slot.staffId !== bookingState.staffId) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, this slot is no longer available."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const availability = await storage.checkSlotAvailability(
+                bookingState.staffId,
+                slotDate,
+                slot.startTime
+              );
+              if (!availability.available) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, this slot is no longer available. It may have been taken."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              if (bookingState.config?.requireName) {
+                const namePrompt = bookingState.config?.namePromptMessage || "Please enter your full name to complete the booking:";
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: namePrompt
+                });
+                await db.update(conversationStates).set({
+                  context: {
+                    ...context,
+                    bookingState: {
+                      ...bookingState,
+                      step: "enter_name",
+                      selectedSlotId: slotId,
+                      selectedSlotDate: slotDate,
+                      selectedStartTime: slot.startTime,
+                      selectedEndTime: slot.endTime
+                    }
+                  },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const configCheck = bookingState.config || {};
+              if (configCheck.customQuestion1Enabled && configCheck.customQuestion1Prompt) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: configCheck.customQuestion1Prompt
+                });
+                await db.update(conversationStates).set({
+                  context: {
+                    ...context,
+                    bookingState: {
+                      ...bookingState,
+                      step: "enter_custom1",
+                      customerName: "",
+                      selectedSlotId: slotId,
+                      selectedSlotDate: slotDate,
+                      selectedStartTime: slot.startTime,
+                      selectedEndTime: slot.endTime
+                    }
+                  },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              try {
+                const booking = await storage.createBooking({
+                  userId: activeWorkflow.userId,
+                  staffId: bookingState.staffId,
+                  departmentId: bookingState.departmentId,
+                  customerPhone: phone,
+                  customerName: "",
+                  slotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  status: bookingState.config?.defaultBookingStatus || "confirmed",
+                  nodeId: bookingState.nodeId,
+                  bookingLabel: bookingState.bookingLabel,
+                  reminderEnabled: bookingState.config?.reminderEnabled || false,
+                  reminderHoursBefore: bookingState.config?.reminderHoursBefore || 24,
+                  reminderMessage: bookingState.config?.reminderMessage || null,
+                  reminderSent: false
+                });
+                const staff = await storage.getBookingStaff(bookingState.staffId);
+                const dept = await storage.getBookingDepartment(bookingState.departmentId);
+                const bookingStatus = bookingState.config?.defaultBookingStatus || "confirmed";
+                let messageToSend;
+                if (bookingStatus === "pending") {
+                  messageToSend = bookingState.config?.pendingMessage || "Your booking request has been submitted. Our team will review and confirm your appointment soon.";
+                } else {
+                  messageToSend = bookingState.config?.successMessage || "Your appointment has been booked for {{date}} at {{time}}.";
+                }
+                messageToSend = messageToSend.replace(/\{\{date\}\}/g, slotDate).replace(/\{\{time\}\}/g, slot.startTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: messageToSend
+                });
+                const definition = activeWorkflow.definitionJson;
+                const bookedNodeId = getNextNodeByHandle(bookingState.nodeId, "booked", definition.edges);
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || bookingState.nodeId,
+                  context: { ...context, bookingState: void 0, lastBookingId: booking.id },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                console.log(`[Booking] Created booking ${booking.id} for ${phone}`);
+              } catch (bookingError) {
+                console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, we could not book this slot. It may no longer be available."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, bookingState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+              }
+              return res.status(200).json({ success: true });
+            }
+          }
+          if (currentState?.context && currentState.context.checkBookingsState) {
+            const context = currentState.context;
+            const checkBookingsState = context.checkBookingsState;
+            const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannel = userChannels.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            if (!activeChannel?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for check bookings flow`);
+              return res.status(200).json({ success: true });
+            }
+            if (checkBookingsState.step === "select_reschedule" && buttonId.startsWith("booking_reschedule_")) {
+              const bookingId = parseInt(buttonId.replace("booking_reschedule_", ""));
+              console.log(`[Booking] User selected booking ${bookingId} to reschedule`);
+              const booking = await storage.getBooking(bookingId);
+              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid booking selection for reschedule: ${bookingId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const staffSlots = await storage.getBookingStaffSlots(booking.staffId);
+              if (staffSlots.length === 0) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, no available slots for rescheduling at this time."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const availableDateTimes = [];
+              const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+              for (let i = 0; i < 7; i++) {
+                const checkDate = /* @__PURE__ */ new Date();
+                checkDate.setDate(checkDate.getDate() + i);
+                const dayOfWeek = checkDate.getDay();
+                const dateStr = checkDate.toISOString().split("T")[0];
+                const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek);
+                for (const slot of daySlots) {
+                  const availabilityResult = await storage.checkSlotAvailability(booking.staffId, dateStr, slot.startTime);
+                  if (availabilityResult.available) {
+                    availableDateTimes.push({
+                      slotId: slot.id,
+                      date: dateStr,
+                      startTime: slot.startTime,
+                      endTime: slot.endTime
+                    });
+                  }
+                }
+              }
+              if (availableDateTimes.length === 0) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, no available slots for rescheduling in the next 7 days."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const slotRows = availableDateTimes.slice(0, 10).map((slot) => ({
+                id: `booking_newslot_${slot.slotId}_${slot.date}`,
+                title: `${slot.date} at ${slot.startTime}`,
+                description: `${slot.startTime} - ${slot.endTime}`
+              }));
+              const slotPromptMsg = checkBookingsState.config?.rescheduleSlotMessage || "Select a new time for your appointment:";
+              const slotButtonLabel = checkBookingsState.config?.rescheduleSlotButtonLabel || "Select New Time";
+              const listPayload = {
+                to: phone,
+                type: "list",
+                body: { text: slotPromptMsg },
+                action: {
+                  list: {
+                    sections: [{
+                      title: "Available Times",
+                      rows: slotRows
+                    }],
+                    label: slotButtonLabel
+                  }
+                }
+              };
+              await sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+              await db.update(conversationStates).set({
+                context: {
+                  ...context,
+                  checkBookingsState: {
+                    ...checkBookingsState,
+                    step: "select_new_slot",
+                    bookingId,
+                    staffId: booking.staffId
+                  }
+                },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, currentState.id));
+              return res.status(200).json({ success: true });
+            }
+            if (checkBookingsState.step === "select_new_slot" && buttonId.startsWith("booking_newslot_")) {
+              const slotParts = buttonId.replace("booking_newslot_", "").split("_");
+              const slotId = parseInt(slotParts[0]);
+              const newSlotDate = slotParts.slice(1).join("_");
+              console.log(`[Booking] Rescheduling booking ${checkBookingsState.bookingId} to slot ${slotId} on ${newSlotDate}`);
+              const slot = await storage.getBookingStaffSlot(slotId);
+              if (!slot || slot.staffId !== checkBookingsState.staffId) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, this slot is no longer available."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              const availabilityResult = await storage.checkSlotAvailability(checkBookingsState.staffId, newSlotDate, slot.startTime, checkBookingsState.bookingId);
+              if (!availabilityResult.available) {
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, this slot is no longer available. Please try again."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              try {
+                await storage.updateBooking(checkBookingsState.bookingId, {
+                  slotDate: newSlotDate,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime
+                });
+                const staff = await storage.getBookingStaff(checkBookingsState.staffId);
+                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                let successMessage = checkBookingsState.config?.rescheduleSuccessMessage || "Your appointment has been rescheduled to {{date}} at {{time}}.";
+                successMessage = successMessage.replace(/\{\{date\}\}/g, newSlotDate).replace(/\{\{time\}\}/g, slot.startTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: successMessage
+                });
+                const definition = activeWorkflow.definitionJson;
+                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, "booked", definition.edges);
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                console.log(`[Booking] Rescheduled booking ${checkBookingsState.bookingId} to ${newSlotDate} at ${slot.startTime}`);
+              } catch (updateError) {
+                console.error(`[Booking] Failed to reschedule: ${updateError.message}`);
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, we could not reschedule your appointment. Please try again."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+              }
+              return res.status(200).json({ success: true });
+            }
+            if (checkBookingsState.step === "select_cancel" && buttonId.startsWith("booking_cancel_")) {
+              const bookingId = parseInt(buttonId.replace("booking_cancel_", ""));
+              console.log(`[Booking] User selected booking ${bookingId} to cancel`);
+              const booking = await storage.getBooking(bookingId);
+              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
+                console.error(`[Booking] Invalid booking selection for cancel: ${bookingId}`);
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                return res.status(200).json({ success: true });
+              }
+              try {
+                await storage.updateBooking(bookingId, { status: "cancelled" });
+                const staff = await storage.getBookingStaff(booking.staffId);
+                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
+                let cancelMessage = checkBookingsState.config?.cancelSuccessMessage || "Your appointment on {{date}} at {{time}} has been cancelled.";
+                cancelMessage = cancelMessage.replace(/\{\{date\}\}/g, booking.slotDate).replace(/\{\{time\}\}/g, booking.startTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "");
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: cancelMessage
+                });
+                const definition = activeWorkflow.definitionJson;
+                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, "booked", definition.edges);
+                await db.update(conversationStates).set({
+                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+                console.log(`[Booking] Cancelled booking ${bookingId}`);
+              } catch (cancelError) {
+                console.error(`[Booking] Failed to cancel booking: ${cancelError.message}`);
+                await sendTextMessage(activeChannel.whapiChannelToken, {
+                  to: phone,
+                  body: "Sorry, we could not cancel your appointment. Please try again."
+                });
+                await db.update(conversationStates).set({
+                  context: { ...context, checkBookingsState: void 0 },
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, currentState.id));
+              }
+              return res.status(200).json({ success: true });
+            }
+          }
+        } catch (bookingError) {
+          console.error(`[Booking] Error processing booking flow: ${bookingError.message}`);
+          return res.status(200).json({ success: true, error: "Booking flow error" });
+        }
+      }
       const executionLog = {
         workflowId: activeWorkflow.id,
         phone,
@@ -7120,6 +10406,234 @@ ${"=".repeat(80)}`);
       };
       try {
         if (messageType === "text") {
+          const [nameCheckState] = await db.select().from(conversationStates).where(and2(
+            eq2(conversationStates.phone, phone),
+            eq2(conversationStates.workflowId, activeWorkflow.id)
+          )).limit(1);
+          const nameCheckContext = nameCheckState?.context || {};
+          const nameCheckBookingState = nameCheckContext.bookingState;
+          if (nameCheckBookingState?.step === "enter_name") {
+            const customerName = incomingMessage.text?.body?.trim() || "";
+            const userChannelsForName = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForName = userChannelsForName.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            if (!activeChannelForName?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for name step, user ${activeWorkflow.userId}`);
+              return res.status(200).json({ success: true });
+            }
+            if (customerName.length < 2) {
+              await sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: "Please enter a valid name (at least 2 characters)."
+              });
+              return res.status(200).json({ success: true });
+            }
+            const config = nameCheckBookingState.config || {};
+            if (config.customQuestion1Enabled && config.customQuestion1Prompt) {
+              await sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: config.customQuestion1Prompt
+              });
+              await db.update(conversationStates).set({
+                context: {
+                  ...nameCheckContext,
+                  bookingState: {
+                    ...nameCheckBookingState,
+                    step: "enter_custom1",
+                    customerName
+                  }
+                },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+              return res.status(200).json({ success: true });
+            }
+            try {
+              const bookingStatus = nameCheckBookingState.config?.defaultBookingStatus || "confirmed";
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName,
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: bookingStatus,
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+                reminderEnabled: nameCheckBookingState.config?.reminderEnabled || false,
+                reminderHoursBefore: nameCheckBookingState.config?.reminderHoursBefore || 24,
+                reminderMessage: nameCheckBookingState.config?.reminderMessage || null,
+                reminderSent: false
+              });
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
+              const messageToSend = (bookingStatus === "pending" ? nameCheckBookingState.config?.pendingMessage || "Your booking request has been submitted. Our team will review and confirm your appointment soon." : nameCheckBookingState.config?.successMessage || "Your appointment has been booked for {{date}} at {{time}}.").replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate).replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "").replace(/\{\{name\}\}/g, customerName);
+              await sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: messageToSend
+              });
+              const definition = activeWorkflow.definitionJson;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, "booked", definition.edges);
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: void 0, lastBookingId: booking.id },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+              console.log(`[Booking] Created booking ${booking.id} for ${phone} with name: ${customerName}`);
+            } catch (bookingError) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await sendTextMessage(activeChannelForName.whapiChannelToken, {
+                to: phone,
+                body: "Sorry, we could not book this slot. It may no longer be available."
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: void 0 },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+            }
+            return res.status(200).json({ success: true });
+          }
+          if (nameCheckBookingState?.step === "enter_custom1") {
+            const customValue1 = incomingMessage.text?.body?.trim() || "";
+            const userChannelsForQ1 = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForQ1 = userChannelsForQ1.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            if (!activeChannelForQ1?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for custom question 1`);
+              return res.status(200).json({ success: true });
+            }
+            const config = nameCheckBookingState.config || {};
+            if (config.customQuestion2Enabled && config.customQuestion2Prompt) {
+              await sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: config.customQuestion2Prompt
+              });
+              await db.update(conversationStates).set({
+                context: {
+                  ...nameCheckContext,
+                  bookingState: {
+                    ...nameCheckBookingState,
+                    step: "enter_custom2",
+                    customField1Value: customValue1,
+                    customField1Label: config.customQuestion1Label || "Question 1"
+                  }
+                },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+              return res.status(200).json({ success: true });
+            }
+            try {
+              const bookingStatus = config.defaultBookingStatus || "confirmed";
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName: nameCheckBookingState.customerName || "",
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: bookingStatus,
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+                customField1Label: config.customQuestion1Label || "Question 1",
+                customField1Value: customValue1,
+                reminderEnabled: config.reminderEnabled || false,
+                reminderHoursBefore: config.reminderHoursBefore || 24,
+                reminderMessage: config.reminderMessage || null,
+                reminderSent: false
+              });
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
+              const messageToSend = (bookingStatus === "pending" ? config.pendingMessage || "Your booking request has been submitted. Our team will review and confirm your appointment soon." : config.successMessage || "Your appointment has been booked for {{date}} at {{time}}.").replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate).replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "").replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || "");
+              await sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: messageToSend
+              });
+              const definition = activeWorkflow.definitionJson;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, "booked", definition.edges);
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: void 0, lastBookingId: booking.id },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+            } catch (bookingError) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await sendTextMessage(activeChannelForQ1.whapiChannelToken, {
+                to: phone,
+                body: "Sorry, we could not book this slot. It may no longer be available."
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: void 0 },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+            }
+            return res.status(200).json({ success: true });
+          }
+          if (nameCheckBookingState?.step === "enter_custom2") {
+            const customValue2 = incomingMessage.text?.body?.trim() || "";
+            const userChannelsForQ2 = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForQ2 = userChannelsForQ2.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+            if (!activeChannelForQ2?.whapiChannelToken) {
+              console.error(`[Booking] No active channel for custom question 2`);
+              return res.status(200).json({ success: true });
+            }
+            const config = nameCheckBookingState.config || {};
+            try {
+              const bookingStatus = config.defaultBookingStatus || "confirmed";
+              const booking = await storage.createBooking({
+                userId: activeWorkflow.userId,
+                staffId: nameCheckBookingState.staffId,
+                departmentId: nameCheckBookingState.departmentId,
+                customerPhone: phone,
+                customerName: nameCheckBookingState.customerName || "",
+                slotDate: nameCheckBookingState.selectedSlotDate,
+                startTime: nameCheckBookingState.selectedStartTime,
+                endTime: nameCheckBookingState.selectedEndTime,
+                status: bookingStatus,
+                nodeId: nameCheckBookingState.nodeId,
+                bookingLabel: nameCheckBookingState.bookingLabel,
+                customField1Label: nameCheckBookingState.customField1Label || "Question 1",
+                customField1Value: nameCheckBookingState.customField1Value || "",
+                customField2Label: config.customQuestion2Label || "Question 2",
+                customField2Value: customValue2,
+                reminderEnabled: config.reminderEnabled || false,
+                reminderHoursBefore: config.reminderHoursBefore || 24,
+                reminderMessage: config.reminderMessage || null,
+                reminderSent: false
+              });
+              const [staff, dept] = await Promise.all([
+                storage.getBookingStaff(nameCheckBookingState.staffId),
+                storage.getBookingDepartment(nameCheckBookingState.departmentId)
+              ]);
+              const messageToSend = (bookingStatus === "pending" ? config.pendingMessage || "Your booking request has been submitted. Our team will review and confirm your appointment soon." : config.successMessage || "Your appointment has been booked for {{date}} at {{time}}.").replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate).replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "").replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || "");
+              await sendTextMessage(activeChannelForQ2.whapiChannelToken, {
+                to: phone,
+                body: messageToSend
+              });
+              const definition = activeWorkflow.definitionJson;
+              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, "booked", definition.edges);
+              await db.update(conversationStates).set({
+                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
+                context: { ...nameCheckContext, bookingState: void 0, lastBookingId: booking.id },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+            } catch (bookingError) {
+              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
+              await sendTextMessage(activeChannelForQ2.whapiChannelToken, {
+                to: phone,
+                body: "Sorry, we could not book this slot. It may no longer be available."
+              });
+              await db.update(conversationStates).set({
+                context: { ...nameCheckContext, bookingState: void 0 },
+                updatedAt: /* @__PURE__ */ new Date()
+              }).where(eq2(conversationStates.id, nameCheckState.id));
+            }
+            return res.status(200).json({ success: true });
+          }
           const msgTimestamp = dayjs.unix(incomingMessage.timestamp || Date.now() / 1e3);
           const msgTimeInBahrain = msgTimestamp.tz("Asia/Bahrain");
           const dateLocal = msgTimeInBahrain.format("YYYY-MM-DD");
@@ -7170,6 +10684,23 @@ ${"=".repeat(80)}`);
                     executionLog.responsesSent.push(response);
                   }
                   console.log(`[Workflow ${workflow2.id}: ${workflow2.name}] Sent welcome message to ${phone} from entry node ${entryNodeId}`);
+                  (async () => {
+                    try {
+                      const userChannelsForLabel = await storage.getChannelsForUser(workflow2.userId);
+                      const activeChannelForLabel = userChannelsForLabel.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                      if (activeChannelForLabel?.whapiChannelToken) {
+                        const chatId2 = `${phone}@s.whatsapp.net`;
+                        await handleChatLabelAsync(
+                          workflow2.userId,
+                          workflow2.id,
+                          activeChannelForLabel.whapiChannelToken,
+                          chatId2,
+                          "chatbot"
+                        );
+                      }
+                    } catch (e) {
+                    }
+                  })();
                   await db.insert(workflowExecutions).values({
                     workflowId: workflow2.id,
                     phone,
@@ -7245,39 +10776,38 @@ ${"=".repeat(80)}`);
               console.log(`[First Message of Day] No active workflows with entry nodes found for user ${activeWorkflow.userId}`);
             }
           } else {
-            console.log("Not first message of day, no action taken");
+            console.log("Not first message of day, marking as inquiry");
+            (async () => {
+              try {
+                const userChannelsForLabel = await storage.getChannelsForUser(activeWorkflow.userId);
+                const activeChannelForLabel = userChannelsForLabel.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                if (activeChannelForLabel?.whapiChannelToken) {
+                  const chatId2 = `${phone}@s.whatsapp.net`;
+                  await handleChatLabelAsync(
+                    activeWorkflow.userId,
+                    activeWorkflow.id,
+                    activeChannelForLabel.whapiChannelToken,
+                    chatId2,
+                    "inquiry"
+                  );
+                }
+              } catch (e) {
+              }
+            })();
           }
         } else if (messageType === "button_reply") {
-          console.log(`
-[BUTTON CLICK DEBUG] =============================================`);
-          console.log(`[BUTTON CLICK DEBUG] Button click received for workflow ${activeWorkflow.id} (${activeWorkflow.name})`);
-          console.log(`[BUTTON CLICK DEBUG] Raw button ID: "${rawButtonId}"`);
-          console.log(`[BUTTON CLICK DEBUG] Extracted button ID: "${buttonId}"`);
-          console.log(`[BUTTON CLICK DEBUG] Reply type: ${incomingMessage.reply?.type}`);
-          console.log(`[BUTTON CLICK DEBUG] context.quoted_id: ${incomingMessage.context?.quoted_id || "MISSING"}`);
-          console.log(`[BUTTON CLICK DEBUG] Full context:`, JSON.stringify(incomingMessage.context, null, 2));
+          console.log(`[Button] workflow:${activeWorkflow.id} btn:${buttonId}`);
           const quotedId = incomingMessage.context?.quoted_id;
           if (quotedId) {
-            console.log(`[BUTTON CLICK DEBUG] Looking up quotedId "${quotedId}" in sent_messages table...`);
             try {
               const anyOwnership = await db.select().from(sentMessages).where(eq2(sentMessages.messageId, quotedId)).limit(1);
-              console.log(`[BUTTON CLICK DEBUG] sent_messages lookup result:`, JSON.stringify(anyOwnership, null, 2));
               if (anyOwnership && anyOwnership.length > 0) {
-                console.log(`[BUTTON CLICK DEBUG] Found ownership record: workflowId=${anyOwnership[0].workflowId}, messageType=${anyOwnership[0].messageType}`);
                 if (anyOwnership[0].workflowId !== activeWorkflow.id) {
-                  console.log(`[Button Reply] Ignoring button click - message ${quotedId} belongs to workflow ${anyOwnership[0].workflowId}, not workflow ${activeWorkflow.id}`);
                   return res.json({ success: true, message: "Button click belongs to different workflow" });
                 }
-                console.log(`[Button Reply] Confirmed ownership - processing button click for workflow ${activeWorkflow.id}`);
-              } else {
-                console.log(`[BUTTON CLICK DEBUG] No record found in sent_messages for quotedId "${quotedId}"`);
-                console.log(`[Button Reply] Message ${quotedId} not tracked in sent_messages - allowing all workflows to process (backward compatible)`);
               }
             } catch (ownershipError) {
-              console.warn(`[Button Reply] Ownership check failed (table may not exist): ${ownershipError.message} - allowing processing for backward compatibility`);
             }
-          } else {
-            console.log(`[BUTTON CLICK DEBUG] No context.quoted_id in the webhook - cannot verify ownership`);
           }
           const definition = activeWorkflow.definitionJson;
           console.log(`[Button Reply Debug] =============================================`);
@@ -7452,6 +10982,14 @@ ${"=".repeat(80)}`);
             const targetNode = definition.nodes?.find((n) => n.id === targetNodeId);
             console.log(`[Button Reply Debug] Target node ID: ${targetNodeId}`);
             console.log(`[Button Reply Debug] Target node found: ${!!targetNode}`);
+            let clickedButtonTitle = "";
+            if (incomingMessage.reply?.type === "buttons_reply") {
+              clickedButtonTitle = incomingMessage.reply.buttons_reply?.title || "";
+            } else if (incomingMessage.reply?.type === "list_reply") {
+              clickedButtonTitle = incomingMessage.reply.list_reply?.title || "";
+            } else if (incomingMessage.button?.text) {
+              clickedButtonTitle = incomingMessage.button.text;
+            }
             if (targetNode) {
               const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
               console.log(`[Button Reply Debug] Target node type: ${nodeType}`);
@@ -7481,6 +11019,87 @@ ${"=".repeat(80)}`);
                 ).limit(1);
               }
               let state = conversationState[0];
+              const stateContext = state.context || {};
+              console.log(`[Data Capture] Context check - captureActive: ${stateContext.captureActive}, clickedButtonTitle: ${clickedButtonTitle}`);
+              console.log(`[Data Capture] Full context:`, JSON.stringify(stateContext));
+              if (stateContext.captureActive && clickedButtonTitle) {
+                const saveKeywords = ["save", "\u062D\u0641\u0638"];
+                const isSaveAction = saveKeywords.some(
+                  (kw) => clickedButtonTitle.toLowerCase().trim() === kw.toLowerCase()
+                );
+                const capturedClicks = stateContext.capturedClicks || [];
+                capturedClicks.push({
+                  buttonId,
+                  buttonTitle: clickedButtonTitle,
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                  nodeId: targetEdge.source
+                  // The node the button was on
+                });
+                console.log(`[Data Capture] Recorded click: "${clickedButtonTitle}" (total: ${capturedClicks.length})`);
+                stateContext.capturedClicks = capturedClicks;
+                state = { ...state, context: stateContext };
+                if (isSaveAction && stateContext.captureSequenceName) {
+                  console.log(`[Data Capture] Save action detected - saving ${capturedClicks.length} clicks for sequence "${stateContext.captureSequenceName}"`);
+                  try {
+                    let existingSequence = await db.select().from(captureSequences).where(
+                      and2(
+                        eq2(captureSequences.workflowId, activeWorkflow.id),
+                        eq2(captureSequences.sequenceName, stateContext.captureSequenceName)
+                      )
+                    ).limit(1);
+                    let sequenceId;
+                    if (existingSequence.length === 0) {
+                      const [newSeq] = await db.insert(captureSequences).values({
+                        userId: activeWorkflow.userId,
+                        workflowId: activeWorkflow.id,
+                        sequenceName: stateContext.captureSequenceName,
+                        startNodeId: stateContext.captureStartNodeId || "",
+                        endNodeId: currentNodeId || ""
+                      }).returning({ id: captureSequences.id });
+                      sequenceId = newSeq.id;
+                      console.log(`[Data Capture] Created new sequence ID: ${sequenceId}`);
+                    } else {
+                      sequenceId = existingSequence[0].id;
+                    }
+                    const existingEntry = await db.select().from(capturedData).where(
+                      and2(
+                        eq2(capturedData.sequenceId, sequenceId),
+                        eq2(capturedData.phone, phone)
+                      )
+                    ).limit(1);
+                    if (existingEntry.length > 0) {
+                      await db.update(capturedData).set({
+                        clicksJson: capturedClicks,
+                        savedAt: /* @__PURE__ */ new Date()
+                      }).where(eq2(capturedData.id, existingEntry[0].id));
+                      console.log(`[Data Capture] Updated existing entry for phone ${phone} in sequence ${sequenceId}`);
+                    } else {
+                      await db.insert(capturedData).values({
+                        sequenceId,
+                        userId: activeWorkflow.userId,
+                        phone,
+                        clicksJson: capturedClicks,
+                        workflowName: activeWorkflow.name,
+                        sequenceName: stateContext.captureSequenceName
+                      });
+                      console.log(`[Data Capture] Created new entry for phone ${phone}`);
+                    }
+                  } catch (captureError) {
+                    console.error(`[Data Capture] Error saving captured data: ${captureError.message}`);
+                  }
+                  delete stateContext.captureActive;
+                  delete stateContext.captureSequenceName;
+                  delete stateContext.capturedClicks;
+                  delete stateContext.captureStartNodeId;
+                  stateContext.captureCompleted = true;
+                  state = { ...state, context: stateContext };
+                  console.log(`[Data Capture] Capture state cleared after save, marked for reset after workflow completes`);
+                }
+                await db.update(conversationStates).set({
+                  context: stateContext,
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, state.id));
+              }
               while (currentNode) {
                 const currentNodeType = currentNode.data?.type || currentNode.data?.nodeType;
                 if (currentNodeType === "action.http_request") {
@@ -7516,6 +11135,223 @@ ${"=".repeat(80)}`);
                   }
                   currentNode = nextNode;
                   currentNodeId = nextNodeId;
+                } else if (currentNodeType === "booking.book_appointment") {
+                  const config = currentNode.data?.config || {};
+                  const context = state.context || {};
+                  console.log(`[Booking] book_appointment node: ${currentNodeId}, state.currentNodeId: ${state.currentNodeId}`);
+                  const existingBookingNodeId = context.bookingState?.nodeId;
+                  const isNavigatingToBookingNode = state.currentNodeId !== currentNodeId;
+                  const shouldStartFresh = !context.bookingState || existingBookingNodeId !== currentNodeId || isNavigatingToBookingNode;
+                  if (shouldStartFresh) console.log(`[Booking] Starting fresh booking flow`);
+                  if (shouldStartFresh) {
+                    let departments;
+                    if (config.serviceId) {
+                      console.log(`[Booking] Filtering departments by serviceId: ${config.serviceId}`);
+                      departments = await storage.getBookingDepartmentsForService(config.serviceId);
+                    } else {
+                      console.log(`[Booking] No serviceId configured, getting all departments for user`);
+                      departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
+                    }
+                    const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                    const activeChannel = userChannels.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                    if (departments.length === 0) {
+                      const noSlotsMessage = config.noSlotsMessage || "Sorry, booking is not available at this time.";
+                      if (activeChannel?.whapiChannelToken) {
+                        await sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noSlotsMessage
+                        });
+                      }
+                      const noSlotsNodeId = getNextNodeByHandle(currentNodeId, "no_slots", definition.edges);
+                      if (!noSlotsNodeId) break;
+                      const noSlotsNode = definition.nodes?.find((n) => n.id === noSlotsNodeId);
+                      if (!noSlotsNode) break;
+                      currentNode = noSlotsNode;
+                      currentNodeId = noSlotsNodeId;
+                      continue;
+                    }
+                    if (activeChannel?.whapiChannelToken) {
+                      const promptMessage = config.promptMessage || "Please select a department for your appointment:";
+                      const listPayload = {
+                        to: phone,
+                        type: "list",
+                        body: { text: promptMessage },
+                        action: {
+                          list: {
+                            sections: [{
+                              title: "Departments",
+                              rows: departments.map((dept) => ({
+                                id: `booking_dept_${dept.id}`,
+                                title: dept.name,
+                                description: dept.description || ""
+                              }))
+                            }],
+                            label: config.departmentButtonLabel || "Select Department"
+                          }
+                        }
+                      };
+                      await sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+                      const bookingState = {
+                        step: "select_department",
+                        nodeId: currentNodeId,
+                        bookingLabel: config.bookingLabel || "appointment",
+                        config
+                      };
+                      await db.update(conversationStates).set({
+                        lastMessageAt: /* @__PURE__ */ new Date(),
+                        currentNodeId,
+                        context: { ...context, bookingState },
+                        updatedAt: /* @__PURE__ */ new Date()
+                      }).where(eq2(conversationStates.id, state.id));
+                      executionLog.responsesSent.push({
+                        nodeId: currentNodeId,
+                        nodeType: "booking.book_appointment",
+                        step: "select_department",
+                        success: true
+                      });
+                      break;
+                    }
+                  }
+                  break;
+                } else if (currentNodeType === "booking.check_bookings") {
+                  const config = currentNode.data?.config || {};
+                  const checkType = config.checkType || "my_bookings";
+                  const context = state.context || {};
+                  console.log(`[Booking] Processing check_bookings node: ${currentNodeId}, type: ${checkType}`);
+                  const statusFilter = config.statusFilter || "upcoming";
+                  const maxBookings = config.maxBookings || 0;
+                  let allCustomerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
+                  let customerBookings = allCustomerBookings;
+                  if (statusFilter === "upcoming") {
+                    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+                    customerBookings = allCustomerBookings.filter(
+                      (b) => b.status === "confirmed" && b.slotDate >= today
+                    );
+                  } else if (statusFilter === "confirmed") {
+                    customerBookings = allCustomerBookings.filter((b) => b.status === "confirmed");
+                  } else if (statusFilter === "pending") {
+                    customerBookings = allCustomerBookings.filter((b) => b.status === "pending");
+                  } else if (statusFilter === "completed") {
+                    customerBookings = allCustomerBookings.filter((b) => b.status === "completed");
+                  } else if (statusFilter === "cancelled") {
+                    customerBookings = allCustomerBookings.filter((b) => b.status === "cancelled");
+                  }
+                  if (maxBookings > 0 && customerBookings.length > maxBookings) {
+                    customerBookings = customerBookings.sort((a, b) => new Date(b.slotDate).getTime() - new Date(a.slotDate).getTime()).slice(0, maxBookings);
+                  }
+                  const activeBookings = customerBookings.filter((b) => b.status === "confirmed");
+                  const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                  const activeChannel = userChannels.find((ch) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                  if (activeChannel?.whapiChannelToken) {
+                    if (checkType === "my_bookings") {
+                      if (customerBookings.length === 0) {
+                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
+                        await sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noBookingsMessage
+                        });
+                      } else {
+                        const bookingListFormat = config.bookingListFormat || "{{date}} at {{time}}\n{{department}} - {{staff}}\nStatus: {{status}}";
+                        const staffIds = Array.from(new Set(customerBookings.map((b) => b.staffId)));
+                        const staffList = await Promise.all(staffIds.map((id) => storage.getBookingStaff(id)));
+                        const staffMap = new Map(staffList.filter(Boolean).map((s) => [s.id, s]));
+                        const deptIds = Array.from(new Set(staffList.filter(Boolean).map((s) => s.departmentId)));
+                        const deptList = await Promise.all(deptIds.map((id) => storage.getBookingDepartment(id)));
+                        const deptMap = new Map(deptList.filter(Boolean).map((d) => [d.id, d]));
+                        let bookingsText = "Your appointments:\n\n";
+                        for (const booking of customerBookings) {
+                          const staff = staffMap.get(booking.staffId);
+                          const dept = staff ? deptMap.get(staff.departmentId) : null;
+                          let formatted = bookingListFormat.replace(/\{\{date\}\}/g, booking.slotDate).replace(/\{\{time\}\}/g, booking.startTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "").replace(/\{\{status\}\}/g, booking.status);
+                          bookingsText += formatted + "\n\n";
+                        }
+                        await sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: bookingsText.trim()
+                        });
+                      }
+                      const nextNodeId = getNextNodeByHandle(currentNodeId, "booked", definition.edges);
+                      if (!nextNodeId) break;
+                      const nextNode = definition.nodes?.find((n) => n.id === nextNodeId);
+                      if (!nextNode) break;
+                      currentNode = nextNode;
+                      currentNodeId = nextNodeId;
+                    } else if (checkType === "reschedule" || checkType === "cancel_booking") {
+                      if (activeBookings.length === 0) {
+                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
+                        await sendTextMessage(activeChannel.whapiChannelToken, {
+                          to: phone,
+                          body: noBookingsMessage
+                        });
+                        const nextNodeId = getNextNodeByHandle(currentNodeId, "no_slots", definition.edges);
+                        if (!nextNodeId) break;
+                        const nextNode = definition.nodes?.find((n) => n.id === nextNodeId);
+                        if (!nextNode) break;
+                        currentNode = nextNode;
+                        currentNodeId = nextNodeId;
+                      } else {
+                        const actionType = checkType === "reschedule" ? "reschedule" : "cancel";
+                        const promptMessage = checkType === "reschedule" ? config.reschedulePromptMessage || "Select the appointment you want to reschedule:" : config.cancelPromptMessage || "Select the appointment you want to cancel:";
+                        const buttonLabel = checkType === "reschedule" ? config.rescheduleButtonLabel || "Select Appointment" : config.cancelButtonLabel || "Select Appointment";
+                        const staffIdsForAction = Array.from(new Set(activeBookings.map((b) => b.staffId)));
+                        const staffListForAction = await Promise.all(staffIdsForAction.map((id) => storage.getBookingStaff(id)));
+                        const staffMapForAction = new Map(staffListForAction.filter(Boolean).map((s) => [s.id, s]));
+                        const deptIdsForAction = Array.from(new Set(staffListForAction.filter(Boolean).map((s) => s.departmentId)));
+                        const deptListForAction = await Promise.all(deptIdsForAction.map((id) => storage.getBookingDepartment(id)));
+                        const deptMapForAction = new Map(deptListForAction.filter(Boolean).map((d) => [d.id, d]));
+                        const bookingRows = activeBookings.map((booking) => {
+                          const staff = staffMapForAction.get(booking.staffId);
+                          const dept = staff ? deptMapForAction.get(staff.departmentId) : null;
+                          return {
+                            id: `booking_${actionType}_${booking.id}`,
+                            title: `${booking.slotDate} at ${booking.startTime}`,
+                            description: `${dept?.name || ""} - ${staff?.name || ""}`.trim() || "Appointment"
+                          };
+                        });
+                        const listPayload = {
+                          to: phone,
+                          type: "list",
+                          body: { text: promptMessage },
+                          action: {
+                            list: {
+                              sections: [{
+                                title: "Your Appointments",
+                                rows: bookingRows
+                              }],
+                              label: buttonLabel
+                            }
+                          }
+                        };
+                        await sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
+                        const checkBookingsState = {
+                          step: `select_${actionType}`,
+                          nodeId: currentNodeId,
+                          checkType,
+                          config
+                        };
+                        await db.update(conversationStates).set({
+                          lastMessageAt: /* @__PURE__ */ new Date(),
+                          currentNodeId,
+                          context: { ...context, checkBookingsState },
+                          updatedAt: /* @__PURE__ */ new Date()
+                        }).where(eq2(conversationStates.id, state.id));
+                        executionLog.responsesSent.push({
+                          nodeId: currentNodeId,
+                          nodeType: "booking.check_bookings",
+                          checkType,
+                          bookingsCount: activeBookings.length,
+                          success: true
+                        });
+                        break;
+                      }
+                    }
+                  }
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: "booking.check_bookings",
+                    bookingsCount: customerBookings.length,
+                    success: true
+                  });
                 } else if (currentNodeType && (currentNodeType.startsWith("message.") || ["quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons", "carousel"].includes(currentNodeType))) {
                   console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
                   console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
@@ -7528,11 +11364,30 @@ ${"=".repeat(80)}`);
                     console.error(`[Button Reply Debug] Failed to send message: ${sendError.message}`);
                     throw sendError;
                   }
-                  await db.update(conversationStates).set({
-                    lastMessageAt: /* @__PURE__ */ new Date(),
-                    currentNodeId,
-                    updatedAt: /* @__PURE__ */ new Date()
-                  }).where(eq2(conversationStates.id, state.id));
+                  const nodeConfig = currentNode.data?.config || {};
+                  if (nodeConfig.isCaptureStart && nodeConfig.captureSequenceName) {
+                    console.log(`[Data Capture] Starting capture sequence: "${nodeConfig.captureSequenceName}"`);
+                    const updatedContext = {
+                      ...state.context,
+                      captureActive: true,
+                      captureSequenceName: nodeConfig.captureSequenceName,
+                      captureStartNodeId: currentNodeId,
+                      capturedClicks: []
+                    };
+                    state = { ...state, context: updatedContext };
+                    await db.update(conversationStates).set({
+                      lastMessageAt: /* @__PURE__ */ new Date(),
+                      currentNodeId,
+                      context: updatedContext,
+                      updatedAt: /* @__PURE__ */ new Date()
+                    }).where(eq2(conversationStates.id, state.id));
+                  } else {
+                    await db.update(conversationStates).set({
+                      lastMessageAt: /* @__PURE__ */ new Date(),
+                      currentNodeId,
+                      updatedAt: /* @__PURE__ */ new Date()
+                    }).where(eq2(conversationStates.id, state.id));
+                  }
                   const hasInteractiveElements = ["quickReply", "quickReplyImage", "quickReplyVideo", "listMessage", "buttons", "carousel"].includes(currentNodeType);
                   if (hasInteractiveElements) {
                     console.log(`[Button Reply Debug] Stopping execution - message node has interactive elements (${currentNodeType})`);
@@ -7560,12 +11415,21 @@ ${"=".repeat(80)}`);
                 }
               }
               console.log(`[Button Reply Debug] While loop finished. Total responses sent: ${executionLog.responsesSent.length}`);
+              const finalContext = state.context || {};
+              if (finalContext.captureCompleted) {
+                console.log(`[Data Capture] Workflow completed, resetting conversation state for next run`);
+                await db.update(conversationStates).set({
+                  currentNodeId: null,
+                  context: {},
+                  updatedAt: /* @__PURE__ */ new Date()
+                }).where(eq2(conversationStates.id, state.id));
+              }
             } else {
               console.log(`[Button Reply Debug] Target node not found in workflow definition`);
             }
           } else {
-            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId}`);
-            console.log(`[Button Reply Debug] Available sourceHandles in edges:`, definition.edges?.map((e) => e.sourceHandle));
+            console.log(`[Button Reply Debug] No target edge found for button_id: ${buttonId} - skipping workflow ${activeWorkflow.id}`);
+            return res.json({ success: true, message: "Button not handled by this workflow" });
           }
         }
         if (executionLog.responsesSent.length === 0 && !executionLog.errorMessage) {
@@ -7732,6 +11596,22 @@ ${"=".repeat(80)}`);
             const result = await buildAndSendNodeMessage(channel, phone, nodeType, config);
             if (result.success) {
               console.log(`[Bulk Webhook] Successfully sent ${nodeType} to ${phone}`);
+              if (channel?.whapiChannelToken) {
+                const channelTokenForLabel = channel.whapiChannelToken;
+                (async () => {
+                  try {
+                    const chatId2 = `${phone}@s.whatsapp.net`;
+                    await handleChatLabelAsync(
+                      workflowRecord.userId,
+                      workflowRecord.id,
+                      channelTokenForLabel,
+                      chatId2,
+                      "chatbot"
+                    );
+                  } catch (e) {
+                  }
+                })();
+              }
               if (result.messageId) {
                 try {
                   await db.insert(sentMessages).values({
@@ -8425,6 +12305,7 @@ ${"=".repeat(80)}`);
         outbox: false,
         logs: false,
         bulkLogs: false,
+        captureList: false,
         pricing: true,
         settings: false,
         balances: false,
@@ -8892,47 +12773,25 @@ ${"=".repeat(80)}`);
       res.status(500).json({ error: "Failed to cancel subscription" });
     }
   });
-  app2.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id);
-      if (userId === req.userId) {
-        return res.status(400).json({ error: "You cannot delete your own account" });
-      }
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      await storage.createAuditLog({
-        actorUserId: req.userId,
-        action: "DELETE_USER",
-        meta: {
-          entity: "user",
-          userId,
-          email: user.email,
-          name: user.name
-        }
-      });
-      await storage.deleteUser(userId);
-      res.json({ message: "User account deleted successfully" });
-    } catch (error) {
-      console.error("Delete user error:", error);
-      res.status(500).json({ error: "Failed to delete user account" });
-    }
-  });
   app2.post("/api/me/cancel-subscription", requireAuth, async (req, res) => {
     try {
-      const subscription = await storage.getActiveSubscriptionForUser(req.userId);
+      const effectiveUserId = getEffectiveUserId(req);
+      const subscription = await storage.getActiveSubscriptionForUser(effectiveUserId);
       if (!subscription) {
         return res.status(404).json({ error: "No active subscription found" });
       }
       await storage.updateSubscription(subscription.id, { status: "CANCELLED" });
       await storage.createAuditLog({
         actorUserId: req.userId,
+        // Real admin ID for accountability
         action: "CANCEL_OWN_SUBSCRIPTION",
         meta: {
           entity: "subscription",
           entityId: subscription.id,
-          planId: subscription.planId
+          planId: subscription.planId,
+          targetUserId: effectiveUserId,
+          // Track which user was affected
+          impersonated: req.impersonatedUser ? true : false
         }
       });
       res.json({ message: "Subscription cancelled successfully" });
@@ -8943,6 +12802,7 @@ ${"=".repeat(80)}`);
   });
   app2.post("/api/me/reset-password", requireAuth, async (req, res) => {
     try {
+      const effectiveUserId = getEffectiveUserId(req);
       const validation = z2.object({
         newPassword: z2.string().min(6, "Password must be at least 6 characters")
       }).safeParse(req.body);
@@ -8951,13 +12811,16 @@ ${"=".repeat(80)}`);
       }
       const { newPassword } = validation.data;
       const passwordHash = await hashPassword(newPassword);
-      await storage.updateUser(req.userId, { passwordHash });
+      await storage.updateUser(effectiveUserId, { passwordHash });
       await storage.createAuditLog({
         actorUserId: req.userId,
+        // Real admin ID for accountability
         action: "RESET_PASSWORD",
         meta: {
           entity: "user",
-          userId: req.userId
+          targetUserId: effectiveUserId,
+          // Track which user's password was reset
+          impersonated: req.impersonatedUser ? true : false
         }
       });
       res.json({ message: "Password reset successfully" });
@@ -9106,49 +12969,40 @@ async function seedDatabase() {
       price: 2900,
       // $29 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 1,
       dailyMessagesLimit: 100,
-      bulkMessagesLimit: 500,
-      features: ["Basic templates", "Email support"]
+      bulkMessagesLimit: 500
     });
     await storage.createPlan({
       name: "Growth",
       price: 7900,
       // $79 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 3,
       dailyMessagesLimit: 500,
-      bulkMessagesLimit: 5e3,
-      features: ["Advanced templates", "Chatbot builder", "Priority support"]
+      bulkMessagesLimit: 5e3
     });
     await storage.createPlan({
       name: "Advanced",
       price: 19900,
       // $199 in cents
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 10,
       dailyMessagesLimit: 2e3,
-      bulkMessagesLimit: 5e4,
-      features: ["Custom workflows", "API access", "Dedicated support"]
+      bulkMessagesLimit: 5e4
     });
     await storage.createPlan({
       name: "Enterprise",
       price: 49900,
       // $499 in cents (custom pricing in reality)
       currency: "USD",
-      durationDays: 30,
+      daysGranted: 30,
       channelsLimit: 999,
       dailyMessagesLimit: 999999,
-      bulkMessagesLimit: 999999,
-      features: [
-        "Custom integrations",
-        "SLA guarantee",
-        "Account manager",
-        "White-label option"
-      ]
+      bulkMessagesLimit: 999999
     });
     console.log("\u2713 Sample plans created");
   }
@@ -9222,6 +13076,155 @@ You may cancel your subscription at any time through your account settings. Acce
     });
     console.log("\u2713 Terms & Conditions documents created");
   }
+  const admin = await storage.getUserByEmail("admin@omniplus.com");
+  if (admin) {
+    const existingDepts = await storage.getBookingDepartmentsForUser(admin.id);
+    if (existingDepts.length === 0) {
+      const generalDept = await storage.createBookingDepartment({
+        userId: admin.id,
+        name: "General Medicine",
+        description: "General health checkups and consultations",
+        isActive: true
+      });
+      const cardioDept = await storage.createBookingDepartment({
+        userId: admin.id,
+        name: "Cardiology",
+        description: "Heart and cardiovascular health",
+        isActive: true
+      });
+      const drSmith = await storage.createBookingStaff({
+        userId: admin.id,
+        departmentId: generalDept.id,
+        name: "Dr. Sarah Smith",
+        isActive: true
+      });
+      const drJones = await storage.createBookingStaff({
+        userId: admin.id,
+        departmentId: cardioDept.id,
+        name: "Dr. Michael Jones",
+        isActive: true
+      });
+      const timeSlots = [
+        { startTime: "09:00", endTime: "10:00" },
+        { startTime: "10:00", endTime: "11:00" },
+        { startTime: "11:00", endTime: "12:00" },
+        { startTime: "14:00", endTime: "15:00" },
+        { startTime: "15:00", endTime: "16:00" },
+        { startTime: "16:00", endTime: "17:00" }
+      ];
+      for (let day = 1; day <= 5; day++) {
+        for (const slot of timeSlots) {
+          await storage.createBookingStaffSlot({
+            staffId: drSmith.id,
+            dayOfWeek: day,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            slotDuration: 60,
+            capacity: 2,
+            isActive: true
+          });
+        }
+      }
+      for (const day of [1, 3, 5]) {
+        for (const slot of timeSlots.slice(0, 3)) {
+          await storage.createBookingStaffSlot({
+            staffId: drJones.id,
+            dayOfWeek: day,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            slotDuration: 60,
+            capacity: 1,
+            isActive: true
+          });
+        }
+      }
+      console.log("\u2713 Hospital booking departments, staff, and slots created");
+      const workflowDefinition = {
+        nodes: [
+          {
+            id: "entry_1",
+            type: "entry",
+            position: { x: 250, y: 50 },
+            data: {
+              label: "Book Appointment",
+              type: "entry",
+              config: { keyword: "book" }
+            }
+          },
+          {
+            id: "message_1",
+            type: "message",
+            position: { x: 250, y: 150 },
+            data: {
+              label: "Welcome Message",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "Welcome to City Hospital! \u{1F3E5}\n\nI'll help you book an appointment with one of our specialists."
+              }
+            }
+          },
+          {
+            id: "booking_1",
+            type: "booking.book_appointment",
+            position: { x: 250, y: 280 },
+            data: {
+              label: "Book Appointment",
+              type: "booking.book_appointment",
+              config: {
+                promptMessage: "Please select a department to book your appointment:",
+                successMessage: "Great! Your appointment is confirmed for {{date}} at {{time}} with {{staff}} in {{department}}.",
+                noSlotsMessage: "Sorry, no available slots at the moment. Please try again later.",
+                allowMultiple: false,
+                maxAdvanceDays: 14,
+                bookingLabel: "Hospital Appointment"
+              }
+            }
+          },
+          {
+            id: "success_msg",
+            type: "message",
+            position: { x: 100, y: 450 },
+            data: {
+              label: "Booking Confirmed",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "Thank you for booking with City Hospital! We look forward to seeing you.\n\nPlease arrive 15 minutes before your appointment time."
+              }
+            }
+          },
+          {
+            id: "no_slots_msg",
+            type: "message",
+            position: { x: 400, y: 450 },
+            data: {
+              label: "No Slots Available",
+              type: "message",
+              config: {
+                messageType: "text",
+                text: "We apologize for the inconvenience. Please try booking again later or call us at (555) 123-4567."
+              }
+            }
+          }
+        ],
+        edges: [
+          { id: "e1", source: "entry_1", target: "message_1", sourceHandle: "default", targetHandle: null },
+          { id: "e2", source: "message_1", target: "booking_1", sourceHandle: "default", targetHandle: null },
+          { id: "e3", source: "booking_1", target: "success_msg", sourceHandle: "booked", targetHandle: null },
+          { id: "e4", source: "booking_1", target: "no_slots_msg", sourceHandle: "no_slots", targetHandle: null }
+        ]
+      };
+      await storage.createWorkflow({
+        userId: admin.id,
+        name: "Hospital Appointment Booking",
+        definitionJson: workflowDefinition,
+        entryNodeId: "entry_1",
+        isActive: true
+      });
+      console.log("\u2713 Hospital booking workflow created (trigger: 'book')");
+    }
+  }
   console.log("Database seeded successfully!");
 }
 
@@ -9231,16 +13234,30 @@ init_whapi();
 import cron from "node-cron";
 import fs3 from "fs";
 import path4 from "path";
+import dayjs2 from "dayjs";
+import utc2 from "dayjs/plugin/utc.js";
+import timezone2 from "dayjs/plugin/timezone.js";
+dayjs2.extend(utc2);
+dayjs2.extend(timezone2);
+var APP_TIMEZONE = "Asia/Bahrain";
 var BackgroundWorker = class {
   dailyBalanceJob = null;
   messageProcessorJob = null;
   mediaCleanupJob = null;
+  autoExtendJob = null;
+  appointmentReminderJob = null;
   start() {
     this.dailyBalanceJob = cron.schedule("0 * * * *", async () => {
       await this.deductDailyBalance();
     });
     this.mediaCleanupJob = cron.schedule("0 3 * * *", async () => {
       await this.cleanupOldMedia();
+    });
+    this.autoExtendJob = cron.schedule("0 0 * * *", async () => {
+      await this.autoExtendChannels();
+    });
+    this.appointmentReminderJob = cron.schedule("*/15 * * * *", async () => {
+      await this.sendAppointmentReminders();
     });
   }
   stop() {
@@ -9252,6 +13269,12 @@ var BackgroundWorker = class {
     }
     if (this.mediaCleanupJob) {
       this.mediaCleanupJob.stop();
+    }
+    if (this.autoExtendJob) {
+      this.autoExtendJob.stop();
+    }
+    if (this.appointmentReminderJob) {
+      this.appointmentReminderJob.stop();
     }
   }
   // Check and pause expired channels
@@ -9281,7 +13304,7 @@ var BackgroundWorker = class {
             });
             expiredCount++;
             await storage.createAuditLog({
-              userId: user.id,
+              actorUserId: user.id,
               action: "CHANNEL_EXPIRED",
               meta: {
                 channelId: channel.id,
@@ -9418,11 +13441,231 @@ var BackgroundWorker = class {
       console.error("Error in media cleanup:", error);
     }
   }
+  // Auto-extend channels for users with autoExtendEnabled
+  async autoExtendChannels() {
+    try {
+      console.log("[AutoExtend] Starting daily auto-extend check...");
+      const now = /* @__PURE__ */ new Date();
+      const dayOfWeek = now.getDay();
+      const isFriday = dayOfWeek === 5;
+      const isSaturday = dayOfWeek === 6;
+      const subscriptions2 = await storage.getSubscriptionsWithAutoExtend();
+      console.log(`[AutoExtend] Found ${subscriptions2.length} subscriptions with auto-extend enabled`);
+      let extendedCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+      for (const subscription of subscriptions2) {
+        try {
+          if (isFriday && subscription.skipFriday) {
+            console.log(`[AutoExtend] Skipping user ${subscription.userId} - Friday skip enabled`);
+            skippedCount++;
+            continue;
+          }
+          if (isSaturday && subscription.skipSaturday) {
+            console.log(`[AutoExtend] Skipping user ${subscription.userId} - Saturday skip enabled`);
+            skippedCount++;
+            continue;
+          }
+          const channels2 = await storage.getChannelsForUser(subscription.userId);
+          const extendableChannels = channels2.filter(
+            (ch) => ch.status === "ACTIVE" || ch.status === "PAUSED"
+          );
+          if (extendableChannels.length === 0) {
+            console.log(`[AutoExtend] No extendable channels for user ${subscription.userId}`);
+            continue;
+          }
+          const mainBalance = await storage.getMainDaysBalance();
+          if (mainBalance < extendableChannels.length) {
+            console.log(`[AutoExtend] Insufficient main balance (${mainBalance}) for user ${subscription.userId} with ${extendableChannels.length} channels`);
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_FAILED",
+              meta: {
+                reason: "Insufficient main balance",
+                mainBalance,
+                channelsToExtend: extendableChannels.length
+              }
+            });
+            errorCount++;
+            continue;
+          }
+          let userExtendedCount = 0;
+          let userFailedCount = 0;
+          const failedChannels = [];
+          for (const channel of extendableChannels) {
+            try {
+              if (!channel.whapiChannelId || !channel.whapiChannelToken) {
+                console.log(`[AutoExtend] Channel "${channel.label}" (ID: ${channel.id}) is missing WHAPI ID or Token, skipping`);
+                userFailedCount++;
+                errorCount++;
+                failedChannels.push({
+                  id: channel.id,
+                  label: channel.label,
+                  error: !channel.whapiChannelId ? "No WHAPI channel ID" : "No WHAPI channel token"
+                });
+                continue;
+              }
+              try {
+                const health = await getChannelHealth(channel.whapiChannelToken);
+                const statusText = health.status?.text;
+                if (statusText === "QR") {
+                  console.log(`[AutoExtend] Skipping channel "${channel.label}" - Status is QR (Not Authorized)`);
+                  skippedCount++;
+                  continue;
+                }
+                if (statusText !== "AUTH") {
+                  console.log(`[AutoExtend] Skipping channel "${channel.label}" - Unexpected status: ${statusText}`);
+                  skippedCount++;
+                  continue;
+                }
+                console.log(`[AutoExtend] Channel "${channel.label}" is AUTHORIZED, proceeding with extension`);
+              } catch (healthError) {
+                console.error(`[AutoExtend] Health check failed for channel ${channel.id}:`, healthError);
+                userFailedCount++;
+                errorCount++;
+                failedChannels.push({
+                  id: channel.id,
+                  label: channel.label,
+                  error: `Health check failed: ${healthError instanceof Error ? healthError.message : String(healthError)}`
+                });
+                continue;
+              }
+              await storage.updateMainDaysBalance(-1);
+              try {
+                await extendWhapiChannel(channel.whapiChannelId, 1, "Auto-extend daily");
+                console.log(`[AutoExtend] WHAPI API call successful for channel "${channel.label}"`);
+              } catch (whapiError) {
+                console.error(`[AutoExtend] WHAPI API failed for channel ${channel.id}:`, whapiError);
+                await storage.updateMainDaysBalance(1);
+                throw whapiError;
+              }
+              await storage.addDaysToChannel({
+                channelId: channel.id,
+                days: 1,
+                source: "ADMIN_MANUAL",
+                metadata: {
+                  reason: "auto_extend",
+                  subscriptionId: subscription.id,
+                  date: now.toISOString()
+                }
+              });
+              await storage.createBalanceTransaction({
+                type: "allocate",
+                days: 1,
+                channelId: channel.id,
+                userId: subscription.userId,
+                note: `Auto-extend: 1 day added to channel "${channel.label}"`
+              });
+              console.log(`[AutoExtend] Extended channel "${channel.label}" (ID: ${channel.id}) for user ${subscription.userId}`);
+              userExtendedCount++;
+              extendedCount++;
+            } catch (channelError) {
+              console.error(`[AutoExtend] Failed to extend channel ${channel.id}:`, channelError);
+              userFailedCount++;
+              errorCount++;
+              failedChannels.push({
+                id: channel.id,
+                label: channel.label,
+                error: channelError instanceof Error ? channelError.message : String(channelError)
+              });
+            }
+          }
+          if (userFailedCount > 0 && userExtendedCount === 0) {
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_FAILED",
+              meta: {
+                reason: "All channel extensions failed",
+                channelsAttempted: extendableChannels.length,
+                failedChannels,
+                date: now.toISOString()
+              }
+            });
+          } else if (userFailedCount > 0 && userExtendedCount > 0) {
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_PARTIAL",
+              meta: {
+                channelsExtended: userExtendedCount,
+                channelsFailed: userFailedCount,
+                failedChannels,
+                date: now.toISOString()
+              }
+            });
+          } else if (userExtendedCount > 0) {
+            await storage.createAuditLog({
+              actorUserId: subscription.userId,
+              action: "AUTO_EXTEND_SUCCESS",
+              meta: {
+                channelsExtended: userExtendedCount,
+                date: now.toISOString()
+              }
+            });
+          }
+        } catch (subscriptionError) {
+          console.error(`[AutoExtend] Error processing subscription ${subscription.id}:`, subscriptionError);
+          errorCount++;
+        }
+      }
+      console.log(`[AutoExtend] Completed. Extended: ${extendedCount} channels, Skipped: ${skippedCount} users, Errors: ${errorCount}`);
+    } catch (error) {
+      console.error("[AutoExtend] Error in auto-extend job:", error);
+    }
+  }
+  // Send appointment reminders for upcoming bookings
+  async sendAppointmentReminders() {
+    try {
+      const bookingsNeedingReminders = await storage.getBookingsNeedingReminders();
+      if (bookingsNeedingReminders.length === 0) {
+        return;
+      }
+      let sentCount = 0;
+      let errorCount = 0;
+      const nowInTz = dayjs2().tz(APP_TIMEZONE);
+      for (const booking of bookingsNeedingReminders) {
+        try {
+          const appointmentDateTimeStr = `${booking.slotDate} ${booking.startTime}`;
+          const appointmentTime = dayjs2.tz(appointmentDateTimeStr, "YYYY-MM-DD HH:mm", APP_TIMEZONE);
+          const reminderHours = booking.reminderHoursBefore || 24;
+          const reminderTime = appointmentTime.subtract(reminderHours, "hour");
+          const fifteenMinutes = 15;
+          if (nowInTz.isAfter(reminderTime) && nowInTz.isBefore(reminderTime.add(fifteenMinutes, "minute"))) {
+            const channels2 = await storage.getChannelsForUser(booking.userId);
+            const activeChannel = channels2.find((ch) => ch.status === "ACTIVE" && ch.whapiChannelToken);
+            if (!activeChannel) {
+              console.log(`[Reminder] No active channel for user ${booking.userId}, skipping booking ${booking.id}`);
+              continue;
+            }
+            const staff = await storage.getBookingStaff(booking.staffId);
+            const dept = await storage.getBookingDepartment(booking.departmentId);
+            let reminderMessage = booking.reminderMessage || "Reminder: You have an appointment on {{date}} at {{time}} with {{staff}} in {{department}}.";
+            reminderMessage = reminderMessage.replace(/\{\{date\}\}/g, booking.slotDate).replace(/\{\{time\}\}/g, booking.startTime).replace(/\{\{department\}\}/g, dept?.name || "").replace(/\{\{staff\}\}/g, staff?.name || "").replace(/\{\{name\}\}/g, booking.customerName || "");
+            await sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: reminderMessage
+            });
+            await storage.markBookingReminderSent(booking.id);
+            console.log(`[Reminder] Sent reminder for booking ${booking.id} to ${booking.customerPhone}`);
+            sentCount++;
+          }
+        } catch (bookingError) {
+          console.error(`[Reminder] Error processing booking ${booking.id}:`, bookingError);
+          errorCount++;
+        }
+      }
+      if (sentCount > 0 || errorCount > 0) {
+        console.log(`[Reminder] Sent: ${sentCount}, Errors: ${errorCount}`);
+      }
+    } catch (error) {
+      console.error("[Reminder] Error in appointment reminder job:", error);
+    }
+  }
 };
 var backgroundWorker = new BackgroundWorker();
 
 // server/index.ts
 var app = express2();
+app.set("trust proxy", 1);
 app.use(express2.json({
   limit: "50mb",
   // Allow larger payloads for base64 file uploads
