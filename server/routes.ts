@@ -6678,10 +6678,12 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot delete admin users" });
       }
 
-      await storage.deleteUser(userId);
+      console.log(`[Admin] Deleting user ${userId} and all related data...`);
 
+      // Create audit log with target user ID BEFORE deletion for history
       await storage.createAuditLog({
         actorUserId: req.userId!,
+        targetUserId: userId,
         targetType: "user",
         targetId: userId,
         action: "DELETE_USER",
@@ -6692,7 +6694,10 @@ export function registerRoutes(app: Express) {
         },
       });
 
-      res.json({ success: true });
+      await storage.deleteUser(userId);
+      console.log(`[Admin] Successfully deleted user ${userId}`);
+
+      res.json({ success: true, message: "User deleted successfully" });
     } catch (error: any) {
       console.error("Delete user error:", error);
       res.status(500).json({ error: "Failed to delete user" });
@@ -11353,43 +11358,8 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Admin: Delete user account (with all related data)
-  app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
-    try {
-      const userId = parseInt(req.params.id);
-      
-      // Prevent self-deletion
-      if (userId === req.userId) {
-        return res.status(400).json({ error: "You cannot delete your own account" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      // Create audit log before deletion
-      await storage.createAuditLog({
-        actorUserId: req.userId!,
-        action: "DELETE_USER",
-        meta: {
-          entity: "user",
-          userId,
-          email: user.email,
-          name: user.name,
-        },
-      });
-
-      // Delete user (cascade will handle related data)
-      await storage.deleteUser(userId);
-
-      res.json({ message: "User account deleted successfully" });
-    } catch (error: any) {
-      console.error("Delete user error:", error);
-      res.status(500).json({ error: "Failed to delete user account" });
-    }
-  });
-
+  // Cleanup: Removed duplicate delete route (previously at line 11357)
+  
   // User: Cancel own subscription
   app.post("/api/me/cancel-subscription", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

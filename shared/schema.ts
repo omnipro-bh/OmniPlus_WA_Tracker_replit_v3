@@ -301,8 +301,8 @@ export const termsDocuments = pgTable("terms_documents", {
 export const ledger = pgTable("ledger", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
-  channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }),
+  channelId: integer("channel_id").references(() => channels.id, { onDelete: "cascade" }),
   transactionType: ledgerTransactionTypeEnum("transaction_type").notNull(),
   amount: integer("amount").notNull(), // Amount in cents (positive or negative)
   currency: text("currency").notNull().default("USD"),
@@ -603,6 +603,7 @@ export const auditLogs = pgTable("audit_logs", {
   actorUserId: integer("user_id").references(() => users.id, { onDelete: "set null" }), // Admin who performed action (mapped to user_id column)
   targetType: text("target_type"), // user, channel, plan, payment, etc.
   targetId: integer("target_id"), // ID of the target
+  targetUserId: integer("target_user_id").references(() => users.id, { onDelete: "cascade" }), // User the action was performed on
   action: text("action").notNull(), // ban_user, approve_payment, delete_channel, etc.
   reason: text("reason"), // Optional reason for action
   meta: jsonb("meta").notNull().default({}),
@@ -654,8 +655,8 @@ export const balanceTransactions = pgTable("balance_transactions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   type: balanceTransactionTypeEnum("type").notNull(),
   days: integer("days").notNull(), // Positive integer
-  channelId: integer("channel_id").references(() => channels.id, { onDelete: "set null" }),
-  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  channelId: integer("channel_id").references(() => channels.id, { onDelete: "cascade" }),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   note: text("note").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
