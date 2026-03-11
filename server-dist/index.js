@@ -1522,41 +1522,9 @@ var init_storage = __esm({
         return user || void 0;
       }
       async deleteUser(id) {
-        await db.transaction(async (tx) => {
-          console.log(`[Storage] Starting manual cleanup for user ${id}`);
-          await tx.delete(messages).where(sql2`${messages.jobId} IN (SELECT id FROM ${jobs} WHERE user_id = ${id})`);
-          await tx.delete(bulkLogs).where(eq(bulkLogs.userId, id));
-          await tx.delete(jobs).where(eq(jobs.userId, id));
-          await tx.delete(workflowExecutions).where(sql2`${workflowExecutions.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
-          await tx.delete(conversationStates).where(sql2`${conversationStates.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
-          await tx.delete(sentMessages).where(sql2`${sentMessages.workflowId} IN (SELECT id FROM ${workflows} WHERE user_id = ${id})`);
-          await tx.delete(captureSequences).where(eq(captureSequences.userId, id));
-          await tx.delete(capturedData).where(eq(capturedData.userId, id));
-          await tx.delete(workflows).where(eq(workflows.userId, id));
-          await tx.delete(bookingStaffSlots).where(sql2`${bookingStaffSlots.staffId} IN (SELECT id FROM ${bookingStaff} WHERE user_id = ${id})`);
-          await tx.delete(bookings).where(eq(bookings.userId, id));
-          await tx.delete(bookingStaff).where(eq(bookingStaff.userId, id));
-          await tx.delete(bookingDepartments).where(eq(bookingDepartments.userId, id));
-          await tx.delete(bookingServices).where(eq(bookingServices.userId, id));
-          await tx.delete(userBookingSettings).where(eq(userBookingSettings.userId, id));
-          await tx.delete(phonebookContacts).where(sql2`${phonebookContacts.phonebookId} IN (SELECT id FROM ${phonebooks} WHERE user_id = ${id})`);
-          await tx.delete(phonebooks).where(eq(phonebooks.userId, id));
-          await tx.delete(channelDaysLedger).where(sql2`${channelDaysLedger.channelId} IN (SELECT id FROM ${channels} WHERE user_id = ${id})`);
-          await tx.delete(balanceTransactions).where(eq(balanceTransactions.userId, id));
-          await tx.delete(ledger).where(eq(ledger.userId, id));
-          await tx.delete(subscriptions).where(eq(subscriptions.userId, id));
-          await tx.delete(offlinePayments).where(eq(offlinePayments.userId, id));
-          await tx.delete(channels).where(eq(channels.userId, id));
-          await tx.delete(subscribers).where(eq(subscribers.userId, id));
-          await tx.delete(mediaUploads).where(eq(mediaUploads.userId, id));
-          await tx.delete(templates).where(eq(templates.userId, id));
-          await tx.delete(labelLogs).where(eq(labelLogs.userId, id));
-          await tx.delete(userCustomPlans).where(eq(userCustomPlans.userId, id));
-          await tx.update(auditLogs).set({ actorUserId: null }).where(eq(auditLogs.actorUserId, id));
-          await tx.delete(auditLogs).where(eq(auditLogs.targetUserId, id));
-          await tx.delete(users).where(eq(users.id, id));
-          console.log(`[Storage] Manual cleanup complete for user ${id}`);
-        });
+        console.log(`[Storage] Deleting user ${id} - CASCADE constraints will handle related data`);
+        await db.delete(users).where(eq(users.id, id));
+        console.log(`[Storage] User ${id} deleted successfully`);
       }
       async getAllUsers() {
         return await db.select().from(users).orderBy(desc(users.createdAt));
