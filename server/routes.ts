@@ -4556,7 +4556,8 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      const updated = await storage.updateBooking(bookingId, req.body);
+      const { id: _id, userId: _userId, ...updateData } = req.body;
+      const updated = await storage.updateBooking(bookingId, updateData);
       res.json(updated);
     } catch (error: any) {
       console.error("Update booking error:", error);
