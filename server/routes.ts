@@ -4292,7 +4292,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/import/departments", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { rows } = req.body;
+      const { rows, serviceId } = req.body;
 
       if (!Array.isArray(rows) || rows.length === 0) {
         return res.status(400).json({ error: "No data to import" });
@@ -4316,6 +4316,7 @@ export function registerRoutes(app: Express) {
             userId: effectiveUserId,
             name,
             description: description || null,
+            serviceId: serviceId || null,
           });
           created.push(dept);
         } catch (err: any) {

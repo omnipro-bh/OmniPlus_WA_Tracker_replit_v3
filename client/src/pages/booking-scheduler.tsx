@@ -522,8 +522,9 @@ export default function BookingScheduler() {
 
   // Import mutations
   const importDeptMutation = useMutation({
-    mutationFn: async (rows: any[]) => {
-      return await apiRequest('POST', '/api/booking/import/departments', { rows });
+    mutationFn: async ({ rows, serviceId }: { rows: any[]; serviceId?: number }) => {
+      const res = await apiRequest('POST', '/api/booking/import/departments', { rows, serviceId });
+      return await res.json();
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/departments'] });
@@ -541,7 +542,8 @@ export default function BookingScheduler() {
 
   const importStaffMutation = useMutation({
     mutationFn: async ({ rows, departmentId }: { rows: any[]; departmentId: number }) => {
-      return await apiRequest('POST', '/api/booking/import/staff', { rows, departmentId });
+      const res = await apiRequest('POST', '/api/booking/import/staff', { rows, departmentId });
+      return await res.json();
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/departments', selectedDepartment?.id, 'staff'] });
@@ -559,7 +561,8 @@ export default function BookingScheduler() {
 
   const importSlotsMutation = useMutation({
     mutationFn: async ({ rows, staffId }: { rows: any[]; staffId: number }) => {
-      return await apiRequest('POST', '/api/booking/import/slots', { rows, staffId });
+      const res = await apiRequest('POST', '/api/booking/import/slots', { rows, staffId });
+      return await res.json();
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/staff', selectedStaff?.id, 'slots'] });
@@ -2125,7 +2128,7 @@ export default function BookingScheduler() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setImportDeptOpen(false); setImportPreview([]); }}>Cancel</Button>
             <Button
-              onClick={() => importDeptMutation.mutate(importPreview)}
+              onClick={() => importDeptMutation.mutate({ rows: importPreview, serviceId: selectedService?.id })}
               disabled={importDeptMutation.isPending || importPreview.length === 0}
               data-testid="button-confirm-import-departments"
             >
