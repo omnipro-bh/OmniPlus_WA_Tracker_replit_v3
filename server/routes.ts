@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storage } from "./storage";
+import { storage, type CalendarSlot, type CalendarBooking } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
@@ -36,6 +36,121 @@ dayjs.extend(timezone);
 // Helper function to get the effective user ID (handles impersonation)
 function getEffectiveUserId(req: AuthRequest): number {
   return req.impersonatedUser?.id || req.userId!;
+}
+
+// Helper: today's date in Asia/Bahrain as "YYYY-MM-DD"
+function todayInBahrain(): string {
+  return dayjs().tz("Asia/Bahrain").format("YYYY-MM-DD");
+}
+
+// Helper: day-of-week (0=Sunday..6=Saturday) for a "YYYY-MM-DD" date string.
+// A pure calendar date has a timezone-independent weekday, so parse as UTC components.
+function dayOfWeekFromDate(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+// Helper: "HH:MM" -> minutes since midnight
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Helper: minutes since midnight -> "HH:MM"
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// Helper: enumerate each "YYYY-MM-DD" date in [from, to] inclusive (UTC, DST-safe)
+function eachDateInRange(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  for (let d = start; d <= end; d = new Date(d.getTime() + 86400000)) {
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
+// Pure helper: compute available slots by expanding weekly slot rules over a date
+// range and subtracting non-cancelled bookings, respecting capacity. No DB calls.
+function computeAvailableSlots(
+  slots: CalendarSlot[],
+  bookings: CalendarBooking[],
+  from: string,
+  to: string
+): Array<{
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  staffId: number;
+  staffName: string;
+  departmentId: number;
+  departmentName: string;
+  capacity: number;
+  bookedCount: number;
+  remainingCapacity: number;
+}> {
+  // Group non-cancelled bookings by staff|date|startTime -> count
+  const bookingCounts = new Map<string, number>();
+  for (const b of bookings) {
+    if (b.status === "cancelled") continue;
+    const key = `${b.staffId}|${b.slotDate}|${b.startTime}`;
+    bookingCounts.set(key, (bookingCounts.get(key) || 0) + 1);
+  }
+
+  const availableSlots: Array<{
+    slotDate: string;
+    startTime: string;
+    endTime: string;
+    staffId: number;
+    staffName: string;
+    departmentId: number;
+    departmentName: string;
+    capacity: number;
+    bookedCount: number;
+    remainingCapacity: number;
+  }> = [];
+
+  for (const dateStr of eachDateInRange(from, to)) {
+    const dow = dayOfWeekFromDate(dateStr);
+    for (const slot of slots) {
+      if (slot.dayOfWeek !== dow) continue;
+      const startMins = timeToMinutes(slot.startTime);
+      const endMins = timeToMinutes(slot.endTime);
+      for (let m = startMins; m + slot.slotDuration <= endMins; m += slot.slotDuration) {
+        const intervalStart = minutesToTime(m);
+        const key = `${slot.staffId}|${dateStr}|${intervalStart}`;
+        const bookedCount = bookingCounts.get(key) || 0;
+        if (bookedCount < slot.capacity) {
+          availableSlots.push({
+            slotDate: dateStr,
+            startTime: intervalStart,
+            endTime: minutesToTime(m + slot.slotDuration),
+            staffId: slot.staffId,
+            staffName: slot.staffName,
+            departmentId: slot.departmentId,
+            departmentName: slot.departmentName,
+            capacity: slot.capacity,
+            bookedCount,
+            remainingCapacity: slot.capacity - bookedCount,
+          });
+        }
+      }
+    }
+  }
+
+  availableSlots.sort((a, b) =>
+    a.slotDate === b.slotDate
+      ? a.startTime === b.startTime
+        ? a.staffId - b.staffId
+        : a.startTime.localeCompare(b.startTime)
+      : a.slotDate.localeCompare(b.slotDate)
+  );
+
+  return availableSlots;
 }
 
 // CRITICAL: Normalize buttons to ALWAYS have 'title' field (NEVER 'text')
@@ -5072,6 +5187,102 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Get available slots error:", error);
       res.status(500).json({ error: "Failed to get available slots" });
+    }
+  });
+
+  // --- Calendar view (bookings + computed available slots) ---
+  app.get("/api/booking/calendar", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { from, to, departmentId, staffId, status } = req.query;
+
+      // Validate required params
+      if (!from || !to) {
+        return res.status(400).json({ error: "from and to are required (YYYY-MM-DD)" });
+      }
+      const fromStr = from as string;
+      const toStr = to as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+        return res.status(400).json({ error: "from and to must be YYYY-MM-DD" });
+      }
+      if (fromStr > toStr) {
+        return res.status(400).json({ error: "from must be on or before to" });
+      }
+      const rangeDays = Math.round(
+        (new Date(toStr + "T00:00:00Z").getTime() - new Date(fromStr + "T00:00:00Z").getTime()) / 86400000
+      );
+      if (rangeDays > 90) {
+        return res.status(400).json({ error: "Range too large (max 90 days)" });
+      }
+      const validStatuses = ["all", "confirmed", "available"];
+      if (status && !validStatuses.includes(status as string)) {
+        return res.status(400).json({ error: "Invalid status. Must be one of: " + validStatuses.join(", ") });
+      }
+
+      const effectiveUserId = getEffectiveUserId(req);
+
+      // Optional filters + ownership checks (404 on missing/cross-tenant)
+      let deptId: number | undefined;
+      if (departmentId !== undefined) {
+        deptId = parseInt(departmentId as string);
+        if (isNaN(deptId)) return res.status(400).json({ error: "Invalid departmentId" });
+        const dept = await storage.getBookingDepartment(deptId);
+        if (!dept || dept.userId !== effectiveUserId) {
+          return res.status(404).json({ error: "Department not found" });
+        }
+      }
+      let staffIdNum: number | undefined;
+      if (staffId !== undefined) {
+        staffIdNum = parseInt(staffId as string);
+        if (isNaN(staffIdNum)) return res.status(400).json({ error: "Invalid staffId" });
+        const staff = await storage.getBookingStaff(staffIdNum);
+        if (!staff || staff.userId !== effectiveUserId) {
+          return res.status(404).json({ error: "Staff not found" });
+        }
+      }
+
+      // Tenant-scoped slot query (respects department/staff filters)
+      const slots = await storage.getBookingStaffSlotsForUser(effectiveUserId, {
+        departmentId: deptId,
+        staffId: staffIdNum,
+      });
+
+      // Tenant-scoped booking query (status=available -> empty bookings)
+      const statusFilter = status && status !== "all" && status !== "available" ? (status as string) : undefined;
+      const bookings = status === "available"
+        ? []
+        : await storage.getBookingsForCalendar(effectiveUserId, {
+            from: fromStr,
+            to: toStr,
+            departmentId: deptId,
+            staffId: staffIdNum,
+            status: statusFilter,
+          });
+
+      // Availability must reflect real occupancy (all non-cancelled bookings),
+      // independent of the display status filter. Reuse `bookings` only when it
+      // already equals that set; otherwise fetch the non-cancelled set explicitly.
+      const availabilityBookings = (status !== "confirmed" && status !== "available")
+        ? bookings
+        : await storage.getBookingsForCalendar(effectiveUserId, {
+            from: fromStr,
+            to: toStr,
+            departmentId: deptId,
+            staffId: staffIdNum,
+          });
+
+      // Compute available slots in memory
+      const availableSlots = computeAvailableSlots(slots, availabilityBookings, fromStr, toStr);
+
+      res.json({
+        range: { from: fromStr, to: toStr },
+        timezone: "Asia/Bahrain",
+        today: todayInBahrain(),
+        bookings,
+        availableSlots,
+      });
+    } catch (error: any) {
+      console.error("Get calendar error:", error);
+      res.status(500).json({ error: "Failed to fetch calendar" });
     }
   });
 

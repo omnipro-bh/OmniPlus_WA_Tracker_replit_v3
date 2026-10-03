@@ -30,6 +30,35 @@ import type {
   InsertCoupon,
 } from "@shared/schema";
 
+// Calendar view types (enriched slot + booking shapes returned by the calendar endpoint)
+export interface CalendarSlot {
+  id: number;
+  staffId: number;
+  staffName: string;
+  departmentId: number;
+  departmentName: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  slotDuration: number;
+  capacity: number;
+}
+
+export interface CalendarBooking {
+  id: number;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  departmentId: number;
+  departmentName: string;
+  staffId: number;
+  staffName: string;
+  customerName: string | null;
+  customerPhone: string;
+  status: string;
+  bookingLabel: string | null;
+}
+
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
@@ -244,6 +273,7 @@ export interface IStorage {
   createBookingStaffSlot(slot: schema.InsertBookingStaffSlot): Promise<schema.BookingStaffSlot>;
   updateBookingStaffSlot(id: number, data: Partial<schema.BookingStaffSlot>): Promise<schema.BookingStaffSlot | undefined>;
   deleteBookingStaffSlot(id: number): Promise<void>;
+  getBookingStaffSlotsForUser(userId: number, filters?: { departmentId?: number; staffId?: number }): Promise<CalendarSlot[]>;
 
   // Booking Scheduler - Bookings (optimized for fast chatbot response)
   getBookingsForUser(userId: number, filters?: { 
@@ -265,6 +295,13 @@ export interface IStorage {
   createBooking(booking: schema.InsertBooking): Promise<schema.Booking>;
   updateBooking(id: number, data: Partial<schema.Booking>): Promise<schema.Booking | undefined>;
   deleteBooking(id: number): Promise<void>;
+  getBookingsForCalendar(userId: number, filters: {
+    from: string;
+    to: string;
+    departmentId?: number;
+    staffId?: number;
+    status?: string;
+  }): Promise<CalendarBooking[]>;
   checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number, userId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
   getBulkBookingCounts(staffId: number, dateRange: { startDate: string; endDate: string }, userId?: number): Promise<Map<string, number>>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
@@ -2012,6 +2049,90 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return created;
     }
+  }
+
+  // Calendar view: all active slots for a user's staff, enriched with staff + department names
+  async getBookingStaffSlotsForUser(userId: number, filters?: { departmentId?: number; staffId?: number }): Promise<CalendarSlot[]> {
+    const conditions = [
+      eq(schema.bookingStaff.userId, userId),
+      eq(schema.bookingStaffSlots.isActive, true),
+      eq(schema.bookingStaff.isActive, true),
+    ];
+    if (filters?.departmentId !== undefined) {
+      conditions.push(eq(schema.bookingStaff.departmentId, filters.departmentId));
+    }
+    if (filters?.staffId !== undefined) {
+      conditions.push(eq(schema.bookingStaff.id, filters.staffId));
+    }
+
+    return await db
+      .select({
+        id: schema.bookingStaffSlots.id,
+        staffId: schema.bookingStaffSlots.staffId,
+        dayOfWeek: schema.bookingStaffSlots.dayOfWeek,
+        startTime: schema.bookingStaffSlots.startTime,
+        endTime: schema.bookingStaffSlots.endTime,
+        slotDuration: schema.bookingStaffSlots.slotDuration,
+        capacity: schema.bookingStaffSlots.capacity,
+        staffName: schema.bookingStaff.name,
+        departmentId: schema.bookingStaff.departmentId,
+        departmentName: schema.bookingDepartments.name,
+      })
+      .from(schema.bookingStaffSlots)
+      .innerJoin(schema.bookingStaff, eq(schema.bookingStaffSlots.staffId, schema.bookingStaff.id))
+      .innerJoin(schema.bookingDepartments, eq(schema.bookingStaff.departmentId, schema.bookingDepartments.id))
+      .where(and(...conditions))
+      .orderBy(schema.bookingStaffSlots.dayOfWeek, schema.bookingStaffSlots.startTime, schema.bookingStaff.id);
+  }
+
+  // Calendar view: bookings in a date range, enriched with staff + department names.
+  // Defaults to non-cancelled; pass an exact status to override.
+  async getBookingsForCalendar(userId: number, filters: {
+    from: string;
+    to: string;
+    departmentId?: number;
+    staffId?: number;
+    status?: string;
+  }): Promise<CalendarBooking[]> {
+    const conditions = [
+      eq(schema.bookings.userId, userId),
+      sql`${schema.bookings.slotDate} >= ${filters.from}`,
+      sql`${schema.bookings.slotDate} <= ${filters.to}`,
+    ];
+
+    if (filters.status) {
+      conditions.push(eq(schema.bookings.status, filters.status as any));
+    } else {
+      conditions.push(sql`${schema.bookings.status} != 'cancelled'`);
+    }
+
+    if (filters.departmentId !== undefined) {
+      conditions.push(eq(schema.bookings.departmentId, filters.departmentId));
+    }
+    if (filters.staffId !== undefined) {
+      conditions.push(eq(schema.bookings.staffId, filters.staffId));
+    }
+
+    return await db
+      .select({
+        id: schema.bookings.id,
+        slotDate: schema.bookings.slotDate,
+        startTime: schema.bookings.startTime,
+        endTime: schema.bookings.endTime,
+        departmentId: schema.bookings.departmentId,
+        departmentName: schema.bookingDepartments.name,
+        staffId: schema.bookings.staffId,
+        staffName: schema.bookingStaff.name,
+        customerName: schema.bookings.customerName,
+        customerPhone: schema.bookings.customerPhone,
+        status: schema.bookings.status,
+        bookingLabel: schema.bookings.bookingLabel,
+      })
+      .from(schema.bookings)
+      .innerJoin(schema.bookingStaff, eq(schema.bookings.staffId, schema.bookingStaff.id))
+      .innerJoin(schema.bookingDepartments, eq(schema.bookings.departmentId, schema.bookingDepartments.id))
+      .where(and(...conditions))
+      .orderBy(schema.bookings.slotDate, schema.bookings.startTime, schema.bookings.staffId);
   }
 }
 
