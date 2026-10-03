@@ -265,8 +265,8 @@ export interface IStorage {
   createBooking(booking: schema.InsertBooking): Promise<schema.Booking>;
   updateBooking(id: number, data: Partial<schema.Booking>): Promise<schema.Booking | undefined>;
   deleteBooking(id: number): Promise<void>;
-  checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
-  getBulkBookingCounts(staffId: number, dateRange: { startDate: string; endDate: string }): Promise<Map<string, number>>;
+  checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number, userId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
+  getBulkBookingCounts(staffId: number, dateRange: { startDate: string; endDate: string }, userId?: number): Promise<Map<string, number>>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
   countOutdatedConfirmedBookings(userId: number): Promise<number>;
   bulkCompleteOutdatedBookings(userId: number): Promise<number>;
@@ -1827,7 +1827,8 @@ export class DatabaseStorage implements IStorage {
     staffId: number,
     slotDate: string,
     startTime: string,
-    excludeBookingId?: number
+    excludeBookingId?: number,
+    userId?: number
   ): Promise<{ available: boolean; existingCount: number; capacity: number }> {
     // Get staff slot configuration for capacity
     const today = new Date(slotDate);
@@ -1863,6 +1864,10 @@ export class DatabaseStorage implements IStorage {
       conditions.push(sql`${schema.bookings.id} != ${excludeBookingId}`);
     }
 
+    if (userId !== undefined) {
+      conditions.push(eq(schema.bookings.userId, userId));
+    }
+
     const [countResult] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.bookings)
@@ -1879,9 +1884,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBulkBookingCounts(
-    staffId: number, 
-    dateRange: { startDate: string; endDate: string }
+    staffId: number,
+    dateRange: { startDate: string; endDate: string },
+    userId?: number
   ): Promise<Map<string, number>> {
+    const conditions = [
+      eq(schema.bookings.staffId, staffId),
+      sql`${schema.bookings.slotDate} >= ${dateRange.startDate}`,
+      sql`${schema.bookings.slotDate} <= ${dateRange.endDate}`,
+      sql`${schema.bookings.status} NOT IN ('cancelled')`,
+    ];
+    if (userId !== undefined) {
+      conditions.push(eq(schema.bookings.userId, userId));
+    }
     const results = await db
       .select({
         slotDate: schema.bookings.slotDate,
@@ -1889,12 +1904,7 @@ export class DatabaseStorage implements IStorage {
         count: sql<number>`count(*)::int`,
       })
       .from(schema.bookings)
-      .where(and(
-        eq(schema.bookings.staffId, staffId),
-        sql`${schema.bookings.slotDate} >= ${dateRange.startDate}`,
-        sql`${schema.bookings.slotDate} <= ${dateRange.endDate}`,
-        sql`${schema.bookings.status} NOT IN ('cancelled')`
-      ))
+      .where(and(...conditions))
       .groupBy(schema.bookings.slotDate, schema.bookings.startTime);
 
     const countMap = new Map<string, number>();

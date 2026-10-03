@@ -3967,6 +3967,12 @@ export function registerRoutes(app: Express) {
       const serviceId = parseInt(req.params.serviceId);
       if (isNaN(serviceId)) return res.status(400).json({ error: "Invalid service ID" });
 
+      const effectiveUserId = getEffectiveUserId(req);
+      const service = await storage.getBookingService(serviceId);
+      if (!service || service.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Service not found" });
+      }
+
       const departments = await storage.getBookingDepartmentsForService(serviceId);
       res.json(departments);
     } catch (error: any) {
@@ -4987,10 +4993,18 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Missing required parameters" });
       }
 
+      const effectiveUserId = getEffectiveUserId(req);
+      const staff = await storage.getBookingStaff(parseInt(staffId as string));
+      if (!staff || staff.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Staff not found" });
+      }
+
       const result = await storage.checkSlotAvailability(
-        parseInt(staffId as string),
+        staff.id,
         slotDate as string,
-        startTime as string
+        startTime as string,
+        undefined,
+        effectiveUserId
       );
       res.json(result);
     } catch (error: any) {
