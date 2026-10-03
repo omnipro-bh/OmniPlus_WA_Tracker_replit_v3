@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -101,6 +101,23 @@ function Router() {
         </DashboardLayout>
       </Route>
       <Route path="/booking-scheduler">
+        <Redirect to="/booking-scheduler/departments" />
+      </Route>
+      <Route path="/booking-scheduler/departments">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bookingScheduler">
+            <BookingScheduler />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/booking-scheduler/bookings">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bookingScheduler">
+            <BookingScheduler />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/booking-scheduler/settings">
         <DashboardLayout>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingScheduler />

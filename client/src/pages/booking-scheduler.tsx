@@ -9,13 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, Settings, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -80,7 +80,11 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 export default function BookingScheduler() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("departments");
+  const [location] = useLocation();
+  const activeTab = (() => {
+    const segment = location.split("/").filter(Boolean).pop();
+    return segment === "bookings" || segment === "settings" ? segment : "departments";
+  })();
   const [selectedService, setSelectedService] = useState<BookingService | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<BookingDepartment | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<BookingStaff | null>(null);
@@ -932,23 +936,8 @@ export default function BookingScheduler() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="departments" data-testid="tab-departments">
-            <Building2 className="h-4 w-4 mr-2" />
-            Departments
-          </TabsTrigger>
-          <TabsTrigger value="bookings" data-testid="tab-bookings">
-            <Calendar className="h-4 w-4 mr-2" />
-            Bookings
-          </TabsTrigger>
-          <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="departments" className="space-y-4">
+      {activeTab === "departments" && (
+        <div className="space-y-4">
           {/* Services Section */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -1621,9 +1610,11 @@ export default function BookingScheduler() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="bookings" className="space-y-4">
+      {activeTab === "bookings" && (
+        <div className="space-y-4">
           {/* Filter and Controls Row */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1920,10 +1911,12 @@ export default function BookingScheduler() {
               </div>
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Settings Tab */}
-        <TabsContent value="settings" className="space-y-4">
+      {/* Settings Tab */}
+      {activeTab === "settings" && (
+        <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Notification Messages</CardTitle>
@@ -2086,8 +2079,8 @@ export default function BookingScheduler() {
               </p>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
 
       {/* Import Departments Dialog */}
       <Dialog open={importDeptOpen} onOpenChange={setImportDeptOpen}>

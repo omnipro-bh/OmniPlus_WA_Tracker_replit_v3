@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Database,
   Calendar,
+  ChevronDown,
   Tag,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -29,17 +30,42 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarHeader,
   SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/lib/auth-context";
 import { MessageSquare } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+
+type NavItem = {
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  pageKey?: string;
+  children?: { title: string; url: string }[];
+};
 
 export function AppSidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { state: sidebarState } = useSidebar();
   const { user } = useAuth();
 
-  const allMainItems = [
+  const [bookingExpanded, setBookingExpanded] = useState(
+    location === "/booking-scheduler" || location.startsWith("/booking-scheduler/"),
+  );
+
+  useEffect(() => {
+    if (location === "/booking-scheduler" || location.startsWith("/booking-scheduler/")) {
+      setBookingExpanded(true);
+    }
+  }, [location]);
+
+  const allMainItems: NavItem[] = [
     {
       title: "Dashboard",
       url: "/dashboard",
@@ -123,6 +149,11 @@ export function AppSidebar() {
       url: "/booking-scheduler",
       icon: Calendar,
       pageKey: "bookingScheduler",
+      children: [
+        { title: "Departments", url: "/booking-scheduler/departments" },
+        { title: "Bookings", url: "/booking-scheduler/bookings" },
+        { title: "Settings", url: "/booking-scheduler/settings" },
+      ],
     },
     {
       title: "Pricing",
@@ -152,7 +183,7 @@ export function AppSidebar() {
     return effectivePageAccess[item.pageKey] === true;
   });
 
-  const adminItems = user?.role === "admin" ? [
+  const adminItems: NavItem[] = user?.role === "admin" ? [
     {
       title: "Admin",
       url: "/admin",
@@ -184,20 +215,67 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === item.url}
-                    data-testid={`link-${item.title.toLowerCase()}`}
-                  >
-                    <Link href={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {mainItems.map((item) => {
+                if (item.children) {
+                  const isActive =
+                    location === item.url || location.startsWith(item.url + "/");
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.title}
+                        data-testid={`link-${item.title.toLowerCase()}`}
+                        onClick={() => {
+                          if (sidebarState === "collapsed") {
+                            setLocation(item.children?.[0]?.url ?? item.url);
+                          } else {
+                            setBookingExpanded((v) => !v);
+                          }
+                        }}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                        <ChevronDown
+                          className={`ml-auto h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${
+                            bookingExpanded ? "rotate-180" : ""
+                          }`}
+                        />
+                      </SidebarMenuButton>
+                      {bookingExpanded && (
+                        <SidebarMenuSub>
+                          {item.children.map((child) => (
+                            <SidebarMenuSubItem key={child.url}>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location === child.url}
+                                data-testid={`link-booking-scheduler-${child.title.toLowerCase()}`}
+                              >
+                                <Link href={child.url}>
+                                  <span>{child.title}</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                }
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location === item.url}
+                      data-testid={`link-${item.title.toLowerCase()}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
