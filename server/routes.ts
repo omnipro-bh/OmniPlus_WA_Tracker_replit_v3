@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storage, type CalendarSlot, type CalendarBooking } from "./storage";
+import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
@@ -74,8 +74,8 @@ function eachDateInRange(from: string, to: string): string[] {
   return dates;
 }
 
-// Pure helper: compute available slots by expanding weekly slot rules over a date
-// range and subtracting non-cancelled bookings, respecting capacity. No DB calls.
+// Pure helper: compute available time windows by subtracting occupying (confirmed/completed)
+// bookings from each staff's weekly slot windows, per date in the range. No DB calls.
 function computeAvailableSlots(
   slots: CalendarSlot[],
   bookings: CalendarBooking[],
@@ -89,16 +89,15 @@ function computeAvailableSlots(
   staffName: string;
   departmentId: number;
   departmentName: string;
-  capacity: number;
-  bookedCount: number;
-  remainingCapacity: number;
 }> {
-  // Group non-cancelled bookings by staff|date|startTime -> count
-  const bookingCounts = new Map<string, number>();
+  // Group occupying bookings by staff|date -> list of [startMin, endMin] intervals
+  const occupyingByStaffDate = new Map<string, Array<[number, number]>>();
   for (const b of bookings) {
-    if (b.status === "cancelled") continue;
-    const key = `${b.staffId}|${b.slotDate}|${b.startTime}`;
-    bookingCounts.set(key, (bookingCounts.get(key) || 0) + 1);
+    if (!(BLOCKING_BOOKING_STATUSES as readonly string[]).includes(b.status)) continue;
+    const key = `${b.staffId}|${b.slotDate}`;
+    const list = occupyingByStaffDate.get(key) || [];
+    list.push([timeToMinutes(b.startTime), timeToMinutes(b.endTime)]);
+    occupyingByStaffDate.set(key, list);
   }
 
   const availableSlots: Array<{
@@ -109,35 +108,47 @@ function computeAvailableSlots(
     staffName: string;
     departmentId: number;
     departmentName: string;
-    capacity: number;
-    bookedCount: number;
-    remainingCapacity: number;
   }> = [];
 
   for (const dateStr of eachDateInRange(from, to)) {
     const dow = dayOfWeekFromDate(dateStr);
     for (const slot of slots) {
       if (slot.dayOfWeek !== dow) continue;
-      const startMins = timeToMinutes(slot.startTime);
-      const endMins = timeToMinutes(slot.endTime);
-      for (let m = startMins; m + slot.slotDuration <= endMins; m += slot.slotDuration) {
-        const intervalStart = minutesToTime(m);
-        const key = `${slot.staffId}|${dateStr}|${intervalStart}`;
-        const bookedCount = bookingCounts.get(key) || 0;
-        if (bookedCount < slot.capacity) {
+      const windowStart = timeToMinutes(slot.startTime);
+      const windowEnd = timeToMinutes(slot.endTime);
+      const intervals = occupyingByStaffDate.get(`${slot.staffId}|${dateStr}`) || [];
+
+      // Clamp + sort overlapping intervals, then subtract them from the window
+      const sorted = intervals
+        .filter(([s, e]) => e > windowStart && s < windowEnd)
+        .map(([s, e]) => [Math.max(s, windowStart), Math.min(e, windowEnd)] as [number, number])
+        .sort((a, b) => a[0] - b[0]);
+
+      let cursor = windowStart;
+      for (const [s, e] of sorted) {
+        if (s > cursor) {
           availableSlots.push({
             slotDate: dateStr,
-            startTime: intervalStart,
-            endTime: minutesToTime(m + slot.slotDuration),
+            startTime: minutesToTime(cursor),
+            endTime: minutesToTime(s),
             staffId: slot.staffId,
             staffName: slot.staffName,
             departmentId: slot.departmentId,
             departmentName: slot.departmentName,
-            capacity: slot.capacity,
-            bookedCount,
-            remainingCapacity: slot.capacity - bookedCount,
           });
         }
+        if (e > cursor) cursor = e;
+      }
+      if (cursor < windowEnd) {
+        availableSlots.push({
+          slotDate: dateStr,
+          startTime: minutesToTime(cursor),
+          endTime: minutesToTime(windowEnd),
+          staffId: slot.staffId,
+          staffName: slot.staffName,
+          departmentId: slot.departmentId,
+          departmentName: slot.departmentName,
+        });
       }
     }
   }

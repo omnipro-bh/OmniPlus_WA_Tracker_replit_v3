@@ -59,6 +59,9 @@ export interface CalendarBooking {
   bookingLabel: string | null;
 }
 
+// Booking statuses that occupy a slot for calendar availability purposes
+export const BLOCKING_BOOKING_STATUSES = ['confirmed', 'completed'] as const;
+
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
@@ -2103,7 +2106,7 @@ export class DatabaseStorage implements IStorage {
     if (filters.status) {
       conditions.push(eq(schema.bookings.status, filters.status as any));
     } else {
-      conditions.push(sql`${schema.bookings.status} != 'cancelled'`);
+      conditions.push(inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any));
     }
 
     if (filters.departmentId !== undefined) {
