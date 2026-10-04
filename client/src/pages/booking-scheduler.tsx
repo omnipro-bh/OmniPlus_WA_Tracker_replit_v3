@@ -20,6 +20,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CustomFieldsSettings } from "@/components/custom-fields-settings";
+import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 
 interface BookingService {
   id: number;
@@ -95,6 +96,7 @@ export default function BookingScheduler() {
   const [newDeptOpen, setNewDeptOpen] = useState(false);
   const [newStaffOpen, setNewStaffOpen] = useState(false);
   const [newSlotOpen, setNewSlotOpen] = useState(false);
+  const [newBookingOpen, setNewBookingOpen] = useState(false);
   
   // Form states
   const [serviceName, setServiceName] = useState("");
@@ -1657,6 +1659,14 @@ export default function BookingScheduler() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setNewBookingOpen(true)}
+                data-testid="button-new-booking"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Booking
+              </Button>
               {selectedBookings.size > 0 && (
                 <>
                   <DropdownMenu>
@@ -2238,6 +2248,9 @@ export default function BookingScheduler() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Booking Dialog */}
+      <ManualBookingDialog open={newBookingOpen} onOpenChange={setNewBookingOpen} />
 
       {/* Edit Booking Dialog */}
       <Dialog open={editBookingOpen} onOpenChange={setEditBookingOpen}>
