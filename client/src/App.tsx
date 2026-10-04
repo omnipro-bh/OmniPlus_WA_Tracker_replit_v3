@@ -24,6 +24,7 @@ import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
 import CaptureList from "@/pages/capture-list";
 import BookingScheduler from "@/pages/booking-scheduler";
+import BookingCalendar from "@/pages/booking-calendar";
 import Phonebooks from "@/pages/phonebooks";
 import PhonebookDetail from "@/pages/phonebook-detail";
 import Subscribers from "@/pages/subscribers";
@@ -121,6 +122,13 @@ function Router() {
         <DashboardLayout>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingScheduler />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/booking-scheduler/calendar">
+        <DashboardLayout>
+          <ProtectedRoute requiredKey="bookingScheduler">
+            <BookingCalendar />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>

@@ -42,12 +42,18 @@ import { MessageSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 
+type NavChild = {
+  title: string;
+  url: string;
+  children?: NavChild[];
+};
+
 type NavItem = {
   title: string;
   url: string;
   icon: LucideIcon;
   pageKey?: string;
-  children?: { title: string; url: string }[];
+  children?: NavChild[];
 };
 
 export function AppSidebar() {
@@ -58,10 +64,16 @@ export function AppSidebar() {
   const [bookingExpanded, setBookingExpanded] = useState(
     location === "/booking-scheduler" || location.startsWith("/booking-scheduler/"),
   );
+  const [bookingsExpanded, setBookingsExpanded] = useState(
+    location.startsWith("/booking-scheduler/bookings") || location.startsWith("/booking-scheduler/calendar"),
+  );
 
   useEffect(() => {
     if (location === "/booking-scheduler" || location.startsWith("/booking-scheduler/")) {
       setBookingExpanded(true);
+    }
+    if (location.startsWith("/booking-scheduler/bookings") || location.startsWith("/booking-scheduler/calendar")) {
+      setBookingsExpanded(true);
     }
   }, [location]);
 
@@ -151,7 +163,14 @@ export function AppSidebar() {
       pageKey: "bookingScheduler",
       children: [
         { title: "Departments", url: "/booking-scheduler/departments" },
-        { title: "Bookings", url: "/booking-scheduler/bookings" },
+        {
+          title: "Bookings",
+          url: "/booking-scheduler/bookings",
+          children: [
+            { title: "List", url: "/booking-scheduler/bookings" },
+            { title: "Calendar", url: "/booking-scheduler/calendar" },
+          ],
+        },
         { title: "Settings", url: "/booking-scheduler/settings" },
       ],
     },
@@ -243,19 +262,62 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                       {bookingExpanded && (
                         <SidebarMenuSub>
-                          {item.children.map((child) => (
-                            <SidebarMenuSubItem key={child.url}>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={location === child.url}
-                                data-testid={`link-booking-scheduler-${child.title.toLowerCase()}`}
-                              >
-                                <Link href={child.url}>
-                                  <span>{child.title}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          ))}
+                          {item.children.map((child) => {
+                            if (child.children) {
+                              const childActive =
+                                location === child.url ||
+                                location.startsWith(child.url + "/") ||
+                                (child.children?.some(
+                                  (gc) => location === gc.url || location.startsWith(gc.url + "/"),
+                                ) ?? false);
+                              return (
+                                <SidebarMenuSubItem key={child.url}>
+                                  <SidebarMenuSubButton
+                                    isActive={childActive}
+                                    data-testid={`link-booking-scheduler-${child.title.toLowerCase()}`}
+                                    onClick={() => setBookingsExpanded((v) => !v)}
+                                  >
+                                    <span>{child.title}</span>
+                                    <ChevronDown
+                                      className={`ml-auto h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${
+                                        bookingsExpanded ? "rotate-180" : ""
+                                      }`}
+                                    />
+                                  </SidebarMenuSubButton>
+                                  {bookingsExpanded && (
+                                    <SidebarMenuSub>
+                                      {child.children.map((gc) => (
+                                        <SidebarMenuSubItem key={gc.url}>
+                                          <SidebarMenuSubButton
+                                            asChild
+                                            isActive={location === gc.url}
+                                            data-testid={`link-booking-scheduler-${child.title.toLowerCase()}-${gc.title.toLowerCase()}`}
+                                          >
+                                            <Link href={gc.url}>
+                                              <span>{gc.title}</span>
+                                            </Link>
+                                          </SidebarMenuSubButton>
+                                        </SidebarMenuSubItem>
+                                      ))}
+                                    </SidebarMenuSub>
+                                  )}
+                                </SidebarMenuSubItem>
+                              );
+                            }
+                            return (
+                              <SidebarMenuSubItem key={child.url}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === child.url}
+                                  data-testid={`link-booking-scheduler-${child.title.toLowerCase()}`}
+                                >
+                                  <Link href={child.url}>
+                                    <span>{child.title}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
                         </SidebarMenuSub>
                       )}
                     </SidebarMenuItem>
