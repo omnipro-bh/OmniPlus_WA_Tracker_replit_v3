@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CustomFieldsSettings } from "@/components/custom-fields-settings";
 import { ManualBookingDialog } from "@/components/manual-booking-dialog";
+import { computeCalcValue, type CalcOperation } from "@/lib/calc";
 
 interface BookingService {
   id: number;
@@ -76,6 +77,40 @@ interface Booking {
   status: string;
   bookingLabel: string | null;
   createdAt: string;
+  customFieldValues?: { fieldId: number; value: string }[];
+}
+
+interface CustomField {
+  id: number;
+  name: string;
+  fieldType: "text" | "number" | "date" | "boolean" | "select" | "calculation";
+  displayOrder: number;
+  options: string[] | null;
+  calcOperation: CalcOperation | null;
+  calcFieldAId: number | null;
+  calcFieldBId: number | null;
+}
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatShortDate(s: string): string {
+  const parts = s.split('-').map(Number);
+  if (parts.length !== 3 || !Number.isFinite(parts[1]) || !Number.isFinite(parts[2])) return s;
+  return `${SHORT_MONTHS[parts[1] - 1]} ${parts[2]}`;
+}
+
+function formatCustomFieldValue(field: CustomField, value: string | undefined): string {
+  if (value === undefined || value === null || value === '') return '—';
+  switch (field.fieldType) {
+    case 'number':
+      return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(value));
+    case 'date':
+      return formatShortDate(value);
+    case 'boolean':
+      return value === 'true' ? 'Yes' : 'No';
+    default:
+      return value;
+  }
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -339,7 +374,7 @@ export default function BookingScheduler() {
     },
   });
 
-  const { data: bookingsData, isLoading: loadingBookings, refetch: refetchBookings, isFetching: fetchingBookings } = useQuery<{ bookings: Booking[]; total: number }>({
+  const { data: bookingsData, isLoading: loadingBookings, refetch: refetchBookings, isFetching: fetchingBookings } = useQuery<{ bookings: Booking[]; customFields: CustomField[]; total: number }>({
     queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter, bookingsSearch],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -356,6 +391,10 @@ export default function BookingScheduler() {
       return res.json();
     },
   });
+
+  const customFields = bookingsData?.customFields ?? [];
+  const sortedCustomFields = [...customFields].sort((a, b) => a.displayOrder - b.displayOrder);
+  const hasCustomFields = sortedCustomFields.length > 0;
 
   // Notification settings query
   const { data: notificationSettings, isLoading: loadingNotificationSettings } = useQuery<{
@@ -1773,119 +1812,140 @@ export default function BookingScheduler() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">
+                      <TableHead className="w-10">
                         <Checkbox
                           checked={bookingsData.bookings.length > 0 && selectedBookings.size === bookingsData.bookings.length}
                           onCheckedChange={handleSelectAll}
                           data-testid="checkbox-select-all"
                         />
                       </TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Staff</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead className="min-w-[140px]">Date & Time</TableHead>
+                      <TableHead className="min-w-[160px]">Service</TableHead>
+                      <TableHead className="min-w-[180px]">Customer</TableHead>
+                      <TableHead className="min-w-[120px]">Label</TableHead>
+                      {hasCustomFields && <TableHead className="min-w-[160px]">Custom Summary</TableHead>}
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="w-[110px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {bookingsData.bookings.map((booking: any) => (
-                      <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedBookings.has(booking.id)}
-                            onCheckedChange={() => handleSelectBooking(booking.id)}
-                            data-testid={`checkbox-booking-${booking.id}`}
-                          />
-                        </TableCell>
-                        <TableCell>{booking.slotDate}</TableCell>
-                        <TableCell>{booking.startTime} - {booking.endTime}</TableCell>
-                        <TableCell>{booking.departmentName || '-'}</TableCell>
-                        <TableCell>{booking.staffName || '-'}</TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{booking.customerName || 'Unknown'}</div>
-                            <div className="text-sm text-muted-foreground">{booking.customerPhone}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1 text-sm">
-                            {booking.bookingLabel && (
-                              <div className="text-muted-foreground">{booking.bookingLabel}</div>
-                            )}
-                            {booking.customField1Label && booking.customField1Value && (
-                              <div>
-                                <span className="font-medium">{booking.customField1Label}:</span>{' '}
-                                {booking.customField1Value}
-                              </div>
-                            )}
-                            {booking.customField2Label && booking.customField2Value && (
-                              <div>
-                                <span className="font-medium">{booking.customField2Label}:</span>{' '}
-                                {booking.customField2Value}
-                              </div>
-                            )}
-                            {!booking.bookingLabel && !booking.customField1Value && !booking.customField2Value && '-'}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusBadgeVariant(booking.status)}>
-                            {booking.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Select
-                              value={booking.status}
-                              onValueChange={(status) => updateBookingMutation.mutate({ id: booking.id, status })}
-                            >
-                              <SelectTrigger className="w-28" data-testid={`select-booking-status-${booking.id}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="pending">Pending</SelectItem>
-                                <SelectItem value="confirmed">Confirmed</SelectItem>
-                                <SelectItem value="completed">Completed</SelectItem>
-                                <SelectItem value="cancelled">Cancelled</SelectItem>
-                                <SelectItem value="no_show">No Show</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" data-testid={`button-booking-actions-${booking.id}`}>
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openEditBookingModal(booking)} data-testid={`action-edit-${booking.id}`}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openRescheduleModal(booking)} data-testid={`action-reschedule-${booking.id}`}>
-                                  <CalendarClock className="h-4 w-4 mr-2" />
-                                  Reschedule
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                {booking.status === 'pending' && (
-                                  <DropdownMenuItem onClick={() => openConfirmModal(booking)} data-testid={`action-confirm-${booking.id}`}>
-                                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
-                                    Confirm Booking
-                                  </DropdownMenuItem>
+                    {bookingsData.bookings.map((booking: any) => {
+                      const values = new Map<number, string>((booking.customFieldValues ?? []).map((v: any) => [v.fieldId, v.value]));
+                      const summaryItems = sortedCustomFields.map((field) => {
+                        let display: string;
+                        if (field.fieldType === 'calculation') {
+                          const a = field.calcFieldAId != null ? values.get(field.calcFieldAId) : undefined;
+                          const b = field.calcFieldBId != null ? values.get(field.calcFieldBId) : undefined;
+                          const result = computeCalcValue(field.calcOperation, a, b);
+                          display = result == null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(result);
+                        } else {
+                          display = formatCustomFieldValue(field, values.get(field.id));
+                        }
+                        return { field, display };
+                      });
+                      const visibleItems = summaryItems.slice(0, 2);
+                      const extraCount = summaryItems.length - visibleItems.length;
+                      return (
+                        <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedBookings.has(booking.id)}
+                              onCheckedChange={() => handleSelectBooking(booking.id)}
+                              data-testid={`checkbox-booking-${booking.id}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{booking.slotDate}</div>
+                              <div className="text-sm text-muted-foreground">{booking.startTime} - {booking.endTime}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div>{booking.departmentName || '—'}</div>
+                              <div className="text-sm text-muted-foreground">{booking.staffName || '—'}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{booking.customerName || 'Unknown'}</div>
+                              <div className="text-sm text-muted-foreground">{booking.customerPhone}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="block truncate text-sm text-muted-foreground">{booking.bookingLabel || '—'}</span>
+                          </TableCell>
+                          {hasCustomFields && (
+                            <TableCell data-testid={`booking-summary-${booking.id}`}>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {visibleItems.map(({ field, display }) => (
+                                  <Badge key={field.id} variant="secondary" className="whitespace-nowrap">
+                                    {field.name}: {display}
+                                  </Badge>
+                                ))}
+                                {extraCount > 0 && (
+                                  <Badge variant="outline" className="whitespace-nowrap">+{extraCount} more</Badge>
                                 )}
-                                {booking.status !== 'cancelled' && (
-                                  <DropdownMenuItem onClick={() => openCancelModal(booking)} className="text-destructive" data-testid={`action-cancel-${booking.id}`}>
-                                    <XCircle className="h-4 w-4 mr-2" />
-                                    Cancel Booking
+                              </div>
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Badge variant={getStatusBadgeVariant(booking.status)}>
+                              {booking.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Select
+                                value={booking.status}
+                                onValueChange={(status) => updateBookingMutation.mutate({ id: booking.id, status })}
+                              >
+                                <SelectTrigger className="w-28" data-testid={`select-booking-status-${booking.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">Pending</SelectItem>
+                                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                                  <SelectItem value="no_show">No Show</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-booking-actions-${booking.id}`}>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openEditBookingModal(booking)} data-testid={`action-edit-${booking.id}`}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit Details
                                   </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                  <DropdownMenuItem onClick={() => openRescheduleModal(booking)} data-testid={`action-reschedule-${booking.id}`}>
+                                    <CalendarClock className="h-4 w-4 mr-2" />
+                                    Reschedule
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {booking.status === 'pending' && (
+                                    <DropdownMenuItem onClick={() => openConfirmModal(booking)} data-testid={`action-confirm-${booking.id}`}>
+                                      <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                                      Confirm Booking
+                                    </DropdownMenuItem>
+                                  )}
+                                  {booking.status !== 'cancelled' && (
+                                    <DropdownMenuItem onClick={() => openCancelModal(booking)} className="text-destructive" data-testid={`action-cancel-${booking.id}`}>
+                                      <XCircle className="h-4 w-4 mr-2" />
+                                      Cancel Booking
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}

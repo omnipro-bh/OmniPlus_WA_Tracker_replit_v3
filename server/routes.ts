@@ -4613,7 +4613,20 @@ export function registerRoutes(app: Express) {
         outdatedConfirmed: isOutdatedFilter,
       });
       
-      // Enrich bookings with department and staff names
+      // Batch-fetch custom field definitions + values (one query each)
+      const customFields = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+      const bookingIds = result.bookings.map((b) => b.id);
+      const fieldValues = await storage.getBookingCustomFieldValuesForBookings(bookingIds);
+
+      // Group values by booking id
+      const valuesByBooking = new Map<number, Array<{ fieldId: number; value: string }>>();
+      for (const v of fieldValues) {
+        const list = valuesByBooking.get(v.bookingId) || [];
+        list.push({ fieldId: v.fieldId, value: v.value });
+        valuesByBooking.set(v.bookingId, list);
+      }
+
+      // Enrich bookings with department/staff names + custom field values
       const enrichedBookings = await Promise.all(
         result.bookings.map(async (booking) => {
           const [department, staff] = await Promise.all([
@@ -4624,11 +4637,23 @@ export function registerRoutes(app: Express) {
             ...booking,
             departmentName: department?.name || null,
             staffName: staff?.name || null,
+            customFieldValues: valuesByBooking.get(booking.id) || [],
           };
         })
       );
-      
-      res.json({ bookings: enrichedBookings, total: result.total });
+
+      const customFieldsForClient = customFields.map((f) => ({
+        id: f.id,
+        name: f.name,
+        fieldType: f.fieldType,
+        displayOrder: f.displayOrder,
+        options: f.options,
+        calcOperation: f.calcOperation,
+        calcFieldAId: f.calcFieldAId,
+        calcFieldBId: f.calcFieldBId,
+      }));
+
+      res.json({ bookings: enrichedBookings, customFields: customFieldsForClient, total: result.total });
     } catch (error: any) {
       console.error("Get bookings error:", error);
       res.status(500).json({ error: "Failed to fetch bookings" });
