@@ -307,7 +307,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
               ) : availability.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No available times on this date. Try another date.</p>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {availability.map((s) => {
                     const isSelected = form.slot?.startTime === s.startTime && form.slot?.endTime === s.endTime;
                     return (
@@ -319,7 +319,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
                         onClick={() => updateField("slot", s)}
                         data-testid={`slot-${s.startTime}`}
                       >
-                        {s.startTime}
+                        {s.startTime}–{s.endTime}
                       </Button>
                     );
                   })}

@@ -5117,48 +5117,23 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized to view this staff's slots" });
       }
 
-      // Get the day of week for the requested date
-      const requestedDate = new Date(date as string);
-      const dayOfWeek = requestedDate.getDay();
-
-      // Get all slots for this staff on this day of week
-      const allSlots = await storage.getBookingStaffSlots(staffId);
-      const daySlots = allSlots.filter((s: any) => s.dayOfWeek === dayOfWeek && s.isActive);
-
-      // For each slot template, generate individual time slots
-      const availableSlots: { startTime: string; endTime: string }[] = [];
-      
-      for (const slotTemplate of daySlots) {
-        // Generate individual slots based on duration
-        let currentTime = slotTemplate.startTime;
-        
-        while (currentTime < slotTemplate.endTime) {
-          // Calculate end time for this slot
-          const [hours, mins] = currentTime.split(':').map(Number);
-          const startMins = hours * 60 + mins;
-          const endMins = startMins + slotTemplate.slotDuration;
-          const endHours = Math.floor(endMins / 60);
-          const endMinutes = endMins % 60;
-          const endTimeStr = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-          
-          if (endTimeStr <= slotTemplate.endTime) {
-            // Check if this slot is available (not already booked)
-            const isAvailable = await storage.checkSlotAvailability(staffId, date as string, currentTime, endTimeStr);
-            
-            if (isAvailable.available) {
-              availableSlots.push({
-                startTime: currentTime,
-                endTime: endTimeStr,
-              });
-            }
-          }
-          
-          // Move to next slot
-          currentTime = endTimeStr;
-        }
+      const dateStr = date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return res.status(400).json({ error: "date must be YYYY-MM-DD" });
       }
 
-      res.json(availableSlots);
+      // Window-based availability (mirrors the calendar): subtract confirmed/completed
+      // bookings from the staff's weekly slot windows for the requested date.
+      // slotDuration and capacity are informational, not a segmentation grid.
+      const slots = await storage.getBookingStaffSlotsForUser(effectiveUserId, { staffId });
+      const bookings = await storage.getBookingsForCalendar(effectiveUserId, {
+        from: dateStr,
+        to: dateStr,
+        staffId,
+      });
+      const windows = computeAvailableSlots(slots, bookings, dateStr, dateStr);
+
+      res.json(windows.map((w) => ({ startTime: w.startTime, endTime: w.endTime })));
     } catch (error: any) {
       console.error("Get available slots error:", error);
       res.status(500).json({ error: "Failed to get available slots" });
@@ -5306,45 +5281,23 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      // Get day of week from date
-      const dateObj = new Date(date as string);
-      const dayOfWeek = dateObj.getDay();
-
-      // Get staff slots for this day
-      const allSlots = await storage.getBookingStaffSlots(staff.id);
-      const daySlots = allSlots.filter(s => s.dayOfWeek === dayOfWeek && s.isActive);
-
-      // For each slot, generate time intervals and check availability
-      const availableSlots: Array<{ startTime: string; endTime: string; available: boolean; remainingCapacity: number }> = [];
-
-      for (const slot of daySlots) {
-        // Generate time slots within this availability window
-        const [startHour, startMin] = slot.startTime.split(':').map(Number);
-        const [endHour, endMin] = slot.endTime.split(':').map(Number);
-        const slotDuration = slot.slotDuration;
-
-        let currentMinutes = startHour * 60 + startMin;
-        const endMinutes = endHour * 60 + endMin;
-
-        while (currentMinutes + slotDuration <= endMinutes) {
-          const slotStartTime = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
-          const slotEndMinutes = currentMinutes + slotDuration;
-          const slotEndTime = `${String(Math.floor(slotEndMinutes / 60)).padStart(2, '0')}:${String(slotEndMinutes % 60).padStart(2, '0')}`;
-
-          const availability = await storage.checkSlotAvailability(staff.id, date as string, slotStartTime, slotEndTime);
-
-          availableSlots.push({
-            startTime: slotStartTime,
-            endTime: slotEndTime,
-            available: availability.available,
-            remainingCapacity: availability.capacity - availability.existingCount,
-          });
-
-          currentMinutes += slotDuration;
-        }
+      const dateStr = date as string;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return res.status(400).json({ error: "date must be YYYY-MM-DD" });
       }
 
-      res.json(availableSlots);
+      // Window-based availability (mirrors the calendar): subtract confirmed/completed
+      // bookings from the staff's weekly slot windows for the requested date.
+      // slotDuration and capacity are informational, not a segmentation grid.
+      const slots = await storage.getBookingStaffSlotsForUser(effectiveUserId, { staffId: staff.id });
+      const bookings = await storage.getBookingsForCalendar(effectiveUserId, {
+        from: dateStr,
+        to: dateStr,
+        staffId: staff.id,
+      });
+      const windows = computeAvailableSlots(slots, bookings, dateStr, dateStr);
+
+      res.json(windows.map((w) => ({ startTime: w.startTime, endTime: w.endTime })));
     } catch (error: any) {
       console.error("Get available slots error:", error);
       res.status(500).json({ error: "Failed to get available slots" });
