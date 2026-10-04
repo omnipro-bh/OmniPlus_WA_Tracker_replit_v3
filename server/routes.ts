@@ -5224,7 +5224,7 @@ export function registerRoutes(app: Express) {
       if (rangeDays > 90) {
         return res.status(400).json({ error: "Range too large (max 90 days)" });
       }
-      const validStatuses = ["all", "confirmed", "available"];
+      const validStatuses = ["all", "available", "pending", "confirmed", "completed", "cancelled", "no_show"];
       if (status && !validStatuses.includes(status as string)) {
         return res.status(400).json({ error: "Invalid status. Must be one of: " + validStatuses.join(", ") });
       }
@@ -5269,10 +5269,10 @@ export function registerRoutes(app: Express) {
             status: statusFilter,
           });
 
-      // Availability must reflect real occupancy (all non-cancelled bookings),
+      // Availability must reflect real occupancy (confirmed/completed only),
       // independent of the display status filter. Reuse `bookings` only when it
-      // already equals that set; otherwise fetch the non-cancelled set explicitly.
-      const availabilityBookings = (status !== "confirmed" && status !== "available")
+      // already equals that set (default); otherwise fetch the blocking set explicitly.
+      const availabilityBookings = (!status || status === "all")
         ? bookings
         : await storage.getBookingsForCalendar(effectiveUserId, {
             from: fromStr,
