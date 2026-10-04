@@ -317,7 +317,7 @@ export interface IStorage {
     staffId?: number;
     status?: string;
   }): Promise<CalendarBooking[]>;
-  checkSlotAvailability(staffId: number, slotDate: string, startTime: string, excludeBookingId?: number, userId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
+  checkSlotAvailability(staffId: number, slotDate: string, startTime: string, endTime: string, excludeBookingId?: number, userId?: number): Promise<{ available: boolean; existingCount: number; capacity: number }>;
   getBulkBookingCounts(staffId: number, dateRange: { startDate: string; endDate: string }, userId?: number): Promise<Map<string, number>>;
   countActiveBookingsForCustomer(customerPhone: string, userId: number, nodeId?: string): Promise<number>;
   countOutdatedConfirmedBookings(userId: number): Promise<number>;
@@ -1889,15 +1889,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(schema.bookings).where(eq(schema.bookings.id, id));
   }
 
-  // OPTIMIZED: Single query to check slot availability (critical path for chatbot response)
-  // NOTE: this method matches on EXACT startTime, which does NOT correctly block
-  // spanning bookings (e.g. an 8-hour booking won't block a 30-min booking inside it).
-  // The correct rule (used by the calendar and checkBookingOverlap) is overlap-based.
-  // Known issue — to be fixed in a future phase; do not change behavior here.
+  // OPTIMIZED: Single query to check slot availability (critical path for chatbot response).
+  // Uses overlap-based matching (start < end AND end > start) with BLOCKING_BOOKING_STATUSES,
+  // the same rule as checkBookingOverlap and the manual booking endpoint.
+  // Kept as a separate method because it also resolves capacity from the staff's slot config
+  // and supports excludeBookingId / userId scoping for the chatbot and reschedule flows.
   async checkSlotAvailability(
     staffId: number,
     slotDate: string,
     startTime: string,
+    endTime: string,
     excludeBookingId?: number,
     userId?: number
   ): Promise<{ available: boolean; existingCount: number; capacity: number }> {
@@ -1927,8 +1928,9 @@ export class DatabaseStorage implements IStorage {
     const conditions = [
       eq(schema.bookings.staffId, staffId),
       eq(schema.bookings.slotDate, slotDate),
-      eq(schema.bookings.startTime, startTime),
-      sql`${schema.bookings.status} NOT IN ('cancelled')`,
+      sql`${schema.bookings.startTime} < ${endTime}`,
+      sql`${schema.bookings.endTime} > ${startTime}`,
+      inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
     ];
 
     if (excludeBookingId) {
@@ -2241,8 +2243,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Overlap-based availability check (used by the manual booking endpoint).
-  // Unlike checkSlotAvailability (exact startTime), this blocks any time-range
-  // overlap with a confirmed/completed booking.
+  // Blocks any time-range overlap with a confirmed/completed booking.
   async checkBookingOverlap(
     staffId: number,
     slotDate: string,

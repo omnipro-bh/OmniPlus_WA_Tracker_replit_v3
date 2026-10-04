@@ -4645,7 +4645,7 @@ export function registerRoutes(app: Express) {
       }
 
       // Check slot availability
-      const availability = await storage.checkSlotAvailability(staffId, slotDate, startTime);
+      const availability = await storage.checkSlotAvailability(staffId, slotDate, startTime, endTime);
       if (!availability.available) {
         return res.status(409).json({ 
           error: "Slot not available", 
@@ -5035,9 +5035,9 @@ export function registerRoutes(app: Express) {
       // Check if new slot is available
       const staffIdToUse = newStaffId || booking.staffId;
       const departmentIdToUse = newDepartmentId || booking.departmentId;
-      const isAvailable = await storage.checkSlotAvailability(staffIdToUse, newDate, newStartTime);
+      const isAvailable = await storage.checkSlotAvailability(staffIdToUse, newDate, newStartTime, newEndTime);
       
-      if (!isAvailable) {
+      if (!isAvailable.available) {
         return res.status(400).json({ error: "The selected time slot is not available" });
       }
 
@@ -5143,9 +5143,9 @@ export function registerRoutes(app: Express) {
           
           if (endTimeStr <= slotTemplate.endTime) {
             // Check if this slot is available (not already booked)
-            const isAvailable = await storage.checkSlotAvailability(staffId, date as string, currentTime);
+            const isAvailable = await storage.checkSlotAvailability(staffId, date as string, currentTime, endTimeStr);
             
-            if (isAvailable) {
+            if (isAvailable.available) {
               availableSlots.push({
                 startTime: currentTime,
                 endTime: endTimeStr,
@@ -5260,7 +5260,7 @@ export function registerRoutes(app: Express) {
   // Check slot availability (for UI preview)
   app.get("/api/booking/availability", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { staffId, slotDate, startTime } = req.query;
+      const { staffId, slotDate, startTime, endTime } = req.query;
 
       if (!staffId || !slotDate || !startTime) {
         return res.status(400).json({ error: "Missing required parameters" });
@@ -5272,10 +5272,13 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Staff not found" });
       }
 
+      // endTime is optional here (legacy preview endpoint); fall back to startTime
+      // (zero-width window) when the caller does not provide a duration.
       const result = await storage.checkSlotAvailability(
         staff.id,
         slotDate as string,
         startTime as string,
+        (endTime as string) || (startTime as string),
         undefined,
         effectiveUserId
       );
@@ -5328,7 +5331,7 @@ export function registerRoutes(app: Express) {
           const slotEndMinutes = currentMinutes + slotDuration;
           const slotEndTime = `${String(Math.floor(slotEndMinutes / 60)).padStart(2, '0')}:${String(slotEndMinutes % 60).padStart(2, '0')}`;
 
-          const availability = await storage.checkSlotAvailability(staff.id, date as string, slotStartTime);
+          const availability = await storage.checkSlotAvailability(staff.id, date as string, slotStartTime, slotEndTime);
 
           availableSlots.push({
             startTime: slotStartTime,
@@ -8319,7 +8322,7 @@ export function registerRoutes(app: Express) {
               
               // Verify slot is still available for this date
               const availability = await storage.checkSlotAvailability(
-                bookingState.staffId, slotDate, slot.startTime
+                bookingState.staffId, slotDate, slot.startTime, slot.endTime
               );
               
               if (!availability.available) {
@@ -8524,7 +8527,7 @@ export function registerRoutes(app: Express) {
                 
                 for (const slot of daySlots) {
                   // Check availability (capacity not reached)
-                  const availabilityResult = await storage.checkSlotAvailability(booking.staffId, dateStr, slot.startTime);
+                  const availabilityResult = await storage.checkSlotAvailability(booking.staffId, dateStr, slot.startTime, slot.endTime);
                   if (availabilityResult.available) {
                     availableDateTimes.push({
                       slotId: slot.id,
@@ -8615,7 +8618,7 @@ export function registerRoutes(app: Express) {
               }
               
               // Check availability again
-              const availabilityResult = await storage.checkSlotAvailability(checkBookingsState.staffId, newSlotDate, slot.startTime, checkBookingsState.bookingId);
+              const availabilityResult = await storage.checkSlotAvailability(checkBookingsState.staffId, newSlotDate, slot.startTime, slot.endTime, checkBookingsState.bookingId);
               if (!availabilityResult.available) {
                 await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
                   to: phone,
