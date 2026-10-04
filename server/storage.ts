@@ -57,6 +57,10 @@ export interface CalendarBooking {
   customerPhone: string;
   status: string;
   bookingLabel: string | null;
+  customField1Label: string | null;
+  customField1Value: string | null;
+  customField2Label: string | null;
+  customField2Value: string | null;
 }
 
 // Booking statuses that occupy a slot for calendar availability purposes
@@ -2130,6 +2134,10 @@ export class DatabaseStorage implements IStorage {
         customerPhone: schema.bookings.customerPhone,
         status: schema.bookings.status,
         bookingLabel: schema.bookings.bookingLabel,
+        customField1Label: schema.bookings.customField1Label,
+        customField1Value: schema.bookings.customField1Value,
+        customField2Label: schema.bookings.customField2Label,
+        customField2Value: schema.bookings.customField2Value,
       })
       .from(schema.bookings)
       .innerJoin(schema.bookingStaff, eq(schema.bookings.staffId, schema.bookingStaff.id))
