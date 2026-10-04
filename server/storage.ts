@@ -66,6 +66,14 @@ export interface CalendarBooking {
 // Booking statuses that occupy a slot for calendar availability purposes
 export const BLOCKING_BOOKING_STATUSES = ['confirmed', 'completed'] as const;
 
+// Sentinel error thrown by createManualBookingWithValues when the slot is taken.
+export class BookingSlotUnavailableError extends Error {
+  constructor() {
+    super("Booking slot unavailable");
+    this.name = "BookingSlotUnavailableError";
+  }
+}
+
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
@@ -337,6 +345,12 @@ export interface IStorage {
   softDeleteBookingCustomField(id: number): Promise<void>;
   reorderBookingCustomFields(userId: number, ids: number[]): Promise<void>;
   countActiveBookingCustomFields(userId: number): Promise<number>;
+
+  // Manual booking (Phase 3B)
+  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number): Promise<{ available: boolean; conflictingCount: number }>;
+  createManualBookingWithValues(booking: schema.InsertBooking, values: { fieldId: number; value: string }[]): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }>;
+  getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
+  getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1876,6 +1890,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // OPTIMIZED: Single query to check slot availability (critical path for chatbot response)
+  // NOTE: this method matches on EXACT startTime, which does NOT correctly block
+  // spanning bookings (e.g. an 8-hour booking won't block a 30-min booking inside it).
+  // The correct rule (used by the calendar and checkBookingOverlap) is overlap-based.
+  // Known issue — to be fixed in a future phase; do not change behavior here.
   async checkSlotAvailability(
     staffId: number,
     slotDate: string,
@@ -2220,6 +2238,87 @@ export class DatabaseStorage implements IStorage {
         eq(schema.bookingCustomFields.isActive, true),
       ));
     return result?.count || 0;
+  }
+
+  // Overlap-based availability check (used by the manual booking endpoint).
+  // Unlike checkSlotAvailability (exact startTime), this blocks any time-range
+  // overlap with a confirmed/completed booking.
+  async checkBookingOverlap(
+    staffId: number,
+    slotDate: string,
+    startTime: string,
+    endTime: string,
+    userId: number
+  ): Promise<{ available: boolean; conflictingCount: number }> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookings)
+      .where(and(
+        eq(schema.bookings.staffId, staffId),
+        eq(schema.bookings.slotDate, slotDate),
+        sql`${schema.bookings.startTime} < ${endTime}`,
+        sql`${schema.bookings.endTime} > ${startTime}`,
+        inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
+        eq(schema.bookings.userId, userId),
+      ));
+    const c = row?.count || 0;
+    return { available: c === 0, conflictingCount: c };
+  }
+
+  // Atomically create a manual booking + its custom field values. Takes an advisory
+  // lock keyed on (staff, date) to serialize double-booking, re-checks overlap inside
+  // the transaction, then inserts the booking and its values.
+  async createManualBookingWithValues(
+    booking: schema.InsertBooking,
+    values: { fieldId: number; value: string }[]
+  ): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }> {
+    return await db.transaction(async (tx) => {
+      const lockKey = `booking:${booking.staffId}:${booking.slotDate}`;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+
+      const [overlap] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.bookings)
+        .where(and(
+          eq(schema.bookings.staffId, booking.staffId),
+          eq(schema.bookings.slotDate, booking.slotDate),
+          sql`${schema.bookings.startTime} < ${booking.endTime}`,
+          sql`${schema.bookings.endTime} > ${booking.startTime}`,
+          inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
+          eq(schema.bookings.userId, booking.userId),
+        ));
+
+      if ((overlap?.count || 0) > 0) {
+        throw new BookingSlotUnavailableError();
+      }
+
+      const [newBooking] = await tx.insert(schema.bookings).values(booking).returning();
+
+      let insertedValues: schema.BookingCustomFieldValue[] = [];
+      if (values.length > 0) {
+        insertedValues = await tx
+          .insert(schema.bookingCustomFieldValues)
+          .values(values.map((v) => ({ bookingId: newBooking.id, fieldId: v.fieldId, value: v.value })))
+          .returning();
+      }
+
+      return { booking: newBooking, values: insertedValues };
+    });
+  }
+
+  async getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]> {
+    return await db
+      .select()
+      .from(schema.bookingCustomFieldValues)
+      .where(eq(schema.bookingCustomFieldValues.bookingId, bookingId));
+  }
+
+  async getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]> {
+    if (bookingIds.length === 0) return [];
+    return await db
+      .select()
+      .from(schema.bookingCustomFieldValues)
+      .where(inArray(schema.bookingCustomFieldValues.bookingId, bookingIds));
   }
 }
 

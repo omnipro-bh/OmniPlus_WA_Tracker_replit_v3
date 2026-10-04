@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES } from "./storage";
+import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES, BookingSlotUnavailableError } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
@@ -4671,6 +4671,153 @@ export function registerRoutes(app: Express) {
       res.json(booking);
     } catch (error: any) {
       console.error("Create booking error:", error);
+      res.status(500).json({ error: "Failed to create booking" });
+    }
+  });
+
+  // Manual booking (business owner creates a booking directly, bypassing the chatbot).
+  // Tenant-scoped, overlap-based availability, stores user-defined custom field values.
+  app.post("/api/booking/bookings/manual", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { departmentId, staffId, slotDate, startTime, endTime, customerName, customerPhone, bookingLabel, customFieldValues } = req.body;
+
+      // Basic required fields
+      if (!departmentId || !staffId || !slotDate || !startTime || !endTime || !customerPhone) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const deptId = Number(departmentId);
+      const staffIdNum = Number(staffId);
+      if (!Number.isInteger(deptId) || !Number.isInteger(staffIdNum)) {
+        return res.status(400).json({ error: "Invalid department or staff ID" });
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(slotDate)) {
+        return res.status(400).json({ error: "slotDate must be YYYY-MM-DD" });
+      }
+      if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+        return res.status(400).json({ error: "startTime and endTime must be HH:MM" });
+      }
+      if (startTime >= endTime) {
+        return res.status(400).json({ error: "startTime must be before endTime" });
+      }
+
+      // Ownership checks (Phase 2A pattern)
+      const dept = await storage.getBookingDepartment(deptId);
+      if (!dept || dept.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      const staff = await storage.getBookingStaff(staffIdNum);
+      if (!staff || staff.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Staff not found" });
+      }
+      if (staff.departmentId !== deptId) {
+        return res.status(400).json({ error: "Staff does not belong to the selected department" });
+      }
+
+      // Slot-window containment: [startTime, endTime) must fit inside one active slot window
+      const dayOfWeek = dayOfWeekFromDate(slotDate);
+      const staffSlots = await storage.getBookingStaffSlots(staff.id);
+      const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
+      if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= startTime && s.endTime >= endTime)) {
+        return res.status(400).json({ error: "Booking time is outside staff availability" });
+      }
+
+      // Fetch the user's active custom field definitions for validation + enrichment
+      const fieldDefs = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+      const fieldById = new Map<number, schema.BookingCustomField>();
+      for (const f of fieldDefs) fieldById.set(f.id, f);
+
+      // Normalize submitted values
+      const submittedEntries: { fieldId: number; raw: string }[] = [];
+      if (customFieldValues && typeof customFieldValues === "object") {
+        for (const [key, value] of Object.entries(customFieldValues as Record<string, unknown>)) {
+          const id = Number(key);
+          if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid custom field ID" });
+          submittedEntries.push({ fieldId: id, raw: String(value ?? "") });
+        }
+      }
+
+      // Reject unknown/cross-tenant/soft-deleted and calculation fields
+      for (const entry of submittedEntries) {
+        const field = fieldById.get(entry.fieldId);
+        if (!field) return res.status(404).json({ error: "Referenced field not found" });
+        if (field.fieldType === "calculation") {
+          return res.status(400).json({ error: "Calculation fields are computed, not submitted" });
+        }
+      }
+
+      // Validate values + required, collecting validated values
+      const validatedValues: { fieldId: number; value: string }[] = [];
+      for (const field of fieldDefs) {
+        if (field.fieldType === "calculation") continue;
+        const entry = submittedEntries.find((e) => e.fieldId === field.id);
+        const value = entry ? entry.raw.trim() : "";
+
+        if (field.isRequired && value.length === 0) {
+          return res.status(400).json({ error: `Field "${field.name}" is required` });
+        }
+        if (value.length === 0) continue;
+
+        if (field.fieldType === "number" && !Number.isFinite(Number(value))) {
+          return res.status(400).json({ error: `Field "${field.name}" must be a number` });
+        }
+        if (field.fieldType === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return res.status(400).json({ error: `Field "${field.name}" must be a date (YYYY-MM-DD)` });
+        }
+        if (field.fieldType === "boolean" && value !== "true" && value !== "false") {
+          return res.status(400).json({ error: `Field "${field.name}" must be true or false` });
+        }
+        if (field.fieldType === "select" && (!field.options || !field.options.includes(value))) {
+          return res.status(400).json({ error: `Field "${field.name}" has an invalid option` });
+        }
+        validatedValues.push({ fieldId: field.id, value });
+      }
+
+      // Pre-check availability (fast path)
+      const overlap = await storage.checkBookingOverlap(staff.id, slotDate, startTime, endTime, effectiveUserId);
+      if (!overlap.available) {
+        return res.status(409).json({ error: "Slot not available" });
+      }
+
+      // Atomic insert (advisory lock + re-check + insert booking + values)
+      let result;
+      try {
+        result = await storage.createManualBookingWithValues(
+          {
+            userId: effectiveUserId,
+            departmentId: deptId,
+            staffId: staff.id,
+            slotDate,
+            startTime,
+            endTime,
+            customerPhone,
+            customerName: customerName || null,
+            bookingLabel: bookingLabel || null,
+            status: "confirmed",
+          },
+          validatedValues
+        );
+      } catch (err) {
+        if (err instanceof BookingSlotUnavailableError) {
+          return res.status(409).json({ error: "Slot not available" });
+        }
+        throw err;
+      }
+
+      // Enrich values with field name + type
+      const enrichedValues = result.values.map((v) => {
+        const field = fieldById.get(v.fieldId);
+        return {
+          fieldId: v.fieldId,
+          fieldName: field?.name ?? "",
+          fieldType: field?.fieldType ?? "",
+          value: v.value,
+        };
+      });
+
+      res.status(201).json({ booking: result.booking, customFieldValues: enrichedValues });
+    } catch (error: any) {
+      console.error("Manual booking error:", error);
       res.status(500).json({ error: "Failed to create booking" });
     }
   });

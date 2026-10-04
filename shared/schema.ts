@@ -1044,7 +1044,7 @@ export const bookings = pgTable("bookings", {
   availabilityIdx: uniqueIndex("bookings_availability_idx").on(table.staffId, table.slotDate, table.startTime, table.status),
 }));
 
-export const bookingsRelations = relations(bookings, ({ one }) => ({
+export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   user: one(users, {
     fields: [bookings.userId],
     references: [users.id],
@@ -1061,6 +1061,7 @@ export const bookingsRelations = relations(bookings, ({ one }) => ({
     fields: [bookings.staffId],
     references: [bookingStaff.id],
   }),
+  customFieldValues: many(bookingCustomFieldValues),
 }));
 
 // User-specific booking notification settings
@@ -1104,10 +1105,34 @@ export const bookingCustomFields = pgTable("booking_custom_fields", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const bookingCustomFieldsRelations = relations(bookingCustomFields, ({ one }) => ({
+export const bookingCustomFieldsRelations = relations(bookingCustomFields, ({ one, many }) => ({
   user: one(users, {
     fields: [bookingCustomFields.userId],
     references: [users.id],
+  }),
+  values: many(bookingCustomFieldValues),
+}));
+
+// Stored values for a booking's user-defined custom fields (Phase 3B manual booking)
+export const bookingCustomFieldValues = pgTable("booking_custom_field_values", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  fieldId: integer("field_id").notNull().references(() => bookingCustomFields.id, { onDelete: "cascade" }),
+  value: text("value").notNull(), // stringified; interpreted per fieldType
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  bookingFieldIdx: uniqueIndex("booking_custom_field_values_booking_field_idx").on(table.bookingId, table.fieldId),
+}));
+
+export const bookingCustomFieldValuesRelations = relations(bookingCustomFieldValues, ({ one }) => ({
+  booking: one(bookings, {
+    fields: [bookingCustomFieldValues.bookingId],
+    references: [bookings.id],
+  }),
+  field: one(bookingCustomFields, {
+    fields: [bookingCustomFieldValues.fieldId],
+    references: [bookingCustomFields.id],
   }),
 }));
 
@@ -1363,6 +1388,8 @@ export const insertBookingCustomFieldSchema = createInsertSchema(bookingCustomFi
   name: z.string().min(1, "Field name is required").max(255),
 });
 
+export const insertBookingCustomFieldValueSchema = createInsertSchema(bookingCustomFieldValues);
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1443,3 +1470,5 @@ export type InsertBooking = z.infer<typeof insertBookingSchema>;
 export type UserBookingSettings = typeof userBookingSettings.$inferSelect;
 export type BookingCustomField = typeof bookingCustomFields.$inferSelect;
 export type InsertBookingCustomField = z.infer<typeof insertBookingCustomFieldSchema>;
+export type BookingCustomFieldValue = typeof bookingCustomFieldValues.$inferSelect;
+export type InsertBookingCustomFieldValue = z.infer<typeof insertBookingCustomFieldValueSchema>;
