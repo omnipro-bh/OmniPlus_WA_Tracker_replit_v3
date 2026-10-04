@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, serial, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -32,7 +32,8 @@ export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAY
 export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
 export const subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["pending", "confirmed", "cancelled", "completed", "no_show"]);
-export const bookingCustomFieldTypeEnum = pgEnum("booking_custom_field_type", ["text", "number", "date", "boolean", "select"]);
+export const bookingCustomFieldTypeEnum = pgEnum("booking_custom_field_type", ["text", "number", "date", "boolean", "select", "calculation"]);
+export const bookingCalculationOperationEnum = pgEnum("booking_calculation_operation", ["add", "subtract", "multiply", "divide"]);
 export const labelLogOperationEnum = pgEnum("label_log_operation", ["sync", "create", "assign", "remove"]);
 export const labelLogStatusEnum = pgEnum("label_log_status", ["success", "error"]);
 
@@ -1093,6 +1094,11 @@ export const bookingCustomFields = pgTable("booking_custom_fields", {
   displayOrder: integer("display_order").notNull().default(0),
   options: text("options").array(), // only for "select" type
   defaultValue: text("default_value"), // stringified; interpreted per fieldType
+  // Calculation fields only. Referenced numeric fields stay intact if their type
+  // changes or they're soft-deleted; computeCalcValue returns null at read time.
+  calcOperation: bookingCalculationOperationEnum("calc_operation"),
+  calcFieldAId: integer("calc_field_a_id").references((): AnyPgColumn => bookingCustomFields.id, { onDelete: "set null" }),
+  calcFieldBId: integer("calc_field_b_id").references((): AnyPgColumn => bookingCustomFields.id, { onDelete: "set null" }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

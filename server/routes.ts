@@ -5312,7 +5312,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/custom-fields", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { name, fieldType, isRequired, options, defaultValue } = req.body;
+      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId } = req.body;
 
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Field name is required" });
@@ -5322,7 +5322,7 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Field name must be at most 255 characters" });
       }
 
-      const validTypes = ["text", "number", "date", "boolean", "select"];
+      const validTypes = ["text", "number", "date", "boolean", "select", "calculation"];
       const type = fieldType || "text";
       if (!validTypes.includes(type)) {
         return res.status(400).json({ error: "Invalid field type" });
@@ -5355,6 +5355,40 @@ export function registerRoutes(app: Express) {
         }
       }
 
+      let calcOperationVal: "add" | "subtract" | "multiply" | "divide" | null = null;
+      let calcFieldAIdVal: number | null = null;
+      let calcFieldBIdVal: number | null = null;
+      if (type === "calculation") {
+        const validOps = ["add", "subtract", "multiply", "divide"];
+        if (!validOps.includes(calcOperation)) {
+          return res.status(400).json({ error: "Calculation fields require a valid operation" });
+        }
+        const aId = parseInt(calcFieldAId);
+        const bId = parseInt(calcFieldBId);
+        if (isNaN(aId) || isNaN(bId)) {
+          return res.status(400).json({ error: "Calculation fields require two referenced fields" });
+        }
+        if (aId === bId) {
+          return res.status(400).json({ error: "Calculation fields must reference two different fields" });
+        }
+        const [refA, refB] = await Promise.all([
+          storage.getBookingCustomField(aId),
+          storage.getBookingCustomField(bId),
+        ]);
+        if (!refA || !refB || refA.userId !== effectiveUserId || refB.userId !== effectiveUserId) {
+          return res.status(404).json({ error: "Referenced field not found" });
+        }
+        if (refA.fieldType !== "number" || refB.fieldType !== "number") {
+          return res.status(400).json({ error: "Calculation fields can only reference number fields" });
+        }
+        if (!refA.isActive || !refB.isActive) {
+          return res.status(400).json({ error: "Calculation fields can only reference active fields" });
+        }
+        calcOperationVal = calcOperation;
+        calcFieldAIdVal = aId;
+        calcFieldBIdVal = bId;
+      }
+
       const field = await storage.createBookingCustomField({
         userId: effectiveUserId,
         name: trimmedName,
@@ -5363,6 +5397,9 @@ export function registerRoutes(app: Express) {
         displayOrder: existing.length,
         options: validatedOptions,
         defaultValue: defaultValue ? String(defaultValue) : null,
+        calcOperation: calcOperationVal,
+        calcFieldAId: calcFieldAIdVal,
+        calcFieldBId: calcFieldBIdVal,
       });
 
       res.json(field);
@@ -5408,7 +5445,7 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Custom field not found" });
       }
 
-      const { name, fieldType, isRequired, options, defaultValue } = req.body;
+      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId } = req.body;
       const updateData: Record<string, any> = {};
 
       if (name !== undefined) {
@@ -5423,7 +5460,7 @@ export function registerRoutes(app: Express) {
       }
 
       if (fieldType !== undefined) {
-        const validTypes = ["text", "number", "date", "boolean", "select"];
+        const validTypes = ["text", "number", "date", "boolean", "select", "calculation"];
         if (!validTypes.includes(fieldType)) return res.status(400).json({ error: "Invalid field type" });
         updateData.fieldType = fieldType;
       }
@@ -5447,6 +5484,41 @@ export function registerRoutes(app: Express) {
         }
       } else {
         updateData.options = null;
+      }
+
+      if (effectiveType === "calculation") {
+        const validOps = ["add", "subtract", "multiply", "divide"];
+        if (!validOps.includes(calcOperation)) {
+          return res.status(400).json({ error: "Calculation fields require a valid operation" });
+        }
+        const aId = parseInt(calcFieldAId);
+        const bId = parseInt(calcFieldBId);
+        if (isNaN(aId) || isNaN(bId)) {
+          return res.status(400).json({ error: "Calculation fields require two referenced fields" });
+        }
+        if (aId === bId) {
+          return res.status(400).json({ error: "Calculation fields must reference two different fields" });
+        }
+        const [refA, refB] = await Promise.all([
+          storage.getBookingCustomField(aId),
+          storage.getBookingCustomField(bId),
+        ]);
+        if (!refA || !refB || refA.userId !== getEffectiveUserId(req) || refB.userId !== getEffectiveUserId(req)) {
+          return res.status(404).json({ error: "Referenced field not found" });
+        }
+        if (refA.fieldType !== "number" || refB.fieldType !== "number") {
+          return res.status(400).json({ error: "Calculation fields can only reference number fields" });
+        }
+        if (!refA.isActive || !refB.isActive) {
+          return res.status(400).json({ error: "Calculation fields can only reference active fields" });
+        }
+        updateData.calcOperation = calcOperation;
+        updateData.calcFieldAId = aId;
+        updateData.calcFieldBId = bId;
+      } else {
+        updateData.calcOperation = null;
+        updateData.calcFieldAId = null;
+        updateData.calcFieldBId = null;
       }
 
       if (defaultValue !== undefined) {

@@ -21,16 +21,28 @@ const TYPE_LABELS: Record<string, string> = {
   date: "Date",
   boolean: "Yes/No",
   select: "Select",
+  calculation: "Calculation",
+};
+
+const OPERATION_LABELS: Record<string, string> = {
+  add: "Add", subtract: "Subtract", multiply: "Multiply", divide: "Divide",
+};
+
+const OPERATION_SYMBOLS: Record<string, string> = {
+  add: "+", subtract: "−", multiply: "×", divide: "÷",
 };
 
 interface CustomField {
   id: number;
   name: string;
-  fieldType: "text" | "number" | "date" | "boolean" | "select";
+  fieldType: "text" | "number" | "date" | "boolean" | "select" | "calculation";
   isRequired: boolean;
   displayOrder: number;
   options: string[] | null;
   defaultValue: string | null;
+  calcOperation: "add" | "subtract" | "multiply" | "divide" | null;
+  calcFieldAId: number | null;
+  calcFieldBId: number | null;
   isActive: boolean;
 }
 
@@ -45,6 +57,9 @@ export function CustomFieldsSettings() {
   const [isRequired, setIsRequired] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
   const [defaultValue, setDefaultValue] = useState("");
+  const [calcOperation, setCalcOperation] = useState("add");
+  const [calcFieldAId, setCalcFieldAId] = useState<number | null>(null);
+  const [calcFieldBId, setCalcFieldBId] = useState<number | null>(null);
 
   const { data: fields = [], isLoading } = useQuery<CustomField[]>({
     queryKey: ["/api/booking/custom-fields"],
@@ -99,12 +114,26 @@ export function CustomFieldsSettings() {
     onError: (e: any) => toast({ title: "Error", description: e.message || "Failed to reorder fields", variant: "destructive" }),
   });
 
+  // Active numeric fields available as calculation operands (excluding self when editing)
+  const numericFields = fields.filter(
+    (f) => f.fieldType === "number" && (!editingField || f.id !== editingField.id),
+  );
+
+  function fieldNameById(id: number | null): string {
+    if (id == null) return "—";
+    const f = fields.find((f) => f.id === id);
+    return f ? f.name : "—";
+  }
+
   function resetForm() {
     setName("");
     setFieldType("text");
     setIsRequired(false);
     setOptions([]);
     setDefaultValue("");
+    setCalcOperation("add");
+    setCalcFieldAId(null);
+    setCalcFieldBId(null);
     setEditingField(null);
   }
 
@@ -120,6 +149,9 @@ export function CustomFieldsSettings() {
     setIsRequired(field.isRequired);
     setOptions(field.options || []);
     setDefaultValue(field.defaultValue || "");
+    setCalcOperation(field.calcOperation || "add");
+    setCalcFieldAId(field.calcFieldAId ?? null);
+    setCalcFieldBId(field.calcFieldBId ?? null);
     setDialogOpen(true);
   }
 
@@ -165,13 +197,26 @@ export function CustomFieldsSettings() {
         return;
       }
     }
+    if (fieldType === "calculation") {
+      if (calcFieldAId == null || calcFieldBId == null) {
+        toast({ title: "Error", description: "Calculation fields require two referenced fields", variant: "destructive" });
+        return;
+      }
+      if (calcFieldAId === calcFieldBId) {
+        toast({ title: "Error", description: "Calculation fields must reference two different fields", variant: "destructive" });
+        return;
+      }
+    }
 
     const payload = {
       name: trimmed,
       fieldType,
-      isRequired,
+      isRequired: fieldType === "calculation" ? false : isRequired,
       options: fieldType === "select" ? options.map((o) => o.trim()).filter(Boolean) : null,
       defaultValue: defaultValue.trim() || null,
+      calcOperation: fieldType === "calculation" ? calcOperation : null,
+      calcFieldAId: fieldType === "calculation" ? calcFieldAId : null,
+      calcFieldBId: fieldType === "calculation" ? calcFieldBId : null,
     };
 
     if (editingField) {
@@ -238,10 +283,16 @@ export function CustomFieldsSettings() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{field.name}</span>
-                      {field.isRequired && <Badge variant="secondary">Required</Badge>}
+                      {field.isRequired && field.fieldType !== "calculation" && <Badge variant="secondary">Required</Badge>}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline">{TYPE_LABELS[field.fieldType] || field.fieldType}</Badge>
+                      {field.fieldType === "calculation" ? (
+                        <Badge variant="outline">
+                          calc: {fieldNameById(field.calcFieldAId)} {OPERATION_SYMBOLS[field.calcOperation ?? "add"]} {fieldNameById(field.calcFieldBId)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">{TYPE_LABELS[field.fieldType] || field.fieldType}</Badge>
+                      )}
                       {field.fieldType === "select" && field.options && field.options.length > 0 && (
                         <span className="truncate">{field.options.join(", ")}</span>
                       )}
@@ -292,20 +343,76 @@ export function CustomFieldsSettings() {
                   <SelectItem value="date">Date</SelectItem>
                   <SelectItem value="boolean">Yes/No</SelectItem>
                   <SelectItem value="select">Select</SelectItem>
+                  <SelectItem value="calculation" disabled={numericFields.length < 2}>Calculation</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="cf-required"
-                checked={isRequired}
-                onCheckedChange={(checked) => setIsRequired(checked === true)}
-                data-testid="switch-custom-field-required"
-              />
-              <Label htmlFor="cf-required">Required</Label>
-            </div>
 
-            {fieldType === "select" ? (
+            {fieldType !== "calculation" && (
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="cf-required"
+                  checked={isRequired}
+                  onCheckedChange={(checked) => setIsRequired(checked === true)}
+                  data-testid="switch-custom-field-required"
+                />
+                <Label htmlFor="cf-required">Required</Label>
+              </div>
+            )}
+
+            {fieldType === "calculation" ? (
+              <div className="space-y-3">
+                <div>
+                  <Label>Operation</Label>
+                  <Select value={calcOperation} onValueChange={setCalcOperation}>
+                    <SelectTrigger data-testid="select-calc-operation">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="add">Add (+)</SelectItem>
+                      <SelectItem value="subtract">Subtract (−)</SelectItem>
+                      <SelectItem value="multiply">Multiply (×)</SelectItem>
+                      <SelectItem value="divide">Divide (÷)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Field A</Label>
+                  <Select
+                    value={calcFieldAId != null ? String(calcFieldAId) : ""}
+                    onValueChange={(v) => setCalcFieldAId(parseInt(v))}
+                  >
+                    <SelectTrigger data-testid="select-calc-field-a">
+                      <SelectValue placeholder="Select field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {numericFields.map((f) => (
+                        <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Field B</Label>
+                  <Select
+                    value={calcFieldBId != null ? String(calcFieldBId) : ""}
+                    onValueChange={(v) => setCalcFieldBId(parseInt(v))}
+                  >
+                    <SelectTrigger data-testid="select-calc-field-b">
+                      <SelectValue placeholder="Select field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {numericFields.map((f) => (
+                        <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {name.trim() || "Field"} = {fieldNameById(calcFieldAId)} {OPERATION_SYMBOLS[calcOperation]} {fieldNameById(calcFieldBId)}
+                </p>
+              </div>
+            ) : fieldType === "select" ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Options (up to {MAX_OPTIONS})</Label>
