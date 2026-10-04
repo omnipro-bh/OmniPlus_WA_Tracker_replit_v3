@@ -19,6 +19,7 @@ import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { CustomFieldsSettings } from "@/components/custom-fields-settings";
 
 interface BookingService {
   id: number;
@@ -2079,6 +2080,7 @@ export default function BookingScheduler() {
               </p>
             </CardContent>
           </Card>
+          <CustomFieldsSettings />
         </div>
       )}
 

@@ -32,6 +32,7 @@ export const ledgerTransactionTypeEnum = pgEnum("ledger_transaction_type", ["PAY
 export const outgoingMessageTypeEnum = pgEnum("outgoing_message_type", ["text", "text_buttons", "image_buttons", "video_buttons", "document"]);
 export const subscriberStatusEnum = pgEnum("subscriber_status", ["subscribed", "unsubscribed"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["pending", "confirmed", "cancelled", "completed", "no_show"]);
+export const bookingCustomFieldTypeEnum = pgEnum("booking_custom_field_type", ["text", "number", "date", "boolean", "select"]);
 export const labelLogOperationEnum = pgEnum("label_log_operation", ["sync", "create", "assign", "remove"]);
 export const labelLogStatusEnum = pgEnum("label_log_status", ["success", "error"]);
 
@@ -1080,6 +1081,30 @@ export const userBookingSettingsRelations = relations(userBookingSettings, ({ on
   }),
 }));
 
+// User-defined custom fields (max 5 per tenant). These are for the manual booking
+// form (Phase 3B+). They are UNRELATED to the legacy bookings.customField1/2 columns,
+// which are a fixed two-field pair used only by the chatbot booking node.
+export const bookingCustomFields = pgTable("booking_custom_fields", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  fieldType: bookingCustomFieldTypeEnum("field_type").notNull().default("text"),
+  isRequired: boolean("is_required").notNull().default(false),
+  displayOrder: integer("display_order").notNull().default(0),
+  options: text("options").array(), // only for "select" type
+  defaultValue: text("default_value"), // stringified; interpreted per fieldType
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const bookingCustomFieldsRelations = relations(bookingCustomFields, ({ one }) => ({
+  user: one(users, {
+    fields: [bookingCustomFields.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -1328,6 +1353,10 @@ export const insertBookingSchema = createInsertSchema(bookings, {
   status: z.enum(["pending", "confirmed", "cancelled", "completed", "no_show"]).default("pending"),
 });
 
+export const insertBookingCustomFieldSchema = createInsertSchema(bookingCustomFields, {
+  name: z.string().min(1, "Field name is required").max(255),
+});
+
 // TypeScript types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1406,3 +1435,5 @@ export type InsertBookingStaffSlot = z.infer<typeof insertBookingStaffSlotSchema
 export type Booking = typeof bookings.$inferSelect;
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
 export type UserBookingSettings = typeof userBookingSettings.$inferSelect;
+export type BookingCustomField = typeof bookingCustomFields.$inferSelect;
+export type InsertBookingCustomField = z.infer<typeof insertBookingCustomFieldSchema>;

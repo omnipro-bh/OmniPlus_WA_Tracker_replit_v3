@@ -5297,6 +5297,188 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // --- Booking Custom Fields (user-defined, max 5 per tenant) ---
+  app.get("/api/booking/custom-fields", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const fields = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+      res.json(fields);
+    } catch (error: any) {
+      console.error("Get custom fields error:", error);
+      res.status(500).json({ error: "Failed to fetch custom fields" });
+    }
+  });
+
+  app.post("/api/booking/custom-fields", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { name, fieldType, isRequired, options, defaultValue } = req.body;
+
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Field name is required" });
+      }
+      const trimmedName = name.trim();
+      if (trimmedName.length > 255) {
+        return res.status(400).json({ error: "Field name must be at most 255 characters" });
+      }
+
+      const validTypes = ["text", "number", "date", "boolean", "select"];
+      const type = fieldType || "text";
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ error: "Invalid field type" });
+      }
+
+      // Max 5 active fields. NOTE: theoretical race condition — two simultaneous
+      // POSTs could both pass this check and exceed 5. Acceptable for now; add a
+      // transaction/lock if this ever matters in practice.
+      const activeCount = await storage.countActiveBookingCustomFields(effectiveUserId);
+      if (activeCount >= 5) {
+        return res.status(400).json({ error: "Maximum of 5 custom fields reached" });
+      }
+
+      const existing = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+      if (existing.some((f) => f.name.toLowerCase() === trimmedName.toLowerCase())) {
+        return res.status(400).json({ error: "A custom field with this name already exists" });
+      }
+
+      let validatedOptions: string[] | null = null;
+      if (type === "select") {
+        if (!Array.isArray(options) || options.length === 0) {
+          return res.status(400).json({ error: "Select fields require at least one option" });
+        }
+        if (options.length > 20) {
+          return res.status(400).json({ error: "Select fields support at most 20 options" });
+        }
+        validatedOptions = options.map((o: any) => String(o || "").trim()).filter(Boolean);
+        if (validatedOptions.length === 0) {
+          return res.status(400).json({ error: "Select fields require at least one option" });
+        }
+      }
+
+      const field = await storage.createBookingCustomField({
+        userId: effectiveUserId,
+        name: trimmedName,
+        fieldType: type as any,
+        isRequired: !!isRequired,
+        displayOrder: existing.length,
+        options: validatedOptions,
+        defaultValue: defaultValue ? String(defaultValue) : null,
+      });
+
+      res.json(field);
+    } catch (error: any) {
+      console.error("Create custom field error:", error);
+      res.status(500).json({ error: "Failed to create custom field" });
+    }
+  });
+
+  // NOTE: must be registered before PATCH /:id so "reorder" isn't captured as an id
+  app.patch("/api/booking/custom-fields/reorder", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const { ids } = req.body;
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids array is required" });
+      }
+
+      const fields = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+      const fieldIdSet = new Set(fields.map((f) => f.id));
+      for (const id of ids) {
+        if (!fieldIdSet.has(Number(id))) {
+          return res.status(404).json({ error: "One or more custom fields not found" });
+        }
+      }
+
+      await storage.reorderBookingCustomFields(effectiveUserId, ids.map(Number));
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Reorder custom fields error:", error);
+      res.status(500).json({ error: "Failed to reorder custom fields" });
+    }
+  });
+
+  app.patch("/api/booking/custom-fields/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const fieldId = parseInt(req.params.id);
+      if (isNaN(fieldId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const field = await storage.getBookingCustomField(fieldId);
+      if (!field || field.userId !== getEffectiveUserId(req)) {
+        return res.status(404).json({ error: "Custom field not found" });
+      }
+
+      const { name, fieldType, isRequired, options, defaultValue } = req.body;
+      const updateData: Record<string, any> = {};
+
+      if (name !== undefined) {
+        const trimmedName = String(name).trim();
+        if (trimmedName.length === 0) return res.status(400).json({ error: "Field name is required" });
+        if (trimmedName.length > 255) return res.status(400).json({ error: "Field name must be at most 255 characters" });
+        const existing = await storage.getBookingCustomFieldsForUser(getEffectiveUserId(req));
+        if (existing.some((f) => f.id !== fieldId && f.name.toLowerCase() === trimmedName.toLowerCase())) {
+          return res.status(400).json({ error: "A custom field with this name already exists" });
+        }
+        updateData.name = trimmedName;
+      }
+
+      if (fieldType !== undefined) {
+        const validTypes = ["text", "number", "date", "boolean", "select"];
+        if (!validTypes.includes(fieldType)) return res.status(400).json({ error: "Invalid field type" });
+        updateData.fieldType = fieldType;
+      }
+
+      if (isRequired !== undefined) {
+        updateData.isRequired = !!isRequired;
+      }
+
+      const effectiveType = fieldType ?? field.fieldType;
+      if (effectiveType === "select") {
+        if (options !== undefined) {
+          if (!Array.isArray(options) || options.length === 0) {
+            return res.status(400).json({ error: "Select fields require at least one option" });
+          }
+          if (options.length > 20) {
+            return res.status(400).json({ error: "Select fields support at most 20 options" });
+          }
+          const cleaned = options.map((o: any) => String(o || "").trim()).filter(Boolean);
+          if (cleaned.length === 0) return res.status(400).json({ error: "Select fields require at least one option" });
+          updateData.options = cleaned;
+        }
+      } else {
+        updateData.options = null;
+      }
+
+      if (defaultValue !== undefined) {
+        updateData.defaultValue = defaultValue ? String(defaultValue) : null;
+      }
+
+      const updated = await storage.updateBookingCustomField(fieldId, updateData);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update custom field error:", error);
+      res.status(500).json({ error: "Failed to update custom field" });
+    }
+  });
+
+  app.delete("/api/booking/custom-fields/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const fieldId = parseInt(req.params.id);
+      if (isNaN(fieldId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const field = await storage.getBookingCustomField(fieldId);
+      if (!field || field.userId !== getEffectiveUserId(req)) {
+        return res.status(404).json({ error: "Custom field not found" });
+      }
+
+      await storage.softDeleteBookingCustomField(fieldId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete custom field error:", error);
+      res.status(500).json({ error: "Failed to delete custom field" });
+    }
+  });
+
   // ============================================================================
   // WORKFLOWS
   // ============================================================================

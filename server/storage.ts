@@ -328,6 +328,15 @@ export interface IStorage {
     cancelMessage: string | null;
     customDayNames: string[] | null;
   }>): Promise<schema.UserBookingSettings>;
+
+  // Booking Custom Fields (user-defined, max 5 per tenant)
+  getBookingCustomFieldsForUser(userId: number): Promise<schema.BookingCustomField[]>;
+  getBookingCustomField(id: number): Promise<schema.BookingCustomField | undefined>;
+  createBookingCustomField(data: schema.InsertBookingCustomField): Promise<schema.BookingCustomField>;
+  updateBookingCustomField(id: number, data: Partial<schema.BookingCustomField>): Promise<schema.BookingCustomField | undefined>;
+  softDeleteBookingCustomField(id: number): Promise<void>;
+  reorderBookingCustomFields(userId: number, ids: number[]): Promise<void>;
+  countActiveBookingCustomFields(userId: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2144,6 +2153,73 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(schema.bookingDepartments, eq(schema.bookings.departmentId, schema.bookingDepartments.id))
       .where(and(...conditions))
       .orderBy(schema.bookings.slotDate, schema.bookings.startTime, schema.bookings.staffId);
+  }
+
+  // Booking Custom Fields (user-defined)
+  async getBookingCustomFieldsForUser(userId: number): Promise<schema.BookingCustomField[]> {
+    return await db
+      .select()
+      .from(schema.bookingCustomFields)
+      .where(and(
+        eq(schema.bookingCustomFields.userId, userId),
+        eq(schema.bookingCustomFields.isActive, true),
+      ))
+      .orderBy(schema.bookingCustomFields.displayOrder, schema.bookingCustomFields.id);
+  }
+
+  async getBookingCustomField(id: number): Promise<schema.BookingCustomField | undefined> {
+    const [field] = await db
+      .select()
+      .from(schema.bookingCustomFields)
+      .where(eq(schema.bookingCustomFields.id, id));
+    return field || undefined;
+  }
+
+  async createBookingCustomField(data: schema.InsertBookingCustomField): Promise<schema.BookingCustomField> {
+    const [field] = await db
+      .insert(schema.bookingCustomFields)
+      .values(data)
+      .returning();
+    return field;
+  }
+
+  async updateBookingCustomField(id: number, data: Partial<schema.BookingCustomField>): Promise<schema.BookingCustomField | undefined> {
+    const [updated] = await db
+      .update(schema.bookingCustomFields)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.bookingCustomFields.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async softDeleteBookingCustomField(id: number): Promise<void> {
+    await db
+      .update(schema.bookingCustomFields)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(schema.bookingCustomFields.id, id));
+  }
+
+  async reorderBookingCustomFields(userId: number, ids: number[]): Promise<void> {
+    for (let i = 0; i < ids.length; i++) {
+      await db
+        .update(schema.bookingCustomFields)
+        .set({ displayOrder: i, updatedAt: new Date() })
+        .where(and(
+          eq(schema.bookingCustomFields.id, ids[i]),
+          eq(schema.bookingCustomFields.userId, userId),
+        ));
+    }
+  }
+
+  async countActiveBookingCustomFields(userId: number): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookingCustomFields)
+      .where(and(
+        eq(schema.bookingCustomFields.userId, userId),
+        eq(schema.bookingCustomFields.isActive, true),
+      ));
+    return result?.count || 0;
   }
 }
 
