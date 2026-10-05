@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronUp, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2, Maximize2, Minimize2 } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronUp, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -144,22 +144,16 @@ export default function BookingScheduler() {
     return { sortBy: 'slotDate', sortDir: 'desc' };
   });
   const [bookingsSearch, setBookingsSearch] = useState("");
-  const [bookingsFullWidth, setBookingsFullWidth] = useState<boolean>(() => {
-    try { return localStorage.getItem('omniplus.bookings.fullWidth') === 'true'; } catch { return false; }
-  });
   const [selectedBookings, setSelectedBookings] = useState<Set<number>>(new Set());
   const BOOKINGS_PAGE_SIZE = 10;
 
-  // Persist sort + status filter + full-width preferences (search text stays transient)
+  // Persist sort + status filter preferences (search text stays transient)
   useEffect(() => {
     try { localStorage.setItem('omniplus.bookings.sort', JSON.stringify(bookingsSort)); } catch { /* ignore */ }
   }, [bookingsSort]);
   useEffect(() => {
     try { localStorage.setItem('omniplus.bookings.statusFilter', bookingsStatusFilter); } catch { /* ignore */ }
   }, [bookingsStatusFilter]);
-  useEffect(() => {
-    try { localStorage.setItem('omniplus.bookings.fullWidth', String(bookingsFullWidth)); } catch { /* ignore */ }
-  }, [bookingsFullWidth]);
 
   // Booking action modal states
   const [editBookingOpen, setEditBookingOpen] = useState(false);
@@ -985,7 +979,7 @@ export default function BookingScheduler() {
   }
 
   return (
-    <div className={bookingsFullWidth ? "p-6 space-y-6 -mx-6 lg:-mx-8" : "p-6 space-y-6"}>
+    <div className="p-6 space-y-6 -mx-6 lg:-mx-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
@@ -1800,17 +1794,6 @@ export default function BookingScheduler() {
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${fetchingBookings ? 'animate-spin' : ''}`} />
                 Refresh
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setBookingsFullWidth((v) => !v)}
-                data-testid="button-toggle-fullwidth"
-                title={bookingsFullWidth ? "Collapse" : "Expand full width"}
-                aria-pressed={bookingsFullWidth}
-              >
-                {bookingsFullWidth ? <Minimize2 className="h-4 w-4 mr-2" /> : <Maximize2 className="h-4 w-4 mr-2" />}
-                {bookingsFullWidth ? "Collapse" : "Expand"}
               </Button>
               <Button
                 variant="outline"

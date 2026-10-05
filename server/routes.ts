@@ -269,23 +269,6 @@ async function getPhonebookLimit(userId: number): Promise<number | null> {
 
 export function registerRoutes(app: Express) {
   // ============================================================================
-  // TEMP DEBUG ENDPOINT (cbff9bc diagnosis) — will be removed after capture.
-  // Unauthenticated; only logs to the PM2 error log. Does not store anything.
-  // ============================================================================
-  app.post("/api/debug/client-error", async (req, res) => {
-    try {
-      const { message, stack, componentStack } = req.body || {};
-      console.error("[CLIENT-ERROR] message:", message ?? "");
-      console.error("[CLIENT-ERROR] stack:\n", stack ?? "");
-      console.error("[CLIENT-ERROR] componentStack:\n", componentStack ?? "");
-      res.json({ ok: true });
-    } catch (e) {
-      console.error("[CLIENT-ERROR] failed to parse body", e);
-      res.status(500).json({ ok: false });
-    }
-  });
-
-  // ============================================================================
   // PAYPAL INTEGRATION
   // ============================================================================
 
