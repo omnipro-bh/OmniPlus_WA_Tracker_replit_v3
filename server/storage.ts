@@ -347,10 +347,11 @@ export interface IStorage {
   countActiveBookingCustomFields(userId: number): Promise<number>;
 
   // Manual booking (Phase 3B)
-  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number): Promise<{ available: boolean; conflictingCount: number }>;
+  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number, excludeBookingId?: number): Promise<{ available: boolean; conflictingCount: number }>;
   createManualBookingWithValues(booking: schema.InsertBooking, values: { fieldId: number; value: string }[]): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }>;
   getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
   getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
+  setBookingCustomFieldValues(bookingId: number, values: { fieldId: number; value: string }[]): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2249,19 +2250,24 @@ export class DatabaseStorage implements IStorage {
     slotDate: string,
     startTime: string,
     endTime: string,
-    userId: number
+    userId: number,
+    excludeBookingId?: number
   ): Promise<{ available: boolean; conflictingCount: number }> {
+    const conditions = [
+      eq(schema.bookings.staffId, staffId),
+      eq(schema.bookings.slotDate, slotDate),
+      sql`${schema.bookings.startTime} < ${endTime}`,
+      sql`${schema.bookings.endTime} > ${startTime}`,
+      inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
+      eq(schema.bookings.userId, userId),
+    ];
+    if (excludeBookingId !== undefined) {
+      conditions.push(sql`${schema.bookings.id} != ${excludeBookingId}`);
+    }
     const [row] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.bookings)
-      .where(and(
-        eq(schema.bookings.staffId, staffId),
-        eq(schema.bookings.slotDate, slotDate),
-        sql`${schema.bookings.startTime} < ${endTime}`,
-        sql`${schema.bookings.endTime} > ${startTime}`,
-        inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
-        eq(schema.bookings.userId, userId),
-      ));
+      .where(and(...conditions));
     const c = row?.count || 0;
     return { available: c === 0, conflictingCount: c };
   }
@@ -2320,6 +2326,16 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(schema.bookingCustomFieldValues)
       .where(inArray(schema.bookingCustomFieldValues.bookingId, bookingIds));
+  }
+
+  async setBookingCustomFieldValues(bookingId: number, values: { fieldId: number; value: string }[]): Promise<void> {
+    return await db.transaction(async (tx) => {
+      await tx.delete(schema.bookingCustomFieldValues).where(eq(schema.bookingCustomFieldValues.bookingId, bookingId));
+      if (values.length > 0) {
+        await tx.insert(schema.bookingCustomFieldValues)
+          .values(values.map((v) => ({ bookingId, fieldId: v.fieldId, value: v.value })));
+      }
+    });
   }
 }
 

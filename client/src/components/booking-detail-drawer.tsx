@@ -61,11 +61,10 @@ interface Props {
   customFields: CustomField[];
   onClose: () => void;
   onEdit: (b: Booking) => void;
-  onReschedule: (b: Booking) => void;
   onCancel: (b: Booking) => void;
 }
 
-export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, onReschedule, onCancel }: Props) {
+export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, onCancel }: Props) {
   if (!booking) return null;
 
   const values = new Map<number, string>((booking.customFieldValues ?? []).map((v) => [v.fieldId, v.value]));
@@ -89,7 +88,6 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
         {/* Top actions */}
         <div className="border-b px-6 py-3 flex gap-2">
           <Button variant="outline" size="sm" onClick={() => onEdit(booking)} data-testid="drawer-action-edit">Edit</Button>
-          <Button variant="outline" size="sm" onClick={() => onReschedule(booking)} data-testid="drawer-action-reschedule">Reschedule</Button>
           <Button variant="outline" size="sm" className="text-destructive" onClick={() => onCancel(booking)} data-testid="drawer-action-cancel">Cancel</Button>
         </div>
 

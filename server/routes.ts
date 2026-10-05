@@ -80,7 +80,8 @@ function computeAvailableSlots(
   slots: CalendarSlot[],
   bookings: CalendarBooking[],
   from: string,
-  to: string
+  to: string,
+  excludeBookingId?: number
 ): Array<{
   slotDate: string;
   startTime: string;
@@ -93,6 +94,7 @@ function computeAvailableSlots(
   // Group occupying bookings by staff|date -> list of [startMin, endMin] intervals
   const occupyingByStaffDate = new Map<string, Array<[number, number]>>();
   for (const b of bookings) {
+    if (excludeBookingId !== undefined && b.id === excludeBookingId) continue;
     if (!(BLOCKING_BOOKING_STATUSES as readonly string[]).includes(b.status)) continue;
     const key = `${b.staffId}|${b.slotDate}`;
     const list = occupyingByStaffDate.get(key) || [];
@@ -4646,6 +4648,7 @@ export function registerRoutes(app: Express) {
         id: f.id,
         name: f.name,
         fieldType: f.fieldType,
+        isRequired: f.isRequired,
         displayOrder: f.displayOrder,
         options: f.options,
         calcOperation: f.calcOperation,
@@ -4860,8 +4863,110 @@ export function registerRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      const { id: _id, userId: _userId, ...updateData } = req.body;
+      const {
+        id: _id,
+        userId: _userId,
+        customFieldValues,
+        sendNotification,
+        ...rest
+      } = req.body;
+
+      // Whitelist accepted booking fields
+      const updateData: Partial<schema.Booking> = {};
+      if (rest.customerName !== undefined) updateData.customerName = rest.customerName || null;
+      if (rest.customerPhone !== undefined) updateData.customerPhone = rest.customerPhone;
+      if (rest.bookingLabel !== undefined) updateData.bookingLabel = rest.bookingLabel || null;
+      if (rest.customField1Value !== undefined) updateData.customField1Value = rest.customField1Value || null;
+      if (rest.customField2Value !== undefined) updateData.customField2Value = rest.customField2Value || null;
+      if (rest.departmentId !== undefined) updateData.departmentId = rest.departmentId;
+      if (rest.staffId !== undefined) updateData.staffId = rest.staffId;
+      if (rest.slotDate !== undefined) updateData.slotDate = rest.slotDate;
+      if (rest.startTime !== undefined) updateData.startTime = rest.startTime;
+      if (rest.endTime !== undefined) updateData.endTime = rest.endTime;
+      if (rest.status !== undefined) updateData.status = rest.status;
+
+      // Determine whether the appointment changed (drives availability + notification)
+      const appointmentChanged =
+        updateData.departmentId !== undefined ||
+        updateData.staffId !== undefined ||
+        updateData.slotDate !== undefined ||
+        updateData.startTime !== undefined ||
+        updateData.endTime !== undefined;
+
+      const newStaffId = updateData.staffId ?? booking.staffId;
+      const newSlotDate = updateData.slotDate ?? booking.slotDate;
+      const newStartTime = updateData.startTime ?? booking.startTime;
+      const newEndTime = updateData.endTime ?? booking.endTime;
+
+      // Availability check when the appointment changed (exclude this booking)
+      if (appointmentChanged) {
+        const overlap = await storage.checkBookingOverlap(newStaffId, newSlotDate, newStartTime, newEndTime, effectiveUserId, bookingId);
+        if (!overlap.available) {
+          return res.status(409).json({ error: "Slot not available" });
+        }
+      }
+
+      // Update the booking row
       const updated = await storage.updateBooking(bookingId, updateData);
+
+      // Upsert custom field values (replace-all strategy)
+      if (customFieldValues !== undefined && typeof customFieldValues === "object") {
+        const fieldDefs = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+        const fieldById = new Map(fieldDefs.map((f) => [f.id, f]));
+        const values: { fieldId: number; value: string }[] = [];
+        for (const [key, raw] of Object.entries(customFieldValues as Record<string, unknown>)) {
+          const fieldId = Number(key);
+          if (!Number.isInteger(fieldId)) return res.status(400).json({ error: "Invalid custom field ID" });
+          const field = fieldById.get(fieldId);
+          if (!field) return res.status(404).json({ error: "Referenced field not found" });
+          if (field.fieldType === "calculation") continue; // computed, not stored
+          const value = String(raw ?? "").trim();
+          if (value === "") continue; // omitted -> removed on replace
+          if (field.fieldType === "number" && !Number.isFinite(Number(value))) {
+            return res.status(400).json({ error: `Field "${field.name}" must be a number` });
+          }
+          if (field.fieldType === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return res.status(400).json({ error: `Field "${field.name}" must be a date (YYYY-MM-DD)` });
+          }
+          if (field.fieldType === "boolean" && value !== "true" && value !== "false") {
+            return res.status(400).json({ error: `Field "${field.name}" must be true or false` });
+          }
+          if (field.fieldType === "select" && (!field.options || !field.options.includes(value))) {
+            return res.status(400).json({ error: `Field "${field.name}" has an invalid option` });
+          }
+          values.push({ fieldId, value });
+        }
+        await storage.setBookingCustomFieldValues(bookingId, values);
+      }
+
+      // Send reschedule notification when the appointment changed
+      if (appointmentChanged && sendNotification) {
+        try {
+          const channels = await storage.getChannelsForUser(effectiveUserId);
+          const activeChannel = channels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+          if (activeChannel?.whapiChannelToken) {
+            const staff = await storage.getBookingStaff(newStaffId);
+            const dept = await storage.getBookingDepartment(updateData.departmentId ?? booking.departmentId);
+            const userSettings = await storage.getUserBookingSettings(effectiveUserId);
+            let message = userSettings?.rescheduleMessage || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
+            message = message
+              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
+              .replace(/\{\{date\}\}/g, newSlotDate)
+              .replace(/\{\{time\}\}/g, newStartTime)
+              .replace(/\{\{oldDate\}\}/g, booking.slotDate)
+              .replace(/\{\{oldTime\}\}/g, booking.startTime)
+              .replace(/\{\{department\}\}/g, dept?.name || '')
+              .replace(/\{\{staff\}\}/g, staff?.name || '');
+            await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
+              to: booking.customerPhone,
+              body: message,
+            });
+          }
+        } catch (notifyErr) {
+          console.error("Failed to send reschedule notification:", notifyErr);
+        }
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error("Update booking error:", error);
@@ -5124,7 +5229,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/booking/staff/:staffId/available-slots", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const staffId = parseInt(req.params.staffId);
-      const { date } = req.query;
+      const { date, excludeBookingId } = req.query;
       
       if (isNaN(staffId) || !date) {
         return res.status(400).json({ error: "Staff ID and date are required" });
@@ -5156,7 +5261,13 @@ export function registerRoutes(app: Express) {
         to: dateStr,
         staffId,
       });
-      const windows = computeAvailableSlots(slots, bookings, dateStr, dateStr);
+      const windows = computeAvailableSlots(
+        slots,
+        bookings,
+        dateStr,
+        dateStr,
+        excludeBookingId !== undefined ? parseInt(excludeBookingId as string) : undefined,
+      );
 
       res.json(windows.map((w) => ({ startTime: w.startTime, endTime: w.endTime })));
     } catch (error: any) {

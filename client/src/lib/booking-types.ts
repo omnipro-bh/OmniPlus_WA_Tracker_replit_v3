@@ -27,6 +27,7 @@ export interface CustomField {
   id: number;
   name: string;
   fieldType: "text" | "number" | "date" | "boolean" | "select" | "calculation";
+  isRequired: boolean;
   displayOrder: number;
   options: string[] | null;
   calcOperation: CalcOperation | null;
