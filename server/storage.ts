@@ -47,6 +47,7 @@ export interface CalendarSlot {
 export interface CalendarBooking {
   id: number;
   slotDate: string;
+  endDate: string | null;
   startTime: string;
   endTime: string;
   departmentId: number;
@@ -72,6 +73,27 @@ export class BookingSlotUnavailableError extends Error {
     super("Booking slot unavailable");
     this.name = "BookingSlotUnavailableError";
   }
+}
+
+// Private helper: enumerate each "YYYY-MM-DD" date in [from, to] inclusive
+// (UTC, DST-safe). Mirrors the equivalent helper in routes.ts but kept local to
+// avoid a storage -> routes import.
+function eachDateInRange(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  for (let d = start; d <= end; d = new Date(d.getTime() + 86400000)) {
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
+// Private predicate: does an existing booking's inclusive day span
+// [slotDate, COALESCE(endDate, slotDate)] intersect the requested [fromDate, toDate]?
+// Single-day bookings (endDate = NULL) behave as endDate === slotDate.
+function bookingDaySpanOverlaps(fromDate: string, toDate: string) {
+  return sql`${schema.bookings.slotDate} <= ${toDate}
+    AND COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) >= ${fromDate}`;
 }
 
 export interface IStorage {
@@ -347,7 +369,7 @@ export interface IStorage {
   countActiveBookingCustomFields(userId: number): Promise<number>;
 
   // Manual booking (Phase 3B)
-  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number, excludeBookingId?: number): Promise<{ available: boolean; conflictingCount: number }>;
+  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number, excludeBookingId?: number, endDate?: string): Promise<{ available: boolean; conflictingCount: number }>;
   createManualBookingWithValues(booking: schema.InsertBooking, values: { fieldId: number; value: string }[]): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }>;
   getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
   getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
@@ -1746,16 +1768,20 @@ export class DatabaseStorage implements IStorage {
     // Handle special outdated confirmed filter at DB level
     if (filters?.outdatedConfirmed) {
       conditions.push(eq(schema.bookings.status, 'confirmed' as any));
-      conditions.push(sql`${schema.bookings.slotDate} < ${today}`);
+      conditions.push(sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) < ${today}`);
     } else {
       if (filters?.status) {
         conditions.push(eq(schema.bookings.status, filters.status as any));
       }
-      if (filters?.fromDate) {
-        conditions.push(sql`${schema.bookings.slotDate} >= ${filters.fromDate}`);
-      }
-      if (filters?.toDate) {
-        conditions.push(sql`${schema.bookings.slotDate} <= ${filters.toDate}`);
+      if (filters?.fromDate && filters?.toDate) {
+        conditions.push(bookingDaySpanOverlaps(filters.fromDate, filters.toDate));
+      } else {
+        if (filters?.fromDate) {
+          conditions.push(sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) >= ${filters.fromDate}`);
+        }
+        if (filters?.toDate) {
+          conditions.push(sql`${schema.bookings.slotDate} <= ${filters.toDate}`);
+        }
       }
     }
     
@@ -1801,7 +1827,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(schema.bookings.userId, userId),
         eq(schema.bookings.status, 'confirmed' as any),
-        sql`${schema.bookings.slotDate} < ${today}`
+        sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) < ${today}`
       ));
     return result?.count || 0;
   }
@@ -1814,7 +1840,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(schema.bookings.userId, userId),
         eq(schema.bookings.status, 'confirmed' as any),
-        sql`${schema.bookings.slotDate} < ${today}`
+        sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) < ${today}`
       ))
       .returning({ id: schema.bookings.id });
     return result.length;
@@ -1849,7 +1875,7 @@ export class DatabaseStorage implements IStorage {
 
     if (options?.upcoming) {
       const today = new Date().toISOString().split('T')[0];
-      conditions.push(sql`${schema.bookings.slotDate} >= ${today}`);
+      conditions.push(sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) >= ${today}`);
       conditions.push(sql`${schema.bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`);
     }
 
@@ -1925,10 +1951,11 @@ export class DatabaseStorage implements IStorage {
       return { available: false, existingCount: 0, capacity: 0 };
     }
 
-    // Count existing bookings for this slot
+    // Count existing bookings for this slot (multi-day aware: a booking whose
+    // [slotDate, endDate] span covers this single date occupies it).
     const conditions = [
       eq(schema.bookings.staffId, staffId),
-      eq(schema.bookings.slotDate, slotDate),
+      bookingDaySpanOverlaps(slotDate, slotDate),
       sql`${schema.bookings.startTime} < ${endTime}`,
       sql`${schema.bookings.endTime} > ${startTime}`,
       inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
@@ -1964,8 +1991,7 @@ export class DatabaseStorage implements IStorage {
   ): Promise<Map<string, number>> {
     const conditions = [
       eq(schema.bookings.staffId, staffId),
-      sql`${schema.bookings.slotDate} >= ${dateRange.startDate}`,
-      sql`${schema.bookings.slotDate} <= ${dateRange.endDate}`,
+      bookingDaySpanOverlaps(dateRange.startDate, dateRange.endDate),
       sql`${schema.bookings.status} NOT IN ('cancelled')`,
     ];
     if (userId !== undefined) {
@@ -1975,16 +2001,21 @@ export class DatabaseStorage implements IStorage {
       .select({
         slotDate: schema.bookings.slotDate,
         startTime: schema.bookings.startTime,
-        count: sql<number>`count(*)::int`,
+        endDate: schema.bookings.endDate,
       })
       .from(schema.bookings)
-      .where(and(...conditions))
-      .groupBy(schema.bookings.slotDate, schema.bookings.startTime);
+      .where(and(...conditions));
 
+    // Expand multi-day bookings across their day span (clamped to the requested
+    // range) so each occupied day contributes to the per-(date,startTime) count.
     const countMap = new Map<string, number>();
     for (const row of results) {
-      const key = `${row.slotDate}_${row.startTime}`;
-      countMap.set(key, row.count);
+      const spanEnd = row.endDate ?? row.slotDate;
+      for (const d of eachDateInRange(row.slotDate, spanEnd)) {
+        if (d < dateRange.startDate || d > dateRange.endDate) continue;
+        const key = `${d}_${row.startTime}`;
+        countMap.set(key, (countMap.get(key) || 0) + 1);
+      }
     }
     return countMap;
   }
@@ -2000,7 +2031,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [
       eq(schema.bookings.customerPhone, customerPhone),
       eq(schema.bookings.userId, userId),
-      sql`${schema.bookings.slotDate} >= ${today}`,
+      sql`COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) >= ${today}`,
       sql`${schema.bookings.status} NOT IN ('cancelled', 'completed', 'no_show')`,
     ];
 
@@ -2133,8 +2164,7 @@ export class DatabaseStorage implements IStorage {
   }): Promise<CalendarBooking[]> {
     const conditions = [
       eq(schema.bookings.userId, userId),
-      sql`${schema.bookings.slotDate} >= ${filters.from}`,
-      sql`${schema.bookings.slotDate} <= ${filters.to}`,
+      bookingDaySpanOverlaps(filters.from, filters.to),
     ];
 
     if (filters.status) {
@@ -2154,6 +2184,7 @@ export class DatabaseStorage implements IStorage {
       .select({
         id: schema.bookings.id,
         slotDate: schema.bookings.slotDate,
+        endDate: schema.bookings.endDate,
         startTime: schema.bookings.startTime,
         endTime: schema.bookings.endTime,
         departmentId: schema.bookings.departmentId,
@@ -2251,11 +2282,13 @@ export class DatabaseStorage implements IStorage {
     startTime: string,
     endTime: string,
     userId: number,
-    excludeBookingId?: number
+    excludeBookingId?: number,
+    endDate?: string
   ): Promise<{ available: boolean; conflictingCount: number }> {
+    const rangeEnd = endDate ?? slotDate;
     const conditions = [
       eq(schema.bookings.staffId, staffId),
-      eq(schema.bookings.slotDate, slotDate),
+      bookingDaySpanOverlaps(slotDate, rangeEnd),
       sql`${schema.bookings.startTime} < ${endTime}`,
       sql`${schema.bookings.endTime} > ${startTime}`,
       inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
@@ -2280,15 +2313,20 @@ export class DatabaseStorage implements IStorage {
     values: { fieldId: number; value: string }[]
   ): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }> {
     return await db.transaction(async (tx) => {
-      const lockKey = `booking:${booking.staffId}:${booking.slotDate}`;
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+      // Lock every day in the range (sorted) to serialize against overlapping
+      // multi-day bookings across any of their occupied dates.
+      const lockRangeEnd = booking.endDate ?? booking.slotDate;
+      for (const d of eachDateInRange(booking.slotDate, lockRangeEnd).sort()) {
+        const lockKey = `booking:${booking.staffId}:${d}`;
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+      }
 
       const [overlap] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(schema.bookings)
         .where(and(
           eq(schema.bookings.staffId, booking.staffId),
-          eq(schema.bookings.slotDate, booking.slotDate),
+          bookingDaySpanOverlaps(booking.slotDate, lockRangeEnd),
           sql`${schema.bookings.startTime} < ${booking.endTime}`,
           sql`${schema.bookings.endTime} > ${booking.startTime}`,
           inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),

@@ -1012,6 +1012,9 @@ export const bookings = pgTable("bookings", {
   
   // Booking Details
   slotDate: varchar("slot_date", { length: 10 }).notNull(), // Format: "YYYY-MM-DD"
+  // NULL = single-day booking (occupies only slotDate). Non-NULL marks the last
+  // occupied day of a multi-day booking; [slotDate, endDate] is inclusive.
+  endDate: varchar("end_date", { length: 10 }), // Format: "YYYY-MM-DD"
   startTime: varchar("start_time", { length: 10 }).notNull(), // Format: "HH:MM"
   endTime: varchar("end_time", { length: 10 }).notNull(), // Format: "HH:MM"
   
@@ -1373,6 +1376,7 @@ export const insertBookingStaffSlotSchema = createInsertSchema(bookingStaffSlots
 
 export const insertBookingSchema = createInsertSchema(bookings, {
   slotDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional().nullable(),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
   endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
   customerPhone: z.string().min(1, "Customer phone is required"),

@@ -91,15 +91,21 @@ function computeAvailableSlots(
   departmentId: number;
   departmentName: string;
 }> {
-  // Group occupying bookings by staff|date -> list of [startMin, endMin] intervals
+  // Group occupying bookings by staff|date -> list of [startMin, endMin] intervals.
+  // Multi-day bookings are expanded across their inclusive [slotDate, endDate]
+  // span (clamped to the requested [from, to] range) so they occupy every day.
   const occupyingByStaffDate = new Map<string, Array<[number, number]>>();
   for (const b of bookings) {
     if (excludeBookingId !== undefined && b.id === excludeBookingId) continue;
     if (!(BLOCKING_BOOKING_STATUSES as readonly string[]).includes(b.status)) continue;
-    const key = `${b.staffId}|${b.slotDate}`;
-    const list = occupyingByStaffDate.get(key) || [];
-    list.push([timeToMinutes(b.startTime), timeToMinutes(b.endTime)]);
-    occupyingByStaffDate.set(key, list);
+    const spanEnd = b.endDate ?? b.slotDate;
+    for (const d of eachDateInRange(b.slotDate, spanEnd)) {
+      if (d < from || d > to) continue;
+      const key = `${b.staffId}|${d}`;
+      const list = occupyingByStaffDate.get(key) || [];
+      list.push([timeToMinutes(b.startTime), timeToMinutes(b.endTime)]);
+      occupyingByStaffDate.set(key, list);
+    }
   }
 
   const availableSlots: Array<{
@@ -4708,7 +4714,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/bookings/manual", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { departmentId, staffId, slotDate, startTime, endTime, customerName, customerPhone, bookingLabel, customFieldValues } = req.body;
+      const { departmentId, staffId, slotDate, startTime, endTime, customerName, customerPhone, bookingLabel, customFieldValues, endDate } = req.body;
 
       // Basic required fields
       if (!departmentId || !staffId || !slotDate || !startTime || !endTime || !customerPhone) {
@@ -4729,6 +4735,24 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "startTime must be before endTime" });
       }
 
+      // Multi-day range validation: endDate is optional; NULL/equal-to-slotDate = single-day.
+      let normalizedEndDate: string | null = null;
+      if (endDate !== undefined && endDate !== null && endDate !== "") {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+          return res.status(400).json({ error: "endDate must be YYYY-MM-DD" });
+        }
+        if (endDate < slotDate) {
+          return res.status(400).json({ error: "endDate must be on or after slotDate" });
+        }
+        const spanDays = Math.round(
+          (new Date(endDate + "T00:00:00Z").getTime() - new Date(slotDate + "T00:00:00Z").getTime()) / 86400000
+        );
+        if (spanDays > 31) {
+          return res.status(400).json({ error: "Booking cannot span more than 31 days" });
+        }
+        normalizedEndDate = endDate === slotDate ? null : endDate;
+      }
+
       // Ownership checks (Phase 2A pattern)
       const dept = await storage.getBookingDepartment(deptId);
       if (!dept || dept.userId !== effectiveUserId) {
@@ -4742,12 +4766,15 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Staff does not belong to the selected department" });
       }
 
-      // Slot-window containment: [startTime, endTime) must fit inside one active slot window
-      const dayOfWeek = dayOfWeekFromDate(slotDate);
+      // Slot-window containment: [startTime, endTime) must fit inside one active
+      // slot window on EVERY day in the range (strict per-day containment).
       const staffSlots = await storage.getBookingStaffSlots(staff.id);
-      const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
-      if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= startTime && s.endTime >= endTime)) {
-        return res.status(400).json({ error: "Booking time is outside staff availability" });
+      for (const d of eachDateInRange(slotDate, normalizedEndDate ?? slotDate)) {
+        const dayOfWeek = dayOfWeekFromDate(d);
+        const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
+        if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= startTime && s.endTime >= endTime)) {
+          return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
+        }
       }
 
       // Fetch the user's active custom field definitions for validation + enrichment
@@ -4801,8 +4828,8 @@ export function registerRoutes(app: Express) {
         validatedValues.push({ fieldId: field.id, value });
       }
 
-      // Pre-check availability (fast path)
-      const overlap = await storage.checkBookingOverlap(staff.id, slotDate, startTime, endTime, effectiveUserId);
+      // Pre-check availability (fast path) across the full range
+      const overlap = await storage.checkBookingOverlap(staff.id, slotDate, startTime, endTime, effectiveUserId, undefined, normalizedEndDate ?? undefined);
       if (!overlap.available) {
         return res.status(409).json({ error: "Slot not available" });
       }
@@ -4816,6 +4843,7 @@ export function registerRoutes(app: Express) {
             departmentId: deptId,
             staffId: staff.id,
             slotDate,
+            endDate: normalizedEndDate,
             startTime,
             endTime,
             customerPhone,
@@ -4881,6 +4909,17 @@ export function registerRoutes(app: Express) {
       if (rest.departmentId !== undefined) updateData.departmentId = rest.departmentId;
       if (rest.staffId !== undefined) updateData.staffId = rest.staffId;
       if (rest.slotDate !== undefined) updateData.slotDate = rest.slotDate;
+      // Only accept endDate as part of an appointment change; otherwise leave the stored
+      // value untouched (prevents a customer-only edit from accidentally collapsing a range).
+      if (rest.endDate !== undefined && (
+        rest.slotDate !== undefined ||
+        rest.startTime !== undefined ||
+        rest.endTime !== undefined ||
+        rest.staffId !== undefined ||
+        rest.departmentId !== undefined
+      )) {
+        updateData.endDate = rest.endDate;
+      }
       if (rest.startTime !== undefined) updateData.startTime = rest.startTime;
       if (rest.endTime !== undefined) updateData.endTime = rest.endTime;
       if (rest.status !== undefined) updateData.status = rest.status;
@@ -4890,6 +4929,7 @@ export function registerRoutes(app: Express) {
         updateData.departmentId !== undefined ||
         updateData.staffId !== undefined ||
         updateData.slotDate !== undefined ||
+        updateData.endDate !== undefined ||
         updateData.startTime !== undefined ||
         updateData.endTime !== undefined;
 
@@ -4898,9 +4938,43 @@ export function registerRoutes(app: Express) {
       const newStartTime = updateData.startTime ?? booking.startTime;
       const newEndTime = updateData.endTime ?? booking.endTime;
 
-      // Availability check when the appointment changed (exclude this booking)
+      // Validate + normalize the multi-day range (only when the appointment's
+      // date/time changed; otherwise preserve the stored value untouched).
       if (appointmentChanged) {
-        const overlap = await storage.checkBookingOverlap(newStaffId, newSlotDate, newStartTime, newEndTime, effectiveUserId, bookingId);
+        const rawEndDate = updateData.endDate !== undefined ? updateData.endDate : booking.endDate;
+        if (rawEndDate !== undefined && rawEndDate !== null && rawEndDate !== "") {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
+            return res.status(400).json({ error: "endDate must be YYYY-MM-DD" });
+          }
+          if (rawEndDate < newSlotDate) {
+            return res.status(400).json({ error: "endDate must be on or after slotDate" });
+          }
+          const spanDays = Math.round(
+            (new Date(rawEndDate + "T00:00:00Z").getTime() - new Date(newSlotDate + "T00:00:00Z").getTime()) / 86400000
+          );
+          if (spanDays > 31) {
+            return res.status(400).json({ error: "Booking cannot span more than 31 days" });
+          }
+          updateData.endDate = rawEndDate === newSlotDate ? null : rawEndDate;
+        } else {
+          updateData.endDate = null;
+        }
+      }
+      const newEndDate = updateData.endDate !== undefined ? updateData.endDate : (booking.endDate ?? null);
+
+      // Per-day slot-window containment when the appointment date/time changed
+      if (appointmentChanged) {
+        const staffSlots = await storage.getBookingStaffSlots(newStaffId);
+        for (const d of eachDateInRange(newSlotDate, newEndDate ?? newSlotDate)) {
+          const dayOfWeek = dayOfWeekFromDate(d);
+          const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
+          if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= newStartTime && s.endTime >= newEndTime)) {
+            return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
+          }
+        }
+
+        // Availability check across the range (exclude this booking)
+        const overlap = await storage.checkBookingOverlap(newStaffId, newSlotDate, newStartTime, newEndTime, effectiveUserId, bookingId, newEndDate ?? undefined);
         if (!overlap.available) {
           return res.status(409).json({ error: "Slot not available" });
         }

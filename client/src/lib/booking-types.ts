@@ -5,6 +5,7 @@ export interface Booking {
   departmentId: number;
   staffId: number;
   slotDate: string;
+  endDate?: string | null;
   startTime: string;
   endTime: string;
   customerPhone: string;
