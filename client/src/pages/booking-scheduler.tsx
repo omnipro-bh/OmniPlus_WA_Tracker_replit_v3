@@ -2399,7 +2399,7 @@ export default function BookingScheduler() {
             {/* Current reference */}
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
               <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
-              <div><span className="font-medium">Current:</span> {formatDateRangeLong(actionBooking?.slotDate, actionBooking?.endDate)} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
+              <div><span className="font-medium">Current:</span> {formatDateRangeLong(actionBooking?.slotDate ?? '', actionBooking?.endDate)} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
             </div>
 
             {/* Customer */}

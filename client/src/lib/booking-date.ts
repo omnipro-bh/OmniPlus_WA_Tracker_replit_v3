@@ -1,6 +1,7 @@
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function parts(s: string): [number, number, number] | null {
+  if (!s || typeof s !== 'string') return null;
   const p = s.split('-').map(Number);
   if (p.length !== 3 || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return null;
   return [p[0], p[1], p[2]];
@@ -9,7 +10,7 @@ function parts(s: string): [number, number, number] | null {
 // "2026-10-18" -> "Oct 18, 2026"
 export function formatLongDate(s: string): string {
   const p = parts(s);
-  if (!p) return s;
+  if (!p) return '—';
   return `${MONTHS[p[1] - 1]} ${p[2]}, ${p[0]}`;
 }
 
@@ -23,7 +24,7 @@ export function formatDateRangeLong(slotDate: string, endDate?: string | null): 
 export function formatDateRangeShort(slotDate: string, endDate?: string | null): string {
   const short = (s: string) => {
     const p = parts(s);
-    if (!p) return s;
+    if (!p) return '—';
     return `${MONTHS[p[1] - 1]} ${p[2]}`;
   };
   if (!endDate || endDate === slotDate) return short(slotDate);

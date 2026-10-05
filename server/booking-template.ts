@@ -1,6 +1,7 @@
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function formatLongDate(s: string): string {
+  if (!s || typeof s !== 'string') return '';
   const p = s.split('-').map(Number);
   if (p.length !== 3 || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return s;
   return `${MONTHS[p[1] - 1]} ${p[2]}, ${p[0]}`;
