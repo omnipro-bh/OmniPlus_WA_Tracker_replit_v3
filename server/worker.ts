@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { storage } from "./storage";
 import { logoutChannel, extendWhapiChannel, sendTextMessage, getChannelHealth } from "./whapi";
+import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import fs from "fs";
 import path from "path";
 import dayjs from "dayjs";
@@ -537,12 +538,16 @@ export class BackgroundWorker {
             let reminderMessage = booking.reminderMessage || 
               'Reminder: You have an appointment on {{date}} at {{time}} with {{staff}} in {{department}}.';
             
-            reminderMessage = reminderMessage
-              .replace(/\{\{date\}\}/g, booking.slotDate)
-              .replace(/\{\{time\}\}/g, booking.startTime)
-              .replace(/\{\{department\}\}/g, dept?.name || '')
-              .replace(/\{\{staff\}\}/g, staff?.name || '')
-              .replace(/\{\{name\}\}/g, booking.customerName || '');
+            reminderMessage = renderBookingTemplate(reminderMessage, {
+              customerName: booking.customerName,
+              date: booking.slotDate,
+              time: booking.startTime,
+              dateRange: formatBookingDateRange(booking.slotDate, booking.endDate),
+              endDate: booking.endDate ?? booking.slotDate,
+              endTime: booking.endTime,
+              department: dept?.name,
+              staff: staff?.name,
+            });
             
             // Send the reminder via WHAPI
             await sendTextMessage(activeChannel.whapiChannelToken!, {

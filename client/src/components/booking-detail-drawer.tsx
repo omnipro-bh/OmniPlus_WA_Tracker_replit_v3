@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { computeCalcValue, OPERATION_SYMBOLS } from "@/lib/calc";
 import type { Booking, CustomField } from "@/lib/booking-types";
+import { formatDateRangeLong, dayCount } from "@/lib/booking-date";
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -79,8 +80,11 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
         <div className="border-b px-6 py-4 pr-12">
           <SheetHeader className="text-left space-y-1">
             <SheetTitle data-testid="drawer-customer-name">{booking.customerName || 'Unknown'}</SheetTitle>
-            <div>
+            <div className="flex items-center gap-2">
               <Badge variant={statusVariant(booking.status)}>{booking.status}</Badge>
+              {booking.endDate && booking.endDate !== booking.slotDate && (
+                <Badge variant="secondary" data-testid="drawer-days-badge">{dayCount(booking.slotDate, booking.endDate)} days</Badge>
+              )}
             </div>
           </SheetHeader>
         </div>
@@ -94,7 +98,7 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           <Section label="Appointment">
-            <Field label="Date" value={formatFullDate(booking.slotDate)} />
+            <Field label="Date" value={formatDateRangeLong(booking.slotDate, booking.endDate)} />
             <Field label="Time" value={`${booking.startTime} – ${booking.endTime}`} />
             <Field label="Department" value={booking.departmentName} />
             <Field label="Staff" value={booking.staffName} />

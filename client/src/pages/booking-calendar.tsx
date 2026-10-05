@@ -15,6 +15,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/h
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateRangeShort } from "@/lib/booking-date";
 
 type ViewMode = "day" | "week" | "month";
 
@@ -67,6 +68,7 @@ interface BookingStaff {
 interface CalendarBooking {
   id: number;
   slotDate: string;
+  endDate: string | null;
   startTime: string;
   endTime: string;
   departmentId: number;
@@ -320,7 +322,7 @@ function DayColumn({
   nowTime: string;
   onBookingClick: (b: CalendarBooking) => void;
 }) {
-  const dayBookings = bookings.filter((b) => b.slotDate === dateKey);
+  const dayBookings = bookings.filter((b) => b.slotDate <= dateKey && (b.endDate ?? b.slotDate) >= dateKey);
   const dayAvailable = availableSlots.filter((w) => w.slotDate === dateKey);
   const isToday = dateKey === todayKey;
   const dow = parseDate(dateKey).getDay();
@@ -369,7 +371,7 @@ function DayColumn({
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[b.status] ?? STATUS_DOT_DEFAULT}`} />
                 <span className="truncate font-medium">{b.customerName || b.customerPhone}</span>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{b.slotDate} · {b.startTime}–{b.endTime}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{formatDateRangeShort(b.slotDate, b.endDate)} · {b.startTime}–{b.endTime}</div>
               <div className="mt-1.5">
                 <StatusPill status={b.status} />
               </div>
@@ -451,6 +453,17 @@ function WeekView({ date, bookings, availableSlots, todayKey, nowTime, onBooking
   );
 }
 
+// Enumerate each "YYYY-MM-DD" in [from, to] inclusive (UTC, DST-safe)
+function eachDateInRange(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  for (let d = start; d <= end; d = new Date(d.getTime() + 86400000)) {
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
 function MonthView({ date, today, bookings, onBookingClick }: {
   date: Date;
   today: Date;
@@ -461,11 +474,16 @@ function MonthView({ date, today, bookings, onBookingClick }: {
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
 
+  const cellKeys = new Set(cells.map((d) => format(d, "yyyy-MM-dd")));
   const bookingsByDate = new Map<string, CalendarBooking[]>();
   for (const b of bookings) {
-    const list = bookingsByDate.get(b.slotDate) || [];
-    list.push(b);
-    bookingsByDate.set(b.slotDate, list);
+    const spanEnd = b.endDate ?? b.slotDate;
+    for (const key of eachDateInRange(b.slotDate, spanEnd)) {
+      if (!cellKeys.has(key)) continue; // skip days outside the 6-week grid
+      const list = bookingsByDate.get(key) || [];
+      list.push(b);
+      bookingsByDate.set(key, list);
+    }
   }
 
   return (

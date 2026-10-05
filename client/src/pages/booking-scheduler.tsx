@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronUp, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronUp, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2, Maximize2, Minimize2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,6 +24,7 @@ import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
 import { computeCalcValue } from "@/lib/calc";
 import { Booking, CustomField } from "@/lib/booking-types";
+import { formatDateRangeLong, formatDateRangeShort, dayCount } from "@/lib/booking-date";
 
 interface BookingService {
   id: number;
@@ -143,16 +144,22 @@ export default function BookingScheduler() {
     return { sortBy: 'slotDate', sortDir: 'desc' };
   });
   const [bookingsSearch, setBookingsSearch] = useState("");
+  const [bookingsFullWidth, setBookingsFullWidth] = useState<boolean>(() => {
+    try { return localStorage.getItem('omniplus.bookings.fullWidth') === 'true'; } catch { return false; }
+  });
   const [selectedBookings, setSelectedBookings] = useState<Set<number>>(new Set());
   const BOOKINGS_PAGE_SIZE = 10;
 
-  // Persist sort + status filter preferences (search text stays transient)
+  // Persist sort + status filter + full-width preferences (search text stays transient)
   useEffect(() => {
     try { localStorage.setItem('omniplus.bookings.sort', JSON.stringify(bookingsSort)); } catch { /* ignore */ }
   }, [bookingsSort]);
   useEffect(() => {
     try { localStorage.setItem('omniplus.bookings.statusFilter', bookingsStatusFilter); } catch { /* ignore */ }
   }, [bookingsStatusFilter]);
+  useEffect(() => {
+    try { localStorage.setItem('omniplus.bookings.fullWidth', String(bookingsFullWidth)); } catch { /* ignore */ }
+  }, [bookingsFullWidth]);
 
   // Booking action modal states
   const [editBookingOpen, setEditBookingOpen] = useState(false);
@@ -893,6 +900,7 @@ export default function BookingScheduler() {
     
     const headers = [
       'Date',
+      'End Date',
       'Start Time',
       'End Time',
       'Department',
@@ -920,6 +928,7 @@ export default function BookingScheduler() {
       });
       return [
         booking.slotDate,
+        booking.endDate && booking.endDate !== booking.slotDate ? booking.endDate : '',
         booking.startTime,
         booking.endTime,
         booking.departmentName || '',
@@ -976,7 +985,7 @@ export default function BookingScheduler() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={bookingsFullWidth ? "p-6 space-y-6 -mx-6 lg:-mx-8" : "p-6 space-y-6"}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
@@ -1795,6 +1804,17 @@ export default function BookingScheduler() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setBookingsFullWidth((v) => !v)}
+                data-testid="button-toggle-fullwidth"
+                title={bookingsFullWidth ? "Collapse" : "Expand full width"}
+                aria-pressed={bookingsFullWidth}
+              >
+                {bookingsFullWidth ? <Minimize2 className="h-4 w-4 mr-2" /> : <Maximize2 className="h-4 w-4 mr-2" />}
+                {bookingsFullWidth ? "Collapse" : "Expand"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => exportBookingsToExcel()}
                 disabled={!bookingsData?.bookings || bookingsData.bookings.length === 0}
                 data-testid="button-export-bookings"
@@ -1829,7 +1849,7 @@ export default function BookingScheduler() {
                           data-testid="checkbox-select-all"
                         />
                       </TableHead>
-                      <TableHead className="min-w-[110px] cursor-pointer select-none" onClick={() => handleSort('slotDate')} data-testid="sort-header-date">
+                      <TableHead className="min-w-[120px] cursor-pointer select-none" onClick={() => handleSort('slotDate')} data-testid="sort-header-date">
                         <span className="inline-flex items-center gap-1">
                           Date & Time
                           {bookingsSort.sortBy === 'slotDate' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
@@ -1893,7 +1913,12 @@ export default function BookingScheduler() {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <div className="font-medium">{booking.slotDate}</div>
+                              <div className="font-medium flex items-center gap-1.5">
+                                {formatDateRangeShort(booking.slotDate, booking.endDate)}
+                                {booking.endDate && booking.endDate !== booking.slotDate && (
+                                  <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{dayCount(booking.slotDate, booking.endDate)}d</Badge>
+                                )}
+                              </div>
                               <div className="text-sm text-muted-foreground">{booking.startTime} - {booking.endTime}</div>
                             </div>
                           </TableCell>
@@ -2049,7 +2074,7 @@ export default function BookingScheduler() {
                           Use these placeholders in your messages. They will be replaced with actual booking data:
                         </p>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {['{{customerName}}', '{{date}}', '{{time}}', '{{department}}', '{{staff}}', '{{oldDate}}', '{{oldTime}}'].map((v) => (
+                          {['{{customerName}}', '{{date}}', '{{time}}', '{{dateRange}}', '{{endDate}}', '{{endTime}}', '{{department}}', '{{staff}}', '{{oldDate}}', '{{oldTime}}'].map((v) => (
                             <code key={v} className="text-xs bg-muted px-1.5 py-0.5 rounded">{v}</code>
                           ))}
                         </div>
@@ -2374,7 +2399,7 @@ export default function BookingScheduler() {
             {/* Current reference */}
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
               <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
-              <div><span className="font-medium">Current:</span> {actionBooking?.slotDate} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
+              <div><span className="font-medium">Current:</span> {formatDateRangeLong(actionBooking?.slotDate, actionBooking?.endDate)} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
             </div>
 
             {/* Customer */}

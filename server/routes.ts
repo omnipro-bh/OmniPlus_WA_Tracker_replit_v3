@@ -5,6 +5,7 @@ import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
+import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
 import { 
@@ -5032,14 +5033,18 @@ export function registerRoutes(app: Express) {
             const dept = await storage.getBookingDepartment(updateData.departmentId ?? booking.departmentId);
             const userSettings = await storage.getUserBookingSettings(effectiveUserId);
             let message = userSettings?.rescheduleMessage || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
-            message = message
-              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
-              .replace(/\{\{date\}\}/g, newSlotDate)
-              .replace(/\{\{time\}\}/g, newStartTime)
-              .replace(/\{\{oldDate\}\}/g, booking.slotDate)
-              .replace(/\{\{oldTime\}\}/g, booking.startTime)
-              .replace(/\{\{department\}\}/g, dept?.name || '')
-              .replace(/\{\{staff\}\}/g, staff?.name || '');
+            message = renderBookingTemplate(message, {
+              customerName: booking.customerName,
+              date: newSlotDate,
+              time: newStartTime,
+              dateRange: formatBookingDateRange(newSlotDate, newEndDate),
+              endDate: newEndDate ?? newSlotDate,
+              endTime: newEndTime,
+              department: dept?.name,
+              staff: staff?.name,
+              oldDate: booking.slotDate,
+              oldTime: booking.startTime,
+            });
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
               body: message,
@@ -5090,14 +5095,16 @@ export function registerRoutes(app: Express) {
             let message = userSettings?.confirmMessage || `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
             
             // Replace template variables
-            message = message
-              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
-              .replace(/\{\{date\}\}/g, booking.slotDate)
-              .replace(/\{\{time\}\}/g, booking.startTime)
-              .replace(/\{\{oldDate\}\}/g, '')
-              .replace(/\{\{oldTime\}\}/g, '')
-              .replace(/\{\{department\}\}/g, dept?.name || '')
-              .replace(/\{\{staff\}\}/g, staff?.name || '');
+            message = renderBookingTemplate(message, {
+              customerName: booking.customerName,
+              date: booking.slotDate,
+              time: booking.startTime,
+              dateRange: formatBookingDateRange(booking.slotDate, booking.endDate),
+              endDate: booking.endDate ?? booking.slotDate,
+              endTime: booking.endTime,
+              department: dept?.name,
+              staff: staff?.name,
+            });
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
@@ -5149,14 +5156,16 @@ export function registerRoutes(app: Express) {
             let message = userSettings?.cancelMessage || `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
             
             // Replace template variables
-            message = message
-              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
-              .replace(/\{\{date\}\}/g, booking.slotDate)
-              .replace(/\{\{time\}\}/g, booking.startTime)
-              .replace(/\{\{oldDate\}\}/g, '')
-              .replace(/\{\{oldTime\}\}/g, '')
-              .replace(/\{\{department\}\}/g, dept?.name || '')
-              .replace(/\{\{staff\}\}/g, staff?.name || '');
+            message = renderBookingTemplate(message, {
+              customerName: booking.customerName,
+              date: booking.slotDate,
+              time: booking.startTime,
+              dateRange: formatBookingDateRange(booking.slotDate, booking.endDate),
+              endDate: booking.endDate ?? booking.slotDate,
+              endTime: booking.endTime,
+              department: dept?.name,
+              staff: staff?.name,
+            });
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
@@ -5282,14 +5291,18 @@ export function registerRoutes(app: Express) {
             let message = userSettings?.rescheduleMessage || `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
             
             // Replace template variables
-            message = message
-              .replace(/\{\{customerName\}\}/g, booking.customerName || '')
-              .replace(/\{\{date\}\}/g, newDate)
-              .replace(/\{\{time\}\}/g, newStartTime)
-              .replace(/\{\{oldDate\}\}/g, oldDate)
-              .replace(/\{\{oldTime\}\}/g, oldTime)
-              .replace(/\{\{department\}\}/g, dept?.name || '')
-              .replace(/\{\{staff\}\}/g, staff?.name || '');
+            message = renderBookingTemplate(message, {
+              customerName: booking.customerName,
+              date: newDate,
+              time: newStartTime,
+              dateRange: formatBookingDateRange(newDate),
+              endDate: newDate,
+              endTime: newEndTime,
+              department: dept?.name,
+              staff: staff?.name,
+              oldDate,
+              oldTime,
+            });
             
             await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
               to: booking.customerPhone,
