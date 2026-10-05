@@ -21,7 +21,9 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CustomFieldsSettings } from "@/components/custom-fields-settings";
 import { ManualBookingDialog } from "@/components/manual-booking-dialog";
-import { computeCalcValue, type CalcOperation } from "@/lib/calc";
+import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
+import { computeCalcValue } from "@/lib/calc";
+import { Booking, CustomField } from "@/lib/booking-types";
 
 interface BookingService {
   id: number;
@@ -63,32 +65,6 @@ interface BookingSlot {
   slotDuration: number;
   capacity: number;
   isActive: boolean;
-}
-
-interface Booking {
-  id: number;
-  departmentId: number;
-  staffId: number;
-  slotDate: string;
-  startTime: string;
-  endTime: string;
-  customerPhone: string;
-  customerName: string | null;
-  status: string;
-  bookingLabel: string | null;
-  createdAt: string;
-  customFieldValues?: { fieldId: number; value: string }[];
-}
-
-interface CustomField {
-  id: number;
-  name: string;
-  fieldType: "text" | "number" | "date" | "boolean" | "select" | "calculation";
-  displayOrder: number;
-  options: string[] | null;
-  calcOperation: CalcOperation | null;
-  calcFieldAId: number | null;
-  calcFieldBId: number | null;
 }
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -162,6 +138,7 @@ export default function BookingScheduler() {
   const [cancelBookingOpen, setCancelBookingOpen] = useState(false);
   const [confirmBookingOpen, setConfirmBookingOpen] = useState(false);
   const [actionBooking, setActionBooking] = useState<any>(null);
+  const [drawerBooking, setDrawerBooking] = useState<Booking | null>(null);
   
   // Edit booking form
   const [editCustomerName, setEditCustomerName] = useState("");
@@ -897,37 +874,51 @@ export default function BookingScheduler() {
     if (!bookingsData?.bookings || bookingsData.bookings.length === 0) return;
     
     const headers = [
-      'Date', 
-      'Start Time', 
-      'End Time', 
+      'Date',
+      'Start Time',
+      'End Time',
       'Department',
       'Staff',
-      'Customer Name', 
-      'Customer Phone', 
-      'Booking Label', 
+      'Customer Name',
+      'Customer Phone',
+      'Booking Label',
+      'Status',
+      'Created At',
+      ...sortedCustomFields.filter(f => f.fieldType !== 'calculation').map(f => f.name),
+      ...sortedCustomFields.filter(f => f.fieldType === 'calculation').map(f => f.name),
       'Custom Question 1 Label',
       'Custom Question 1 Answer',
       'Custom Question 2 Label',
       'Custom Question 2 Answer',
-      'Status', 
-      'Created At'
     ];
-    const rows = bookingsData.bookings.map((booking: any) => [
-      booking.slotDate,
-      booking.startTime,
-      booking.endTime,
-      booking.departmentName || '',
-      booking.staffName || '',
-      booking.customerName || 'Unknown',
-      booking.customerPhone,
-      booking.bookingLabel || '',
-      booking.customField1Label || '',
-      booking.customField1Value || '',
-      booking.customField2Label || '',
-      booking.customField2Value || '',
-      booking.status,
-      booking.createdAt ? format(new Date(booking.createdAt), 'yyyy-MM-dd HH:mm') : '',
-    ]);
+    const rows = bookingsData.bookings.map((booking: any) => {
+      const values = new Map<number, string>((booking.customFieldValues ?? []).map((v: any) => [v.fieldId, v.value]));
+      const regularCells = sortedCustomFields.filter(f => f.fieldType !== 'calculation').map(f => values.get(f.id) ?? '');
+      const calcCells = sortedCustomFields.filter(f => f.fieldType === 'calculation').map(f => {
+        const a = f.calcFieldAId != null ? values.get(f.calcFieldAId) : undefined;
+        const b = f.calcFieldBId != null ? values.get(f.calcFieldBId) : undefined;
+        const result = computeCalcValue(f.calcOperation, a, b);
+        return result == null ? '' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(result);
+      });
+      return [
+        booking.slotDate,
+        booking.startTime,
+        booking.endTime,
+        booking.departmentName || '',
+        booking.staffName || '',
+        booking.customerName || 'Unknown',
+        booking.customerPhone,
+        booking.bookingLabel || '',
+        booking.status,
+        booking.createdAt ? format(new Date(booking.createdAt), 'yyyy-MM-dd HH:mm') : '',
+        ...regularCells,
+        ...calcCells,
+        booking.customField1Label || '',
+        booking.customField1Value || '',
+        booking.customField2Label || '',
+        booking.customField2Value || '',
+      ];
+    });
     
     // Create CSV content with proper escaping
     const escapeCell = (cell: string) => {
@@ -1809,6 +1800,7 @@ export default function BookingScheduler() {
                   {bookingsStatusFilter !== 'all' ? `No ${bookingsStatusFilter} bookings found` : 'No bookings yet'}
                 </p>
               ) : (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1819,13 +1811,13 @@ export default function BookingScheduler() {
                           data-testid="checkbox-select-all"
                         />
                       </TableHead>
-                      <TableHead className="min-w-[140px]">Date & Time</TableHead>
-                      <TableHead className="min-w-[160px]">Service</TableHead>
-                      <TableHead className="min-w-[180px]">Customer</TableHead>
-                      <TableHead className="min-w-[120px]">Label</TableHead>
-                      {hasCustomFields && <TableHead className="min-w-[160px]">Custom Summary</TableHead>}
-                      <TableHead className="min-w-[120px]">Status</TableHead>
-                      <TableHead className="w-[110px]">Actions</TableHead>
+                      <TableHead className="min-w-[130px]">Date & Time</TableHead>
+                      <TableHead className="min-w-[150px]">Service</TableHead>
+                      <TableHead className="min-w-[170px]">Customer</TableHead>
+                      <TableHead className="min-w-[110px]">Label</TableHead>
+                      {hasCustomFields && <TableHead className="min-w-[150px]">Custom Summary</TableHead>}
+                      <TableHead className="min-w-[110px]">Status</TableHead>
+                      <TableHead className="min-w-[150px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1846,8 +1838,8 @@ export default function BookingScheduler() {
                       const visibleItems = summaryItems.slice(0, 2);
                       const extraCount = summaryItems.length - visibleItems.length;
                       return (
-                        <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`}>
-                          <TableCell>
+                        <TableRow key={booking.id} data-testid={`booking-row-${booking.id}`} onClick={() => setDrawerBooking(booking)} className="cursor-pointer hover:bg-muted/50">
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
                               checked={selectedBookings.has(booking.id)}
                               onCheckedChange={() => handleSelectBooking(booking.id)}
@@ -1884,7 +1876,7 @@ export default function BookingScheduler() {
                                   </Badge>
                                 ))}
                                 {extraCount > 0 && (
-                                  <Badge variant="outline" className="whitespace-nowrap">+{extraCount} more</Badge>
+                                  <Badge variant="outline" className="whitespace-nowrap cursor-pointer" onClick={(e) => { e.stopPropagation(); setDrawerBooking(booking); }}>+{extraCount} more</Badge>
                                 )}
                               </div>
                             </TableCell>
@@ -1894,7 +1886,7 @@ export default function BookingScheduler() {
                               {booking.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-1">
                               <Select
                                 value={booking.status}
@@ -1948,6 +1940,7 @@ export default function BookingScheduler() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -2311,6 +2304,16 @@ export default function BookingScheduler() {
 
       {/* New Booking Dialog */}
       <ManualBookingDialog open={newBookingOpen} onOpenChange={setNewBookingOpen} />
+
+      {/* Booking Detail Drawer */}
+      <BookingDetailDrawer
+        booking={drawerBooking}
+        customFields={sortedCustomFields}
+        onClose={() => setDrawerBooking(null)}
+        onEdit={(b) => { setDrawerBooking(null); openEditBookingModal(b); }}
+        onReschedule={(b) => { setDrawerBooking(null); openRescheduleModal(b); }}
+        onCancel={(b) => { setDrawerBooking(null); openCancelModal(b); }}
+      />
 
       {/* Edit Booking Dialog */}
       <Dialog open={editBookingOpen} onOpenChange={setEditBookingOpen}>
