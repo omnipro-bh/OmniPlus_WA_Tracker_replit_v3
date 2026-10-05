@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES, BookingSlotUnavailableError } from "./storage";
+import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES, BookingSlotUnavailableError, occupiedWindowForDate, type OccupiedWindowSource } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
@@ -102,9 +102,10 @@ function computeAvailableSlots(
     const spanEnd = b.endDate ?? b.slotDate;
     for (const d of eachDateInRange(b.slotDate, spanEnd)) {
       if (d < from || d > to) continue;
+      const [ws, we] = occupiedWindowForDate(b, d);
       const key = `${b.staffId}|${d}`;
       const list = occupyingByStaffDate.get(key) || [];
-      list.push([timeToMinutes(b.startTime), timeToMinutes(b.endTime)]);
+      list.push([timeToMinutes(ws), timeToMinutes(we)]);
       occupyingByStaffDate.set(key, list);
     }
   }
@@ -4724,7 +4725,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/bookings/manual", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { departmentId, staffId, slotDate, startTime, endTime, customerName, customerPhone, bookingLabel, customFieldValues, endDate } = req.body;
+      const { departmentId, staffId, slotDate, startTime, endTime, customerName, customerPhone, bookingLabel, customFieldValues, endDate, endDayStartTime, endDayEndTime } = req.body;
 
       // Basic required fields
       if (!departmentId || !staffId || !slotDate || !startTime || !endTime || !customerPhone) {
@@ -4763,6 +4764,31 @@ export function registerRoutes(app: Express) {
         normalizedEndDate = endDate === slotDate ? null : endDate;
       }
 
+      // End-day window validation: optional; both-or-neither, HH:MM, ordered,
+      // only valid for a multi-day booking, and collapsed to NULL when equal to
+      // the main window.
+      let normalizedEndDayStartTime: string | null = null;
+      let normalizedEndDayEndTime: string | null = null;
+      const hasEndDayStart = endDayStartTime !== undefined && endDayStartTime !== null && endDayStartTime !== "";
+      const hasEndDayEnd = endDayEndTime !== undefined && endDayEndTime !== null && endDayEndTime !== "";
+      if (hasEndDayStart !== hasEndDayEnd) {
+        return res.status(400).json({ error: "endDayStartTime and endDayEndTime must be set together" });
+      }
+      if (hasEndDayStart) {
+        if (!/^\d{2}:\d{2}$/.test(endDayStartTime) || !/^\d{2}:\d{2}$/.test(endDayEndTime)) {
+          return res.status(400).json({ error: "endDayStartTime and endDayEndTime must be HH:MM" });
+        }
+        if (endDayEndTime <= endDayStartTime) {
+          return res.status(400).json({ error: "endDayEndTime must be after endDayStartTime" });
+        }
+        if (normalizedEndDate === null) {
+          return res.status(400).json({ error: "end-day times require an end date" });
+        }
+        const sameAsMain = endDayStartTime === startTime && endDayEndTime === endTime;
+        normalizedEndDayStartTime = sameAsMain ? null : endDayStartTime;
+        normalizedEndDayEndTime = sameAsMain ? null : endDayEndTime;
+      }
+
       // Ownership checks (Phase 2A pattern)
       const dept = await storage.getBookingDepartment(deptId);
       if (!dept || dept.userId !== effectiveUserId) {
@@ -4776,13 +4802,23 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Staff does not belong to the selected department" });
       }
 
-      // Slot-window containment: [startTime, endTime) must fit inside one active
-      // slot window on EVERY day in the range (strict per-day containment).
+      // Slot-window containment: each day's window must fit inside one active
+      // slot window on EVERY day in the range (strict per-day containment; the
+      // last day may use its own window).
       const staffSlots = await storage.getBookingStaffSlots(staff.id);
+      const proposedWindow: OccupiedWindowSource = {
+        slotDate,
+        endDate: normalizedEndDate,
+        startTime,
+        endTime,
+        endDayStartTime: normalizedEndDayStartTime,
+        endDayEndTime: normalizedEndDayEndTime,
+      };
       for (const d of eachDateInRange(slotDate, normalizedEndDate ?? slotDate)) {
+        const [ws, we] = occupiedWindowForDate(proposedWindow, d);
         const dayOfWeek = dayOfWeekFromDate(d);
         const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
-        if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= startTime && s.endTime >= endTime)) {
+        if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= ws && s.endTime >= we)) {
           return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
         }
       }
@@ -4839,7 +4875,7 @@ export function registerRoutes(app: Express) {
       }
 
       // Pre-check availability (fast path) across the full range
-      const overlap = await storage.checkBookingOverlap(staff.id, slotDate, startTime, endTime, effectiveUserId, undefined, normalizedEndDate ?? undefined);
+      const overlap = await storage.checkBookingOverlap(staff.id, slotDate, startTime, endTime, effectiveUserId, undefined, normalizedEndDate ?? undefined, normalizedEndDayStartTime ?? undefined, normalizedEndDayEndTime ?? undefined);
       if (!overlap.available) {
         return res.status(409).json({ error: "Slot not available" });
       }
@@ -4856,6 +4892,8 @@ export function registerRoutes(app: Express) {
             endDate: normalizedEndDate,
             startTime,
             endTime,
+            endDayStartTime: normalizedEndDayStartTime,
+            endDayEndTime: normalizedEndDayEndTime,
             customerPhone,
             customerName: customerName || null,
             bookingLabel: bookingLabel || null,
@@ -4930,6 +4968,18 @@ export function registerRoutes(app: Express) {
       )) {
         updateData.endDate = rest.endDate;
       }
+      // Only accept end-day times as part of an appointment change (same guard).
+      if ((rest.endDayStartTime !== undefined || rest.endDayEndTime !== undefined) && (
+        rest.slotDate !== undefined ||
+        rest.startTime !== undefined ||
+        rest.endTime !== undefined ||
+        rest.endDate !== undefined ||
+        rest.staffId !== undefined ||
+        rest.departmentId !== undefined
+      )) {
+        if (rest.endDayStartTime !== undefined) updateData.endDayStartTime = rest.endDayStartTime;
+        if (rest.endDayEndTime !== undefined) updateData.endDayEndTime = rest.endDayEndTime;
+      }
       if (rest.startTime !== undefined) updateData.startTime = rest.startTime;
       if (rest.endTime !== undefined) updateData.endTime = rest.endTime;
       if (rest.status !== undefined) updateData.status = rest.status;
@@ -4941,7 +4991,9 @@ export function registerRoutes(app: Express) {
         updateData.slotDate !== undefined ||
         updateData.endDate !== undefined ||
         updateData.startTime !== undefined ||
-        updateData.endTime !== undefined;
+        updateData.endTime !== undefined ||
+        updateData.endDayStartTime !== undefined ||
+        updateData.endDayEndTime !== undefined;
 
       const newStaffId = updateData.staffId ?? booking.staffId;
       const newSlotDate = updateData.slotDate ?? booking.slotDate;
@@ -4969,22 +5021,70 @@ export function registerRoutes(app: Express) {
         } else {
           updateData.endDate = null;
         }
+
+        const effectiveEndDate = updateData.endDate !== undefined ? updateData.endDate : (booking.endDate ?? null);
+
+        // End-day window validation + normalization. Single-day result always
+        // clears end-day times; multi-day validates both-or-neither / HH:MM /
+        // ordering and collapses an identical window to NULL.
+        if (effectiveEndDate === null) {
+          const explicitStart = updateData.endDayStartTime != null && updateData.endDayStartTime !== "";
+          const explicitEnd = updateData.endDayEndTime != null && updateData.endDayEndTime !== "";
+          if (explicitStart || explicitEnd) {
+            return res.status(400).json({ error: "end-day times require an end date" });
+          }
+          updateData.endDayStartTime = null;
+          updateData.endDayEndTime = null;
+        } else {
+          const rawStart = updateData.endDayStartTime !== undefined ? updateData.endDayStartTime : booking.endDayStartTime;
+          const rawEnd = updateData.endDayEndTime !== undefined ? updateData.endDayEndTime : booking.endDayEndTime;
+          const hasStart = rawStart != null && rawStart !== "";
+          const hasEnd = rawEnd != null && rawEnd !== "";
+          if (hasStart !== hasEnd) {
+            return res.status(400).json({ error: "endDayStartTime and endDayEndTime must be set together" });
+          }
+          if (hasStart && hasEnd) {
+            if (!/^\d{2}:\d{2}$/.test(rawStart) || !/^\d{2}:\d{2}$/.test(rawEnd)) {
+              return res.status(400).json({ error: "endDayStartTime and endDayEndTime must be HH:MM" });
+            }
+            if (rawEnd <= rawStart) {
+              return res.status(400).json({ error: "endDayEndTime must be after endDayStartTime" });
+            }
+            const sameAsMain = rawStart === newStartTime && rawEnd === newEndTime;
+            updateData.endDayStartTime = sameAsMain ? null : rawStart;
+            updateData.endDayEndTime = sameAsMain ? null : rawEnd;
+          } else {
+            updateData.endDayStartTime = null;
+            updateData.endDayEndTime = null;
+          }
+        }
       }
       const newEndDate = updateData.endDate !== undefined ? updateData.endDate : (booking.endDate ?? null);
+      const newEndDayStartTime = updateData.endDayStartTime !== undefined ? updateData.endDayStartTime : (booking.endDayStartTime ?? null);
+      const newEndDayEndTime = updateData.endDayEndTime !== undefined ? updateData.endDayEndTime : (booking.endDayEndTime ?? null);
 
       // Per-day slot-window containment when the appointment date/time changed
       if (appointmentChanged) {
         const staffSlots = await storage.getBookingStaffSlots(newStaffId);
+        const proposedWindow: OccupiedWindowSource = {
+          slotDate: newSlotDate,
+          endDate: newEndDate,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          endDayStartTime: newEndDayStartTime,
+          endDayEndTime: newEndDayEndTime,
+        };
         for (const d of eachDateInRange(newSlotDate, newEndDate ?? newSlotDate)) {
+          const [ws, we] = occupiedWindowForDate(proposedWindow, d);
           const dayOfWeek = dayOfWeekFromDate(d);
           const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
-          if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= newStartTime && s.endTime >= newEndTime)) {
+          if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= ws && s.endTime >= we)) {
             return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
           }
         }
 
         // Availability check across the range (exclude this booking)
-        const overlap = await storage.checkBookingOverlap(newStaffId, newSlotDate, newStartTime, newEndTime, effectiveUserId, bookingId, newEndDate ?? undefined);
+        const overlap = await storage.checkBookingOverlap(newStaffId, newSlotDate, newStartTime, newEndTime, effectiveUserId, bookingId, newEndDate ?? undefined, newEndDayStartTime ?? undefined, newEndDayEndTime ?? undefined);
         if (!overlap.available) {
           return res.status(409).json({ error: "Slot not available" });
         }

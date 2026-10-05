@@ -1017,6 +1017,9 @@ export const bookings = pgTable("bookings", {
   endDate: varchar("end_date", { length: 10 }), // Format: "YYYY-MM-DD"
   startTime: varchar("start_time", { length: 10 }).notNull(), // Format: "HH:MM"
   endTime: varchar("end_time", { length: 10 }).notNull(), // Format: "HH:MM"
+  // Last day's own time window; NULL = same as startTime/endTime (or single-day).
+  endDayStartTime: varchar("end_day_start_time", { length: 5 }), // Format: "HH:MM"
+  endDayEndTime: varchar("end_day_end_time", { length: 5 }), // Format: "HH:MM"
   
   // Customer Info
   customerPhone: varchar("customer_phone", { length: 50 }).notNull(), // Phone number from chatbot
@@ -1379,6 +1382,8 @@ export const insertBookingSchema = createInsertSchema(bookings, {
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").optional().nullable(),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
   endTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  endDayStartTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional().nullable(),
+  endDayEndTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional().nullable(),
   customerPhone: z.string().min(1, "Customer phone is required"),
   customerName: z.string().optional(),
   customField1Label: z.string().optional(),

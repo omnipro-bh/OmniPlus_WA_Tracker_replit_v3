@@ -50,6 +50,8 @@ export interface CalendarBooking {
   endDate: string | null;
   startTime: string;
   endTime: string;
+  endDayStartTime: string | null;
+  endDayEndTime: string | null;
   departmentId: number;
   departmentName: string;
   staffId: number;
@@ -94,6 +96,44 @@ function eachDateInRange(from: string, to: string): string[] {
 function bookingDaySpanOverlaps(fromDate: string, toDate: string) {
   return sql`${schema.bookings.slotDate} <= ${toDate}
     AND COALESCE(${schema.bookings.endDate}, ${schema.bookings.slotDate}) >= ${fromDate}`;
+}
+
+// Shape needed to resolve a booking's occupied time window for a given date.
+export interface OccupiedWindowSource {
+  slotDate: string;
+  endDate: string | null;
+  startTime: string;
+  endTime: string;
+  endDayStartTime: string | null;
+  endDayEndTime: string | null;
+}
+
+// Resolve the [start, end] window a booking occupies on a specific date.
+// The last day of a multi-day booking may use its own window (endDayStartTime/
+// endDayEndTime); every other day (and single-day bookings) uses startTime/endTime.
+export function occupiedWindowForDate(b: OccupiedWindowSource, date: string): [string, string] {
+  const isLastDay = b.endDate != null && b.endDate !== b.slotDate && date === b.endDate;
+  if (isLastDay) return [b.endDayStartTime ?? b.startTime, b.endDayEndTime ?? b.endTime];
+  return [b.startTime, b.endTime];
+}
+
+// Count distinct existing bookings that time-overlap the proposed booking on any
+// day of the proposed range. String comparison works because times are "HH:MM".
+function countConflicts(proposed: OccupiedWindowSource, existing: OccupiedWindowSource[]): number {
+  const days = eachDateInRange(proposed.slotDate, proposed.endDate ?? proposed.slotDate);
+  let n = 0;
+  for (const ex of existing) {
+    const exEnd = ex.endDate ?? ex.slotDate;
+    let conflict = false;
+    for (const d of days) {
+      if (d < ex.slotDate || d > exEnd) continue;
+      const [ps, pe] = occupiedWindowForDate(proposed, d);
+      const [es, ee] = occupiedWindowForDate(ex, d);
+      if (es < pe && ee > ps) { conflict = true; break; }
+    }
+    if (conflict) n++;
+  }
+  return n;
 }
 
 export interface IStorage {
@@ -371,7 +411,7 @@ export interface IStorage {
   countActiveBookingCustomFields(userId: number): Promise<number>;
 
   // Manual booking (Phase 3B)
-  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number, excludeBookingId?: number, endDate?: string): Promise<{ available: boolean; conflictingCount: number }>;
+  checkBookingOverlap(staffId: number, slotDate: string, startTime: string, endTime: string, userId: number, excludeBookingId?: number, endDate?: string, endDayStartTime?: string, endDayEndTime?: string): Promise<{ available: boolean; conflictingCount: number }>;
   createManualBookingWithValues(booking: schema.InsertBooking, values: { fieldId: number; value: string }[]): Promise<{ booking: schema.Booking; values: schema.BookingCustomFieldValue[] }>;
   getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
   getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
@@ -1977,12 +2017,11 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Count existing bookings for this slot (multi-day aware: a booking whose
-    // [slotDate, endDate] span covers this single date occupies it).
+    // [slotDate, endDate] span covers this single date occupies it; the last day
+    // of a multi-day booking uses its own window).
     const conditions = [
       eq(schema.bookings.staffId, staffId),
       bookingDaySpanOverlaps(slotDate, slotDate),
-      sql`${schema.bookings.startTime} < ${endTime}`,
-      sql`${schema.bookings.endTime} > ${startTime}`,
       inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
     ];
 
@@ -1994,12 +2033,22 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(schema.bookings.userId, userId));
     }
 
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)::int` })
+    const existing = await db
+      .select({
+        slotDate: schema.bookings.slotDate,
+        endDate: schema.bookings.endDate,
+        startTime: schema.bookings.startTime,
+        endTime: schema.bookings.endTime,
+        endDayStartTime: schema.bookings.endDayStartTime,
+        endDayEndTime: schema.bookings.endDayEndTime,
+      })
       .from(schema.bookings)
       .where(and(...conditions));
 
-    const existingCount = countResult?.count || 0;
+    const existingCount = countConflicts(
+      { slotDate, endDate: null, startTime, endTime, endDayStartTime: null, endDayEndTime: null },
+      existing
+    );
     const capacity = slotConfig.capacity;
 
     return {
@@ -2026,19 +2075,24 @@ export class DatabaseStorage implements IStorage {
       .select({
         slotDate: schema.bookings.slotDate,
         startTime: schema.bookings.startTime,
+        endTime: schema.bookings.endTime,
         endDate: schema.bookings.endDate,
+        endDayStartTime: schema.bookings.endDayStartTime,
+        endDayEndTime: schema.bookings.endDayEndTime,
       })
       .from(schema.bookings)
       .where(and(...conditions));
 
     // Expand multi-day bookings across their day span (clamped to the requested
     // range) so each occupied day contributes to the per-(date,startTime) count.
+    // The last day's window uses its own start time.
     const countMap = new Map<string, number>();
     for (const row of results) {
       const spanEnd = row.endDate ?? row.slotDate;
       for (const d of eachDateInRange(row.slotDate, spanEnd)) {
         if (d < dateRange.startDate || d > dateRange.endDate) continue;
-        const key = `${d}_${row.startTime}`;
+        const [ws] = occupiedWindowForDate(row, d);
+        const key = `${d}_${ws}`;
         countMap.set(key, (countMap.get(key) || 0) + 1);
       }
     }
@@ -2212,6 +2266,8 @@ export class DatabaseStorage implements IStorage {
         endDate: schema.bookings.endDate,
         startTime: schema.bookings.startTime,
         endTime: schema.bookings.endTime,
+        endDayStartTime: schema.bookings.endDayStartTime,
+        endDayEndTime: schema.bookings.endDayEndTime,
         departmentId: schema.bookings.departmentId,
         departmentName: schema.bookingDepartments.name,
         staffId: schema.bookings.staffId,
@@ -2300,7 +2356,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Overlap-based availability check (used by the manual booking endpoint).
-  // Blocks any time-range overlap with a confirmed/completed booking.
+  // Blocks any time-range overlap with a confirmed/completed booking. Time
+  // comparison is done per-day in JS so multi-day bookings' last-day windows are
+  // handled correctly.
   async checkBookingOverlap(
     staffId: number,
     slotDate: string,
@@ -2308,25 +2366,41 @@ export class DatabaseStorage implements IStorage {
     endTime: string,
     userId: number,
     excludeBookingId?: number,
-    endDate?: string
+    endDate?: string,
+    endDayStartTime?: string,
+    endDayEndTime?: string
   ): Promise<{ available: boolean; conflictingCount: number }> {
     const rangeEnd = endDate ?? slotDate;
     const conditions = [
       eq(schema.bookings.staffId, staffId),
       bookingDaySpanOverlaps(slotDate, rangeEnd),
-      sql`${schema.bookings.startTime} < ${endTime}`,
-      sql`${schema.bookings.endTime} > ${startTime}`,
       inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
       eq(schema.bookings.userId, userId),
     ];
     if (excludeBookingId !== undefined) {
       conditions.push(sql`${schema.bookings.id} != ${excludeBookingId}`);
     }
-    const [row] = await db
-      .select({ count: sql<number>`count(*)::int` })
+    const existing = await db
+      .select({
+        slotDate: schema.bookings.slotDate,
+        endDate: schema.bookings.endDate,
+        startTime: schema.bookings.startTime,
+        endTime: schema.bookings.endTime,
+        endDayStartTime: schema.bookings.endDayStartTime,
+        endDayEndTime: schema.bookings.endDayEndTime,
+      })
       .from(schema.bookings)
       .where(and(...conditions));
-    const c = row?.count || 0;
+
+    const proposed: OccupiedWindowSource = {
+      slotDate,
+      endDate: rangeEnd === slotDate ? null : rangeEnd,
+      startTime,
+      endTime,
+      endDayStartTime: endDayStartTime ?? null,
+      endDayEndTime: endDayEndTime ?? null,
+    };
+    const c = countConflicts(proposed, existing);
     return { available: c === 0, conflictingCount: c };
   }
 
@@ -2346,19 +2420,32 @@ export class DatabaseStorage implements IStorage {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
       }
 
-      const [overlap] = await tx
-        .select({ count: sql<number>`count(*)::int` })
+      const existing = await tx
+        .select({
+          slotDate: schema.bookings.slotDate,
+          endDate: schema.bookings.endDate,
+          startTime: schema.bookings.startTime,
+          endTime: schema.bookings.endTime,
+          endDayStartTime: schema.bookings.endDayStartTime,
+          endDayEndTime: schema.bookings.endDayEndTime,
+        })
         .from(schema.bookings)
         .where(and(
           eq(schema.bookings.staffId, booking.staffId),
           bookingDaySpanOverlaps(booking.slotDate, lockRangeEnd),
-          sql`${schema.bookings.startTime} < ${booking.endTime}`,
-          sql`${schema.bookings.endTime} > ${booking.startTime}`,
           inArray(schema.bookings.status, BLOCKING_BOOKING_STATUSES as any),
           eq(schema.bookings.userId, booking.userId),
         ));
 
-      if ((overlap?.count || 0) > 0) {
+      const proposed: OccupiedWindowSource = {
+        slotDate: booking.slotDate,
+        endDate: booking.endDate ?? null,
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        endDayStartTime: booking.endDayStartTime ?? null,
+        endDayEndTime: booking.endDayEndTime ?? null,
+      };
+      if (countConflicts(proposed, existing) > 0) {
         throw new BookingSlotUnavailableError();
       }
 
