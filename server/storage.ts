@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, or, desc, sql, like, inArray } from "drizzle-orm";
+import { eq, and, or, asc, desc, sql, like, inArray } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type {
   User,
@@ -323,6 +323,8 @@ export interface IStorage {
     pageSize?: number;
     search?: string;
     outdatedConfirmed?: boolean; // Special filter for confirmed bookings with past dates
+    sortBy?: string; // slotDate | customerName | status | createdAt | updatedAt
+    sortDir?: 'asc' | 'desc';
   }): Promise<{ bookings: schema.Booking[]; total: number }>;
   getBookingsForCustomer(customerPhone: string, userId: number, options?: { 
     status?: string; 
@@ -1756,6 +1758,8 @@ export class DatabaseStorage implements IStorage {
       pageSize?: number;
       search?: string;
       outdatedConfirmed?: boolean;
+      sortBy?: string;
+      sortDir?: 'asc' | 'desc';
     }
   ): Promise<{ bookings: schema.Booking[]; total: number }> {
     const page = filters?.page || 1;
@@ -1803,11 +1807,32 @@ export class DatabaseStorage implements IStorage {
       )`);
     }
 
+    // Dynamic sort: whitelist column + direction, with a stable tiebreak.
+    const sortColumn = (() => {
+      switch (filters?.sortBy) {
+        case 'customerName': return schema.bookings.customerName;
+        case 'status':       return schema.bookings.status;
+        case 'createdAt':    return schema.bookings.createdAt;
+        case 'updatedAt':    return schema.bookings.updatedAt;
+        case 'slotDate':
+        default:             return schema.bookings.slotDate;
+      }
+    })();
+    const dir = filters?.sortDir === 'asc' ? asc : desc;
+    const orderClause = [dir(sortColumn)];
+    if (filters?.sortBy === undefined || filters.sortBy === 'slotDate') {
+      // Date sort keeps startTime as the secondary key (matches default behavior)
+      orderClause.push(dir(schema.bookings.startTime));
+    } else {
+      // Non-date sorts tie-break on the appointment datetime for stability
+      orderClause.push(desc(schema.bookings.slotDate), desc(schema.bookings.startTime));
+    }
+
     const bookingsList = await db
       .select()
       .from(schema.bookings)
       .where(and(...conditions))
-      .orderBy(desc(schema.bookings.slotDate), desc(schema.bookings.startTime))
+      .orderBy(...orderClause)
       .limit(pageSize)
       .offset(offset);
 

@@ -4604,10 +4604,17 @@ export function registerRoutes(app: Express) {
   app.get("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { status, fromDate, toDate, staffId, departmentId, page, pageSize, search } = req.query;
+      const { status, fromDate, toDate, staffId, departmentId, page, pageSize, search, sortBy, sortDir } = req.query;
       
       // Handle special "outdated_confirmed" filter at storage level
       const isOutdatedFilter = status === 'outdated_confirmed';
+
+      // Sort whitelist with graceful fallback to defaults
+      const SORTABLE_BY = ['slotDate', 'customerName', 'status', 'createdAt', 'updatedAt'] as const;
+      const rawSortBy = typeof sortBy === 'string' ? sortBy : '';
+      const rawSortDir = typeof sortDir === 'string' ? sortDir : '';
+      const normalizedSortBy = (SORTABLE_BY as readonly string[]).includes(rawSortBy) ? rawSortBy : 'slotDate';
+      const normalizedSortDir = rawSortDir === 'asc' ? 'asc' : 'desc';
 
       const result = await storage.getBookingsForUser(effectiveUserId, {
         status: isOutdatedFilter ? undefined : status as string,
@@ -4619,6 +4626,8 @@ export function registerRoutes(app: Express) {
         pageSize: pageSize ? parseInt(pageSize as string) : 20,
         search: search as string,
         outdatedConfirmed: isOutdatedFilter,
+        sortBy: normalizedSortBy,
+        sortDir: normalizedSortDir,
       });
       
       // Batch-fetch custom field definitions + values (one query each)

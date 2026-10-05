@@ -38,6 +38,7 @@ interface FormState {
   departmentId: string;
   staffId: string;
   slotDate: string;
+  endDate: string;
   slot: Slot | null;
   customerName: string;
   customerPhone: string;
@@ -49,6 +50,7 @@ const INITIAL_FORM: FormState = {
   departmentId: "",
   staffId: "",
   slotDate: "",
+  endDate: "",
   slot: null,
   customerName: "",
   customerPhone: "",
@@ -127,7 +129,16 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
     setForm((f) => ({ ...f, staffId: val, slot: null }));
 
   const selectDate = (val: string) =>
-    setForm((f) => ({ ...f, slotDate: val, slot: null }));
+    setForm((f) => ({
+      ...f,
+      slotDate: val,
+      // Auto-clear endDate if it now precedes the new start date
+      endDate: f.endDate && f.endDate < val ? "" : f.endDate,
+      slot: null,
+    }));
+
+  const selectEndDate = (val: string) =>
+    setForm((f) => ({ ...f, endDate: val }));
 
   const resetForm = () => {
     setForm(INITIAL_FORM);
@@ -140,6 +151,13 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
     if (!form.departmentId) return "Please select a department";
     if (!form.staffId) return "Please select a staff member";
     if (!form.slotDate) return "Please select a date";
+    if (form.endDate && form.endDate < form.slotDate) return "End date must be on or after the start date";
+    if (form.endDate) {
+      const spanDays = Math.round(
+        (new Date(form.endDate + "T00:00:00Z").getTime() - new Date(form.slotDate + "T00:00:00Z").getTime()) / 86400000
+      );
+      if (spanDays > 31) return "Booking cannot span more than 31 days";
+    }
     if (!form.slot) return "Please select a time slot";
     if (!form.customerName.trim()) return "Customer name is required";
     if (!form.customerPhone.trim()) return "Customer phone is required";
@@ -178,6 +196,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
           departmentId: Number(form.departmentId),
           staffId: Number(form.staffId),
           slotDate: form.slotDate,
+          endDate: form.endDate || undefined,
           startTime: form.slot!.startTime,
           endTime: form.slot!.endTime,
           customerName: form.customerName.trim(),
@@ -284,16 +303,30 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="mb-date">Date</Label>
-              <Input
-                id="mb-date"
-                type="date"
-                min={today}
-                value={form.slotDate}
-                onChange={(e) => selectDate(e.target.value)}
-                data-testid="input-date"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="mb-date">Date</Label>
+                <Input
+                  id="mb-date"
+                  type="date"
+                  min={today}
+                  value={form.slotDate}
+                  onChange={(e) => selectDate(e.target.value)}
+                  data-testid="input-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mb-end-date">End Date <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  id="mb-end-date"
+                  type="date"
+                  min={form.slotDate || undefined}
+                  disabled={!form.slotDate}
+                  value={form.endDate}
+                  onChange={(e) => selectEndDate(e.target.value)}
+                  data-testid="input-end-date"
+                />
+              </div>
             </div>
 
             <div className="space-y-1.5">

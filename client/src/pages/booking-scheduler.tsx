@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Building2, Users, Clock, Calendar, Plus, Trash2, Edit, ChevronDown, ChevronUp, ChevronRight, Phone, Mail, Download, RefreshCw, Filter, ChevronLeft, Search, CheckCircle, XCircle, CalendarClock, Send, MoreHorizontal, Bell, RotateCcw, MessageSquare, Upload, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -127,10 +127,32 @@ export default function BookingScheduler() {
   
   // Bookings pagination and filter state
   const [bookingsPage, setBookingsPage] = useState(1);
-  const [bookingsStatusFilter, setBookingsStatusFilter] = useState<string>("all");
+  const [bookingsStatusFilter, setBookingsStatusFilter] = useState<string>(() => {
+    try { return localStorage.getItem('omniplus.bookings.statusFilter') || 'all'; } catch { return 'all'; }
+  });
+  const [bookingsSort, setBookingsSort] = useState<{ sortBy: string; sortDir: 'asc' | 'desc' }>(() => {
+    try {
+      const raw = localStorage.getItem('omniplus.bookings.sort');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.sortDir === 'asc' || parsed.sortDir === 'desc') && typeof parsed.sortBy === 'string') {
+          return parsed;
+        }
+      }
+    } catch { /* fall through */ }
+    return { sortBy: 'slotDate', sortDir: 'desc' };
+  });
   const [bookingsSearch, setBookingsSearch] = useState("");
   const [selectedBookings, setSelectedBookings] = useState<Set<number>>(new Set());
   const BOOKINGS_PAGE_SIZE = 10;
+
+  // Persist sort + status filter preferences (search text stays transient)
+  useEffect(() => {
+    try { localStorage.setItem('omniplus.bookings.sort', JSON.stringify(bookingsSort)); } catch { /* ignore */ }
+  }, [bookingsSort]);
+  useEffect(() => {
+    try { localStorage.setItem('omniplus.bookings.statusFilter', bookingsStatusFilter); } catch { /* ignore */ }
+  }, [bookingsStatusFilter]);
 
   // Booking action modal states
   const [editBookingOpen, setEditBookingOpen] = useState(false);
@@ -150,6 +172,7 @@ export default function BookingScheduler() {
   const [editDepartmentId, setEditDepartmentId] = useState<string>("");
   const [editStaffId, setEditStaffId] = useState<string>("");
   const [editDate, setEditDate] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
   const [editSlot, setEditSlot] = useState("");
   const [editAvailableStaff, setEditAvailableStaff] = useState<BookingStaff[]>([]);
   const [editAvailableSlots, setEditAvailableSlots] = useState<any[]>([]);
@@ -345,7 +368,7 @@ export default function BookingScheduler() {
   });
 
   const { data: bookingsData, isLoading: loadingBookings, refetch: refetchBookings, isFetching: fetchingBookings } = useQuery<{ bookings: Booking[]; customFields: CustomField[]; total: number }>({
-    queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter, bookingsSearch],
+    queryKey: ['/api/booking/bookings', bookingsPage, bookingsStatusFilter, bookingsSearch, bookingsSort.sortBy, bookingsSort.sortDir],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', String(bookingsPage));
@@ -356,6 +379,8 @@ export default function BookingScheduler() {
       if (bookingsSearch.trim()) {
         params.set('search', bookingsSearch.trim());
       }
+      params.set('sortBy', bookingsSort.sortBy);
+      params.set('sortDir', bookingsSort.sortDir);
       const res = await fetch(`/api/booking/bookings?${params.toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch bookings');
       return res.json();
@@ -370,6 +395,7 @@ export default function BookingScheduler() {
     editDepartmentId !== String(actionBooking.departmentId) ||
     editStaffId !== String(actionBooking.staffId) ||
     editDate !== actionBooking.slotDate ||
+    editEndDate !== (actionBooking.endDate ?? '') ||
     editSlot !== `${actionBooking.startTime}|${actionBooking.endTime}`
   );
 
@@ -771,6 +797,7 @@ export default function BookingScheduler() {
     setEditDepartmentId(String(booking.departmentId));
     setEditStaffId(String(booking.staffId));
     setEditDate(booking.slotDate);
+    setEditEndDate(booking.endDate ?? '');
     setEditSlot(`${booking.startTime}|${booking.endTime}`);
     setEditStatus(booking.status || '');
     setEditCustomFieldValues(
@@ -834,6 +861,31 @@ export default function BookingScheduler() {
       case 'no_show': return 'destructive';
       default: return 'secondary';
     }
+  };
+
+  // Sortable header handler: new column -> ascending; active column -> toggle direction.
+  const handleSort = (col: string) => {
+    setBookingsSort((prev) => {
+      if (prev.sortBy === col) {
+        return { sortBy: col, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { sortBy: col, sortDir: 'asc' };
+    });
+    setBookingsPage(1);
+    setSelectedBookings(new Set());
+  };
+
+  // Compact timestamp: "Today 12:08" / "Oct 5 12:08" / "Oct 5 2025" / "—"
+  const formatTimestamp = (ts?: string | null): string => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    const now = new Date();
+    const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    if (sameDay) return `Today ${format(d, 'HH:mm')}`;
+    if (sameYear) return format(d, 'MMM d HH:mm');
+    return format(d, 'MMM d yyyy');
   };
 
   const exportBookingsToExcel = () => {
@@ -1777,12 +1829,39 @@ export default function BookingScheduler() {
                           data-testid="checkbox-select-all"
                         />
                       </TableHead>
-                      <TableHead className="min-w-[110px]">Date & Time</TableHead>
-                      <TableHead className="min-w-[130px]">Service</TableHead>
-                      <TableHead className="min-w-[150px]">Customer</TableHead>
+                      <TableHead className="min-w-[110px] cursor-pointer select-none" onClick={() => handleSort('slotDate')} data-testid="sort-header-date">
+                        <span className="inline-flex items-center gap-1">
+                          Date & Time
+                          {bookingsSort.sortBy === 'slotDate' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                        </span>
+                      </TableHead>
+                      <TableHead className="min-w-[110px]">Service</TableHead>
+                      <TableHead className="min-w-[130px] cursor-pointer select-none" onClick={() => handleSort('customerName')} data-testid="sort-header-customer">
+                        <span className="inline-flex items-center gap-1">
+                          Customer
+                          {bookingsSort.sortBy === 'customerName' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                        </span>
+                      </TableHead>
                       <TableHead className="min-w-[90px]">Label</TableHead>
+                      <TableHead className="min-w-[95px] cursor-pointer select-none" onClick={() => handleSort('createdAt')} data-testid="sort-header-created">
+                        <span className="inline-flex items-center gap-1">
+                          Created
+                          {bookingsSort.sortBy === 'createdAt' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                        </span>
+                      </TableHead>
+                      <TableHead className="min-w-[95px] cursor-pointer select-none" onClick={() => handleSort('updatedAt')} data-testid="sort-header-updated">
+                        <span className="inline-flex items-center gap-1">
+                          Updated
+                          {bookingsSort.sortBy === 'updatedAt' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                        </span>
+                      </TableHead>
                       {hasCustomFields && <TableHead className="min-w-[130px]">Custom Summary</TableHead>}
-                      <TableHead className="min-w-[95px]">Status</TableHead>
+                      <TableHead className="min-w-[95px] cursor-pointer select-none" onClick={() => handleSort('status')} data-testid="sort-header-status">
+                        <span className="inline-flex items-center gap-1">
+                          Status
+                          {bookingsSort.sortBy === 'status' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                        </span>
+                      </TableHead>
                       <TableHead className="min-w-[140px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1832,6 +1911,12 @@ export default function BookingScheduler() {
                           </TableCell>
                           <TableCell>
                             <span className="block truncate text-sm text-muted-foreground">{booking.bookingLabel || '—'}</span>
+                          </TableCell>
+                          <TableCell data-testid={`booking-cell-created-${booking.id}`}>
+                            <span className="text-xs whitespace-nowrap text-muted-foreground">{formatTimestamp(booking.createdAt)}</span>
+                          </TableCell>
+                          <TableCell data-testid={`booking-cell-updated-${booking.id}`}>
+                            <span className="text-xs whitespace-nowrap text-muted-foreground">{formatTimestamp(booking.updatedAt)}</span>
                           </TableCell>
                           {hasCustomFields && (
                             <TableCell data-testid={`booking-summary-${booking.id}`}>
@@ -2381,7 +2466,7 @@ export default function BookingScheduler() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="col-span-2">
                   <Label htmlFor="edit-status">Status</Label>
                   <Select value={editStatus} onValueChange={setEditStatus}>
                     <SelectTrigger data-testid="select-edit-status">
@@ -2405,12 +2490,26 @@ export default function BookingScheduler() {
                     onChange={async (e) => {
                       setEditDate(e.target.value);
                       setEditSlot('');
+                      // Auto-clear endDate if it now precedes the new start date
+                      if (editEndDate && editEndDate < e.target.value) setEditEndDate('');
                       if (editStaffId && e.target.value) {
                         await fetchAvailableSlotsForEdit(parseInt(editStaffId), e.target.value, actionBooking?.id);
                       }
                     }}
                     min={new Date().toISOString().split('T')[0]}
                     data-testid="input-edit-date"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-end-date">End Date <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    id="edit-end-date"
+                    type="date"
+                    min={editDate || undefined}
+                    disabled={!editDate}
+                    value={editEndDate}
+                    onChange={(e) => setEditEndDate(e.target.value)}
+                    data-testid="input-edit-end-date"
                   />
                 </div>
               </div>
@@ -2559,6 +2658,19 @@ export default function BookingScheduler() {
             <Button
               onClick={() => {
                 if (!actionBooking) return;
+                if (editEndDate && editEndDate < editDate) {
+                  toast({ title: 'Invalid date range', description: 'End date must be on or after the start date', variant: 'destructive' });
+                  return;
+                }
+                if (editEndDate) {
+                  const spanDays = Math.round(
+                    (new Date(editEndDate + 'T00:00:00Z').getTime() - new Date(editDate + 'T00:00:00Z').getTime()) / 86400000
+                  );
+                  if (spanDays > 31) {
+                    toast({ title: 'Invalid date range', description: 'Booking cannot span more than 31 days', variant: 'destructive' });
+                    return;
+                  }
+                }
                 const customFieldValues: Record<string, string> = {};
                 for (const f of sortedCustomFields) {
                   if (f.fieldType === 'calculation') continue;
@@ -2585,6 +2697,7 @@ export default function BookingScheduler() {
                   payload.departmentId = editDepartmentId ? parseInt(editDepartmentId) : undefined;
                   payload.staffId = editStaffId ? parseInt(editStaffId) : undefined;
                   payload.slotDate = editDate || undefined;
+                  payload.endDate = editEndDate || null;
                   payload.startTime = startTime || undefined;
                   payload.endTime = endTime || undefined;
                 }
