@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { LogOut, AlertCircle, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { is } from "drizzle-orm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
+  fullWidth?: boolean;
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, fullWidth }: DashboardLayoutProps) {
   const { user, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
@@ -121,7 +121,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </Alert>
           )}
           <main className="flex-1 overflow-y-auto">
-            <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
+            <div className={fullWidth ? "w-full px-6 lg:px-8 py-8" : "max-w-7xl mx-auto px-6 lg:px-8 py-8"}>
               {children}
             </div>
           </main>

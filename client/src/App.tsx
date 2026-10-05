@@ -105,28 +105,28 @@ function Router() {
         <Redirect to="/booking-scheduler/departments" />
       </Route>
       <Route path="/booking-scheduler/departments">
-        <DashboardLayout>
+        <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingScheduler />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>
       <Route path="/booking-scheduler/bookings">
-        <DashboardLayout>
+        <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingScheduler />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>
       <Route path="/booking-scheduler/settings">
-        <DashboardLayout>
+        <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingScheduler />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>
       <Route path="/booking-scheduler/calendar">
-        <DashboardLayout>
+        <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="bookingScheduler">
             <BookingCalendar />
           </ProtectedRoute>
