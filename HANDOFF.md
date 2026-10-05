@@ -2,18 +2,17 @@
 
 ## Current state
 
-- `origin/main` HEAD: `f32bd69` (Batch B). This HANDOFF.md is the next commit on top of it.
-- Deployed/running on the VPS: `3685cc0` (Batch A) — the VPS is 1 commit behind (`f32bd69` was docs/config-only and intentionally not pulled).
+- `origin/main` HEAD: `5fe401c` (Phase 3D-3). Deployed/running on the VPS.
 - Deploy target: `wt.omniplus-bh.com`
 
 ## Recent commits
 
-- `f32bd69` chore: project hygiene (Batch B)
+- `5fe401c` feat(booking): merge Edit+Reschedule, fix time slot, custom field editing (Phase 3D-3)
+- `68729dc` feat(booking): detail drawer + row click + export with custom fields (Phase 3D-2)
+- `20a08e2` feat(booking): list shows custom field values + redesigned columns (Phase 3D-1)
+- `08d17a4` fix(booking): availability endpoints return windows, not slotDuration chunks
+- `dc3e0da` feat(booking): manual booking form UI (Phase 3C)
 - `3685cc0` fix(booking): overlap-based availability + 2 latent boolean bugs (Batch A)
-- `6aa8c23` feat(booking): manual booking endpoint with custom field values (Phase 3B)
-- `455a26d` feat(booking): calculation field type for custom fields
-- `1cbec7f` feat(booking): custom fields foundation (Phase 3A)
-- `9ad3678` fix(booking): remove 'Available' from calendar status filter
 
 ## Completed phases
 
@@ -22,17 +21,37 @@
 - Custom fields foundation — max 5/tenant, types text/number/date/boolean/select (`1cbec7f`)
 - Calculation field type — field-A [op] field-B computed on read (`455a26d`)
 - Manual booking endpoint — `POST /api/booking/bookings/manual`, overlap + advisory lock + custom values (`6aa8c23`)
-- Batch A — `checkSlotAvailability` overlap-based + `BLOCKING_BOOKING_STATUSES`; fixed 2 latent boolean bugs (reschedule + available-slots) (`3685cc0`)
+- Batch A — `checkSlotAvailability` overlap-based + `BLOCKING_BOOKING_STATUSES`; fixed 2 latent boolean bugs (`3685cc0`)
 - Batch B — AGENTS.md fixed, `.gitignore`, untracked `client-dist/`/`server-dist/`, `deploy.sh` db:push removed (`f32bd69`)
 - Batch C — VPS→GitHub auth migrated to SSH deploy key (VPS-only, no commit)
+- Availability-endpoint fix — `/available-slots` returns windows (not slotDuration chunks), reusing `computeAvailableSlots` (`08d17a4`)
+- Phase 3C — manual booking form UI: "New Booking" dialog (dept→staff→date→time cascade + dynamic custom fields + live calc) (`dc3e0da`)
+- Phase 3D-1 — bookings list redesign: 8 columns + adaptive Custom Summary (custom field values + computed calc) (`20a08e2`)
+- Phase 3D-2 — detail drawer (Sheet) + row click + Excel export with custom fields (`68729dc`)
+- Phase 3D-3 — merged Edit+Reschedule dialog, time-slot `excludeBookingId` fix, custom-field editing, legacy-field editing, layout tightening (`5fe401c`)
 
 ## Next phase
 
-- **Phase 3C — Manual Booking Form UI (not started).**
+- **Phase 3F — multi-day bookings.**
+
+## Phase 3F plan (multi-day bookings)
+
+- Add `endDate` column to `bookings` (nullable; defaults to `slotDate` for existing rows).
+- Extend availability logic everywhere (calendar + `/staff/:id/available-slots` + manual + PUT endpoints).
+- Add "End Date" input to merged Edit dialog + manual booking dialog.
+- Calendar renders multi-day bookings across all days in range.
+- Excel export + drawer + list show the range.
+- Chatbot unaffected (single-day, `endDate === slotDate`).
+- Estimated ~5 hours, split into 3F-1 (backend) → 3F-2 (create/edit UI) → 3F-3 (calendar/display).
+
+## Remaining polish (not started)
+
+- Custom Summary column shows "—" chips for fields without values (visual noise).
+- VPS: SSH deploy keys in use; **the exposed GitHub PAT should be deleted — overdue.**
 
 ## Known pre-existing issues (do NOT chase)
 
-- 9 TS errors (`npm run check`): `admin.tsx:1284`, `outbox.tsx:727`, `whapi-settings.tsx:24/25/145`, `storage.ts:1004` (labelLog), `schema.ts:1250`, `vite.config.ts:14/16`
+- 9 TS errors (`npm run check`): `admin.tsx:1284`, `outbox.tsx:727`, `whapi-settings.tsx:24/25/145`, `storage.ts:1005` (labelLog), `schema.ts:1250`, `vite.config.ts:14/16`
 - PM2 non-fatal: `EISDIR uploads/use-cases`, `[AutoExtend] Health check failed for channel 9/10`, WHAPI 524 timeouts
 
 ## Hard constraints
@@ -54,5 +73,4 @@
 
 ## Outstanding cleanup
 
-1. Delete the exposed GitHub PAT after the 24h safety window (SSH key is now the only auth).
-2. Before the next VPS pull: run `git reset --hard origin/main` (the Batch B artifact-untracking leaves stale local modifications to `client-dist/`/`server-dist/` that will conflict with the pull).
+1. Delete the exposed GitHub PAT from GitHub — **overdue** (SSH deploy key is now the only auth).
