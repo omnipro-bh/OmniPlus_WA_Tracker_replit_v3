@@ -1,12 +1,16 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## ⚠️ TOP PRIORITY — Security
+## ✅ Security — Supabase DB password rotation (DONE 2026-10-06)
 
-- **Rotate the Supabase DB password.** The `DATABASE_URL` (including password) was exposed in the 2026-10-06 session's tool output during a `psql` parsing error. Steps: rotate the password in the Supabase dashboard → update `DATABASE_URL` in the VPS `/opt/omniplus/.env` → `pm2 restart omniplus --update-env`. Do this in a separate session; do not interrupt the current work.
+- **Rotated 2026-10-06.** The `DATABASE_URL` (including password) was exposed in the 2026-10-06 session's tool output during a `psql` parsing error.
+- Rotated in Supabase dashboard → `DATABASE_URL` updated in VPS `/opt/omniplus/.env` (16:35) → `pm2 restart omniplus --update-env` (↺ 30) → app reconnected + re-seeded successfully.
+- Deleted 7 stale `.env` backups (`.env.bak.*` + `.env.before-rotate-2026-10-06`); old password now invalid + removed from disk.
+- Flushed ~4.7 GB of PM2 logs.
 
 ## Current state
 
-- `origin/main` HEAD: `143a59a` (Feature 2 — Department→Service / Staff→Provider rebrand). Deployed/running on the VPS.
+- Production HEAD (deployed/running on VPS): `143a59a` (Feature 2 — Department→Service / Staff→Provider rebrand).
+- Repo HEAD: `c6fd0df` (docs-only HANDOFF update) + this commit (docs-only security rotation + HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer) — db:push applied.
 
@@ -27,6 +31,7 @@
 
 ## Completed phases
 
+- **Security rotation (2026-10-06)** — Supabase DB password rotated; VPS `.env` updated (16:35) + `pm2 restart --update-env` (↺ 30); app reconnected + re-seeded; 7 stale `.env` backups deleted; ~4.7 GB PM2 logs flushed.
 - Sidebar tabs → sub-navigation (`57b123f`)
 - Full calendar — backend + UI + polish + full-screen + filters (`a0aea0a` → `9ad3678`)
 - Custom fields foundation — max 5/tenant, types text/number/date/boolean/select (`1cbec7f`)
@@ -55,6 +60,11 @@
 ## Remaining polish (none critical)
 
 - Custom Summary column shows "—" chips for fields without values (visual noise).
+
+## Optional polish (later)
+
+- Set up `pm2-logrotate` (or scheduled truncation) to prevent the ~4.7 GB log growth from recurring.
+- Consider a second Supabase password rotation to invalidate the intermediate password that appeared in a chat screenshot on 2026-10-06.
 
 ## Deferred (own session)
 
