@@ -40,6 +40,7 @@ interface FormState {
   slotDate: string;
   endDate: string;
   slot: Slot | null;
+  endDaySlot: Slot | null;
   customerName: string;
   customerPhone: string;
   bookingLabel: string;
@@ -52,6 +53,7 @@ const INITIAL_FORM: FormState = {
   slotDate: "",
   endDate: "",
   slot: null,
+  endDaySlot: null,
   customerName: "",
   customerPhone: "",
   bookingLabel: "",
@@ -65,6 +67,8 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
   const [formError, setFormError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Slot[]>([]);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [endDayAvailability, setEndDayAvailability] = useState<Slot[]>([]);
+  const [loadingEndDayAvailability, setLoadingEndDayAvailability] = useState(false);
 
   // Tenant-scoped data (authenticated queries)
   const { data: departments = [] } = useQuery<Department[]>({ queryKey: ["/api/booking/departments"] });
@@ -107,6 +111,21 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
     }
   }, []);
 
+  // Fetch available slots for the last day of a multi-day booking
+  const fetchEndDayAvailability = useCallback(async (staffId: string, date: string) => {
+    setLoadingEndDayAvailability(true);
+    try {
+      const res = await fetch(`/api/booking/staff/${staffId}/available-slots?date=${date}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch slots");
+      const slots = await res.json();
+      setEndDayAvailability(Array.isArray(slots) ? slots : []);
+    } catch {
+      setEndDayAvailability([]);
+    } finally {
+      setLoadingEndDayAvailability(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (form.staffId && form.slotDate) {
       fetchAvailability(form.staffId, form.slotDate);
@@ -114,6 +133,15 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
       setAvailability([]);
     }
   }, [form.staffId, form.slotDate, fetchAvailability]);
+
+  useEffect(() => {
+    if (form.staffId && form.endDate && form.endDate !== form.slotDate) {
+      fetchEndDayAvailability(form.staffId, form.endDate);
+    } else {
+      setEndDayAvailability([]);
+      setForm((f) => (f.endDaySlot === null ? f : { ...f, endDaySlot: null }));
+    }
+  }, [form.staffId, form.endDate, form.slotDate, fetchEndDayAvailability]);
 
   // Form helpers
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -138,7 +166,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
     }));
 
   const selectEndDate = (val: string) =>
-    setForm((f) => ({ ...f, endDate: val }));
+    setForm((f) => ({ ...f, endDate: val, endDaySlot: null }));
 
   const resetForm = () => {
     setForm(INITIAL_FORM);
@@ -188,6 +216,13 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
         }
       }
 
+      const isMultiDay = !!form.endDate && form.endDate !== form.slotDate;
+      const endSameAsMain =
+        isMultiDay &&
+        !!form.endDaySlot &&
+        form.endDaySlot.startTime === form.slot!.startTime &&
+        form.endDaySlot.endTime === form.slot!.endTime;
+
       const res = await fetch("/api/booking/bookings/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,6 +234,8 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
           endDate: form.endDate || undefined,
           startTime: form.slot!.startTime,
           endTime: form.slot!.endTime,
+          endDayStartTime: isMultiDay && form.endDaySlot && !endSameAsMain ? form.endDaySlot.startTime : undefined,
+          endDayEndTime: isMultiDay && form.endDaySlot && !endSameAsMain ? form.endDaySlot.endTime : undefined,
           customerName: form.customerName.trim(),
           customerPhone: form.customerPhone.trim(),
           bookingLabel: form.bookingLabel.trim() || undefined,
@@ -359,6 +396,50 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
                 </div>
               )}
             </div>
+
+            {/* Last-day time (multi-day only) */}
+            {form.endDate && form.endDate !== form.slotDate && (
+              <div className="space-y-1.5">
+                <Label>
+                  Last day time <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                {loadingEndDayAvailability ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading available times…
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={form.endDaySlot === null ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => updateField("endDaySlot", null)}
+                      data-testid="end-day-same"
+                    >
+                      Same as main window
+                    </Button>
+                    {endDayAvailability.map((s) => {
+                      const isSelected = form.endDaySlot?.startTime === s.startTime && form.endDaySlot?.endTime === s.endTime;
+                      return (
+                        <Button
+                          key={s.startTime}
+                          type="button"
+                          variant={isSelected ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => updateField("endDaySlot", s)}
+                          data-testid={`end-day-slot-${s.startTime}`}
+                        >
+                          {s.startTime}–{s.endTime}
+                        </Button>
+                      );
+                    })}
+                    {endDayAvailability.length === 0 && (
+                      <p className="col-span-full text-xs text-muted-foreground">No free times on the last day.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Customer */}

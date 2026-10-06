@@ -8,6 +8,8 @@ export interface Booking {
   endDate?: string | null;
   startTime: string;
   endTime: string;
+  endDayStartTime?: string | null;
+  endDayEndTime?: string | null;
   customerPhone: string;
   customerName: string | null;
   status: string;

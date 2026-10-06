@@ -15,7 +15,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/h
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { formatDateRangeShort } from "@/lib/booking-date";
+import { formatDateRangeShort, occupiedWindowForDate } from "@/lib/booking-date";
 
 type ViewMode = "day" | "week" | "month";
 
@@ -71,6 +71,8 @@ interface CalendarBooking {
   endDate: string | null;
   startTime: string;
   endTime: string;
+  endDayStartTime: string | null;
+  endDayEndTime: string | null;
   departmentId: number;
   departmentName: string;
   staffId: number;
@@ -344,7 +346,8 @@ function DayColumn({
         );
       })}
       {dayBookings.map((b) => {
-        const pos = clampedPosition(b.startTime, b.endTime);
+        const [ws, we] = occupiedWindowForDate(b, dateKey);
+        const pos = clampedPosition(ws, we);
         if (!pos) return null;
         return (
           <HoverCard key={b.id}>
@@ -362,7 +365,7 @@ function DayColumn({
                   </span>
                 </div>
                 {pos.height >= 32 && (
-                  <div className="truncate opacity-75">{b.startTime}–{b.endTime}</div>
+                  <div className="truncate opacity-75">{ws}–{we}</div>
                 )}
               </div>
             </HoverCardTrigger>
@@ -371,7 +374,7 @@ function DayColumn({
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[b.status] ?? STATUS_DOT_DEFAULT}`} />
                 <span className="truncate font-medium">{b.customerName || b.customerPhone}</span>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{formatDateRangeShort(b.slotDate, b.endDate)} · {b.startTime}–{b.endTime}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{formatDateRangeShort(b.slotDate, b.endDate)} · {ws}–{we}</div>
               <div className="mt-1.5">
                 <StatusPill status={b.status} />
               </div>

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { computeCalcValue, OPERATION_SYMBOLS } from "@/lib/calc";
 import type { Booking, CustomField } from "@/lib/booking-types";
-import { formatDateRangeLong, dayCount } from "@/lib/booking-date";
+import { formatDateRangeLong, dayCount, formatEndDayWindow } from "@/lib/booking-date";
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -100,6 +100,7 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
           <Section label="Appointment">
             <Field label="Date" value={formatDateRangeLong(booking.slotDate, booking.endDate)} />
             <Field label="Time" value={`${booking.startTime} – ${booking.endTime}`} />
+            {formatEndDayWindow(booking) && <Field label="Last day" value={formatEndDayWindow(booking)!} />}
             <Field label="Department" value={booking.departmentName} />
             <Field label="Staff" value={booking.staffName} />
             <Field label="Label" value={booking.bookingLabel} />

@@ -24,7 +24,7 @@ import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
 import { computeCalcValue } from "@/lib/calc";
 import { Booking, CustomField } from "@/lib/booking-types";
-import { formatDateRangeLong, formatDateRangeShort, dayCount } from "@/lib/booking-date";
+import { formatDateRangeLong, formatDateRangeShort, dayCount, formatDateTimeRangeLong, formatEndDayWindow, END_DAY_SAME } from "@/lib/booking-date";
 
 interface BookingService {
   id: number;
@@ -175,6 +175,9 @@ export default function BookingScheduler() {
   const [editDate, setEditDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const [editSlot, setEditSlot] = useState("");
+  const [editEndDaySlot, setEditEndDaySlot] = useState<string>("");
+  const [editEndDaySlots, setEditEndDaySlots] = useState<any[]>([]);
+  const [editEndDayLoading, setEditEndDayLoading] = useState(false);
   const [editAvailableStaff, setEditAvailableStaff] = useState<BookingStaff[]>([]);
   const [editAvailableSlots, setEditAvailableSlots] = useState<any[]>([]);
   
@@ -397,7 +400,10 @@ export default function BookingScheduler() {
     editStaffId !== String(actionBooking.staffId) ||
     editDate !== actionBooking.slotDate ||
     editEndDate !== (actionBooking.endDate ?? '') ||
-    editSlot !== `${actionBooking.startTime}|${actionBooking.endTime}`
+    editSlot !== `${actionBooking.startTime}|${actionBooking.endTime}` ||
+    editEndDaySlot !== (actionBooking.endDayStartTime && actionBooking.endDayEndTime
+      ? `${actionBooking.endDayStartTime}|${actionBooking.endDayEndTime}`
+      : "")
   );
 
   // Notification settings query
@@ -787,6 +793,23 @@ export default function BookingScheduler() {
     }
   };
 
+  // Fetch available slots for the last day of a multi-day booking (edit modal)
+  const fetchAvailableSlotsForEndDay = async (staffId: number, date: string, excludeBookingId?: number) => {
+    setEditEndDayLoading(true);
+    try {
+      const params = new URLSearchParams({ date });
+      if (excludeBookingId !== undefined) params.set('excludeBookingId', String(excludeBookingId));
+      const res = await fetch(`/api/booking/staff/${staffId}/available-slots?${params.toString()}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch slots');
+      const slots = await res.json();
+      setEditEndDaySlots(slots);
+    } catch (err) {
+      setEditEndDaySlots([]);
+    } finally {
+      setEditEndDayLoading(false);
+    }
+  };
+
   // Helper to open edit modal
   const openEditBookingModal = async (booking: any) => {
     setActionBooking(booking);
@@ -800,6 +823,10 @@ export default function BookingScheduler() {
     setEditDate(booking.slotDate);
     setEditEndDate(booking.endDate ?? '');
     setEditSlot(`${booking.startTime}|${booking.endTime}`);
+    setEditEndDaySlot(booking.endDayStartTime && booking.endDayEndTime
+      ? `${booking.endDayStartTime}|${booking.endDayEndTime}`
+      : "");
+    setEditEndDaySlots([]);
     setEditStatus(booking.status || '');
     setEditCustomFieldValues(
       Object.fromEntries((booking.customFieldValues ?? []).map((v: any) => [String(v.fieldId), v.value]))
@@ -810,6 +837,10 @@ export default function BookingScheduler() {
     setEditAvailableStaff(staffList);
     // Fetch available slots for current staff and date (exclude this booking)
     await fetchAvailableSlotsForEdit(booking.staffId, booking.slotDate, booking.id);
+    // Fetch last-day availability if this is a multi-day booking
+    if (booking.endDate && booking.endDate !== booking.slotDate) {
+      await fetchAvailableSlotsForEndDay(booking.staffId, booking.endDate, booking.id);
+    }
     setEditBookingOpen(true);
   };
 
@@ -897,6 +928,8 @@ export default function BookingScheduler() {
       'End Date',
       'Start Time',
       'End Time',
+      'End Day Start Time',
+      'End Day End Time',
       'Department',
       'Staff',
       'Customer Name',
@@ -925,6 +958,8 @@ export default function BookingScheduler() {
         booking.endDate && booking.endDate !== booking.slotDate ? booking.endDate : '',
         booking.startTime,
         booking.endTime,
+        booking.endDayStartTime || '',
+        booking.endDayEndTime || '',
         booking.departmentName || '',
         booking.staffName || '',
         booking.customerName || 'Unknown',
@@ -1903,6 +1938,9 @@ export default function BookingScheduler() {
                                 )}
                               </div>
                               <div className="text-sm text-muted-foreground">{booking.startTime} - {booking.endTime}</div>
+                              {formatEndDayWindow(booking) && (
+                                <div className="text-xs text-muted-foreground/80">Last day {formatEndDayWindow(booking)}</div>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2382,7 +2420,7 @@ export default function BookingScheduler() {
             {/* Current reference */}
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
               <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
-              <div><span className="font-medium">Current:</span> {formatDateRangeLong(actionBooking?.slotDate ?? '', actionBooking?.endDate)} at {actionBooking?.startTime} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
+              <div><span className="font-medium">Current:</span> {actionBooking ? formatDateTimeRangeLong(actionBooking) : '—'} ({actionBooking?.departmentName} - {actionBooking?.staffName})</div>
             </div>
 
             {/* Customer */}
@@ -2498,6 +2536,8 @@ export default function BookingScheduler() {
                     onChange={async (e) => {
                       setEditDate(e.target.value);
                       setEditSlot('');
+                      setEditEndDaySlot('');
+                      setEditEndDaySlots([]);
                       // Auto-clear endDate if it now precedes the new start date
                       if (editEndDate && editEndDate < e.target.value) setEditEndDate('');
                       if (editStaffId && e.target.value) {
@@ -2516,7 +2556,16 @@ export default function BookingScheduler() {
                     min={editDate || undefined}
                     disabled={!editDate}
                     value={editEndDate}
-                    onChange={(e) => setEditEndDate(e.target.value)}
+                    onChange={async (e) => {
+                      const v = e.target.value;
+                      setEditEndDate(v);
+                      setEditEndDaySlot('');
+                      if (v && v !== editDate && editStaffId) {
+                        await fetchAvailableSlotsForEndDay(parseInt(editStaffId), v, actionBooking?.id);
+                      } else {
+                        setEditEndDaySlots([]);
+                      }
+                    }}
                     data-testid="input-edit-end-date"
                   />
                 </div>
@@ -2540,6 +2589,35 @@ export default function BookingScheduler() {
                   </Select>
                 )}
               </div>
+
+              {/* Last-day time (multi-day only) */}
+              {editEndDate && editEndDate !== editDate && (
+                <div>
+                  <Label htmlFor="edit-end-day-slot">
+                    Last day time <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  {editEndDayLoading ? (
+                    <p className="text-sm text-muted-foreground mt-2">Loading available times…</p>
+                  ) : (
+                    <Select value={editEndDaySlot} onValueChange={setEditEndDaySlot} disabled={!editStaffId}>
+                      <SelectTrigger data-testid="select-edit-end-day-slot">
+                        <SelectValue placeholder={`Same as main window (${actionBooking?.startTime}–${actionBooking?.endTime})`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={END_DAY_SAME}>Same as main window</SelectItem>
+                        {editEndDaySlots.map((slot: any) => (
+                          <SelectItem key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}|${slot.endTime}`}>
+                            {slot.startTime} - {slot.endTime}
+                          </SelectItem>
+                        ))}
+                        {editEndDaySlots.length === 0 && (
+                          <SelectItem value="__none__" disabled>No free times on the last day</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Send notification (only when appointment changed) */}
@@ -2708,6 +2786,13 @@ export default function BookingScheduler() {
                   payload.endDate = editEndDate || null;
                   payload.startTime = startTime || undefined;
                   payload.endTime = endTime || undefined;
+                  // End-day window (collapse equal-to-main → null)
+                  const isMultiDay = !!editEndDate && editEndDate !== editDate;
+                  const edStart = editEndDaySlot && editEndDaySlot !== END_DAY_SAME ? editEndDaySlot.split('|')[0] : undefined;
+                  const edEnd = editEndDaySlot && editEndDaySlot !== END_DAY_SAME ? editEndDaySlot.split('|')[1] : undefined;
+                  const sameAsMain = edStart === startTime && edEnd === endTime;
+                  payload.endDayStartTime = isMultiDay && edStart && !sameAsMain ? edStart : null;
+                  payload.endDayEndTime = isMultiDay && edEnd && !sameAsMain ? edEnd : null;
                 }
                 editBookingMutation.mutate(payload);
               }}
@@ -2731,8 +2816,11 @@ export default function BookingScheduler() {
           </DialogHeader>
           <div className="py-4 space-y-4">
             <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
-              <div><span className="font-medium">Date:</span> {actionBooking?.slotDate}</div>
-              <div><span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}</div>
+              <div><span className="font-medium">Date:</span> {formatDateRangeLong(actionBooking?.slotDate, actionBooking?.endDate)}</div>
+              <div>
+                <span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}
+                {actionBooking && formatEndDayWindow(actionBooking) && ` (last day ${formatEndDayWindow(actionBooking)})`}
+              </div>
               <div><span className="font-medium">Department:</span> {actionBooking?.departmentName}</div>
               <div><span className="font-medium">Staff:</span> {actionBooking?.staffName}</div>
             </div>
@@ -2781,8 +2869,11 @@ export default function BookingScheduler() {
           <div className="py-4 space-y-4">
             <div className="p-4 bg-muted rounded-lg space-y-2 text-sm">
               <div><span className="font-medium">Customer:</span> {actionBooking?.customerName || actionBooking?.customerPhone}</div>
-              <div><span className="font-medium">Date:</span> {actionBooking?.slotDate}</div>
-              <div><span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}</div>
+              <div><span className="font-medium">Date:</span> {formatDateRangeLong(actionBooking?.slotDate, actionBooking?.endDate)}</div>
+              <div>
+                <span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}
+                {actionBooking && formatEndDayWindow(actionBooking) && ` (last day ${formatEndDayWindow(actionBooking)})`}
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <div>
