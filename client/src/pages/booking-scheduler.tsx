@@ -192,9 +192,9 @@ export default function BookingScheduler() {
   const [cancelMessage, setCancelMessage] = useState("");
 
   // Default messages
-  const getDefaultConfirmMessage = () => `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
-  const getDefaultRescheduleMessage = () => `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nDepartment: {{department}}\nStaff: {{staff}}\n\nWe look forward to seeing you!`;
-  const getDefaultCancelMessage = () => `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nDepartment: {{department}}\n\nIf you have questions, please contact us.`;
+  const getDefaultConfirmMessage = () => `Your booking has been confirmed!\n\nDate: {{date}}\nTime: {{time}}\nService: {{service}}\nProvider: {{provider}}\n\nWe look forward to seeing you!`;
+  const getDefaultRescheduleMessage = () => `Your booking has been rescheduled.\n\nOld: {{oldDate}} at {{oldTime}}\nNew: {{date}} at {{time}}\nService: {{service}}\nProvider: {{provider}}\n\nWe look forward to seeing you!`;
+  const getDefaultCancelMessage = () => `Your booking has been cancelled.\n\nDate: {{date}}\nTime: {{time}}\nService: {{service}}\n\nIf you have questions, please contact us.`;
 
   // Import dialog states
   const [importDeptOpen, setImportDeptOpen] = useState(false);
@@ -242,7 +242,7 @@ export default function BookingScheduler() {
     const headers = rawHeaders.map(h => h.toLowerCase().trim());
     
     const headerAliases: Record<string, string[]> = {
-      name: ['name', 'department', 'staff', 'department_name', 'staff_name'],
+      name: ['name', 'department', 'staff', 'service', 'provider', 'department_name', 'staff_name'],
       description: ['description', 'desc', 'details'],
       phone: ['phone', 'phone_number', 'phonenumber', 'tel', 'telephone'],
       email: ['email', 'email_address', 'e-mail'],
@@ -495,10 +495,10 @@ export default function BookingScheduler() {
       setNewDeptOpen(false);
       setDeptName("");
       setDeptDesc("");
-      toast({ title: "Department created", description: "Department has been created successfully." });
+      toast({ title: "Service created", description: "Service has been created successfully." });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create department", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to create service", variant: "destructive" });
     },
   });
 
@@ -509,16 +509,16 @@ export default function BookingScheduler() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/departments'] });
       setSelectedDepartment(null);
-      toast({ title: "Department deleted" });
+      toast({ title: "Service deleted" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete department", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to delete service", variant: "destructive" });
     },
   });
 
   const createStaffMutation = useMutation({
     mutationFn: async (data: { name: string; phone?: string; email?: string }) => {
-      if (!selectedDepartment) throw new Error("No department selected");
+      if (!selectedDepartment) throw new Error("No service selected");
       return await apiRequest('POST', `/api/booking/departments/${selectedDepartment.id}/staff`, data);
     },
     onSuccess: () => {
@@ -527,10 +527,10 @@ export default function BookingScheduler() {
       setStaffName("");
       setStaffPhone("");
       setStaffEmail("");
-      toast({ title: "Staff added", description: "Staff member has been added successfully." });
+      toast({ title: "Provider added", description: "Provider has been added successfully." });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to add staff", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to add provider", variant: "destructive" });
     },
   });
 
@@ -541,16 +541,16 @@ export default function BookingScheduler() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/departments', selectedDepartment?.id, 'staff'] });
       setSelectedStaff(null);
-      toast({ title: "Staff deleted" });
+      toast({ title: "Provider deleted" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete staff", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to delete provider", variant: "destructive" });
     },
   });
 
   const createSlotMutation = useMutation({
     mutationFn: async (data: { dayOfWeek: number; startTime: string; endTime: string; slotDuration: number; capacity: number }) => {
-      if (!selectedStaff) throw new Error("No staff selected");
+      if (!selectedStaff) throw new Error("No provider selected");
       return await apiRequest('POST', `/api/booking/staff/${selectedStaff.id}/slots`, data);
     },
     onSuccess: () => {
@@ -588,11 +588,11 @@ export default function BookingScheduler() {
       setImportPreview([]);
       toast({ 
         title: "Import complete", 
-        description: `${result.imported} department(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
+        description: `${result.imported} service(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
       });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to import departments", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to import services", variant: "destructive" });
     },
   });
 
@@ -607,11 +607,11 @@ export default function BookingScheduler() {
       setImportPreview([]);
       toast({ 
         title: "Import complete", 
-        description: `${result.imported} staff member(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
+        description: `${result.imported} provider(s) imported${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}` 
       });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to import staff", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to import providers", variant: "destructive" });
     },
   });
 
@@ -960,8 +960,8 @@ export default function BookingScheduler() {
       'End Time',
       'End Day Start Time',
       'End Day End Time',
-      'Department',
-      'Staff',
+      'Service',
+      'Provider',
       'Customer Name',
       'Customer Phone',
       'Booking Label',
@@ -1051,7 +1051,7 @@ export default function BookingScheduler() {
             <Calendar className="h-6 w-6" />
             Booking Scheduler
           </h1>
-          <p className="text-muted-foreground">Manage departments, staff, and appointment bookings</p>
+          <p className="text-muted-foreground">Manage services, providers, and appointment bookings</p>
         </div>
       </div>
 
@@ -1061,20 +1061,20 @@ export default function BookingScheduler() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-lg">Booking Services</CardTitle>
-                <CardDescription>Group departments by service context (e.g., different branches, languages)</CardDescription>
+                <CardTitle className="text-lg">Service Groups</CardTitle>
+                <CardDescription>Group services by context (e.g., different branches, languages)</CardDescription>
               </div>
               <Dialog open={newServiceOpen} onOpenChange={setNewServiceOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" data-testid="button-add-service">
                     <Plus className="h-4 w-4 mr-1" />
-                    Add Service
+                    Add Service Group
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Create Booking Service</DialogTitle>
-                    <DialogDescription>Add a new service to group related departments.</DialogDescription>
+                    <DialogTitle>Create Service Group</DialogTitle>
+                    <DialogDescription>Add a new service group to organize related services.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
@@ -1093,7 +1093,7 @@ export default function BookingScheduler() {
                         id="service-desc"
                         value={serviceDesc}
                         onChange={(e) => setServiceDesc(e.target.value)}
-                        placeholder="Describe this service..."
+                        placeholder="Describe this service group..."
                         data-testid="input-service-description"
                       />
                     </div>
@@ -1177,7 +1177,7 @@ export default function BookingScheduler() {
                       disabled={!serviceName.trim() || createServiceMutation.isPending}
                       data-testid="button-submit-service"
                     >
-                      {createServiceMutation.isPending ? "Creating..." : "Create Service"}
+                      {createServiceMutation.isPending ? "Creating..." : "Create Service Group"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -1190,8 +1190,8 @@ export default function BookingScheduler() {
                 </div>
               ) : services.length === 0 ? (
                 <div className="text-center py-4 text-muted-foreground">
-                  <p className="text-sm">No services created yet.</p>
-                  <p className="text-xs mt-1">Services help organize departments for different contexts (branches, languages, etc.)</p>
+                  <p className="text-sm">No service groups created yet.</p>
+                  <p className="text-xs mt-1">Service groups help organize services for different contexts (branches, languages, etc.)</p>
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
@@ -1205,7 +1205,7 @@ export default function BookingScheduler() {
                     }}
                     data-testid="button-service-all"
                   >
-                    All Services
+                    All Service Groups
                   </Button>
                   {services.map((service) => (
                     <div key={service.id} className="flex items-center gap-1">
@@ -1225,7 +1225,7 @@ export default function BookingScheduler() {
                         variant="ghost"
                         size="icon"
                         onClick={() => {
-                          if (confirm(`Delete service "${service.name}"? This will unlink all associated departments.`)) {
+                          if (confirm(`Delete service group "${service.name}"? This will unlink all associated services.`)) {
                             deleteServiceMutation.mutate(service.id);
                           }
                         }}
@@ -1245,9 +1245,9 @@ export default function BookingScheduler() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="text-lg">Departments</CardTitle>
+                  <CardTitle className="text-lg">Services</CardTitle>
                   <CardDescription>
-                    {selectedService ? `Departments in ${selectedService.name}` : "All departments across services"}
+                    {selectedService ? `Services in ${selectedService.name}` : "All services across service groups"}
                   </CardDescription>
                 </div>
                 <div className="flex gap-1">
@@ -1287,8 +1287,8 @@ export default function BookingScheduler() {
                     </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Create Department</DialogTitle>
-                      <DialogDescription>Add a new department to organize your staff.</DialogDescription>
+                      <DialogTitle>Create Service</DialogTitle>
+                      <DialogDescription>Add a new service to organize your providers.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div>
@@ -1307,7 +1307,7 @@ export default function BookingScheduler() {
                           id="dept-desc"
                           value={deptDesc}
                           onChange={(e) => setDeptDesc(e.target.value)}
-                          placeholder="Describe this department..."
+                          placeholder="Describe this service..."
                           data-testid="input-department-description"
                         />
                       </div>
@@ -1333,7 +1333,7 @@ export default function BookingScheduler() {
                 <ScrollArea className="h-[400px]">
                   {filteredDepartments.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      {selectedService ? `No departments in ${selectedService.name}` : "No departments yet"}
+                      {selectedService ? `No services in ${selectedService.name}` : "No services yet"}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -1355,7 +1355,7 @@ export default function BookingScheduler() {
                               <span className="font-medium">{dept.name}</span>
                               {!selectedService && dept.serviceId && (
                                 <Badge variant="secondary" className="text-xs">
-                                  {services.find(s => s.id === dept.serviceId)?.name || 'Unknown Service'}
+                                  {services.find(s => s.id === dept.serviceId)?.name || 'Unknown Service Group'}
                                 </Badge>
                               )}
                             </div>
@@ -1364,7 +1364,7 @@ export default function BookingScheduler() {
                               size="icon"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm('Delete this department?')) {
+                                if (confirm('Delete this service?')) {
                                   deleteDeptMutation.mutate(dept.id);
                                 }
                               }}
@@ -1388,9 +1388,9 @@ export default function BookingScheduler() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="text-lg">Staff</CardTitle>
+                  <CardTitle className="text-lg">Providers</CardTitle>
                   <CardDescription>
-                    {selectedDepartment ? `Staff in ${selectedDepartment.name}` : 'Select a department'}
+                    {selectedDepartment ? `Providers in ${selectedDepartment.name}` : 'Select a service'}
                   </CardDescription>
                 </div>
                 {selectedDepartment && (
@@ -1431,8 +1431,8 @@ export default function BookingScheduler() {
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Add Staff Member</DialogTitle>
-                          <DialogDescription>Add a new staff member to {selectedDepartment.name}.</DialogDescription>
+                          <DialogTitle>Add Provider</DialogTitle>
+                          <DialogDescription>Add a new provider to {selectedDepartment.name}.</DialogDescription>
                         </DialogHeader>
                       <div className="space-y-4">
                         <div>
@@ -1441,7 +1441,7 @@ export default function BookingScheduler() {
                             id="staff-name"
                             value={staffName}
                             onChange={(e) => setStaffName(e.target.value)}
-                            placeholder="Staff member name"
+                            placeholder="Provider name"
                             data-testid="input-staff-name"
                           />
                         </div>
@@ -1477,7 +1477,7 @@ export default function BookingScheduler() {
                           disabled={!staffName.trim() || createStaffMutation.isPending}
                           data-testid="button-submit-staff"
                         >
-                          {createStaffMutation.isPending ? "Adding..." : "Add Staff"}
+                          {createStaffMutation.isPending ? "Adding..." : "Add Provider"}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1488,11 +1488,11 @@ export default function BookingScheduler() {
               <CardContent>
                 <ScrollArea className="h-[400px]">
                   {!selectedDepartment ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">Select a department first</p>
+                    <p className="text-sm text-muted-foreground text-center py-8">Select a service first</p>
                   ) : loadingStaff ? (
                     <Skeleton className="h-32 w-full" />
                   ) : staff.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">No staff in this department</p>
+                    <p className="text-sm text-muted-foreground text-center py-8">No providers in this service</p>
                   ) : (
                     <div className="space-y-2">
                       {staff.map((member) => (
@@ -1514,7 +1514,7 @@ export default function BookingScheduler() {
                               size="icon"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm('Delete this staff member?')) {
+                                if (confirm('Delete this provider?')) {
                                   deleteStaffMutation.mutate(member.id);
                                 }
                               }}
@@ -1551,7 +1551,7 @@ export default function BookingScheduler() {
                 <div>
                   <CardTitle className="text-lg">Time Slots</CardTitle>
                   <CardDescription>
-                    {selectedStaff ? `Availability for ${selectedStaff.name}` : 'Select a staff member'}
+                    {selectedStaff ? `Availability for ${selectedStaff.name}` : 'Select a provider'}
                   </CardDescription>
                 </div>
                 {selectedStaff && (
@@ -1682,7 +1682,7 @@ export default function BookingScheduler() {
               <CardContent>
                 <ScrollArea className="h-[400px]">
                   {!selectedStaff ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">Select a staff member first</p>
+                    <p className="text-sm text-muted-foreground text-center py-8">Select a provider first</p>
                   ) : loadingSlots ? (
                     <Skeleton className="h-32 w-full" />
                   ) : slots.length === 0 ? (
@@ -1903,7 +1903,7 @@ export default function BookingScheduler() {
                           {bookingsSort.sortBy === 'slotDate' && (bookingsSort.sortDir === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
                         </span>
                       </TableHead>
-                      <TableHead className="min-w-[110px]">Service</TableHead>
+                      <TableHead className="min-w-[110px]">Service / Provider</TableHead>
                       <TableHead className="min-w-[130px] cursor-pointer select-none" onClick={() => handleSort('customerName')} data-testid="sort-header-customer">
                         <span className="inline-flex items-center gap-1">
                           Customer
@@ -2123,9 +2123,10 @@ export default function BookingScheduler() {
                         <p className="text-sm font-medium text-blue-500">Template Variables</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           Use these placeholders in your messages. They will be replaced with actual booking data:
+                          {' '}{`{{service}}`} and {`{{provider}}`} are preferred; {`{{department}}`} and {`{{staff}}`} still work as aliases.
                         </p>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {['{{customerName}}', '{{date}}', '{{time}}', '{{dateRange}}', '{{endDate}}', '{{endTime}}', '{{department}}', '{{staff}}', '{{oldDate}}', '{{oldTime}}'].map((v) => (
+                          {['{{customerName}}', '{{date}}', '{{time}}', '{{dateRange}}', '{{endDate}}', '{{endTime}}', '{{service}}', '{{provider}}', '{{oldDate}}', '{{oldTime}}'].map((v) => (
                             <code key={v} className="text-xs bg-muted px-1.5 py-0.5 rounded">{v}</code>
                           ))}
                         </div>
@@ -2274,9 +2275,9 @@ export default function BookingScheduler() {
       <Dialog open={importDeptOpen} onOpenChange={setImportDeptOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import Departments</DialogTitle>
+            <DialogTitle>Import Services</DialogTitle>
             <DialogDescription>
-              Review the data before importing. {importPreview.length} department(s) found.
+              Review the data before importing. {importPreview.length} service(s) found.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2313,7 +2314,7 @@ export default function BookingScheduler() {
               disabled={importDeptMutation.isPending || importPreview.length === 0}
               data-testid="button-confirm-import-departments"
             >
-              {importDeptMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Department(s)`}
+              {importDeptMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Service(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2323,9 +2324,9 @@ export default function BookingScheduler() {
       <Dialog open={importStaffOpen} onOpenChange={setImportStaffOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import Staff to {selectedDepartment?.name}</DialogTitle>
+            <DialogTitle>Import Providers to {selectedDepartment?.name}</DialogTitle>
             <DialogDescription>
-              Review the data before importing. {importPreview.length} staff member(s) found.
+              Review the data before importing. {importPreview.length} provider(s) found.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2364,7 +2365,7 @@ export default function BookingScheduler() {
               disabled={importStaffMutation.isPending || importPreview.length === 0 || !selectedDepartment}
               data-testid="button-confirm-import-staff"
             >
-              {importStaffMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Staff Member(s)`}
+              {importStaffMutation.isPending ? 'Importing...' : `Import ${importPreview.length} Provider(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2495,7 +2496,7 @@ export default function BookingScheduler() {
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appointment</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="edit-department">Department</Label>
+                  <Label htmlFor="edit-department">Service</Label>
                   <Select
                     value={editDepartmentId}
                     onValueChange={async (val) => {
@@ -2508,7 +2509,7 @@ export default function BookingScheduler() {
                     }}
                   >
                     <SelectTrigger data-testid="select-edit-department">
-                      <SelectValue placeholder="Select department" />
+                      <SelectValue placeholder="Select service" />
                     </SelectTrigger>
                     <SelectContent>
                       {departments.map((dept) => (
@@ -2518,7 +2519,7 @@ export default function BookingScheduler() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="edit-staff">Staff</Label>
+                  <Label htmlFor="edit-staff">Provider</Label>
                   <Select
                     value={editStaffId}
                     onValueChange={async (val) => {
@@ -2531,7 +2532,7 @@ export default function BookingScheduler() {
                     disabled={!editDepartmentId}
                   >
                     <SelectTrigger data-testid="select-edit-staff">
-                      <SelectValue placeholder="Select staff" />
+                      <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
                       {editAvailableStaff.filter(s => s.isActive).map((s) => (
@@ -2851,8 +2852,8 @@ export default function BookingScheduler() {
                 <span className="font-medium">Time:</span> {actionBooking?.startTime} - {actionBooking?.endTime}
                 {actionBooking && formatEndDayWindow(actionBooking) && ` (last day ${formatEndDayWindow(actionBooking)})`}
               </div>
-              <div><span className="font-medium">Department:</span> {actionBooking?.departmentName}</div>
-              <div><span className="font-medium">Staff:</span> {actionBooking?.staffName}</div>
+              <div><span className="font-medium">Service:</span> {actionBooking?.departmentName}</div>
+              <div><span className="font-medium">Provider:</span> {actionBooking?.staffName}</div>
             </div>
             <div className="flex items-center justify-between">
               <div>

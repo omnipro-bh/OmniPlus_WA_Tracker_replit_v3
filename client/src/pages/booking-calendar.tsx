@@ -268,10 +268,10 @@ function FilterBar({
     <div className="flex flex-wrap items-center gap-2">
       <Select value={departmentFilter} onValueChange={onDepartmentChange}>
         <SelectTrigger className="w-48" data-testid="calendar-filter-department">
-          <SelectValue placeholder="All Departments" />
+          <SelectValue placeholder="All Services" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Departments</SelectItem>
+          <SelectItem value="all">All Services</SelectItem>
           {sortedDepartments.map((d) => (
             <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
           ))}
@@ -280,10 +280,10 @@ function FilterBar({
 
       <Select value={staffFilter} onValueChange={onStaffChange}>
         <SelectTrigger className="w-48" data-testid="calendar-filter-staff">
-          <SelectValue placeholder="All Staff" />
+          <SelectValue placeholder="All Providers" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Staff</SelectItem>
+          <SelectItem value="all">All Providers</SelectItem>
           {sortedDepartments.map((d) => {
             const deptStaff = (staffByDept.get(d.id) || []).sort((a, b) => a.name.localeCompare(b.name));
             if (deptStaff.length === 0) return null;
@@ -585,8 +585,8 @@ function BookingDetailDialog({ booking, onClose }: {
           <Section label="Appointment">
             <Field icon={Calendar} label="Date" value={booking.slotDate} />
             <Field icon={Clock} label="Time" value={`${booking.startTime}–${booking.endTime}`} />
-            <Field icon={Building2} label="Department" value={booking.departmentName} />
-            <Field icon={User} label="Staff" value={booking.staffName} />
+            <Field icon={Building2} label="Service" value={booking.departmentName} />
+            <Field icon={User} label="Provider" value={booking.staffName} />
             <Field icon={Tag} label="Label" value={booking.bookingLabel} />
           </Section>
           <Section label="Customer">

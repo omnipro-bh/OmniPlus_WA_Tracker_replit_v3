@@ -176,8 +176,8 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
 
   // Client validation
   const validate = (): string | null => {
-    if (!form.departmentId) return "Please select a department";
-    if (!form.staffId) return "Please select a staff member";
+    if (!form.departmentId) return "Please select a service";
+    if (!form.staffId) return "Please select a provider";
     if (!form.slotDate) return "Please select a date";
     if (form.endDate && form.endDate < form.slotDate) return "End date must be on or after the start date";
     if (form.endDate) {
@@ -310,10 +310,10 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
             <h3 className="text-sm font-semibold text-muted-foreground">Appointment</h3>
 
             <div className="space-y-1.5">
-              <Label htmlFor="mb-department">Department</Label>
+              <Label htmlFor="mb-department">Service</Label>
               <Select value={form.departmentId || undefined} onValueChange={selectDepartment}>
                 <SelectTrigger id="mb-department" data-testid="select-department">
-                  <SelectValue placeholder="Select department" />
+                  <SelectValue placeholder="Select service" />
                 </SelectTrigger>
                 <SelectContent>
                   {sortedDepartments.map((d) => (
@@ -324,10 +324,10 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="mb-staff">Staff</Label>
+              <Label htmlFor="mb-staff">Provider</Label>
               <Select value={form.staffId || undefined} onValueChange={selectStaff} disabled={!form.departmentId || loadingStaff}>
                 <SelectTrigger id="mb-staff" data-testid="select-staff">
-                  <SelectValue placeholder={loadingStaff ? "Loading…" : !form.departmentId ? "Select department first" : "Select staff"} />
+                  <SelectValue placeholder={loadingStaff ? "Loading…" : !form.departmentId ? "Select service first" : "Select provider"} />
                 </SelectTrigger>
                 <SelectContent>
                   {sortedStaff.map((s) => (
@@ -336,7 +336,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
                 </SelectContent>
               </Select>
               {form.departmentId && !loadingStaff && sortedStaff.length === 0 && (
-                <p className="text-xs text-muted-foreground">No staff in this department.</p>
+                <p className="text-xs text-muted-foreground">No providers in this service.</p>
               )}
             </div>
 
@@ -373,7 +373,7 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading available times…
                 </div>
               ) : !form.staffId || !form.slotDate ? (
-                <p className="text-xs text-muted-foreground">Select staff and date to see available times.</p>
+                <p className="text-xs text-muted-foreground">Select provider and date to see available times.</p>
               ) : availability.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No available times on this date. Try another date.</p>
               ) : (

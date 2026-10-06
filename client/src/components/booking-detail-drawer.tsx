@@ -101,8 +101,8 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
             <Field label="Date" value={formatDateRangeLong(booking.slotDate, booking.endDate)} />
             <Field label="Time" value={`${booking.startTime} – ${booking.endTime}`} />
             {formatEndDayWindow(booking) && <Field label="Last day" value={formatEndDayWindow(booking)!} />}
-            <Field label="Department" value={booking.departmentName} />
-            <Field label="Staff" value={booking.staffName} />
+            <Field label="Service" value={booking.departmentName} />
+            <Field label="Provider" value={booking.staffName} />
             <Field label="Label" value={booking.bookingLabel} />
           </Section>
 

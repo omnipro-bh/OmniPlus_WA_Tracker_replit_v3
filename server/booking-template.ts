@@ -42,6 +42,8 @@ export function renderBookingTemplate(template: string, ctx: BookingTemplateCont
     .replace(/\{\{time\}\}/g, ctx.time)
     .replace(/\{\{oldDate\}\}/g, ctx.oldDate ?? '')
     .replace(/\{\{oldTime\}\}/g, ctx.oldTime ?? '')
+    .replace(/\{\{service\}\}/g, ctx.department ?? '')    // alias of {{department}}
+    .replace(/\{\{provider\}\}/g, ctx.staff ?? '')        // alias of {{staff}}
     .replace(/\{\{department\}\}/g, ctx.department ?? '')
     .replace(/\{\{staff\}\}/g, ctx.staff ?? '');
 }

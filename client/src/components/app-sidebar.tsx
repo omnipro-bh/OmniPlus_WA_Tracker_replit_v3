@@ -162,7 +162,7 @@ export function AppSidebar() {
       icon: Calendar,
       pageKey: "bookingScheduler",
       children: [
-        { title: "Departments", url: "/booking-scheduler/departments" },
+        { title: "Services", url: "/booking-scheduler/departments" },
         {
           title: "Bookings",
           url: "/booking-scheduler/bookings",

@@ -2248,60 +2248,60 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         <Separator />
 
         <div>
-          <Label htmlFor="promptMessage">Department Selection Message *</Label>
+          <Label htmlFor="promptMessage">Service Selection Message *</Label>
           <Textarea
             id="promptMessage"
-            placeholder="Please select a department to book your appointment..."
+            placeholder="Please select a service to book your appointment..."
             value={config.promptMessage || ''}
             onChange={(e) => updateConfig('promptMessage', e.target.value)}
             data-testid="input-prompt-message"
             rows={2}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Message shown when asking user to select a department
+            Message shown when asking user to select a service
           </p>
         </div>
 
         <div>
-          <Label htmlFor="departmentButtonLabel">Department Button Label</Label>
+          <Label htmlFor="departmentButtonLabel">Service Button Label</Label>
           <Input
             id="departmentButtonLabel"
-            placeholder="Select Department"
+            placeholder="Select Service"
             value={config.departmentButtonLabel || ''}
             onChange={(e) => updateConfig('departmentButtonLabel', e.target.value)}
             data-testid="input-department-button-label"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Button text for department selection (default: Select Department)
+            Button text for service selection (default: Select Service)
           </p>
         </div>
 
         <div>
-          <Label htmlFor="staffPromptMessage">Staff Selection Message *</Label>
+          <Label htmlFor="staffPromptMessage">Provider Selection Message *</Label>
           <Textarea
             id="staffPromptMessage"
-            placeholder="Please select a staff member for your appointment..."
+            placeholder="Please select a provider for your appointment..."
             value={config.staffPromptMessage || ''}
             onChange={(e) => updateConfig('staffPromptMessage', e.target.value)}
             data-testid="input-staff-prompt-message"
             rows={2}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Message shown when asking user to select a staff member
+            Message shown when asking user to select a provider
           </p>
         </div>
 
         <div>
-          <Label htmlFor="staffButtonLabel">Staff Button Label</Label>
+          <Label htmlFor="staffButtonLabel">Provider Button Label</Label>
           <Input
             id="staffButtonLabel"
-            placeholder="Select Staff"
+            placeholder="Select Provider"
             value={config.staffButtonLabel || ''}
             onChange={(e) => updateConfig('staffButtonLabel', e.target.value)}
             data-testid="input-staff-button-label"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Button text for staff selection (default: Select Staff)
+            Button text for provider selection (default: Select Provider)
           </p>
         </div>
 
@@ -2345,7 +2345,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             rows={3}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders
+            Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`}, {`{{name}}`} for placeholders ({`{{department}}`}/{`{{staff}}`} also work)
           </p>
         </div>
 
@@ -2584,14 +2584,14 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               <Label htmlFor="reminderMessage">Reminder Message *</Label>
               <Textarea
                 id="reminderMessage"
-                placeholder="Reminder: You have an appointment on {{date}} at {{time}} with {{staff}} in {{department}}."
+                placeholder="Reminder: You have an appointment on {{date}} at {{time}} with {{provider}} in {{service}}."
                 value={config.reminderMessage || ''}
                 onChange={(e) => updateConfig('reminderMessage', e.target.value)}
                 data-testid="input-reminder-message"
                 rows={3}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders
+                Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`}, {`{{name}}`} for placeholders ({`{{department}}`}/{`{{staff}}`} also work)
               </p>
             </div>
           </>
@@ -2630,13 +2630,13 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               rows={3}
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Message sent when booking is created as pending. Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{name}}`} for placeholders.
+              Message sent when booking is created as pending. Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`}, {`{{name}}`} for placeholders ({`{{department}}`}/{`{{staff}}`} also work).
             </p>
           </div>
         )}
 
         <p className="text-xs text-amber-600 mt-4">
-          Note: Configure departments, staff, and time slots in the Booking Scheduler page. The chatbot will dynamically show available options.
+          Note: Configure services, providers, and time slots in the Booking Scheduler page. The chatbot will dynamically show available options.
         </p>
       </div>
     );
@@ -2727,14 +2727,14 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           <Label htmlFor="bookingListFormat">Booking List Format</Label>
           <Textarea
             id="bookingListFormat"
-            placeholder="📅 {{date}} at {{time}}\n📍 {{department}} - {{staff}}\nStatus: {{status}}"
+            placeholder="📅 {{date}} at {{time}}\n📍 {{service}} - {{provider}}\nStatus: {{status}}"
             value={config.bookingListFormat || ''}
             onChange={(e) => updateConfig('bookingListFormat', e.target.value)}
             data-testid="input-booking-list-format"
             rows={3}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Format for each booking. Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`}, {`{{status}}`}
+            Format for each booking. Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`}, {`{{status}}`} ({`{{department}}`}/{`{{staff}}`} also work)
           </p>
         </div>
 
@@ -2773,7 +2773,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                 rows={2}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+                Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`} for placeholders ({`{{department}}`}/{`{{staff}}`} also work)
               </p>
             </div>
           </>
@@ -2835,7 +2835,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                 rows={2}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use {`{{date}}`}, {`{{time}}`}, {`{{department}}`}, {`{{staff}}`} for placeholders
+                Use {`{{date}}`}, {`{{time}}`}, {`{{service}}`}, {`{{provider}}`} for placeholders ({`{{department}}`}/{`{{staff}}`} also work)
               </p>
             </div>
           </>

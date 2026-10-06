@@ -4122,7 +4122,7 @@ export function registerRoutes(app: Express) {
       res.json(departments);
     } catch (error: any) {
       console.error("Get departments for service error:", error);
-      res.status(500).json({ error: "Failed to fetch departments" });
+      res.status(500).json({ error: "Failed to fetch services" });
     }
   });
 
@@ -4134,7 +4134,7 @@ export function registerRoutes(app: Express) {
       res.json(departments);
     } catch (error: any) {
       console.error("Get departments error:", error);
-      res.status(500).json({ error: "Failed to fetch departments" });
+      res.status(500).json({ error: "Failed to fetch services" });
     }
   });
 
@@ -4144,7 +4144,7 @@ export function registerRoutes(app: Express) {
       const { name, description, serviceId } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ error: "Department name is required" });
+        return res.status(400).json({ error: "Service name is required" });
       }
 
       // Validate serviceId if provided
@@ -4164,7 +4164,7 @@ export function registerRoutes(app: Express) {
       res.json(department);
     } catch (error: any) {
       console.error("Create department error:", error);
-      res.status(500).json({ error: "Failed to create department" });
+      res.status(500).json({ error: "Failed to create service" });
     }
   });
 
@@ -4174,7 +4174,7 @@ export function registerRoutes(app: Express) {
       if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
 
       const dept = await storage.getBookingDepartment(deptId);
-      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (!dept) return res.status(404).json({ error: "Service not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4185,7 +4185,7 @@ export function registerRoutes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       console.error("Update department error:", error);
-      res.status(500).json({ error: "Failed to update department" });
+      res.status(500).json({ error: "Failed to update service" });
     }
   });
 
@@ -4195,7 +4195,7 @@ export function registerRoutes(app: Express) {
       if (isNaN(deptId)) return res.status(400).json({ error: "Invalid ID" });
 
       const dept = await storage.getBookingDepartment(deptId);
-      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (!dept) return res.status(404).json({ error: "Service not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4206,7 +4206,7 @@ export function registerRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete department error:", error);
-      res.status(500).json({ error: "Failed to delete department" });
+      res.status(500).json({ error: "Failed to delete service" });
     }
   });
 
@@ -4214,10 +4214,10 @@ export function registerRoutes(app: Express) {
   app.get("/api/booking/departments/:deptId/staff", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const deptId = parseInt(req.params.deptId);
-      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid service ID" });
 
       const dept = await storage.getBookingDepartment(deptId);
-      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (!dept) return res.status(404).json({ error: "Service not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4228,7 +4228,7 @@ export function registerRoutes(app: Express) {
       res.json(staff);
     } catch (error: any) {
       console.error("Get staff error:", error);
-      res.status(500).json({ error: "Failed to fetch staff" });
+      res.status(500).json({ error: "Failed to fetch providers" });
     }
   });
 
@@ -4239,17 +4239,17 @@ export function registerRoutes(app: Express) {
       res.json(staff);
     } catch (error: any) {
       console.error("Get all staff error:", error);
-      res.status(500).json({ error: "Failed to fetch staff" });
+      res.status(500).json({ error: "Failed to fetch providers" });
     }
   });
 
   app.post("/api/booking/departments/:deptId/staff", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const deptId = parseInt(req.params.deptId);
-      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid department ID" });
+      if (isNaN(deptId)) return res.status(400).json({ error: "Invalid service ID" });
 
       const dept = await storage.getBookingDepartment(deptId);
-      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (!dept) return res.status(404).json({ error: "Service not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4258,7 +4258,7 @@ export function registerRoutes(app: Express) {
 
       const { name, phone, email } = req.body;
       if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ error: "Staff name is required" });
+        return res.status(400).json({ error: "Provider name is required" });
       }
 
       const staff = await storage.createBookingStaff({
@@ -4271,7 +4271,7 @@ export function registerRoutes(app: Express) {
       res.json(staff);
     } catch (error: any) {
       console.error("Create staff error:", error);
-      res.status(500).json({ error: "Failed to create staff" });
+      res.status(500).json({ error: "Failed to create provider" });
     }
   });
 
@@ -4281,7 +4281,7 @@ export function registerRoutes(app: Express) {
       if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
 
       const staff = await storage.getBookingStaff(staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4292,7 +4292,7 @@ export function registerRoutes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       console.error("Update staff error:", error);
-      res.status(500).json({ error: "Failed to update staff" });
+      res.status(500).json({ error: "Failed to update provider" });
     }
   });
 
@@ -4302,7 +4302,7 @@ export function registerRoutes(app: Express) {
       if (isNaN(staffId)) return res.status(400).json({ error: "Invalid ID" });
 
       const staff = await storage.getBookingStaff(staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4313,7 +4313,7 @@ export function registerRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete staff error:", error);
-      res.status(500).json({ error: "Failed to delete staff" });
+      res.status(500).json({ error: "Failed to delete provider" });
     }
   });
 
@@ -4321,10 +4321,10 @@ export function registerRoutes(app: Express) {
   app.get("/api/booking/staff/:staffId/slots", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const staffId = parseInt(req.params.staffId);
-      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid provider ID" });
 
       const staff = await storage.getBookingStaff(staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4342,10 +4342,10 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/staff/:staffId/slots", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const staffId = parseInt(req.params.staffId);
-      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid staff ID" });
+      if (isNaN(staffId)) return res.status(400).json({ error: "Invalid provider ID" });
 
       const staff = await storage.getBookingStaff(staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4385,7 +4385,7 @@ export function registerRoutes(app: Express) {
       if (!slot) return res.status(404).json({ error: "Slot not found" });
 
       const staff = await storage.getBookingStaff(slot.staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4409,7 +4409,7 @@ export function registerRoutes(app: Express) {
       if (!slot) return res.status(404).json({ error: "Slot not found" });
 
       const staff = await storage.getBookingStaff(slot.staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -4458,7 +4458,7 @@ export function registerRoutes(app: Express) {
         const description = (row.description || '').toString().trim();
 
         if (!name) {
-          errors.push(`Row ${i + 1}: Department name is required`);
+          errors.push(`Row ${i + 1}: Service name is required`);
           continue;
         }
 
@@ -4471,14 +4471,14 @@ export function registerRoutes(app: Express) {
           });
           created.push(dept);
         } catch (err: any) {
-          errors.push(`Row ${i + 1}: Failed to create department "${name}"`);
+          errors.push(`Row ${i + 1}: Failed to create service "${name}"`);
         }
       }
 
       res.json({ imported: created.length, errors });
     } catch (error: any) {
       console.error("Import departments error:", error);
-      res.status(500).json({ error: "Failed to import departments" });
+      res.status(500).json({ error: "Failed to import services" });
     }
   });
 
@@ -4488,11 +4488,11 @@ export function registerRoutes(app: Express) {
       const { rows, departmentId } = req.body;
 
       if (!departmentId) {
-        return res.status(400).json({ error: "Department ID is required" });
+        return res.status(400).json({ error: "Service ID is required" });
       }
 
       const dept = await storage.getBookingDepartment(departmentId);
-      if (!dept) return res.status(404).json({ error: "Department not found" });
+      if (!dept) return res.status(404).json({ error: "Service not found" });
       if (dept.userId !== effectiveUserId && req.user?.role !== "admin") {
         return res.status(403).json({ error: "Not authorized" });
       }
@@ -4511,7 +4511,7 @@ export function registerRoutes(app: Express) {
         const email = (row.email || '').toString().trim();
 
         if (!name) {
-          errors.push(`Row ${i + 1}: Staff name is required`);
+          errors.push(`Row ${i + 1}: Provider name is required`);
           continue;
         }
 
@@ -4525,14 +4525,14 @@ export function registerRoutes(app: Express) {
           });
           created.push(staff);
         } catch (err: any) {
-          errors.push(`Row ${i + 1}: Failed to create staff "${name}"`);
+          errors.push(`Row ${i + 1}: Failed to create provider "${name}"`);
         }
       }
 
       res.json({ imported: created.length, errors });
     } catch (error: any) {
       console.error("Import staff error:", error);
-      res.status(500).json({ error: "Failed to import staff" });
+      res.status(500).json({ error: "Failed to import providers" });
     }
   });
 
@@ -4542,11 +4542,11 @@ export function registerRoutes(app: Express) {
       const { rows, staffId } = req.body;
 
       if (!staffId) {
-        return res.status(400).json({ error: "Staff ID is required" });
+        return res.status(400).json({ error: "Provider ID is required" });
       }
 
       const staff = await storage.getBookingStaff(staffId);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
         return res.status(403).json({ error: "Not authorized" });
       }
@@ -4829,14 +4829,14 @@ export function registerRoutes(app: Express) {
       // Ownership checks (Phase 2A pattern)
       const dept = await storage.getBookingDepartment(deptId);
       if (!dept || dept.userId !== effectiveUserId) {
-        return res.status(404).json({ error: "Department not found" });
+        return res.status(404).json({ error: "Service not found" });
       }
       const staff = await storage.getBookingStaff(staffIdNum);
       if (!staff || staff.userId !== effectiveUserId) {
-        return res.status(404).json({ error: "Staff not found" });
+        return res.status(404).json({ error: "Provider not found" });
       }
       if (staff.departmentId !== deptId) {
-        return res.status(400).json({ error: "Staff does not belong to the selected department" });
+        return res.status(400).json({ error: "Provider does not belong to the selected service" });
       }
 
       // Slot-window containment: each day's window must fit inside one active
@@ -5472,7 +5472,7 @@ export function registerRoutes(app: Express) {
       const staff = await storage.getBookingStaff(staffId);
       
       if (!staff) {
-        return res.status(404).json({ error: "Staff not found" });
+        return res.status(404).json({ error: "Provider not found" });
       }
 
       // Verify ownership - staff must belong to the requesting user (or admin)
@@ -5613,7 +5613,7 @@ export function registerRoutes(app: Express) {
       const effectiveUserId = getEffectiveUserId(req);
       const staff = await storage.getBookingStaff(parseInt(staffId as string));
       if (!staff || staff.userId !== effectiveUserId) {
-        return res.status(404).json({ error: "Staff not found" });
+        return res.status(404).json({ error: "Provider not found" });
       }
 
       // endTime is optional here (legacy preview endpoint); fall back to startTime
@@ -5643,7 +5643,7 @@ export function registerRoutes(app: Express) {
       }
 
       const staff = await storage.getBookingStaff(parseInt(staffId as string));
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Provider not found" });
 
       const effectiveUserId = getEffectiveUserId(req);
       if (staff.userId !== effectiveUserId && req.user?.role !== "admin") {
@@ -5710,7 +5710,7 @@ export function registerRoutes(app: Express) {
         if (isNaN(deptId)) return res.status(400).json({ error: "Invalid departmentId" });
         const dept = await storage.getBookingDepartment(deptId);
         if (!dept || dept.userId !== effectiveUserId) {
-          return res.status(404).json({ error: "Department not found" });
+          return res.status(404).json({ error: "Service not found" });
         }
       }
       let staffIdNum: number | undefined;
@@ -5719,7 +5719,7 @@ export function registerRoutes(app: Express) {
         if (isNaN(staffIdNum)) return res.status(400).json({ error: "Invalid staffId" });
         const staff = await storage.getBookingStaff(staffIdNum);
         if (!staff || staff.userId !== effectiveUserId) {
-          return res.status(404).json({ error: "Staff not found" });
+          return res.status(404).json({ error: "Provider not found" });
         }
       }
 
@@ -8483,7 +8483,7 @@ export function registerRoutes(app: Express) {
               }
               
               // Send staff selection list (using correct WHAPI format)
-              const staffPromptMsg = bookingState.config?.staffPromptMessage || 'Please select a staff member:';
+              const staffPromptMsg = bookingState.config?.staffPromptMessage || 'Please select a provider:';
               const listPayload = {
                 to: phone,
                 type: 'list',
@@ -8498,7 +8498,7 @@ export function registerRoutes(app: Express) {
                         description: s.specialty || '',
                       })),
                     }],
-                    label: bookingState.config?.staffButtonLabel || 'Select Staff',
+                    label: bookingState.config?.staffButtonLabel || 'Select Provider',
                   },
                 },
               };
@@ -10211,7 +10211,7 @@ export function registerRoutes(app: Express) {
                     }
                     
                     if (activeChannel?.whapiChannelToken) {
-                      const promptMessage = config.promptMessage || 'Please select a department for your appointment:';
+                      const promptMessage = config.promptMessage || 'Please select a service for your appointment:';
                       
                       // Build list message with departments (using correct WHAPI format)
                       const listPayload = {
@@ -10228,7 +10228,7 @@ export function registerRoutes(app: Express) {
                                 description: dept.description || '',
                               })),
                             }],
-                            label: config.departmentButtonLabel || 'Select Department',
+                            label: config.departmentButtonLabel || 'Select Service',
                           },
                         },
                       };
