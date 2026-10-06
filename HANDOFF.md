@@ -2,11 +2,14 @@
 
 ## Current state
 
-- `origin/main` HEAD: `1bfb9a7` (layout fix — full-width booking-scheduler pages). Deployed/running on the VPS.
+- `origin/main` HEAD: `b2ec4fe` (Phase 3F-4-1 — per-day end-time backend). Deployed/running on the VPS.
 - Deploy target: `wt.omniplus-bh.com`
+- Schema: `bookings` now has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`) — db:push applied.
 
 ## Recent commits
 
+- `b2ec4fe` feat(booking): per-day end-time window (Phase 3F-4-1 backend)
+- `e082d63` docs: update HANDOFF.md (post Phase 3F + layout fix)
 - `1bfb9a7` fix(layout): full-width for booking-scheduler pages, kill horizontal scroll
 - `c4fc5e0` chore(booking): always full-width + remove diagnostic scaffolding (keep null-safety)
 - `5e931cc` TEMP(diagnosis): debug boundary + null-safety fix (cbff9bc investigation)
@@ -35,26 +38,29 @@
 - **Null-safety fix** — `parts()` guards null/undefined; `formatLongDate`/`formatDateRangeShort` return `—`, server `formatLongDate` returns `''` (`5e931cc`, kept in `c4fc5e0`)
 - **Diagnostic scaffolding removed** — DebugBoundary + `/api/debug/client-error` reverted after the blank-page investigation concluded it was a cached-bundle/transient issue, not a code defect (`c4fc5e0`)
 - **Layout fix** — `DashboardLayout` gained `fullWidth` prop; applied to the 4 booking-scheduler routes only; bookings page wrapper `py-6 space-y-6` (removed `-mx-6 lg:-mx-8` hack); stray `import { is }` removed (`1bfb9a7`)
+- **Phase 3F-4-1 — per-day end-time backend**: `endDayStartTime`/`endDayEndTime` nullable `varchar(5)` columns; `occupiedWindowForDate(booking, date)` helper (last day uses its own window); `countConflicts` JS per-day conflict detection; reworked `checkSlotAvailability`/`checkBookingOverlap`/`getBulkBookingCounts`/`createManualBookingWithValues`/`computeAvailableSlots`; POST manual + PUT accept/validate the end-day fields (both-or-neither, HH:MM, ordered, requires endDate, collapse-equal-to-null; PUT clears on collapse-to-single-day) (`b2ec4fe`)
 
 ## Next phase
 
-- **Phase 3F-4 — per-day time windows.** (design in progress; do NOT implement yet)
+- **Phase 3F-4-2 — per-day end-time UI.** (not started)
 
-## Phase 3F-4 plan (different end-day times)
+## Phase 3F-4-2 plan (UI)
 
-- Schema: add nullable `endDayStartTime` / `endDayEndTime` varchar(5) columns to `bookings`.
-- Availability rework: per-day occupied window — last day uses `endDayStartTime ?? startTime` → `endDayEndTime ?? endTime`; all other days use `startTime` → `endTime`. Every occupancy query (`checkSlotAvailability`, `checkBookingOverlap`, `getBulkBookingCounts`, `computeAvailableSlots`, `createManualBookingWithValues`) must handle this.
-- Endpoints: POST manual + PUT accept `endDayStartTime`/`endDayEndTime` (HH:MM, both-or-neither, end > start, only when `endDate` set).
-- Chatbot untouched (single-day → both new columns NULL).
+- Second "End Day Time" dropdown in the Edit Booking dialog (shown only when `endDate` is set), and the same in the New Booking dialog.
+- Detail drawer: show the distinct end-day time when set.
+- Bookings list "Date & Time" column: show the range with the end-day time.
+- Edit "Current:" header: `Oct 10, 2026 09:00 – Oct 12, 2026 12:00 (Bahraini - Weekdays)` format.
+- Confirm + Cancel Booking dialogs: show full range + end-day time.
+- Excel export: consider per-day time columns or extend the "End Date" column.
+- Backend already returns `endDayStartTime`/`endDayEndTime` (calendar + list select `*`); client `Booking` type needs the two fields.
 
 ## Remaining polish (none critical)
 
 - Custom Summary column shows "—" chips for fields without values (visual noise).
-- Multi-day bookings feature is otherwise nearly complete.
 
 ## Known pre-existing issues (do NOT chase)
 
-- 9 TS errors (`npm run check`): `admin.tsx:1284`, `outbox.tsx:727`, `whapi-settings.tsx:24/25/145`, `storage.ts:1029` (labelLog), `schema.ts:1253`, `vite.config.ts:14/16`
+- 9 TS errors (`npm run check`): `admin.tsx:1284`, `outbox.tsx:727`, `whapi-settings.tsx:24/25/145`, `storage.ts:1069` (labelLog), `schema.ts:1256`, `vite.config.ts:14/16`
 - PM2 non-fatal: `EISDIR uploads/use-cases`, `[AutoExtend] Health check failed for channel 9/10`, WHAPI 524 timeouts
 
 ## Hard constraints
