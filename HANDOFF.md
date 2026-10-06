@@ -6,12 +6,15 @@
 
 ## Current state
 
-- `origin/main` HEAD: `44f8a2d` (Phase 3F-4-2 — per-day end-time UI). Deployed/running on the VPS.
+- `origin/main` HEAD: `143a59a` (Feature 2 — Department→Service / Staff→Provider rebrand). Deployed/running on the VPS.
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` now has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`) — db:push applied.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer) — db:push applied.
 
 ## Recent commits
 
+- `143a59a` feat(booking): rebrand Department→Service, Staff→Provider, add Service Group layer
+- `057c6b0` feat(admin): per-user custom fields limit override (5-10, admin-settable)
+- `50badc2` feat(booking): wire calendar actions + weekday errors + refresh + HANDOFF
 - `44f8a2d` feat(booking): per-day end-time UI (Phase 3F-4-2)
 - `b2ec4fe` feat(booking): per-day end-time window (Phase 3F-4-1 backend)
 - `e082d63` docs: update HANDOFF.md (post Phase 3F + layout fix)
@@ -45,17 +48,17 @@
 - **Layout fix** — `DashboardLayout` gained `fullWidth` prop; applied to the 4 booking-scheduler routes only; bookings page wrapper `py-6 space-y-6` (removed `-mx-6 lg:-mx-8` hack); stray `import { is }` removed (`1bfb9a7`)
 - **Phase 3F-4-1 — per-day end-time backend**: `endDayStartTime`/`endDayEndTime` nullable `varchar(5)` columns; `occupiedWindowForDate(booking, date)` helper (last day uses its own window); `countConflicts` JS per-day conflict detection; reworked `checkSlotAvailability`/`checkBookingOverlap`/`getBulkBookingCounts`/`createManualBookingWithValues`/`computeAvailableSlots`; POST manual + PUT accept/validate the end-day fields (both-or-neither, HH:MM, ordered, requires endDate, collapse-equal-to-null; PUT clears on collapse-to-single-day) (`b2ec4fe`)
 - **Phase 3F-4-2 — per-day end-time UI**: end-day "Last day time" pickers in Edit + New Booking dialogs (availability fetched for `endDate`); `END_DAY_SAME` sentinel + "Same as main window" default; collapse-equal-to-main → null on save; "Current:" header + drawer + list "Last day" line + confirm/cancel + Excel columns; calendar `DayColumn` uses `occupiedWindowForDate`; `Booking`/`CalendarBooking` types gained the two fields (`44f8a2d`)
-
-## In progress (pending commit)
-
-- **Post-3F-4-2 polish (3 files modified, NOT yet committed):**
-  1. `server/routes.ts` — new `GET /api/booking/bookings/:id` (booking + `customFieldValues` + dept/staff names); weekday-formatted availability error ("…on Friday, Nov 13, 2026") via `formatWeekdayDate`.
-  2. `client/src/pages/booking-calendar.tsx` — wire calendar `BookingDetailDialog` Edit/Cancel buttons to navigate to `/booking-scheduler/bookings?edit=<id>`/`?cancel=<id>` (removed Coming Soon placeholders); added a Refresh button to `CalendarHeader`.
-  3. `client/src/pages/booking-scheduler.tsx` — handle `?edit=`/`?cancel=` deep-link on mount; add calendar invalidation to 7 mutations (update status, bulk delete/status/complete, edit, confirm, cancel).
+- **Post-3F-4-2 fixes**: calendar `BookingDetailDialog` Edit/Cancel buttons wired to navigate to `/booking-scheduler/bookings?edit=<id>`/`?cancel=<id>` (deep-link handler in scheduler opens the modal); new `GET /api/booking/bookings/:id`; weekday-formatted availability errors (`formatWeekdayDate` → "…on Friday, Nov 13, 2026"); calendar Refresh button; calendar query invalidation added to all 7 booking-affecting mutations (status update, bulk delete/status/complete, edit, confirm, cancel) (`50badc2`)
+- **Feature 1 — admin per-user custom-fields limit override**: `users.custom_fields_limit` (nullable integer) + shared `CUSTOM_FIELDS_DEFAULT_LIMIT=5`/`CUSTOM_FIELDS_MAX_LIMIT=10`; POST enforces `min(user.customFieldsLimit ?? 5, 10)`; admin "Custom Fields Limit" input under Per-User Overrides (1–10, rejected with 400 outside range); relaxed the active-subscription requirement for user-level overrides; client reads the effective limit via `/api/me` (through `useAuth`) (`057c6b0`)
+- **Feature 2 — rebrand (Department→Service, Staff→Provider)**: all user-visible labels rebranded across UI, chatbot config field labels + defaults, notification defaults, Excel export headers, toasts, and server error messages; "Booking Service" grouping → "Service Group" (new hierarchy: Service Group → Service → Provider → Time Slots); template aliases `{{service}}`/`{{provider}}` preferred, `{{department}}`/`{{staff}}` retained as working aliases; DB columns / API paths / URL routes / TS types / data-testids / chatbot flow logic untouched (`143a59a`)
 
 ## Remaining polish (none critical)
 
 - Custom Summary column shows "—" chips for fields without values (visual noise).
+
+## Deferred (own session)
+
+- **Feature 3 — password-protected shareable booking links**: field-level read/write permissions, per-user, max 2 links, enable/disable/delete. Multi-session project. (This session closed at ~50% of the overall project.)
 
 ## Known pre-existing issues (do NOT chase)
 
