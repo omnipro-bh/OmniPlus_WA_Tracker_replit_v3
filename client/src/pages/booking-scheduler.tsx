@@ -94,7 +94,7 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 export default function BookingScheduler() {
   const { toast } = useToast();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const activeTab = (() => {
     const segment = location.split("/").filter(Boolean).pop();
     return segment === "bookings" || segment === "settings" ? segment : "departments";
@@ -640,6 +640,7 @@ export default function BookingScheduler() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       toast({ title: "Booking updated" });
     },
     onError: (error: any) => {
@@ -653,6 +654,7 @@ export default function BookingScheduler() {
     },
     onSuccess: (_, ids) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       setSelectedBookings(new Set());
       toast({ title: `${ids.length} booking(s) deleted` });
     },
@@ -668,6 +670,7 @@ export default function BookingScheduler() {
     },
     onSuccess: (data: any, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       refetchOutdatedCount();
       setSelectedBookings(new Set());
       toast({ title: `${data.updated} booking(s) changed to ${variables.status}` });
@@ -697,6 +700,7 @@ export default function BookingScheduler() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       refetchOutdatedCount();
       toast({ title: `${data.updated} outdated booking(s) marked as completed` });
     },
@@ -727,6 +731,7 @@ export default function BookingScheduler() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       setEditBookingOpen(false);
       setActionBooking(null);
       toast({ title: "Booking updated successfully" });
@@ -743,6 +748,7 @@ export default function BookingScheduler() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       setConfirmBookingOpen(false);
       setActionBooking(null);
       toast({ title: "Booking confirmed" });
@@ -759,6 +765,7 @@ export default function BookingScheduler() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/booking/bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/booking/calendar'] });
       setCancelBookingOpen(false);
       setActionBooking(null);
       toast({ title: "Booking cancelled" });
@@ -857,6 +864,29 @@ export default function BookingScheduler() {
     setSendConfirmNotification(true);
     setConfirmBookingOpen(true);
   };
+
+  // Deep-link handling: the calendar's detail dialog navigates here with
+  // ?edit=<id> or ?cancel=<id>. Fetch the full booking, open the modal, then
+  // strip the query param from the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get('edit');
+    const cancelId = params.get('cancel');
+    if (editId) {
+      fetch(`/api/booking/bookings/${editId}`, { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => { if (b) openEditBookingModal(b); })
+        .catch(() => toast({ title: "Error", description: "Could not open booking for editing", variant: "destructive" }))
+        .finally(() => setLocation('/booking-scheduler/bookings', { replace: true }));
+    } else if (cancelId) {
+      fetch(`/api/booking/bookings/${cancelId}`, { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => { if (b) openCancelModal(b); })
+        .catch(() => toast({ title: "Error", description: "Could not open booking for cancellation", variant: "destructive" }))
+        .finally(() => setLocation('/booking-scheduler/bookings', { replace: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSelectAll = () => {
     if (!bookingsData?.bookings) return;

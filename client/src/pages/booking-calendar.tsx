@@ -5,7 +5,7 @@ import { addDays, addWeeks, addMonths, startOfWeek, startOfMonth, format, isSame
 import type { LucideIcon } from "lucide-react";
 import {
   Calendar, ChevronLeft, ChevronRight, Maximize2, Minimize2,
-  Building2, Clock, User, Phone, Tag, CalendarDays, SlidersHorizontal,
+  Building2, Clock, User, Phone, Tag, CalendarDays, SlidersHorizontal, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,7 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateRangeShort, occupiedWindowForDate } from "@/lib/booking-date";
 
@@ -174,6 +174,7 @@ function topForInstant(time: string): number | null {
 
 function CalendarHeader({
   view, setView, currentDate, isToday, isFullscreen, onToggleFullscreen, onPrev, onToday, onNext,
+  onRefresh, isFetching,
 }: {
   view: ViewMode;
   setView: (v: ViewMode) => void;
@@ -184,6 +185,8 @@ function CalendarHeader({
   onPrev: () => void;
   onToday: () => void;
   onNext: () => void;
+  onRefresh: () => void;
+  isFetching: boolean;
 }) {
   return (
     <div className={isFullscreen
@@ -203,6 +206,15 @@ function CalendarHeader({
             <ToggleGroupItem value="week" data-testid="calendar-view-week">Week</ToggleGroupItem>
             <ToggleGroupItem value="month" data-testid="calendar-view-month">Month</ToggleGroupItem>
           </ToggleGroup>
+          <Button
+            variant="outline" size="sm"
+            onClick={onRefresh}
+            disabled={isFetching}
+            data-testid="button-calendar-refresh"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Button
             variant="outline" size="icon"
             onClick={onToggleFullscreen}
@@ -552,23 +564,11 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function ComingSoonButton({ children }: { children: React.ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex">
-          <Button variant="outline" size="sm" disabled>{children}</Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>Coming soon</TooltipContent>
-    </Tooltip>
-  );
-}
-
 function BookingDetailDialog({ booking, onClose }: {
   booking: CalendarBooking;
   onClose: () => void;
 }) {
+  const [, navigate] = useLocation();
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md" data-testid="calendar-detail-dialog">
@@ -596,9 +596,21 @@ function BookingDetailDialog({ booking, onClose }: {
           </Section>
         </div>
         <DialogFooter>
-          <ComingSoonButton>Cancel</ComingSoonButton>
-          <ComingSoonButton>Reschedule</ComingSoonButton>
-          <ComingSoonButton>Edit</ComingSoonButton>
+          <Button
+            variant="outline"
+            className="text-destructive"
+            onClick={() => navigate(`/booking-scheduler/bookings?cancel=${booking.id}`)}
+            data-testid="calendar-action-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/booking-scheduler/bookings?edit=${booking.id}`)}
+            data-testid="calendar-action-edit"
+          >
+            Edit
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -637,7 +649,7 @@ export default function BookingCalendar() {
   const { from, to } = rangeFor(view, currentDate);
   const hasActiveFilters = departmentFilter !== "all" || staffFilter !== "all" || statusFilter !== "all";
 
-  const { data, isLoading, isError, error } = useQuery<CalendarResponse>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<CalendarResponse>({
     queryKey: ["/api/booking/calendar", from, to, departmentFilter, staffFilter, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams({ from, to });
@@ -706,6 +718,8 @@ export default function BookingCalendar() {
       onPrev={() => navigate(-1)}
       onToday={goToday}
       onNext={() => navigate(1)}
+      onRefresh={() => refetch()}
+      isFetching={isFetching}
     />
   );
 

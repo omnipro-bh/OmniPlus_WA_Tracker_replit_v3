@@ -51,6 +51,15 @@ function dayOfWeekFromDate(dateStr: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "YYYY-MM-DD" -> "Friday, Nov 13, 2026"
+function formatWeekdayDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${WEEKDAY_NAMES[dayOfWeekFromDate(dateStr)]}, ${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+}
+
 // Helper: "HH:MM" -> minutes since midnight
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -4680,6 +4689,34 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.get("/api/booking/bookings/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const bookingId = parseInt(req.params.id);
+      if (!Number.isInteger(bookingId)) {
+        return res.status(400).json({ error: "Invalid booking id" });
+      }
+      const booking = await storage.getBooking(bookingId);
+      if (!booking || booking.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+      const [department, staff, customFieldValues] = await Promise.all([
+        booking.departmentId ? storage.getBookingDepartment(booking.departmentId) : null,
+        booking.staffId ? storage.getBookingStaff(booking.staffId) : null,
+        storage.getBookingCustomFieldValues(booking.id),
+      ]);
+      res.json({
+        ...booking,
+        departmentName: department?.name || null,
+        staffName: staff?.name || null,
+        customFieldValues: customFieldValues.map((v) => ({ fieldId: v.fieldId, value: v.value })),
+      });
+    } catch (error: any) {
+      console.error("Get booking error:", error);
+      res.status(500).json({ error: "Failed to fetch booking" });
+    }
+  });
+
   app.post("/api/booking/bookings", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
@@ -4819,7 +4856,7 @@ export function registerRoutes(app: Express) {
         const dayOfWeek = dayOfWeekFromDate(d);
         const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
         if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= ws && s.endTime >= we)) {
-          return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
+          return res.status(400).json({ error: `Booking time is outside staff availability on ${formatWeekdayDate(d)}` });
         }
       }
 
@@ -5079,7 +5116,7 @@ export function registerRoutes(app: Express) {
           const dayOfWeek = dayOfWeekFromDate(d);
           const daySlots = staffSlots.filter((s) => s.dayOfWeek === dayOfWeek && s.isActive);
           if (daySlots.length === 0 || !daySlots.some((s) => s.startTime <= ws && s.endTime >= we)) {
-            return res.status(400).json({ error: `Booking time is outside staff availability on ${d}` });
+            return res.status(400).json({ error: `Booking time is outside staff availability on ${formatWeekdayDate(d)}` });
           }
         }
 

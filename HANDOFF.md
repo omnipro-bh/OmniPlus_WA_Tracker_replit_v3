@@ -1,13 +1,18 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## ⚠️ TOP PRIORITY — Security
+
+- **Rotate the Supabase DB password.** The `DATABASE_URL` (including password) was exposed in the 2026-10-06 session's tool output during a `psql` parsing error. Steps: rotate the password in the Supabase dashboard → update `DATABASE_URL` in the VPS `/opt/omniplus/.env` → `pm2 restart omniplus --update-env`. Do this in a separate session; do not interrupt the current work.
+
 ## Current state
 
-- `origin/main` HEAD: `b2ec4fe` (Phase 3F-4-1 — per-day end-time backend). Deployed/running on the VPS.
+- `origin/main` HEAD: `44f8a2d` (Phase 3F-4-2 — per-day end-time UI). Deployed/running on the VPS.
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` now has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`) — db:push applied.
 
 ## Recent commits
 
+- `44f8a2d` feat(booking): per-day end-time UI (Phase 3F-4-2)
 - `b2ec4fe` feat(booking): per-day end-time window (Phase 3F-4-1 backend)
 - `e082d63` docs: update HANDOFF.md (post Phase 3F + layout fix)
 - `1bfb9a7` fix(layout): full-width for booking-scheduler pages, kill horizontal scroll
@@ -39,20 +44,14 @@
 - **Diagnostic scaffolding removed** — DebugBoundary + `/api/debug/client-error` reverted after the blank-page investigation concluded it was a cached-bundle/transient issue, not a code defect (`c4fc5e0`)
 - **Layout fix** — `DashboardLayout` gained `fullWidth` prop; applied to the 4 booking-scheduler routes only; bookings page wrapper `py-6 space-y-6` (removed `-mx-6 lg:-mx-8` hack); stray `import { is }` removed (`1bfb9a7`)
 - **Phase 3F-4-1 — per-day end-time backend**: `endDayStartTime`/`endDayEndTime` nullable `varchar(5)` columns; `occupiedWindowForDate(booking, date)` helper (last day uses its own window); `countConflicts` JS per-day conflict detection; reworked `checkSlotAvailability`/`checkBookingOverlap`/`getBulkBookingCounts`/`createManualBookingWithValues`/`computeAvailableSlots`; POST manual + PUT accept/validate the end-day fields (both-or-neither, HH:MM, ordered, requires endDate, collapse-equal-to-null; PUT clears on collapse-to-single-day) (`b2ec4fe`)
+- **Phase 3F-4-2 — per-day end-time UI**: end-day "Last day time" pickers in Edit + New Booking dialogs (availability fetched for `endDate`); `END_DAY_SAME` sentinel + "Same as main window" default; collapse-equal-to-main → null on save; "Current:" header + drawer + list "Last day" line + confirm/cancel + Excel columns; calendar `DayColumn` uses `occupiedWindowForDate`; `Booking`/`CalendarBooking` types gained the two fields (`44f8a2d`)
 
-## Next phase
+## In progress (pending commit)
 
-- **Phase 3F-4-2 — per-day end-time UI.** (not started)
-
-## Phase 3F-4-2 plan (UI)
-
-- Second "End Day Time" dropdown in the Edit Booking dialog (shown only when `endDate` is set), and the same in the New Booking dialog.
-- Detail drawer: show the distinct end-day time when set.
-- Bookings list "Date & Time" column: show the range with the end-day time.
-- Edit "Current:" header: `Oct 10, 2026 09:00 – Oct 12, 2026 12:00 (Bahraini - Weekdays)` format.
-- Confirm + Cancel Booking dialogs: show full range + end-day time.
-- Excel export: consider per-day time columns or extend the "End Date" column.
-- Backend already returns `endDayStartTime`/`endDayEndTime` (calendar + list select `*`); client `Booking` type needs the two fields.
+- **Post-3F-4-2 polish (3 files modified, NOT yet committed):**
+  1. `server/routes.ts` — new `GET /api/booking/bookings/:id` (booking + `customFieldValues` + dept/staff names); weekday-formatted availability error ("…on Friday, Nov 13, 2026") via `formatWeekdayDate`.
+  2. `client/src/pages/booking-calendar.tsx` — wire calendar `BookingDetailDialog` Edit/Cancel buttons to navigate to `/booking-scheduler/bookings?edit=<id>`/`?cancel=<id>` (removed Coming Soon placeholders); added a Refresh button to `CalendarHeader`.
+  3. `client/src/pages/booking-scheduler.tsx` — handle `?edit=`/`?cancel=` deep-link on mount; add calendar invalidation to 7 mutations (update status, bulk delete/status/complete, edit, confirm, cancel).
 
 ## Remaining polish (none critical)
 
