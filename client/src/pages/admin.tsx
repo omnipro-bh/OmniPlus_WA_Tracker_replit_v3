@@ -1972,6 +1972,7 @@ export default function Admin() {
     phonebookLimit: "",
     captureSequenceLimit: "",
     bookingSchedulerLimit: "",
+    customFieldsLimit: "",
     pageAccess: {} as Record<string, boolean>,
     autoExtendEnabled: false,
     skipFriday: false,
@@ -2800,6 +2801,7 @@ export default function Admin() {
       phonebookLimit: subscription?.phonebookLimit ? String(subscription.phonebookLimit) : "",
       captureSequenceLimit: subscription?.captureSequenceLimit ? String(subscription.captureSequenceLimit) : "",
       bookingSchedulerLimit: subscription?.bookingSchedulerLimit ? String(subscription.bookingSchedulerLimit) : "",
+      customFieldsLimit: user.customFieldsLimit ? String(user.customFieldsLimit) : "",
       pageAccess: completePageAccess,
       autoExtendEnabled: subscription?.autoExtendEnabled || false,
       skipFriday: subscription?.skipFriday || false,
@@ -2823,6 +2825,7 @@ export default function Admin() {
       phonebookLimit: userOverrides.phonebookLimit ? parseInt(userOverrides.phonebookLimit) : null,
       captureSequenceLimit: userOverrides.captureSequenceLimit ? parseInt(userOverrides.captureSequenceLimit) : null,
       bookingSchedulerLimit: userOverrides.bookingSchedulerLimit ? parseInt(userOverrides.bookingSchedulerLimit) : null,
+      customFieldsLimit: userOverrides.customFieldsLimit ? parseInt(userOverrides.customFieldsLimit) : null,
       pageAccess: Object.keys(userOverrides.pageAccess).length > 0 ? userOverrides.pageAccess : null,
       autoExtendEnabled: userOverrides.autoExtendEnabled,
       skipFriday: userOverrides.skipFriday,
@@ -5045,6 +5048,19 @@ export default function Admin() {
                       value={userOverrides.bookingSchedulerLimit}
                       onChange={(e) => setUserOverrides({ ...userOverrides, bookingSchedulerLimit: e.target.value })}
                       data-testid="input-override-booking-scheduler"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="override-custom-fields">Custom Fields Limit</Label>
+                    <Input
+                      id="override-custom-fields"
+                      type="number"
+                      min={1}
+                      max={10}
+                      placeholder="Plan default (5)"
+                      value={userOverrides.customFieldsLimit}
+                      onChange={(e) => setUserOverrides({ ...userOverrides, customFieldsLimit: e.target.value })}
+                      data-testid="input-override-custom-fields"
                     />
                   </div>
                 </div>

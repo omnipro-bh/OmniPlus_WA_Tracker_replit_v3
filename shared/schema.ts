@@ -37,6 +37,10 @@ export const bookingCalculationOperationEnum = pgEnum("booking_calculation_opera
 export const labelLogOperationEnum = pgEnum("label_log_operation", ["sync", "create", "assign", "remove"]);
 export const labelLogStatusEnum = pgEnum("label_log_status", ["success", "error"]);
 
+// Booking custom fields — per-user limit (default 5, admin-overridable up to 10)
+export const CUSTOM_FIELDS_DEFAULT_LIMIT = 5;
+export const CUSTOM_FIELDS_MAX_LIMIT = 10;
+
 // Users table
 export const users = pgTable("users", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -49,6 +53,7 @@ export const users = pgTable("users", {
   whapiToken: text("whapi_token"), // Per-user WHAPI token if needed
   bulkWebhookToken: text("bulk_webhook_token").notNull().default(sql`gen_random_uuid()::text`),
   phonebookLimit: integer("phonebook_limit"), // Per-user override for phonebook contact limit (null = use plan limit)
+  customFieldsLimit: integer("custom_fields_limit"), // Per-user override for booking custom fields (null = default 5, max 10)
   // Label management settings (admin-controlled per-user override)
   labelManagementAllowed: boolean("label_management_allowed").notNull().default(true), // Admin can disable for specific users
   contactExportAllowed: boolean("contact_export_allowed").notNull().default(true), // Admin can disable contact export for specific users

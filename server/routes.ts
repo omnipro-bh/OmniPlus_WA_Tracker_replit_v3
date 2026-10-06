@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES, BookingSlotUnavailableError, occupiedWindowForDate, type OccupiedWindowSource } from "./storage";
 import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
-import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages } from "@shared/schema";
+import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
@@ -5800,12 +5800,18 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid field type" });
       }
 
-      // Max 5 active fields. NOTE: theoretical race condition — two simultaneous
-      // POSTs could both pass this check and exceed 5. Acceptable for now; add a
-      // transaction/lock if this ever matters in practice.
+      // Max N active fields (default 5, admin-overridable up to 10). NOTE:
+      // theoretical race condition — two simultaneous POSTs could both pass this
+      // check and exceed the limit. Acceptable for now; add a transaction/lock if
+      // this ever matters in practice.
+      const user = await storage.getUser(effectiveUserId);
+      const limit = Math.min(
+        user?.customFieldsLimit ?? CUSTOM_FIELDS_DEFAULT_LIMIT,
+        CUSTOM_FIELDS_MAX_LIMIT
+      );
       const activeCount = await storage.countActiveBookingCustomFields(effectiveUserId);
-      if (activeCount >= 5) {
-        return res.status(400).json({ error: "Maximum of 5 custom fields reached" });
+      if (activeCount >= limit) {
+        return res.status(400).json({ error: `Maximum of ${limit} custom fields reached` });
       }
 
       const existing = await storage.getBookingCustomFieldsForUser(effectiveUserId);
@@ -7166,7 +7172,7 @@ export function registerRoutes(app: Express) {
         dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, 
         phonebookLimit, captureSequenceLimit, pageAccess,
         autoExtendEnabled, skipFriday, skipSaturday,
-        labelManagementAllowed, contactExportAllowed, safetyMeterAllowed
+        labelManagementAllowed, contactExportAllowed, safetyMeterAllowed, customFieldsLimit
       } = req.body;
 
       const user = await storage.getUser(userId);
@@ -7174,9 +7180,16 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // Get active subscription
-      const subscription = await storage.getActiveSubscriptionForUser(userId);
-      if (!subscription) {
+      // Split overrides into subscription-backed vs user-table flags. A user with
+      // no active subscription can still receive user-level overrides (e.g.
+      // customFieldsLimit, labelManagementAllowed), but subscription-based limits
+      // require an active subscription to write into.
+      const hasSubscriptionOverrides = [dailyMessagesLimit, bulkMessagesLimit, channelsLimit, chatbotsLimit, phonebookLimit, captureSequenceLimit, pageAccess, autoExtendEnabled, skipFriday, skipSaturday].some((v) => v !== undefined);
+      const hasUserOverrides = [customFieldsLimit, labelManagementAllowed, contactExportAllowed, safetyMeterAllowed].some((v) => v !== undefined);
+
+      // Get active subscription (only required when subscription-backed overrides are present)
+      const subscription = hasSubscriptionOverrides ? await storage.getActiveSubscriptionForUser(userId) : null;
+      if (hasSubscriptionOverrides && !subscription) {
         return res.status(404).json({ error: "No active subscription found" });
       }
 
@@ -7196,11 +7209,24 @@ export function registerRoutes(app: Express) {
       console.log(`[/api/admin/users/:id/overrides] Saving pageAccess for user ${userId}:`, JSON.stringify(pageAccess));
       console.log(`[/api/admin/users/:id/overrides] Full overrides object:`, JSON.stringify(overrides));
 
-      // Update subscription with overrides
-      await storage.updateSubscription(subscription.id, overrides);
+      // Update subscription with overrides (only when subscription-backed overrides present)
+      if (subscription) {
+        await storage.updateSubscription(subscription.id, overrides);
+      }
       
-      // Update user-level settings (labelManagementAllowed, contactExportAllowed are on users table)
+      // Update user-level settings (customFieldsLimit + boolean flags on users table)
       const userUpdates: any = {};
+      if (customFieldsLimit !== undefined) {
+        if (customFieldsLimit === null || customFieldsLimit === "") {
+          userUpdates.customFieldsLimit = null;
+        } else {
+          const v = Number(customFieldsLimit);
+          if (!Number.isInteger(v) || v < 1 || v > CUSTOM_FIELDS_MAX_LIMIT) {
+            return res.status(400).json({ error: `customFieldsLimit must be between 1 and ${CUSTOM_FIELDS_MAX_LIMIT}` });
+          }
+          userUpdates.customFieldsLimit = v;
+        }
+      }
       if (labelManagementAllowed !== undefined) {
         userUpdates.labelManagementAllowed = labelManagementAllowed;
       }
@@ -7217,13 +7243,13 @@ export function registerRoutes(app: Express) {
 
       await storage.createAuditLog({
         actorUserId: req.userId!,
-        targetType: "subscription",
-        targetId: subscription.id,
+        targetType: subscription ? "subscription" : "user",
+        targetId: subscription ? subscription.id : userId,
         action: "UPDATE_OVERRIDES",
-        meta: { userId, email: user.email, overrides, adminId: req.userId },
+        meta: { userId, email: user.email, overrides, hasSubscriptionOverrides, hasUserOverrides, adminId: req.userId },
       });
 
-      res.json({ success: true, subscription: await storage.getActiveSubscriptionForUser(userId) });
+      res.json({ success: true, subscription: subscription ? await storage.getActiveSubscriptionForUser(userId) : null });
     } catch (error: any) {
       console.error("Update overrides error:", error);
       res.status(500).json({ error: "Failed to update overrides" });

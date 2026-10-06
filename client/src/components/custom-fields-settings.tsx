@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth-context";
+import { CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 
-const MAX_FIELDS = 5;
 const MAX_OPTIONS = 20;
 
 const TYPE_LABELS: Record<string, string> = {
@@ -48,6 +49,11 @@ interface CustomField {
 
 export function CustomFieldsSettings() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const limit = Math.min(
+    (user as any)?.customFieldsLimit ?? CUSTOM_FIELDS_DEFAULT_LIMIT,
+    CUSTOM_FIELDS_MAX_LIMIT
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingField, setEditingField] = useState<CustomField | null>(null);
 
@@ -231,16 +237,16 @@ export function CustomFieldsSettings() {
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div>
           <CardTitle>Custom Fields</CardTitle>
-          <CardDescription>Collect extra info on bookings; up to 5 fields</CardDescription>
+          <CardDescription>Collect extra info on bookings; up to {limit} fields</CardDescription>
         </div>
         <Button
           size="sm"
           onClick={openAdd}
-          disabled={fields.length >= MAX_FIELDS}
+          disabled={fields.length >= limit}
           data-testid="button-add-custom-field"
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add Field ({fields.length} / {MAX_FIELDS})
+          Add Field ({fields.length} / {limit})
         </Button>
       </CardHeader>
       <CardContent>
