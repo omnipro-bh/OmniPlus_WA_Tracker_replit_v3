@@ -9,13 +9,14 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `f296755` (Feature 3G-3 — public share-link list + CSV + edit/cancel/confirm).
-- Repo HEAD: `f296755` (+ this commit: docs-only HANDOFF update).
+- Production HEAD (deployed/running on VPS): `e9aa29b` (Feature 3G-4 — owner UI for share links in Settings).
+- Repo HEAD: `e9aa29b` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
 
 ## Recent commits
 
+- `e9aa29b` feat(booking): owner UI for share links in Settings (Phase 3G-4)
 - `f296755` feat(booking): public share-link list + CSV + edit/cancel/confirm (Phase 3G-3)
 - `b2c3fd6` feat(booking): public share-link auth + session + rate limiting (Phase 3G-2)
 - `c4bc05e` feat(booking): share-link schema + owner endpoints (Phase 3G-1)
@@ -36,6 +37,7 @@
 
 ## Completed phases
 
+- **Phase 3G-4 — owner UI for share links (Settings tab)**: `client/src/components/share-links-settings.tsx` (new `ShareLinksSettings` Card — list, create/edit dialog, token reveal, toggle, regenerate, delete; mirrors `custom-fields-settings.tsx` patterns; field-permission matrix grouped (Scheduling/Customer/Details/Legacy/Custom) with service/provider/status read-only; "Set all visible to Read"; token reveal modal with exact warning text, cleared on close; Delete + Regenerate via `AlertDialog`; N/2 counter); mounted after `<CustomFieldsSettings />` in the settings tab (`e9aa29b`). **Deployed but not yet manually verified.**
 - **Phase 3G-3 — public list + CSV + write actions**: `todayInBahrain()` + `visibleCustomFieldIds()` in `server/share-links.ts`; `buildCsvHeader(config, customFieldNames)` with real (csvCell-sanitized) custom-field names; `buildCsvRow` aligned to the same id order; `enrichBookingsForUser()` + `getShareBookingsForLink()` single row source (fetch 5000 → enrich → filter); 5 public endpoints behind `requireShareSession` — `GET /bookings` (paginated 50, cap 200, echoes `config` + `today`), `GET /bookings.csv` (cap 5000, BOM, `X-Truncated`/`X-Truncated-At`), `PATCH /bookings/:id` (write-perm whitelist, service/provider/status rejected, `checkBookingOverlap` with `excludeBookingId`), `POST /bookings/:id/cancel`, `POST /bookings/:id/confirm`; `resolveShareBookingInScope()` enforces ownership + link visibility on all writes; write rate limit (60/5 min) + audit logging (`third_party_edit/cancel/confirm`); projected responses; removed temporary `/ping` (`f296755`)
 - **Phase 3G-2 — public auth + session + rate limiting**: derived `SHARE_SECRET` (HMAC of `SESSION_SECRET` + namespace); `signShareSession`/`verifyShareSession` (12h, payload-shape validated); `requireShareSession` middleware (fail-closed: cookie → JWT → link lookup → enabled → not-expired → `configVersion` match; 401 vs 404 split); `server/share-rate-limit.ts` (in-memory token lockout 10 fails/15 min + IP throttle 20/5 min, lazy expiry + sweep, `getClientIp` via `req.ip`); `DUMMY_PASSWORD_HASH` + `timingEqualizeCompare` (timing-equalized 404); `POST /api/public/share/:token/auth` (rate limit → lookup → timing-equalize 404 → bcrypt → 401/200 + `share_session` cookie); `GET /api/public/share/:token/ping` (temporary); `server/index.ts` path redaction (`/share/[redacted]`) (`b2c3fd6`)
 - **Phase 3G-1 — share links (schema + owner endpoints)**: `booking_share_links` table (14 cols — `userId` FK cascade, `slot`, `tokenHash` SHA-256 unique, `passwordHash` bcrypt-10, `config` JSONB, `configVersion`, `isEnabled`, `expiresAt`, `lastAccessedAt`, `tokenCreatedAt`, timestamps; unique `(user_id, slot)` index for max-2 links); `server/share-links.ts` (256-bit URL-safe token shown once, `hashToken`, `serializeShareLink` strips secrets + adds masked `tokenPreview`, `assignSlot`, `projectBooking` whitelist projector, `filterBookingsByConfig`, CSV helpers with formula-injection mitigation); 6 owner endpoints behind `requireAuth` (create/list/patch/toggle/delete/regenerate) with zod validation, 404 cross-tenant, `configVersion` bump on password change (`c4bc05e`)
@@ -75,13 +77,31 @@
 
 ## In progress — Feature 3 (shareable booking links)
 
-Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~42% (3G-1 + 3G-2 + 3G-3 done).
+Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~48% (3G-1 + 3G-2 + 3G-3 done; 3G-4 deployed, verification pending).
 
 - **3G-1** ✅ schema + owner endpoints
 - **3G-2** ✅ public auth + session + rate limiting
 - **3G-3** ✅ public list + CSV + edit/cancel/confirm
-- **3G-4** — owner UI in the Settings tab (create/edit/list/toggle/delete)
+- **3G-4** ⏳ owner UI in the Settings tab — deployed, manual verification pending
 - **3G-5** — public UI page (`/share/:token`)
+
+## Next session — start here
+
+**Phase 3G-4 — manual UI verification (deployed at `e9aa29b`, not yet manually verified):**
+
+1. Load Settings tab (`/booking-scheduler/settings`) → confirm the "Share Links" card renders.
+2. Create a link.
+3. Reveal modal shows the full URL; confirm no token is logged to console or persisted after close.
+4. Copy the URL → clipboard copy + toast.
+5. Toggle enable/disable → status pill flips.
+6. Edit the link → form pre-populates and PATCH saves.
+7. Regenerate → `AlertDialog` copy + new URL reveal.
+8. Delete → `AlertDialog` copy + row disappears.
+9. Max-2 enforcement → Create button disabled at 2 links (server 409 backstop).
+10. Field-permission matrix → service/provider/status offer only Hidden|Read.
+11. Open the copied URL in an incognito window → hits the public page (may 404 — 3G-5 is not built yet, that's expected).
+
+After all 11 pass, mark **3G-4 fully ✅** in the "In progress" section.
 
 ## Follow-ups
 
