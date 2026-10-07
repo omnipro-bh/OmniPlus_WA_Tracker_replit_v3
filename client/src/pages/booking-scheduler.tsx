@@ -20,6 +20,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CustomFieldsSettings } from "@/components/custom-fields-settings";
+import { ShareLinksSettings } from "@/components/share-links-settings";
 import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
 import { computeCalcValue } from "@/lib/calc";
@@ -2268,6 +2269,7 @@ export default function BookingScheduler() {
             </CardContent>
           </Card>
           <CustomFieldsSettings />
+          <ShareLinksSettings />
         </div>
       )}
 
