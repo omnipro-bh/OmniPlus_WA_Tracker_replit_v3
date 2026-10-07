@@ -1,15 +1,30 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import type { BookingShareLink } from "@shared/schema";
 import { storage } from "./storage";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "change_me_in_production";
+
+// Isolated secret for share-session JWTs (derived from SESSION_SECRET so a
+// compromise of one secret cannot forge the other, without a new env var).
+const SHARE_SECRET = crypto
+  .createHmac("sha256", JWT_SECRET)
+  .update("omniplus:share-session")
+  .digest("hex");
 
 export interface AuthRequest extends Request {
   userId?: number;
   user?: any;
   impersonatedUser?: any; // The user being impersonated (when impersonating)
   isImpersonating?: boolean;
+}
+
+// Public share-link session (Feature 3). Distinct from AuthRequest — a share
+// session has no userId/impersonation, only the resolved link.
+export interface ShareRequest extends Request {
+  shareLink?: BookingShareLink;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -103,5 +118,56 @@ export async function requireAdmin(req: AuthRequest, res: Response, next: NextFu
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Admin access required" });
   }
+  next();
+}
+
+// ---- Feature 3: share-link sessions ----
+
+export function signShareSession(linkId: number, configVersion: number): string {
+  return jwt.sign({ linkId, configVersion }, SHARE_SECRET, { expiresIn: "12h" });
+}
+
+export function verifyShareSession(token: string): { linkId: number; configVersion: number } | null {
+  try {
+    const payload = jwt.verify(token, SHARE_SECRET) as { linkId: number; configVersion: number };
+    if (typeof payload.linkId !== "number" || typeof payload.configVersion !== "number") {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// Validates the share_session JWT and re-loads/re-checks the link on every
+// request (so disable/delete/expiry/password-change take effect immediately).
+// Auth-state failures (missing/invalid cookie) → 401; link-state failures
+// (deleted/disabled/expired/password-changed) → 404 with a uniform message.
+export async function requireShareSession(req: ShareRequest, res: Response, next: NextFunction) {
+  const token = req.cookies?.share_session;
+  if (!token) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  const payload = verifyShareSession(token);
+  if (!payload) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  const link = await storage.getShareLink(payload.linkId);
+  if (!link) {
+    return res.status(404).json({ error: "Share link not found" });
+  }
+  if (!link.isEnabled) {
+    return res.status(404).json({ error: "Share link not found" });
+  }
+  if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) {
+    return res.status(404).json({ error: "Share link not found" });
+  }
+  if (link.configVersion !== payload.configVersion) {
+    return res.status(404).json({ error: "Share link not found" });
+  }
+
+  req.shareLink = link;
   next();
 }

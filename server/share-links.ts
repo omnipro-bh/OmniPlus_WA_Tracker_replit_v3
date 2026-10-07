@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import { comparePassword } from "./auth";
 import type { Booking, BookingShareLink, ShareLinkConfig } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +25,16 @@ export function hashToken(token: string): string {
 // Short, stable, non-sensitive preview for the owner list UI.
 export function maskToken(tokenHash: string): string {
   return tokenHash.slice(0, 3) + "…";
+}
+
+// ---- timing equalization --------------------------------------------------
+// A valid bcrypt hash compared against on the "token missing/disabled/expired"
+// path so those responses spend the same ~100ms as a real password check
+// (prevents enumerating valid tokens via response timing).
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("omniplus-share-dummy-password", 10);
+
+export async function timingEqualizeCompare(password: string): Promise<void> {
+  await comparePassword(password, DUMMY_PASSWORD_HASH);
 }
 
 // ---- slot assignment (max 2 links per user) -------------------------------

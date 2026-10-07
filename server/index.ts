@@ -33,7 +33,8 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
+  // Redact share-link tokens from the logged path (tokens are secrets).
+  const path = req.path.replace(/\/share\/[A-Za-z0-9_-]+/, "/share/[redacted]");
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;

@@ -4,8 +4,9 @@ import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
-import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
-import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink } from "./share-links";
+import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, type AuthRequest, type ShareRequest } from "./auth";
+import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare } from "./share-links";
+import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess } from "./share-rate-limit";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
@@ -6189,6 +6190,80 @@ export function registerRoutes(app: Express) {
       console.error("Regenerate share link token error:", error);
       res.status(500).json({ error: "Failed to regenerate share link token" });
     }
+  });
+
+  // ============================================================================
+  // PUBLIC SHARE LINKS (Feature 3G-2 — auth + session only)
+  // ============================================================================
+
+  // Authenticate against a share link and set a short-lived share_session cookie.
+  app.post("/api/public/share/:token/auth", async (req: Request, res: Response) => {
+    const token = req.params.token;
+    const parsed = z.object({ password: z.string().min(1).max(128) }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+    const password = parsed.data.password;
+
+    const tokenHash = hashShareToken(token);
+    const ip = getClientIp(req);
+
+    // IP throttle (across all tokens)
+    const ipThrottle = checkIpThrottled(ip);
+    if (ipThrottle.throttled) {
+      return res.status(429).set("Retry-After", String(ipThrottle.retryAfter ?? 60)).json({ error: "Too many attempts" });
+    }
+    recordIpAttempt(ip);
+
+    // Per-token lockout (password brute force)
+    const lock = checkTokenLocked(tokenHash);
+    if (lock.locked) {
+      return res.status(429).set("Retry-After", String(lock.retryAfter ?? 60)).json({ error: "Too many attempts" });
+    }
+
+    const link = await storage.getShareLinkByTokenHash(tokenHash);
+    if (!link || !link.isEnabled || (link.expiresAt && link.expiresAt.getTime() <= Date.now())) {
+      // Timing-equalize so "missing/disabled/expired" is indistinguishable from
+      // a valid token (spends the same ~100ms bcrypt cost).
+      await timingEqualizeCompare(password);
+      return res.status(404).json({ error: "Share link not found" });
+    }
+
+    const ok = await comparePassword(password, link.passwordHash);
+    if (!ok) {
+      recordTokenFailure(tokenHash);
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+
+    recordTokenSuccess(tokenHash);
+
+    // Throttled lastAccessedAt (at most once per hour).
+    const last = link.lastAccessedAt ? new Date(link.lastAccessedAt).getTime() : 0;
+    if (Date.now() - last > 60 * 60 * 1000) {
+      await storage.updateShareLink(link.id, { lastAccessedAt: new Date() });
+    }
+
+    const session = signShareSession(link.id, link.configVersion);
+    res.cookie("share_session", session, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+      maxAge: 12 * 60 * 60 * 1000,
+    });
+
+    res.json({ ok: true });
+  });
+
+  // Temporary session probe — validates the session + that the URL token matches
+  // the session's link. Remove in 3G-3 when real public endpoints exist.
+  app.get("/api/public/share/:token/ping", requireShareSession, async (req: ShareRequest, res: Response) => {
+    const tokenHash = hashShareToken(req.params.token);
+    const urlLink = await storage.getShareLinkByTokenHash(tokenHash);
+    if (!urlLink || urlLink.id !== req.shareLink!.id) {
+      return res.status(404).json({ error: "Share link not found" });
+    }
+    res.json({ ok: true, linkId: req.shareLink!.id });
   });
 
   // ============================================================================
