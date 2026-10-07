@@ -1147,6 +1147,81 @@ export const bookingCustomFieldValuesRelations = relations(bookingCustomFieldVal
   }),
 }));
 
+// ---------------------------------------------------------------------------
+// Booking share links (Feature 3) — password-protected, field-scoped public
+// access to a subset of a user's bookings. Max 2 links per user, enforced by
+// the unique (userId, slot) index. The token is stored as a SHA-256 hash;
+// the plaintext is shown once at creation / regeneration.
+// ---------------------------------------------------------------------------
+
+export const shareLinkFieldPermissionSchema = z.enum(["hidden", "read", "write"]);
+export type ShareFieldPermission = z.infer<typeof shareLinkFieldPermissionSchema>;
+
+export const shareLinkVisibilitySchema = z.enum(["all", "statuses", "confirmed_upcoming"]);
+export const shareLinkBookingStatusSchema = z.enum(["pending", "confirmed", "cancelled", "completed", "no_show"]);
+
+export const shareLinkConfigSchema = z.object({
+  visibility: shareLinkVisibilitySchema.default("all"),
+  statuses: z.array(shareLinkBookingStatusSchema).default([]),
+  dateRange: z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").nullable(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").nullable(),
+  }).nullable().default(null),
+  fieldPermissions: z.record(z.string(), shareLinkFieldPermissionSchema).default({}),
+  allowedActions: z.object({
+    edit: z.boolean().default(false),
+    cancel: z.boolean().default(false),
+    confirm: z.boolean().default(false),
+    exportCsv: z.boolean().default(false),
+  }).default({}),
+});
+export type ShareLinkConfig = z.infer<typeof shareLinkConfigSchema>;
+
+export const bookingShareLinks = pgTable("booking_share_links", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  slot: integer("slot").notNull(), // 0 | 1 — max 2 links per user
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  description: varchar("description", { length: 255 }),
+  config: jsonb("config").$type<ShareLinkConfig>().notNull(),
+  configVersion: integer("config_version").notNull().default(1),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  expiresAt: timestamp("expires_at"),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  tokenCreatedAt: timestamp("token_created_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userSlotIdx: uniqueIndex("booking_share_links_user_slot_idx").on(table.userId, table.slot),
+}));
+
+export const bookingShareLinksRelations = relations(bookingShareLinks, ({ one }) => ({
+  user: one(users, {
+    fields: [bookingShareLinks.userId],
+    references: [users.id],
+  }),
+}));
+
+// API payload schemas. The plaintext password goes in; tokenHash/slot/userId are
+// server-assigned. `expiresAt` accepts null (clear) or a date string/Date.
+const nullableDateSchema = z.union([z.null(), z.coerce.date()]);
+
+export const insertBookingShareLinkSchema = z.object({
+  password: z.string().min(1).max(128),
+  description: z.string().max(255).optional().nullable(),
+  config: shareLinkConfigSchema,
+  expiresAt: nullableDateSchema.optional(),
+});
+
+export const updateBookingShareLinkSchema = z.object({
+  password: z.string().min(1).max(128).optional(),
+  description: z.string().max(255).optional().nullable(),
+  config: shareLinkConfigSchema.optional(),
+  isEnabled: z.boolean().optional(),
+  expiresAt: nullableDateSchema.optional(),
+});
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
@@ -1486,3 +1561,5 @@ export type BookingCustomField = typeof bookingCustomFields.$inferSelect;
 export type InsertBookingCustomField = z.infer<typeof insertBookingCustomFieldSchema>;
 export type BookingCustomFieldValue = typeof bookingCustomFieldValues.$inferSelect;
 export type InsertBookingCustomFieldValue = z.infer<typeof insertBookingCustomFieldValueSchema>;
+export type BookingShareLink = typeof bookingShareLinks.$inferSelect;
+export type InsertBookingShareLink = typeof bookingShareLinks.$inferInsert;

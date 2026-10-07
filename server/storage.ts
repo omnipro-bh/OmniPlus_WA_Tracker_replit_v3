@@ -416,6 +416,27 @@ export interface IStorage {
   getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
   getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
   setBookingCustomFieldValues(bookingId: number, values: { fieldId: number; value: string }[]): Promise<void>;
+
+  // Booking share links (Feature 3)
+  createShareLink(data: {
+    userId: number;
+    slot: number;
+    tokenHash: string;
+    passwordHash: string;
+    description?: string | null;
+    config: schema.ShareLinkConfig;
+    configVersion?: number;
+    isEnabled?: boolean;
+    expiresAt?: Date | null;
+    tokenCreatedAt?: Date | null;
+  }): Promise<schema.BookingShareLink>;
+  listShareLinks(userId: number): Promise<schema.BookingShareLink[]>;
+  getShareLink(id: number): Promise<schema.BookingShareLink | undefined>;
+  getShareLinkByTokenHash(tokenHash: string): Promise<schema.BookingShareLink | undefined>;
+  updateShareLink(id: number, data: Partial<schema.BookingShareLink>): Promise<schema.BookingShareLink | undefined>;
+  toggleShareLink(id: number): Promise<schema.BookingShareLink | undefined>;
+  deleteShareLink(id: number): Promise<void>;
+  countShareLinks(userId: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2486,6 +2507,85 @@ export class DatabaseStorage implements IStorage {
           .values(values.map((v) => ({ bookingId, fieldId: v.fieldId, value: v.value })));
       }
     });
+  }
+
+  // Booking share links (Feature 3)
+
+  async createShareLink(data: {
+    userId: number;
+    slot: number;
+    tokenHash: string;
+    passwordHash: string;
+    description?: string | null;
+    config: schema.ShareLinkConfig;
+    configVersion?: number;
+    isEnabled?: boolean;
+    expiresAt?: Date | null;
+    tokenCreatedAt?: Date | null;
+  }): Promise<schema.BookingShareLink> {
+    const [link] = await db.insert(schema.bookingShareLinks).values({
+      userId: data.userId,
+      slot: data.slot,
+      tokenHash: data.tokenHash,
+      passwordHash: data.passwordHash,
+      description: data.description ?? null,
+      config: data.config,
+      configVersion: data.configVersion ?? 1,
+      isEnabled: data.isEnabled ?? true,
+      expiresAt: data.expiresAt ?? null,
+      tokenCreatedAt: data.tokenCreatedAt ?? null,
+    }).returning();
+    return link;
+  }
+
+  async listShareLinks(userId: number): Promise<schema.BookingShareLink[]> {
+    return await db.select()
+      .from(schema.bookingShareLinks)
+      .where(eq(schema.bookingShareLinks.userId, userId))
+      .orderBy(asc(schema.bookingShareLinks.id));
+  }
+
+  async getShareLink(id: number): Promise<schema.BookingShareLink | undefined> {
+    const [link] = await db.select().from(schema.bookingShareLinks).where(eq(schema.bookingShareLinks.id, id));
+    return link || undefined;
+  }
+
+  async getShareLinkByTokenHash(tokenHash: string): Promise<schema.BookingShareLink | undefined> {
+    const [link] = await db.select().from(schema.bookingShareLinks).where(eq(schema.bookingShareLinks.tokenHash, tokenHash));
+    return link || undefined;
+  }
+
+  async updateShareLink(id: number, data: Partial<schema.BookingShareLink>): Promise<schema.BookingShareLink | undefined> {
+    // Defense-in-depth: strip identity/ownership fields so no caller can change
+    // the row's id, owner, slot, or creation time via update. tokenHash and
+    // tokenCreatedAt remain — they are the legitimate fields for regenerate.
+    const { id: _id, userId: _userId, slot: _slot, createdAt: _createdAt, ...safe } = data;
+    const [link] = await db.update(schema.bookingShareLinks)
+      .set({ ...safe, updatedAt: new Date() })
+      .where(eq(schema.bookingShareLinks.id, id))
+      .returning();
+    return link;
+  }
+
+  async toggleShareLink(id: number): Promise<schema.BookingShareLink | undefined> {
+    const [existing] = await db.select().from(schema.bookingShareLinks).where(eq(schema.bookingShareLinks.id, id));
+    if (!existing) return undefined;
+    const [link] = await db.update(schema.bookingShareLinks)
+      .set({ isEnabled: !existing.isEnabled, updatedAt: new Date() })
+      .where(eq(schema.bookingShareLinks.id, id))
+      .returning();
+    return link;
+  }
+
+  async deleteShareLink(id: number): Promise<void> {
+    await db.delete(schema.bookingShareLinks).where(eq(schema.bookingShareLinks.id, id));
+  }
+
+  async countShareLinks(userId: number): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(schema.bookingShareLinks)
+      .where(eq(schema.bookingShareLinks.userId, userId));
+    return result?.count || 0;
   }
 }
 

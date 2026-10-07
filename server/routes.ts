@@ -5,6 +5,7 @@ import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, type AuthRequest } from "./auth";
+import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink } from "./share-links";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
@@ -6026,6 +6027,167 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Delete custom field error:", error);
       res.status(500).json({ error: "Failed to delete custom field" });
+    }
+  });
+
+  // ============================================================================
+  // BOOKING SHARE LINKS (Feature 3G-1 — owner management only)
+  // ============================================================================
+
+  // Create a share link (max 2 per user). Returns the plaintext token exactly once.
+  app.post("/api/booking/share-links", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const parsed = schema.insertBookingShareLinkSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const data = parsed.data;
+
+      const slot = assignSlot(await storage.listShareLinks(effectiveUserId));
+      if (slot === null) {
+        return res.status(409).json({ error: "Maximum of 2 share links reached" });
+      }
+
+      const token = generateShareToken();
+      const tokenHash = hashShareToken(token);
+      const passwordHash = await hashPassword(data.password);
+
+      const link = await storage.createShareLink({
+        userId: effectiveUserId,
+        slot,
+        tokenHash,
+        passwordHash,
+        description: data.description ?? null,
+        config: data.config,
+        expiresAt: data.expiresAt ?? null,
+        tokenCreatedAt: new Date(),
+      });
+
+      res.status(201).json({ link: serializeShareLink(link), token });
+    } catch (error: any) {
+      if (error?.code === "23505" || String(error?.message).includes("unique")) {
+        return res.status(409).json({ error: "Maximum of 2 share links reached" });
+      }
+      console.error("Create share link error:", error);
+      res.status(500).json({ error: "Failed to create share link" });
+    }
+  });
+
+  // List the user's share links (never returns tokenHash or passwordHash).
+  app.get("/api/booking/share-links", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const links = await storage.listShareLinks(effectiveUserId);
+      res.json({ links: links.map(serializeShareLink), count: links.length, max: 2 });
+    } catch (error: any) {
+      console.error("List share links error:", error);
+      res.status(500).json({ error: "Failed to list share links" });
+    }
+  });
+
+  // Edit a share link (config/description/password/expiry/enable). Changing the
+  // password bumps configVersion, which invalidates existing share sessions.
+  app.patch("/api/booking/share-links/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const linkId = parseInt(req.params.id);
+      if (!Number.isInteger(linkId)) return res.status(400).json({ error: "Invalid link id" });
+
+      const link = await storage.getShareLink(linkId);
+      if (!link || link.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Share link not found" });
+      }
+
+      const parsed = schema.updateBookingShareLinkSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const data = parsed.data;
+
+      const updates: Partial<schema.BookingShareLink> = {};
+      if (data.description !== undefined) updates.description = data.description;
+      if (data.config !== undefined) updates.config = data.config;
+      if (data.isEnabled !== undefined) updates.isEnabled = data.isEnabled;
+      if (data.expiresAt !== undefined) updates.expiresAt = data.expiresAt;
+      if (data.password !== undefined) {
+        updates.passwordHash = await hashPassword(data.password);
+        updates.configVersion = (link.configVersion ?? 1) + 1;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+
+      const updated = await storage.updateShareLink(linkId, updates);
+      res.json({ link: serializeShareLink(updated!) });
+    } catch (error: any) {
+      console.error("Update share link error:", error);
+      res.status(500).json({ error: "Failed to update share link" });
+    }
+  });
+
+  // Enable / disable a share link.
+  app.patch("/api/booking/share-links/:id/toggle", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const linkId = parseInt(req.params.id);
+      if (!Number.isInteger(linkId)) return res.status(400).json({ error: "Invalid link id" });
+
+      const link = await storage.getShareLink(linkId);
+      if (!link || link.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Share link not found" });
+      }
+
+      const updated = await storage.toggleShareLink(linkId);
+      res.json({ link: serializeShareLink(updated!) });
+    } catch (error: any) {
+      console.error("Toggle share link error:", error);
+      res.status(500).json({ error: "Failed to toggle share link" });
+    }
+  });
+
+  // Hard-delete a share link (frees its slot).
+  app.delete("/api/booking/share-links/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const linkId = parseInt(req.params.id);
+      if (!Number.isInteger(linkId)) return res.status(400).json({ error: "Invalid link id" });
+
+      const link = await storage.getShareLink(linkId);
+      if (!link || link.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Share link not found" });
+      }
+
+      await storage.deleteShareLink(linkId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete share link error:", error);
+      res.status(500).json({ error: "Failed to delete share link" });
+    }
+  });
+
+  // Regenerate the token (invalidates the old link). Returns the plaintext once.
+  app.post("/api/booking/share-links/:id/regenerate", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const linkId = parseInt(req.params.id);
+      if (!Number.isInteger(linkId)) return res.status(400).json({ error: "Invalid link id" });
+
+      const link = await storage.getShareLink(linkId);
+      if (!link || link.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Share link not found" });
+      }
+
+      const token = generateShareToken();
+      const updated = await storage.updateShareLink(linkId, {
+        tokenHash: hashShareToken(token),
+        tokenCreatedAt: new Date(),
+      });
+      res.json({ link: serializeShareLink(updated!), token });
+    } catch (error: any) {
+      console.error("Regenerate share link token error:", error);
+      res.status(500).json({ error: "Failed to regenerate share link token" });
     }
   });
 
