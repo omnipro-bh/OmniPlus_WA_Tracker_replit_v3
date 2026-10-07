@@ -9,13 +9,16 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `143a59a` (Feature 2 — Department→Service / Staff→Provider rebrand).
-- Repo HEAD: `c6fd0df` (docs-only HANDOFF update) + this commit (docs-only security rotation + HANDOFF update).
+- Production HEAD (deployed/running on VPS): `c4bc05e` (Feature 3G-1 — share-link schema + owner endpoints).
+- Repo HEAD: `c4bc05e` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer) — db:push applied.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
 
 ## Recent commits
 
+- `c4bc05e` feat(booking): share-link schema + owner endpoints (Phase 3G-1)
+- `3f0f001` docs: mark Supabase DB password rotation done + note optional polish (2026-10-06)
+- `c6fd0df` docs: update HANDOFF.md (post Feature 2 rebrand — session closure)
 - `143a59a` feat(booking): rebrand Department→Service, Staff→Provider, add Service Group layer
 - `057c6b0` feat(admin): per-user custom fields limit override (5-10, admin-settable)
 - `50badc2` feat(booking): wire calendar actions + weekday errors + refresh + HANDOFF
@@ -31,6 +34,7 @@
 
 ## Completed phases
 
+- **Phase 3G-1 — share links (schema + owner endpoints)**: `booking_share_links` table (14 cols — `userId` FK cascade, `slot`, `tokenHash` SHA-256 unique, `passwordHash` bcrypt-10, `config` JSONB, `configVersion`, `isEnabled`, `expiresAt`, `lastAccessedAt`, `tokenCreatedAt`, timestamps; unique `(user_id, slot)` index for max-2 links); `server/share-links.ts` (256-bit URL-safe token shown once, `hashToken`, `serializeShareLink` strips secrets + adds masked `tokenPreview`, `assignSlot`, `projectBooking` whitelist projector, `filterBookingsByConfig`, CSV helpers with formula-injection mitigation); 6 owner endpoints behind `requireAuth` (create/list/patch/toggle/delete/regenerate) with zod validation, 404 cross-tenant, `configVersion` bump on password change (`c4bc05e`)
 - **Security rotation (2026-10-06)** — Supabase DB password rotated; VPS `.env` updated (16:35) + `pm2 restart --update-env` (↺ 30); app reconnected + re-seeded; 7 stale `.env` backups deleted; ~4.7 GB PM2 logs flushed.
 - Sidebar tabs → sub-navigation (`57b123f`)
 - Full calendar — backend + UI + polish + full-screen + filters (`a0aea0a` → `9ad3678`)
@@ -64,11 +68,16 @@
 ## Optional polish (later)
 
 - Set up `pm2-logrotate` (or scheduled truncation) to prevent the ~4.7 GB log growth from recurring.
-- Consider a second Supabase password rotation to invalidate the intermediate password that appeared in a chat screenshot on 2026-10-06.
 
-## Deferred (own session)
+## In progress — Feature 3 (shareable booking links)
 
-- **Feature 3 — password-protected shareable booking links**: field-level read/write permissions, per-user, max 2 links, enable/disable/delete. Multi-session project. (This session closed at ~50% of the overall project.)
+Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~25% (3G-1 done).
+
+Remaining sub-phases:
+- **3G-2** — public `/auth` endpoint + rate limiting/lockout + `share_session` cookie + `requireShareSession` middleware
+- **3G-3** — public bookings list + CSV export + per-field read/hidden/write enforcement + edit/cancel/confirm
+- **3G-4** — owner UI in the Settings tab (create/edit/list/toggle/delete)
+- **3G-5** — public UI page (`/share/:token`)
 
 ## Known pre-existing issues (do NOT chase)
 
