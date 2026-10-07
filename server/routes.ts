@@ -5,8 +5,8 @@ import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, type AuthRequest, type ShareRequest } from "./auth";
-import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare } from "./share-links";
-import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess } from "./share-rate-limit";
+import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare, projectBooking, filterBookingsByConfig, buildCsvHeader, buildCsvRow, getShareBookingsForLink, enrichBookingsForUser } from "./share-links";
+import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess, checkWriteThrottled, recordWrite } from "./share-rate-limit";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
@@ -44,6 +44,16 @@ function getEffectiveUserId(req: AuthRequest): number {
 // Helper: today's date in Asia/Bahrain as "YYYY-MM-DD"
 function todayInBahrain(): string {
   return dayjs().tz("Asia/Bahrain").format("YYYY-MM-DD");
+}
+
+// Resolve a booking for a share link, enforcing ownership + the link's own
+// visibility scope (so link A can't act on a booking only visible in link B).
+async function resolveShareBookingInScope(link: schema.BookingShareLink, bookingId: number): Promise<schema.Booking | null> {
+  const booking = await storage.getBooking(bookingId);
+  if (!booking || booking.userId !== link.userId) return null;
+  const [enriched] = await enrichBookingsForUser(link.userId, [booking]);
+  if (filterBookingsByConfig([enriched], link.config, todayInBahrain()).length === 0) return null;
+  return booking;
 }
 
 // Helper: day-of-week (0=Sunday..6=Saturday) for a "YYYY-MM-DD" date string.
@@ -6255,15 +6265,267 @@ export function registerRoutes(app: Express) {
     res.json({ ok: true });
   });
 
-  // Temporary session probe — validates the session + that the URL token matches
-  // the session's link. Remove in 3G-3 when real public endpoints exist.
-  app.get("/api/public/share/:token/ping", requireShareSession, async (req: ShareRequest, res: Response) => {
-    const tokenHash = hashShareToken(req.params.token);
-    const urlLink = await storage.getShareLinkByTokenHash(tokenHash);
-    if (!urlLink || urlLink.id !== req.shareLink!.id) {
-      return res.status(404).json({ error: "Share link not found" });
+  // Public bookings list (projected to the link's permitted fields).
+  app.get("/api/public/share/:token/bookings", requireShareSession, async (req: ShareRequest, res: Response) => {
+    try {
+      const link = req.shareLink!;
+      const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+      const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize)) || 50));
+
+      const rows = await getShareBookingsForLink(link);
+      const count = rows.length;
+      const start = (page - 1) * pageSize;
+      const paged = rows.slice(start, start + pageSize);
+
+      res.json({
+        bookings: paged.map((b) => projectBooking(b, link.config)),
+        count,
+        page,
+        pageSize,
+        config: link.config,
+        today: todayInBahrain(),
+      });
+    } catch (error: any) {
+      console.error("Public share bookings error:", error);
+      res.status(500).json({ error: "Failed to fetch bookings" });
     }
-    res.json({ ok: true, linkId: req.shareLink!.id });
+  });
+
+  // Public CSV export — same rows + columns as the JSON list (cap 5000).
+  app.get("/api/public/share/:token/bookings.csv", requireShareSession, async (req: ShareRequest, res: Response) => {
+    try {
+      const link = req.shareLink!;
+      const rows = await getShareBookingsForLink(link);
+      const MAX = 5000;
+      const truncated = rows.length > MAX;
+      const sliced = rows.slice(0, MAX);
+
+      const customFields = await storage.getBookingCustomFieldsForUser(link.userId);
+      const customFieldNames: Record<number, string> = {};
+      for (const f of customFields) customFieldNames[f.id] = f.name;
+
+      const projected = sliced.map((b) => projectBooking(b, link.config));
+      const header = buildCsvHeader(link.config, customFieldNames);
+      const lines = projected.map((p) => buildCsvRow(p, link.config));
+      let body = "\uFEFF" + header + "\n" + lines.join("\n");
+      if (truncated) body += '\n"# truncated at 5000 rows"';
+
+      const filename = `bookings-${link.id}-${todayInBahrain()}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      if (truncated) {
+        res.setHeader("X-Truncated", "true");
+        res.setHeader("X-Truncated-At", String(MAX));
+      }
+      res.send(body);
+    } catch (error: any) {
+      console.error("Public share CSV error:", error);
+      res.status(500).json({ error: "Failed to export bookings" });
+    }
+  });
+
+  // Public edit — only fields with "write" permission are accepted.
+  app.patch("/api/public/share/:token/bookings/:id", requireShareSession, async (req: ShareRequest, res: Response) => {
+    try {
+      const link = req.shareLink!;
+      const ip = getClientIp(req);
+
+      const throttle = checkWriteThrottled(link.id);
+      if (throttle.throttled) {
+        return res.status(429).set("Retry-After", String(throttle.retryAfter ?? 60)).json({ error: "Too many writes" });
+      }
+      recordWrite(link.id);
+
+      const bookingId = parseInt(req.params.id);
+      if (!Number.isInteger(bookingId)) return res.status(400).json({ error: "Invalid booking id" });
+
+      const booking = await resolveShareBookingInScope(link, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      if (!link.config.allowedActions.edit) {
+        return res.status(403).json({ error: "Editing not permitted" });
+      }
+
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const perms = link.config.fieldPermissions || {};
+      const updates: Partial<schema.Booking> = {};
+      const customUpdates: Array<{ fieldId: number; value: string }> = [];
+      const changedFields: string[] = [];
+
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      const TIME_RE = /^\d{2}:\d{2}$/;
+      const permKeyFor = (key: string): string => {
+        if (key === "endDayStartTime" || key === "endDayEndTime") return "endDayTime";
+        if (key === "customField1Label" || key === "customField1Value") return "customField1";
+        if (key === "customField2Label" || key === "customField2Value") return "customField2";
+        return key;
+      };
+
+      for (const [key, raw] of Object.entries(body)) {
+        if (key === "service" || key === "provider") {
+          return res.status(400).json({ error: "Field is read-only" });
+        }
+        if (key === "status") {
+          return res.status(400).json({ error: "Use cancel/confirm endpoints to change status" });
+        }
+        const permKey = key.startsWith("custom:") ? key : permKeyFor(key);
+        if ((perms[permKey] ?? "hidden") !== "write") {
+          return res.status(400).json({ error: `Field not writable: ${key}` });
+        }
+
+        if (key === "slotDate") {
+          if (typeof raw !== "string" || !DATE_RE.test(raw)) return res.status(400).json({ error: "Invalid slotDate" });
+          updates.slotDate = raw;
+        } else if (key === "endDate") {
+          if (raw === null) updates.endDate = null;
+          else { if (typeof raw !== "string" || !DATE_RE.test(raw)) return res.status(400).json({ error: "Invalid endDate" }); updates.endDate = raw; }
+        } else if (key === "startTime") {
+          if (typeof raw !== "string" || !TIME_RE.test(raw)) return res.status(400).json({ error: "Invalid startTime" });
+          updates.startTime = raw;
+        } else if (key === "endTime") {
+          if (typeof raw !== "string" || !TIME_RE.test(raw)) return res.status(400).json({ error: "Invalid endTime" });
+          updates.endTime = raw;
+        } else if (key === "endDayStartTime") {
+          if (raw === null) updates.endDayStartTime = null;
+          else { if (typeof raw !== "string" || !TIME_RE.test(raw)) return res.status(400).json({ error: "Invalid endDayStartTime" }); updates.endDayStartTime = raw; }
+        } else if (key === "endDayEndTime") {
+          if (raw === null) updates.endDayEndTime = null;
+          else { if (typeof raw !== "string" || !TIME_RE.test(raw)) return res.status(400).json({ error: "Invalid endDayEndTime" }); updates.endDayEndTime = raw; }
+        } else if (key === "bookingLabel") {
+          updates.bookingLabel = raw === null ? null : String(raw);
+        } else if (key === "customerName") {
+          updates.customerName = raw === null ? null : String(raw);
+        } else if (key === "customerPhone") {
+          if (typeof raw !== "string" || !raw.trim()) return res.status(400).json({ error: "customerPhone required" });
+          updates.customerPhone = raw;
+        } else if (key === "customField1Label") {
+          updates.customField1Label = raw === null ? null : String(raw);
+        } else if (key === "customField1Value") {
+          updates.customField1Value = raw === null ? null : String(raw);
+        } else if (key === "customField2Label") {
+          updates.customField2Label = raw === null ? null : String(raw);
+        } else if (key === "customField2Value") {
+          updates.customField2Value = raw === null ? null : String(raw);
+        } else if (key.startsWith("custom:")) {
+          const fieldId = parseInt(key.slice("custom:".length), 10);
+          if (!Number.isInteger(fieldId)) return res.status(400).json({ error: `Invalid field: ${key}` });
+          customUpdates.push({ fieldId, value: raw === null ? "" : String(raw) });
+        } else {
+          return res.status(400).json({ error: `Unknown field: ${key}` });
+        }
+        changedFields.push(key);
+      }
+
+      if (changedFields.length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+
+      // Availability check when any scheduling field changed.
+      const timeChanged = ["slotDate", "endDate", "startTime", "endTime", "endDayStartTime", "endDayEndTime"]
+        .some((k) => k in updates);
+      if (timeChanged) {
+        const newSlotDate = updates.slotDate ?? booking.slotDate;
+        const newStartTime = updates.startTime ?? booking.startTime;
+        const newEndTime = updates.endTime ?? booking.endTime;
+        const newEndDate = updates.endDate !== undefined ? updates.endDate : booking.endDate;
+        const newEndDayStartTime = updates.endDayStartTime !== undefined ? updates.endDayStartTime : booking.endDayStartTime;
+        const newEndDayEndTime = updates.endDayEndTime !== undefined ? updates.endDayEndTime : booking.endDayEndTime;
+        const overlap = await storage.checkBookingOverlap(
+          booking.staffId, newSlotDate, newStartTime, newEndTime,
+          link.userId, bookingId,
+          newEndDate ?? undefined, newEndDayStartTime ?? undefined, newEndDayEndTime ?? undefined,
+        );
+        if (!overlap.available) {
+          return res.status(409).json({ error: "Slot not available" });
+        }
+      }
+
+      const updated = await storage.updateBooking(bookingId, updates);
+      if (customUpdates.length > 0) {
+        await storage.setBookingCustomFieldValues(bookingId, customUpdates);
+      }
+
+      await storage.createAuditLog({
+        actorUserId: link.userId,
+        targetType: "booking",
+        targetId: bookingId,
+        action: "third_party_edit",
+        meta: { linkId: link.id, changedFields },
+        ip,
+      });
+
+      const [reEnriched] = await enrichBookingsForUser(link.userId, [updated!]);
+      res.json({ booking: projectBooking(reEnriched, link.config) });
+    } catch (error: any) {
+      console.error("Public share edit error:", error);
+      res.status(500).json({ error: "Failed to update booking" });
+    }
+  });
+
+  // Public cancel.
+  app.post("/api/public/share/:token/bookings/:id/cancel", requireShareSession, async (req: ShareRequest, res: Response) => {
+    try {
+      const link = req.shareLink!;
+      const ip = getClientIp(req);
+
+      const throttle = checkWriteThrottled(link.id);
+      if (throttle.throttled) return res.status(429).set("Retry-After", String(throttle.retryAfter ?? 60)).json({ error: "Too many writes" });
+      recordWrite(link.id);
+
+      const bookingId = parseInt(req.params.id);
+      if (!Number.isInteger(bookingId)) return res.status(400).json({ error: "Invalid booking id" });
+
+      const booking = await resolveShareBookingInScope(link, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      if (!link.config.allowedActions.cancel) return res.status(403).json({ error: "Cancelling not permitted" });
+      if (booking.status === "cancelled") return res.status(400).json({ error: "Already cancelled" });
+
+      const updated = await storage.updateBooking(bookingId, { status: "cancelled" });
+      await storage.createAuditLog({
+        actorUserId: link.userId, targetType: "booking", targetId: bookingId,
+        action: "third_party_cancel", meta: { linkId: link.id }, ip,
+      });
+
+      const [reEnriched] = await enrichBookingsForUser(link.userId, [updated!]);
+      res.json({ booking: projectBooking(reEnriched, link.config) });
+    } catch (error: any) {
+      console.error("Public share cancel error:", error);
+      res.status(500).json({ error: "Failed to cancel booking" });
+    }
+  });
+
+  // Public confirm.
+  app.post("/api/public/share/:token/bookings/:id/confirm", requireShareSession, async (req: ShareRequest, res: Response) => {
+    try {
+      const link = req.shareLink!;
+      const ip = getClientIp(req);
+
+      const throttle = checkWriteThrottled(link.id);
+      if (throttle.throttled) return res.status(429).set("Retry-After", String(throttle.retryAfter ?? 60)).json({ error: "Too many writes" });
+      recordWrite(link.id);
+
+      const bookingId = parseInt(req.params.id);
+      if (!Number.isInteger(bookingId)) return res.status(400).json({ error: "Invalid booking id" });
+
+      const booking = await resolveShareBookingInScope(link, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+      if (!link.config.allowedActions.confirm) return res.status(403).json({ error: "Confirming not permitted" });
+      if (booking.status === "confirmed") return res.status(400).json({ error: "Already confirmed" });
+
+      const updated = await storage.updateBooking(bookingId, { status: "confirmed" });
+      await storage.createAuditLog({
+        actorUserId: link.userId, targetType: "booking", targetId: bookingId,
+        action: "third_party_confirm", meta: { linkId: link.id }, ip,
+      });
+
+      const [reEnriched] = await enrichBookingsForUser(link.userId, [updated!]);
+      res.json({ booking: projectBooking(reEnriched, link.config) });
+    } catch (error: any) {
+      console.error("Public share confirm error:", error);
+      res.status(500).json({ error: "Failed to confirm booking" });
+    }
   });
 
   // ============================================================================

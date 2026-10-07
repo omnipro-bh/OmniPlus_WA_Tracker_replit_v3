@@ -1,7 +1,19 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
 import { comparePassword } from "./auth";
+import { storage } from "./storage";
 import type { Booking, BookingShareLink, ShareLinkConfig } from "@shared/schema";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// Today's date in the owner's local timezone (Asia/Bahrain), "YYYY-MM-DD".
+function todayInBahrain(): string {
+  return dayjs().tz("Asia/Bahrain").format("YYYY-MM-DD");
+}
 
 // ---------------------------------------------------------------------------
 // Feature 3 — shareable, password-protected booking links.
@@ -155,7 +167,18 @@ export function visibleFieldKeys(config: ShareLinkConfig): string[] {
   return SHARE_FIELD_ORDER.filter((k) => (perms[k] ?? "hidden") !== "hidden");
 }
 
-export function buildCsvHeader(config: ShareLinkConfig): string {
+// Sorted list of visible user-defined custom field ids (stable column order,
+// shared by header + row so their columns line up).
+export function visibleCustomFieldIds(config: ShareLinkConfig): number[] {
+  const perms = config.fieldPermissions || {};
+  return Object.keys(perms)
+    .filter((k) => k.startsWith("custom:"))
+    .map((k) => parseInt(k.slice("custom:".length), 10))
+    .filter((id) => Number.isInteger(id) && (perms[`custom:${id}`] ?? "hidden") !== "hidden")
+    .sort((a, b) => a - b);
+}
+
+export function buildCsvHeader(config: ShareLinkConfig, customFieldNames: Record<number, string> = {}): string {
   const cells = visibleFieldKeys(config).map((k) => {
     switch (k) {
       case "endDayTime": return csvCell("Last day time");
@@ -164,6 +187,10 @@ export function buildCsvHeader(config: ShareLinkConfig): string {
       default: return csvCell(k);
     }
   });
+  // Custom-field columns use their real names (owner-controlled → sanitize).
+  for (const id of visibleCustomFieldIds(config)) {
+    cells.push(csvCell(customFieldNames[id] ?? `Custom Field ${id}`));
+  }
   return cells.join(",");
 }
 
@@ -181,8 +208,48 @@ export function buildCsvRow(projected: Record<string, unknown>, config: ShareLin
     }
     return csvCell(projected[k]);
   });
-  for (const v of (projected["customFieldValues"] as Array<{ fieldId: number; value: string }> || [])) {
-    cells.push(csvCell(v.value));
+  // Custom-field values in the same (id-sorted) order as the header.
+  const values = (projected["customFieldValues"] as Array<{ fieldId: number; value: string }> || []);
+  const byId = new Map(values.map((v) => [v.fieldId, v.value]));
+  for (const id of visibleCustomFieldIds(config)) {
+    cells.push(csvCell(byId.get(id) ?? ""));
   }
   return cells.join(",");
+}
+
+// ---- enrichment + shared row fetch ----------------------------------------
+
+// Enrich raw bookings with derived names + custom field values (the shape
+// `projectBooking` needs). Mirrors the owner list's enrichment (per-row N+1).
+export async function enrichBookingsForUser(_userId: number, bookings: Booking[]): Promise<EnrichedBooking[]> {
+  if (bookings.length === 0) return [];
+  const bookingIds = bookings.map((b) => b.id);
+  const fieldValues = await storage.getBookingCustomFieldValuesForBookings(bookingIds);
+  const valuesByBooking = new Map<number, Array<{ fieldId: number; value: string }>>();
+  for (const v of fieldValues) {
+    const list = valuesByBooking.get(v.bookingId) ?? [];
+    list.push({ fieldId: v.fieldId, value: v.value });
+    valuesByBooking.set(v.bookingId, list);
+  }
+  return await Promise.all(bookings.map(async (b) => {
+    const [department, staff] = await Promise.all([
+      b.departmentId ? storage.getBookingDepartment(b.departmentId) : null,
+      b.staffId ? storage.getBookingStaff(b.staffId) : null,
+    ]);
+    return {
+      ...b,
+      departmentName: department?.name ?? null,
+      staffName: staff?.name ?? null,
+      customFieldValues: valuesByBooking.get(b.id) ?? [],
+    };
+  }));
+}
+
+// Single source of rows for the public JSON list, CSV export, and the
+// visibility check on write actions. Fetches the owner's bookings (up to 5000),
+// enriches, then applies the link's visibility/statuses/dateRange filters.
+export async function getShareBookingsForLink(link: BookingShareLink): Promise<EnrichedBooking[]> {
+  const { bookings } = await storage.getBookingsForUser(link.userId, { page: 1, pageSize: 5000 });
+  const enriched = await enrichBookingsForUser(link.userId, bookings);
+  return filterBookingsByConfig(enriched, link.config, todayInBahrain());
 }

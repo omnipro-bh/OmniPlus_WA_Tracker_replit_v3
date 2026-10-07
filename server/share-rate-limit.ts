@@ -24,6 +24,15 @@ interface IpState {
 }
 const ipStates = new Map<string, IpState>();
 
+const WRITE_MAX = 60;
+const WRITE_WINDOW_MS = 5 * 60 * 1000;
+
+interface WriteState {
+  count: number;
+  windowStart: number;
+}
+const writeStates = new Map<number, WriteState>();
+
 // nginx sets X-Forwarded-For; Express (`trust proxy = 1`) already honors it.
 export function getClientIp(req: Request): string {
   return req.ip || "unknown";
@@ -78,6 +87,30 @@ export function recordIpAttempt(ip: string): void {
   }
 }
 
+export function checkWriteThrottled(linkId: number): { throttled: boolean; retryAfter?: number } {
+  const s = writeStates.get(linkId);
+  if (!s) return { throttled: false };
+  const now = Date.now();
+  if (now - s.windowStart >= WRITE_WINDOW_MS) {
+    writeStates.delete(linkId); // lazy expiry
+    return { throttled: false };
+  }
+  if (s.count >= WRITE_MAX) {
+    return { throttled: true, retryAfter: Math.ceil((s.windowStart + WRITE_WINDOW_MS - now) / 1000) };
+  }
+  return { throttled: false };
+}
+
+export function recordWrite(linkId: number): void {
+  const now = Date.now();
+  const s = writeStates.get(linkId);
+  if (!s || now - s.windowStart >= WRITE_WINDOW_MS) {
+    writeStates.set(linkId, { count: 1, windowStart: now });
+  } else {
+    s.count += 1;
+  }
+}
+
 // Periodic sweep to keep the maps bounded (lazy expiry on access covers the hot path).
 setInterval(() => {
   const now = Date.now();
@@ -86,5 +119,8 @@ setInterval(() => {
   });
   ipStates.forEach((v, k) => {
     if (now - v.windowStart >= IP_WINDOW_MS) ipStates.delete(k);
+  });
+  writeStates.forEach((v, k) => {
+    if (now - v.windowStart >= WRITE_WINDOW_MS) writeStates.delete(k);
   });
 }, 10 * 60 * 1000).unref();
