@@ -9,13 +9,14 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `c4bc05e` (Feature 3G-1 — share-link schema + owner endpoints).
-- Repo HEAD: `c4bc05e` (+ this commit: docs-only HANDOFF update).
+- Production HEAD (deployed/running on VPS): `b2c3fd6` (Feature 3G-2 — public share-link auth + session + rate limiting).
+- Repo HEAD: `b2c3fd6` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
 
 ## Recent commits
 
+- `b2c3fd6` feat(booking): public share-link auth + session + rate limiting (Phase 3G-2)
 - `c4bc05e` feat(booking): share-link schema + owner endpoints (Phase 3G-1)
 - `3f0f001` docs: mark Supabase DB password rotation done + note optional polish (2026-10-06)
 - `c6fd0df` docs: update HANDOFF.md (post Feature 2 rebrand — session closure)
@@ -34,6 +35,7 @@
 
 ## Completed phases
 
+- **Phase 3G-2 — public auth + session + rate limiting**: derived `SHARE_SECRET` (HMAC of `SESSION_SECRET` + namespace); `signShareSession`/`verifyShareSession` (12h, payload-shape validated); `requireShareSession` middleware (fail-closed: cookie → JWT → link lookup → enabled → not-expired → `configVersion` match; 401 vs 404 split); `server/share-rate-limit.ts` (in-memory token lockout 10 fails/15 min + IP throttle 20/5 min, lazy expiry + sweep, `getClientIp` via `req.ip`); `DUMMY_PASSWORD_HASH` + `timingEqualizeCompare` (timing-equalized 404); `POST /api/public/share/:token/auth` (rate limit → lookup → timing-equalize 404 → bcrypt → 401/200 + `share_session` cookie); `GET /api/public/share/:token/ping` (temporary); `server/index.ts` path redaction (`/share/[redacted]`) (`b2c3fd6`)
 - **Phase 3G-1 — share links (schema + owner endpoints)**: `booking_share_links` table (14 cols — `userId` FK cascade, `slot`, `tokenHash` SHA-256 unique, `passwordHash` bcrypt-10, `config` JSONB, `configVersion`, `isEnabled`, `expiresAt`, `lastAccessedAt`, `tokenCreatedAt`, timestamps; unique `(user_id, slot)` index for max-2 links); `server/share-links.ts` (256-bit URL-safe token shown once, `hashToken`, `serializeShareLink` strips secrets + adds masked `tokenPreview`, `assignSlot`, `projectBooking` whitelist projector, `filterBookingsByConfig`, CSV helpers with formula-injection mitigation); 6 owner endpoints behind `requireAuth` (create/list/patch/toggle/delete/regenerate) with zod validation, 404 cross-tenant, `configVersion` bump on password change (`c4bc05e`)
 - **Security rotation (2026-10-06)** — Supabase DB password rotated; VPS `.env` updated (16:35) + `pm2 restart --update-env` (↺ 30); app reconnected + re-seeded; 7 stale `.env` backups deleted; ~4.7 GB PM2 logs flushed.
 - Sidebar tabs → sub-navigation (`57b123f`)
@@ -71,13 +73,18 @@
 
 ## In progress — Feature 3 (shareable booking links)
 
-Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~25% (3G-1 done).
+Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~34% (3G-1 + 3G-2 done).
 
-Remaining sub-phases:
-- **3G-2** — public `/auth` endpoint + rate limiting/lockout + `share_session` cookie + `requireShareSession` middleware
+- **3G-1** ✅ schema + owner endpoints
+- **3G-2** ✅ public auth + session + rate limiting
 - **3G-3** — public bookings list + CSV export + per-field read/hidden/write enforcement + edit/cancel/confirm
 - **3G-4** — owner UI in the Settings tab (create/edit/list/toggle/delete)
 - **3G-5** — public UI page (`/share/:token`)
+
+## Follow-ups
+
+- **nginx log redaction** — `/var/log/nginx/my-app-access.log` records the raw `/api/public/share/<token>/*` URI (nginx logs the request before Express can redact). Add a custom nginx `log_format` to redact `/share/<token>` → `/share/[redacted]`. Note: app-log redaction (`server/index.ts`) already works.
+- **Remove `GET /api/public/share/:token/ping`** in Phase 3G-3 once real public endpoints exist (it was only a temporary `requireShareSession` test surface).
 
 ## Known pre-existing issues (do NOT chase)
 
