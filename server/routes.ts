@@ -6458,7 +6458,7 @@ export function registerRoutes(app: Express) {
 
       const updated = await storage.updateBooking(bookingId, updates);
       if (customUpdates.length > 0) {
-        await storage.setBookingCustomFieldValues(bookingId, customUpdates);
+        await storage.mergeBookingCustomFieldValues(bookingId, customUpdates);
       }
 
       await storage.createAuditLog({

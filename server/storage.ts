@@ -416,6 +416,7 @@ export interface IStorage {
   getBookingCustomFieldValues(bookingId: number): Promise<schema.BookingCustomFieldValue[]>;
   getBookingCustomFieldValuesForBookings(bookingIds: number[]): Promise<schema.BookingCustomFieldValue[]>;
   setBookingCustomFieldValues(bookingId: number, values: { fieldId: number; value: string }[]): Promise<void>;
+  mergeBookingCustomFieldValues(bookingId: number, updates: { fieldId: number; value: string }[]): Promise<void>;
 
   // Booking share links (Feature 3)
   createShareLink(data: {
@@ -2507,6 +2508,27 @@ export class DatabaseStorage implements IStorage {
           .values(values.map((v) => ({ bookingId, fieldId: v.fieldId, value: v.value })));
       }
     });
+  }
+
+  // Merge (not replace) custom field values for a booking: upsert each incoming
+  // { fieldId, value }, leaving unmentioned fields untouched. Empty values delete
+  // the row (matches the owner edit's delete-on-empty semantics). Used by the
+  // public share PATCH, which sends only the changed fields.
+  async mergeBookingCustomFieldValues(
+    bookingId: number,
+    updates: { fieldId: number; value: string }[],
+  ): Promise<void> {
+    const existing = await this.getBookingCustomFieldValues(bookingId);
+    const map = new Map(existing.map((v) => [v.fieldId, v.value]));
+    for (const u of updates) {
+      if (u.value === "") {
+        map.delete(u.fieldId); // delete-on-empty
+      } else {
+        map.set(u.fieldId, u.value);
+      }
+    }
+    const merged = Array.from(map, ([fieldId, value]) => ({ fieldId, value }));
+    await this.setBookingCustomFieldValues(bookingId, merged);
   }
 
   // Booking share links (Feature 3)
