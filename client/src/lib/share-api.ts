@@ -21,6 +21,8 @@ export interface ShareBooking {
   customerPhone?: string;
   service?: string | null;
   provider?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   customField1Label?: string | null;
   customField1Value?: string | null;
   customField2Label?: string | null;

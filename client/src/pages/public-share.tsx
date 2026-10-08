@@ -57,8 +57,16 @@ import {
 } from "@/lib/share-fields";
 import { ShareEditDialog } from "@/components/share-edit-dialog";
 import { formatLongDate } from "@/lib/booking-date";
+import { format } from "date-fns";
 
 const PAGE_SIZE = 50;
+
+// Full ISO timestamp → "Oct 8, 2026 14:39" (Created/Updated columns).
+function formatTimestamp(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : format(d, "MMM d, yyyy HH:mm");
+}
 
 function renderStandardCell(key: string, b: ShareBooking): ReactNode {
   switch (key) {
@@ -92,6 +100,10 @@ function renderStandardCell(key: string, b: ShareBooking): ReactNode {
       return <span>{b.service || "—"}</span>;
     case "provider":
       return <span>{b.provider || "—"}</span>;
+    case "createdAt":
+      return <span>{formatTimestamp(b.createdAt)}</span>;
+    case "updatedAt":
+      return <span>{formatTimestamp(b.updatedAt)}</span>;
     default:
       return <span>—</span>;
   }

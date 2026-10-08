@@ -23,6 +23,8 @@ export const SHARE_FIELD_ORDER: string[] = [
   "customerPhone",
   "service",
   "provider",
+  "createdAt",
+  "updatedAt",
 ];
 
 export const STANDARD_FIELD_LABELS: Record<string, string> = {
@@ -37,6 +39,8 @@ export const STANDARD_FIELD_LABELS: Record<string, string> = {
   customerPhone: "Customer phone",
   service: "Service",
   provider: "Provider",
+  createdAt: "Created",
+  updatedAt: "Updated",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -99,8 +103,7 @@ export function visibleCustomFieldIds(
     .filter(
       (id) =>
         Number.isInteger(id) &&
-        Object.prototype.hasOwnProperty.call(names, id) &&
-        types[id] !== "calculation",
+        Object.prototype.hasOwnProperty.call(names, id),
     )
     .sort((a, b) => {
       const ai = orderIndex.has(a) ? orderIndex.get(a)! : Infinity;
@@ -174,8 +177,7 @@ export function orderedVisibleFields(
       const id = parseInt(key.slice("custom:".length), 10);
       if (
         !Number.isInteger(id) ||
-        !Object.prototype.hasOwnProperty.call(names, id) ||
-        types[id] === "calculation"
+        !Object.prototype.hasOwnProperty.call(names, id)
       ) {
         continue;
       }
@@ -229,6 +231,8 @@ const STANDARD_FIELD_SORT_TYPES: Record<string, "date" | "time" | "status" | "nu
   customerPhone: "text",
   service: "text",
   provider: "text",
+  createdAt: "date",
+  updatedAt: "date",
 };
 
 // Raw sort value for a booking + column key. `endDayTime` is a composite column
@@ -252,9 +256,10 @@ export function compareBookingFields(
   key: string,
   customFieldTypes: Record<number, string>,
 ): number {
-  const type = key.startsWith("custom:")
+  const rawType = key.startsWith("custom:")
     ? customFieldTypes[parseInt(key.slice("custom:".length), 10)] ?? "text"
     : STANDARD_FIELD_SORT_TYPES[key] ?? "text";
+  const type = rawType === "calculation" ? "number" : rawType;
   const av = sortValue(key, a);
   const bv = sortValue(key, b);
   const as = av == null ? "" : String(av);

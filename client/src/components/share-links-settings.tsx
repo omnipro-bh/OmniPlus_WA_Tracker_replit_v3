@@ -69,6 +69,8 @@ const STANDARD_FIELDS: Array<{ key: string; label: string; group: FieldGroup; wr
   { key: "status", label: "Status", group: "Details", writable: false },
   { key: "service", label: "Service", group: "Details", writable: false },
   { key: "provider", label: "Provider", group: "Details", writable: false },
+  { key: "createdAt", label: "Created", group: "Details", writable: false },
+  { key: "updatedAt", label: "Updated", group: "Details", writable: false },
 ];
 
 function fmtDate(iso: string | null | undefined): string {
@@ -174,13 +176,11 @@ export function ShareLinksSettings() {
   });
 
   // Custom-field permission rows, ordered by displayOrder (fallback id).
-  // Fields that can appear on the public page (excludes calculation fields —
-  // they have no stored value; orderedVisibleFields filters them at render).
-  const visibleCustomFields = customFields.filter((cf) => cf.fieldType !== "calculation");
-
-  const customFieldRows = [...visibleCustomFields]
+  // Calculation fields are included (they render computed values on the public
+  // page) but are read-only — they offer only Hidden/Read.
+  const customFieldRows = [...customFields]
     .sort((a, b) => (a.displayOrder ?? a.id) - (b.displayOrder ?? b.id))
-    .map((cf) => ({ key: `custom:${cf.id}`, label: cf.name, writable: true }));
+    .map((cf) => ({ key: `custom:${cf.id}`, label: cf.name, writable: cf.fieldType !== "calculation" }));
 
   // Flat list of every field (standard + custom) with its label + writability.
   // Used by the reorderable permission list; the Details group stays read-only.
@@ -233,7 +233,7 @@ export function ShareLinksSettings() {
   function emptyFieldPermissions(): Record<string, FieldPerm> {
     const perms: Record<string, FieldPerm> = {};
     for (const f of STANDARD_FIELDS) perms[f.key] = "hidden";
-    for (const cf of visibleCustomFields) perms[`custom:${cf.id}`] = "hidden";
+    for (const cf of customFields) perms[`custom:${cf.id}`] = "hidden";
     return perms;
   }
 

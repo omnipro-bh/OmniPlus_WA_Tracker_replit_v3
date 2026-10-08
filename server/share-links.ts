@@ -91,6 +91,8 @@ const STANDARD_PROJECTORS: Record<string, (b: EnrichedBooking) => Record<string,
   customerPhone: (b) => ({ customerPhone: b.customerPhone }),
   service: (b) => ({ service: b.departmentName }),
   provider: (b) => ({ provider: b.staffName }),
+  createdAt: (b) => ({ createdAt: b.createdAt ? new Date(b.createdAt).toISOString() : null }),
+  updatedAt: (b) => ({ updatedAt: b.updatedAt ? new Date(b.updatedAt).toISOString() : null }),
 };
 
 // Builds the projected object key-by-key from a whitelist; a hidden field is never
@@ -157,7 +159,7 @@ function csvCell(value: unknown): string {
 const SHARE_FIELD_ORDER = [
   "slotDate", "endDate", "startTime", "endTime", "endDayTime",
   "status", "bookingLabel", "customerName", "customerPhone",
-  "service", "provider",
+  "service", "provider", "createdAt", "updatedAt",
 ];
 
 export function visibleFieldKeys(config: ShareLinkConfig): string[] {
@@ -263,9 +265,33 @@ export function buildCsvRow(
 
 // ---- enrichment + shared row fetch ----------------------------------------
 
+// Mirrors client/src/lib/calc.ts — keep in sync. Returns null on missing
+// operand, non-finite, or divide-by-zero.
+function computeCalcValue(
+  op: "add" | "subtract" | "multiply" | "divide" | null | undefined,
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number | null {
+  if (!op) return null;
+  if (a == null || b == null || a.trim() === "" || b.trim() === "") return null;
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isFinite(na) || !Number.isFinite(nb)) return null;
+  switch (op) {
+    case "add": return na + nb;
+    case "subtract": return na - nb;
+    case "multiply": return na * nb;
+    case "divide": return nb === 0 ? null : na / nb;
+    default: return null;
+  }
+}
+
 // Enrich raw bookings with derived names + custom field values (the shape
 // `projectBooking` needs). Mirrors the owner list's enrichment (per-row N+1).
-export async function enrichBookingsForUser(_userId: number, bookings: Booking[]): Promise<EnrichedBooking[]> {
+// Calculation fields are computed at read time and inlined into customFieldValues
+// as `{ fieldId, value: String(result) }` so the public page/CSV render them like
+// any other custom field.
+export async function enrichBookingsForUser(userId: number, bookings: Booking[]): Promise<EnrichedBooking[]> {
   if (bookings.length === 0) return [];
   const bookingIds = bookings.map((b) => b.id);
   const fieldValues = await storage.getBookingCustomFieldValuesForBookings(bookingIds);
@@ -275,16 +301,27 @@ export async function enrichBookingsForUser(_userId: number, bookings: Booking[]
     list.push({ fieldId: v.fieldId, value: v.value });
     valuesByBooking.set(v.bookingId, list);
   }
+  // Calculation field definitions (computed, never stored).
+  const calcFields = (await storage.getBookingCustomFieldsForUser(userId))
+    .filter((f) => f.fieldType === "calculation");
   return await Promise.all(bookings.map(async (b) => {
     const [department, staff] = await Promise.all([
       b.departmentId ? storage.getBookingDepartment(b.departmentId) : null,
       b.staffId ? storage.getBookingStaff(b.staffId) : null,
     ]);
+    const values = valuesByBooking.get(b.id) ?? [];
+    const byId = new Map(values.map((v) => [v.fieldId, v.value]));
+    for (const cf of calcFields) {
+      const a = cf.calcFieldAId != null ? byId.get(cf.calcFieldAId) : undefined;
+      const bv = cf.calcFieldBId != null ? byId.get(cf.calcFieldBId) : undefined;
+      const result = computeCalcValue(cf.calcOperation, a, bv);
+      if (result != null) values.push({ fieldId: cf.id, value: String(result) });
+    }
     return {
       ...b,
       departmentName: department?.name ?? null,
       staffName: staff?.name ?? null,
-      customFieldValues: valuesByBooking.get(b.id) ?? [],
+      customFieldValues: values,
     };
   }));
 }

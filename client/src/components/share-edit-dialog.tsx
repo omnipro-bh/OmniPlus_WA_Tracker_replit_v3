@@ -65,6 +65,9 @@ function writableControls(
   for (const key of orderedWritableFieldKeys(config, names, types, customFieldOrder)) {
     if (key.startsWith("custom:")) {
       const id = parseInt(key.slice("custom:".length), 10);
+      // Calculation fields are read-only; never render an input for them (a
+      // legacy link could still carry a stale "write" permission).
+      if (types[id] === "calculation") continue;
       const label = customFieldLabel(id, names);
       const fieldType = types[id] ?? "text";
       if (fieldType === "boolean") {

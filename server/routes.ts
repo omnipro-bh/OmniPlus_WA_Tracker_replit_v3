@@ -6392,6 +6392,11 @@ export function registerRoutes(app: Express) {
         return key;
       };
 
+      // Calculation fields are read-only (computed, never stored). Hoisted so we
+      // fetch the definitions once, not per body key.
+      const customFieldDefs = await storage.getBookingCustomFieldsForUser(link.userId);
+      const calcIds = new Set(customFieldDefs.filter((f) => f.fieldType === "calculation").map((f) => f.id));
+
       for (const [key, raw] of Object.entries(body)) {
         if (key === "service" || key === "provider") {
           return res.status(400).json({ error: "Field is read-only" });
@@ -6432,6 +6437,8 @@ export function registerRoutes(app: Express) {
         } else if (key.startsWith("custom:")) {
           const fieldId = parseInt(key.slice("custom:".length), 10);
           if (!Number.isInteger(fieldId)) return res.status(400).json({ error: `Invalid field: ${key}` });
+          // Reject writes to computed (calculation) fields.
+          if (calcIds.has(fieldId)) return res.status(400).json({ error: `Field is read-only: ${key}` });
           customUpdates.push({ fieldId, value: raw === null ? "" : String(raw) });
         } else {
           return res.status(400).json({ error: `Unknown field: ${key}` });
