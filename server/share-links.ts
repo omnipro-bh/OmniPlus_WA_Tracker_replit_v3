@@ -91,8 +91,6 @@ const STANDARD_PROJECTORS: Record<string, (b: EnrichedBooking) => Record<string,
   customerPhone: (b) => ({ customerPhone: b.customerPhone }),
   service: (b) => ({ service: b.departmentName }),
   provider: (b) => ({ provider: b.staffName }),
-  customField1: (b) => ({ customField1Label: b.customField1Label, customField1Value: b.customField1Value }),
-  customField2: (b) => ({ customField2Label: b.customField2Label, customField2Value: b.customField2Value }),
 };
 
 // Builds the projected object key-by-key from a whitelist; a hidden field is never
@@ -159,7 +157,7 @@ function csvCell(value: unknown): string {
 const SHARE_FIELD_ORDER = [
   "slotDate", "endDate", "startTime", "endTime", "endDayTime",
   "status", "bookingLabel", "customerName", "customerPhone",
-  "service", "provider", "customField1", "customField2",
+  "service", "provider",
 ];
 
 export function visibleFieldKeys(config: ShareLinkConfig): string[] {
@@ -182,8 +180,6 @@ export function buildCsvHeader(config: ShareLinkConfig, customFieldNames: Record
   const cells = visibleFieldKeys(config).map((k) => {
     switch (k) {
       case "endDayTime": return csvCell("Last day time");
-      case "customField1": return csvCell("Custom Field 1");
-      case "customField2": return csvCell("Custom Field 2");
       default: return csvCell(k);
     }
   });
@@ -200,11 +196,6 @@ export function buildCsvRow(projected: Record<string, unknown>, config: ShareLin
       const s = projected["endDayStartTime"];
       const e = projected["endDayEndTime"];
       return csvCell(s && e ? `${s}-${e}` : (s || e || ""));
-    }
-    if (k === "customField1" || k === "customField2") {
-      const label = projected[`${k}Label`];
-      const value = projected[`${k}Value`];
-      return csvCell(label ? `${label}: ${value ?? ""}` : (value ?? ""));
     }
     return csvCell(projected[k]);
   });

@@ -68,8 +68,6 @@ const STANDARD_FIELDS: Array<{ key: string; label: string; group: FieldGroup; wr
   { key: "status", label: "Status", group: "Details", writable: false },
   { key: "service", label: "Service", group: "Details", writable: false },
   { key: "provider", label: "Provider", group: "Details", writable: false },
-  { key: "customField1", label: "Custom field 1", group: "Legacy", writable: true },
-  { key: "customField2", label: "Custom field 2", group: "Legacy", writable: true },
 ];
 
 function fmtDate(iso: string | null | undefined): string {

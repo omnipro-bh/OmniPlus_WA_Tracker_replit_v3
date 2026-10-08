@@ -6292,7 +6292,13 @@ export function registerRoutes(app: Express) {
 
       const customFields = await storage.getBookingCustomFieldsForUser(link.userId);
       const customFieldNames: Record<number, string> = {};
-      for (const f of customFields) customFieldNames[f.id] = f.name;
+      const customFieldTypes: Record<number, string> = {};
+      const customFieldOptions: Record<number, string[]> = {};
+      for (const f of customFields) {
+        customFieldNames[f.id] = f.name;
+        customFieldTypes[f.id] = f.fieldType;
+        customFieldOptions[f.id] = f.options ?? [];
+      }
 
       res.json({
         bookings: paged.map((b) => projectBooking(b, link.config)),
@@ -6302,6 +6308,8 @@ export function registerRoutes(app: Express) {
         config: link.config,
         today: todayInBahrain(),
         customFieldNames,
+        customFieldTypes,
+        customFieldOptions,
       });
     } catch (error: any) {
       console.error("Public share bookings error:", error);
@@ -6374,8 +6382,6 @@ export function registerRoutes(app: Express) {
       const TIME_RE = /^\d{2}:\d{2}$/;
       const permKeyFor = (key: string): string => {
         if (key === "endDayStartTime" || key === "endDayEndTime") return "endDayTime";
-        if (key === "customField1Label" || key === "customField1Value") return "customField1";
-        if (key === "customField2Label" || key === "customField2Value") return "customField2";
         return key;
       };
 
@@ -6416,14 +6422,6 @@ export function registerRoutes(app: Express) {
         } else if (key === "customerPhone") {
           if (typeof raw !== "string" || !raw.trim()) return res.status(400).json({ error: "customerPhone required" });
           updates.customerPhone = raw;
-        } else if (key === "customField1Label") {
-          updates.customField1Label = raw === null ? null : String(raw);
-        } else if (key === "customField1Value") {
-          updates.customField1Value = raw === null ? null : String(raw);
-        } else if (key === "customField2Label") {
-          updates.customField2Label = raw === null ? null : String(raw);
-        } else if (key === "customField2Value") {
-          updates.customField2Value = raw === null ? null : String(raw);
         } else if (key.startsWith("custom:")) {
           const fieldId = parseInt(key.slice("custom:".length), 10);
           if (!Number.isInteger(fieldId)) return res.status(400).json({ error: `Invalid field: ${key}` });

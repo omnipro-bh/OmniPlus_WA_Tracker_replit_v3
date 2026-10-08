@@ -36,6 +36,8 @@ export interface ShareListResponse {
   config: ShareLinkConfig;
   today: string;
   customFieldNames: Record<number, string>;
+  customFieldTypes: Record<number, string>;
+  customFieldOptions: Record<number, string[]>;
 }
 
 export class ShareApiError extends Error {

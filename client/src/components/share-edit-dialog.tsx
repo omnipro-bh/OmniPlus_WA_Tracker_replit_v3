@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,9 +30,10 @@ const TIME_RE = /^\d{2}:\d{2}$/;
 interface Control {
   wireKey: string; // actual payload key sent to the server
   label: string;
-  type: "date" | "time" | "text";
+  type: "date" | "time" | "text" | "number" | "select";
   nullable: boolean; // empty input -> null
   required: boolean;
+  options?: string[]; // only for "select" (custom select + boolean)
 }
 
 // Standard writable permission keys -> their input controls (payload wire keys).
@@ -41,19 +49,18 @@ const STANDARD_CONTROLS: Record<string, Control[]> = {
   bookingLabel: [{ wireKey: "bookingLabel", label: "Booking label", type: "text", nullable: true, required: false }],
   customerName: [{ wireKey: "customerName", label: "Customer name", type: "text", nullable: true, required: false }],
   customerPhone: [{ wireKey: "customerPhone", label: "Customer phone", type: "text", nullable: false, required: true }],
-  customField1: [
-    { wireKey: "customField1Label", label: "Custom field 1 label", type: "text", nullable: true, required: false },
-    { wireKey: "customField1Value", label: "Custom field 1 value", type: "text", nullable: true, required: false },
-  ],
-  customField2: [
-    { wireKey: "customField2Label", label: "Custom field 2 label", type: "text", nullable: true, required: false },
-    { wireKey: "customField2Value", label: "Custom field 2 value", type: "text", nullable: true, required: false },
-  ],
 };
 
-function writableControls(config: ShareLinkConfig, customFieldNames: Record<number, string>): Control[] {
+function writableControls(
+  config: ShareLinkConfig,
+  customFieldNames: Record<number, string>,
+  customFieldTypes: Record<number, string>,
+  customFieldOptions: Record<number, string[]>,
+): Control[] {
   const perms = config.fieldPermissions || {};
   const names = customFieldNames || {};
+  const types = customFieldTypes || {};
+  const options = customFieldOptions || {};
   const out: Control[] = [];
   for (const key of SHARE_FIELD_ORDER) {
     if (perms[key] !== "write") continue;
@@ -62,16 +69,27 @@ function writableControls(config: ShareLinkConfig, customFieldNames: Record<numb
   const customIds = Object.keys(perms)
     .filter((k) => k.startsWith("custom:") && perms[k] === "write")
     .map((k) => parseInt(k.slice("custom:".length), 10))
-    .filter((id) => Number.isInteger(id) && Object.prototype.hasOwnProperty.call(names, id))
+    .filter(
+      (id) =>
+        Number.isInteger(id) &&
+        Object.prototype.hasOwnProperty.call(names, id) &&
+        types[id] !== "calculation",
+    )
     .sort((a, b) => a - b);
   for (const id of customIds) {
-    out.push({
-      wireKey: `custom:${id}`,
-      label: customFieldLabel(id, names),
-      type: "text",
-      nullable: false,
-      required: false,
-    });
+    const label = customFieldLabel(id, names);
+    const fieldType = types[id] ?? "text";
+    if (fieldType === "boolean") {
+      out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: ["true", "false"] });
+    } else if (fieldType === "select") {
+      out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: options[id] ?? [] });
+    } else if (fieldType === "number") {
+      out.push({ wireKey: `custom:${id}`, label, type: "number", nullable: false, required: false });
+    } else if (fieldType === "date") {
+      out.push({ wireKey: `custom:${id}`, label, type: "date", nullable: false, required: false });
+    } else {
+      out.push({ wireKey: `custom:${id}`, label, type: "text", nullable: false, required: false });
+    }
   }
   return out;
 }
@@ -93,6 +111,8 @@ interface ShareEditDialogProps {
   booking: ShareBooking;
   config: ShareLinkConfig;
   customFieldNames: Record<number, string>;
+  customFieldTypes: Record<number, string>;
+  customFieldOptions: Record<number, string[]>;
   onSaved: () => void;
   onSessionExpired: () => void;
   onUnavailable: () => void;
@@ -105,6 +125,8 @@ export function ShareEditDialog({
   booking,
   config,
   customFieldNames,
+  customFieldTypes,
+  customFieldOptions,
   onSaved,
   onSessionExpired,
   onUnavailable,
@@ -114,7 +136,10 @@ export function ShareEditDialog({
   const [initial, setInitial] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
-  const controls = useMemo(() => writableControls(config, customFieldNames), [config, customFieldNames]);
+  const controls = useMemo(
+    () => writableControls(config, customFieldNames, customFieldTypes, customFieldOptions),
+    [config, customFieldNames, customFieldTypes, customFieldOptions],
+  );
 
   // (Re)initialize the form whenever the dialog opens for a booking.
   useEffect(() => {
@@ -218,14 +243,30 @@ export function ShareEditDialog({
                 {c.label}
                 {c.required && <span className="text-destructive"> *</span>}
               </Label>
-              <Input
-                id={`share-edit-${c.wireKey}`}
-                type={c.type}
-                step={c.type === "time" ? 60 : undefined}
-                value={values[c.wireKey] ?? ""}
-                onChange={(e) => setValues((v) => ({ ...v, [c.wireKey]: e.target.value }))}
-                data-testid={`input-share-edit-${c.wireKey}`}
-              />
+              {c.type === "select" ? (
+                <Select
+                  value={values[c.wireKey] || undefined}
+                  onValueChange={(v) => setValues((prev) => ({ ...prev, [c.wireKey]: v }))}
+                >
+                  <SelectTrigger id={`share-edit-${c.wireKey}`} data-testid={`input-share-edit-${c.wireKey}`}>
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(c.options ?? []).map((opt) => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id={`share-edit-${c.wireKey}`}
+                  type={c.type}
+                  step={c.type === "time" ? 60 : undefined}
+                  value={values[c.wireKey] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [c.wireKey]: e.target.value }))}
+                  data-testid={`input-share-edit-${c.wireKey}`}
+                />
+              )}
             </div>
           ))}
 

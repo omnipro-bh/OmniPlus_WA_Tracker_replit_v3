@@ -89,16 +89,6 @@ function renderStandardCell(key: string, b: ShareBooking): ReactNode {
       return <span>{b.service || "—"}</span>;
     case "provider":
       return <span>{b.provider || "—"}</span>;
-    case "customField1": {
-      const label = b.customField1Label;
-      const value = b.customField1Value;
-      return <span>{label ? `${label}: ${value ?? ""}` : (value ?? "—")}</span>;
-    }
-    case "customField2": {
-      const label = b.customField2Label;
-      const value = b.customField2Value;
-      return <span>{label ? `${label}: ${value ?? ""}` : (value ?? "—")}</span>;
-    }
     default:
       return <span>—</span>;
   }
@@ -279,6 +269,8 @@ export default function PublicSharePage() {
   const bookings = data?.bookings ?? [];
   const count = data?.count ?? 0;
   const customFieldNames = data?.customFieldNames ?? {};
+  const customFieldTypes = data?.customFieldTypes ?? {};
+  const customFieldOptions = data?.customFieldOptions ?? {};
 
   function handleSessionExpired() {
     setEditingBooking(null);
@@ -421,8 +413,8 @@ export default function PublicSharePage() {
   // ----- ready: booking list -----
 
   const standardCols = visibleFieldKeys(config);
-  const customColIds = visibleCustomFieldIds(config, customFieldNames);
-  const showEdit = !!config.allowedActions?.edit && hasWritableField(config);
+  const customColIds = visibleCustomFieldIds(config, customFieldNames, customFieldTypes);
+  const showEdit = !!config.allowedActions?.edit && hasWritableField(config, customFieldNames, customFieldTypes);
   const showCancel = !!config.allowedActions?.cancel;
   const showConfirm = !!config.allowedActions?.confirm;
   const showActions = showEdit || showCancel || showConfirm;
@@ -430,7 +422,7 @@ export default function PublicSharePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <div className="px-4 py-8 space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold">Shared bookings</h1>
@@ -599,6 +591,8 @@ export default function PublicSharePage() {
           booking={editingBooking}
           config={config}
           customFieldNames={customFieldNames}
+          customFieldTypes={customFieldTypes}
+          customFieldOptions={customFieldOptions}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ["share", token, "bookings"] })}
           onSessionExpired={handleSessionExpired}
           onUnavailable={handleUnavailable}

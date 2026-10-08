@@ -22,8 +22,6 @@ export const SHARE_FIELD_ORDER: string[] = [
   "customerPhone",
   "service",
   "provider",
-  "customField1",
-  "customField2",
 ];
 
 export const STANDARD_FIELD_LABELS: Record<string, string> = {
@@ -38,8 +36,6 @@ export const STANDARD_FIELD_LABELS: Record<string, string> = {
   customerPhone: "Customer phone",
   service: "Service",
   provider: "Provider",
-  customField1: "Custom field 1",
-  customField2: "Custom field 2",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -84,24 +80,55 @@ export function visibleFieldKeys(config: ShareLinkConfig): string[] {
 // Visible user-defined custom field ids, sorted ascending (stable column order).
 // Only ids present in `customFieldNames` are rendered, so ghost permissions the
 // owner never configured (e.g. after "Set all visible to Read") don't produce
-// empty columns.
+// empty columns. Calculation fields are computed (never stored), so they're
+// excluded from columns too.
 export function visibleCustomFieldIds(
   config: ShareLinkConfig,
   customFieldNames: Record<number, string>,
+  customFieldTypes: Record<number, string>,
 ): number[] {
   const perms = config.fieldPermissions || {};
   const names = customFieldNames || {};
+  const types = customFieldTypes || {};
   return Object.keys(perms)
     .filter((k) => k.startsWith("custom:") && perms[k] !== "hidden")
     .map((k) => parseInt(k.slice("custom:".length), 10))
-    .filter((id) => Number.isInteger(id) && Object.prototype.hasOwnProperty.call(names, id))
+    .filter(
+      (id) =>
+        Number.isInteger(id) &&
+        Object.prototype.hasOwnProperty.call(names, id) &&
+        types[id] !== "calculation",
+    )
     .sort((a, b) => a - b);
 }
 
-// True when any standard or custom field is writable (drives whether Edit shows).
-export function hasWritableField(config: ShareLinkConfig): boolean {
+// True when at least one actually-renderable field is writable (drives whether
+// Edit shows). Mirrors the exact set of controls the edit dialog would render:
+// standard keys currently in SHARE_FIELD_ORDER, plus custom:<id> ids present in
+// customFieldNames and not of type "calculation".
+export function hasWritableField(
+  config: ShareLinkConfig,
+  customFieldNames: Record<number, string>,
+  customFieldTypes: Record<number, string>,
+): boolean {
   const perms = config.fieldPermissions || {};
-  return Object.values(perms).some((v) => v === "write");
+  const names = customFieldNames || {};
+  const types = customFieldTypes || {};
+  for (const key of SHARE_FIELD_ORDER) {
+    if (perms[key] === "write") return true;
+  }
+  for (const key of Object.keys(perms)) {
+    if (!key.startsWith("custom:") || perms[key] !== "write") continue;
+    const id = parseInt(key.slice("custom:".length), 10);
+    if (
+      Number.isInteger(id) &&
+      Object.prototype.hasOwnProperty.call(names, id) &&
+      types[id] !== "calculation"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Column header for a custom field: the real name when provided (the server now
