@@ -86,10 +86,12 @@ export function visibleCustomFieldIds(
   config: ShareLinkConfig,
   customFieldNames: Record<number, string>,
   customFieldTypes: Record<number, string>,
+  customFieldOrder: number[] = [],
 ): number[] {
   const perms = config.fieldPermissions || {};
   const names = customFieldNames || {};
   const types = customFieldTypes || {};
+  const orderIndex = new Map(customFieldOrder.map((id, i) => [id, i]));
   return Object.keys(perms)
     .filter((k) => k.startsWith("custom:") && perms[k] !== "hidden")
     .map((k) => parseInt(k.slice("custom:".length), 10))
@@ -99,7 +101,12 @@ export function visibleCustomFieldIds(
         Object.prototype.hasOwnProperty.call(names, id) &&
         types[id] !== "calculation",
     )
-    .sort((a, b) => a - b);
+    .sort((a, b) => {
+      const ai = orderIndex.has(a) ? orderIndex.get(a)! : Infinity;
+      const bi = orderIndex.has(b) ? orderIndex.get(b)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a - b;
+    });
 }
 
 // True when at least one actually-renderable field is writable (drives whether

@@ -38,6 +38,7 @@ export interface ShareListResponse {
   customFieldNames: Record<number, string>;
   customFieldTypes: Record<number, string>;
   customFieldOptions: Record<number, string[]>;
+  customFieldOrder: number[];
 }
 
 export class ShareApiError extends Error {

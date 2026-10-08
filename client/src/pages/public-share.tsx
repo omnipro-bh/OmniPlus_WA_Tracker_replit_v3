@@ -271,6 +271,7 @@ export default function PublicSharePage() {
   const customFieldNames = data?.customFieldNames ?? {};
   const customFieldTypes = data?.customFieldTypes ?? {};
   const customFieldOptions = data?.customFieldOptions ?? {};
+  const customFieldOrder = data?.customFieldOrder ?? [];
 
   function handleSessionExpired() {
     setEditingBooking(null);
@@ -413,7 +414,7 @@ export default function PublicSharePage() {
   // ----- ready: booking list -----
 
   const standardCols = visibleFieldKeys(config);
-  const customColIds = visibleCustomFieldIds(config, customFieldNames, customFieldTypes);
+  const customColIds = visibleCustomFieldIds(config, customFieldNames, customFieldTypes, customFieldOrder);
   const showEdit = !!config.allowedActions?.edit && hasWritableField(config, customFieldNames, customFieldTypes);
   const showCancel = !!config.allowedActions?.cancel;
   const showConfirm = !!config.allowedActions?.confirm;
@@ -593,6 +594,7 @@ export default function PublicSharePage() {
           customFieldNames={customFieldNames}
           customFieldTypes={customFieldTypes}
           customFieldOptions={customFieldOptions}
+          customFieldOrder={customFieldOrder}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ["share", token, "bookings"] })}
           onSessionExpired={handleSessionExpired}
           onUnavailable={handleUnavailable}

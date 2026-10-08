@@ -56,11 +56,13 @@ function writableControls(
   customFieldNames: Record<number, string>,
   customFieldTypes: Record<number, string>,
   customFieldOptions: Record<number, string[]>,
+  customFieldOrder: number[],
 ): Control[] {
   const perms = config.fieldPermissions || {};
   const names = customFieldNames || {};
   const types = customFieldTypes || {};
   const options = customFieldOptions || {};
+  const orderIndex = new Map(customFieldOrder.map((id, i) => [id, i]));
   const out: Control[] = [];
   for (const key of SHARE_FIELD_ORDER) {
     if (perms[key] !== "write") continue;
@@ -75,7 +77,12 @@ function writableControls(
         Object.prototype.hasOwnProperty.call(names, id) &&
         types[id] !== "calculation",
     )
-    .sort((a, b) => a - b);
+    .sort((a, b) => {
+      const ai = orderIndex.has(a) ? orderIndex.get(a)! : Infinity;
+      const bi = orderIndex.has(b) ? orderIndex.get(b)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a - b;
+    });
   for (const id of customIds) {
     const label = customFieldLabel(id, names);
     const fieldType = types[id] ?? "text";
@@ -113,6 +120,7 @@ interface ShareEditDialogProps {
   customFieldNames: Record<number, string>;
   customFieldTypes: Record<number, string>;
   customFieldOptions: Record<number, string[]>;
+  customFieldOrder: number[];
   onSaved: () => void;
   onSessionExpired: () => void;
   onUnavailable: () => void;
@@ -127,6 +135,7 @@ export function ShareEditDialog({
   customFieldNames,
   customFieldTypes,
   customFieldOptions,
+  customFieldOrder,
   onSaved,
   onSessionExpired,
   onUnavailable,
@@ -137,8 +146,8 @@ export function ShareEditDialog({
   const [formError, setFormError] = useState<string | null>(null);
 
   const controls = useMemo(
-    () => writableControls(config, customFieldNames, customFieldTypes, customFieldOptions),
-    [config, customFieldNames, customFieldTypes, customFieldOptions],
+    () => writableControls(config, customFieldNames, customFieldTypes, customFieldOptions, customFieldOrder),
+    [config, customFieldNames, customFieldTypes, customFieldOptions, customFieldOrder],
   );
 
   // (Re)initialize the form whenever the dialog opens for a booking.

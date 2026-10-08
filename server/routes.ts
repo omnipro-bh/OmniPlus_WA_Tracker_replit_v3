@@ -6299,6 +6299,9 @@ export function registerRoutes(app: Express) {
         customFieldTypes[f.id] = f.fieldType;
         customFieldOptions[f.id] = f.options ?? [];
       }
+      const customFieldOrder = [...customFields]
+        .sort((a, b) => (a.displayOrder ?? a.id) - (b.displayOrder ?? b.id))
+        .map((f) => f.id);
 
       res.json({
         bookings: paged.map((b) => projectBooking(b, link.config)),
@@ -6310,6 +6313,7 @@ export function registerRoutes(app: Express) {
         customFieldNames,
         customFieldTypes,
         customFieldOptions,
+        customFieldOrder,
       });
     } catch (error: any) {
       console.error("Public share bookings error:", error);
@@ -6329,10 +6333,13 @@ export function registerRoutes(app: Express) {
       const customFields = await storage.getBookingCustomFieldsForUser(link.userId);
       const customFieldNames: Record<number, string> = {};
       for (const f of customFields) customFieldNames[f.id] = f.name;
+      const customFieldOrder = [...customFields]
+        .sort((a, b) => (a.displayOrder ?? a.id) - (b.displayOrder ?? b.id))
+        .map((f) => f.id);
 
       const projected = sliced.map((b) => projectBooking(b, link.config));
-      const header = buildCsvHeader(link.config, customFieldNames);
-      const lines = projected.map((p) => buildCsvRow(p, link.config));
+      const header = buildCsvHeader(link.config, customFieldNames, customFieldOrder);
+      const lines = projected.map((p) => buildCsvRow(p, link.config, customFieldOrder));
       let body = "\uFEFF" + header + "\n" + lines.join("\n");
       if (truncated) body += '\n"# truncated at 5000 rows"';
 

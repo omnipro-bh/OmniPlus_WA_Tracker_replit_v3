@@ -331,6 +331,8 @@ export function ShareLinksSettings() {
                   <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground mt-0.5">
                     <span className="font-mono">{link.tokenPreview}</span>
                     <span>Created {fmtDate(link.createdAt)}</span>
+                    <span>Updated {fmtDate(link.updatedAt)}</span>
+                    <span>Token since {fmtDate(link.tokenCreatedAt)}</span>
                     <span>Accessed {fmtDate(link.lastAccessedAt)}</span>
                     <span>Expires {fmtDate(link.expiresAt)}</span>
                   </div>
