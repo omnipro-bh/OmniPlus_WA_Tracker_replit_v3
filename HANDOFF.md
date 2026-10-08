@@ -9,13 +9,19 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `e9aa29b` (Feature 3G-4 — owner UI for share links in Settings).
-- Repo HEAD: `e9aa29b` (+ this commit: docs-only HANDOFF update).
+- Production HEAD (deployed/running on VPS): `3b7626a` (Feature 3G-5e — share-link UI polish).
+- Repo HEAD: `3b7626a` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
 
 ## Recent commits
 
+- `3b7626a` feat(booking): share-link UI polish — Updated/Token since + displayOrder-driven columns (3G-5e)
+- `376e413` fix(booking): preserve unmentioned custom field values on share PATCH (3G-5d)
+- `9d2ded5` chore(debug): temporary diagnostic logs for share edit modal (3G-5d-diagnostic)
+- `37aeecb` fix(booking): public share page — legacy fields, custom-field types, full-width table (3G-5c)
+- `e4997b3` fix(booking): public share page — logout, real custom-field names, wider table, refresh (3G-5b)
+- `1fe1856` feat(booking): public share page at /share/:token (Phase 3G-5)
 - `e9aa29b` feat(booking): owner UI for share links in Settings (Phase 3G-4)
 - `f296755` feat(booking): public share-link list + CSV + edit/cancel/confirm (Phase 3G-3)
 - `b2c3fd6` feat(booking): public share-link auth + session + rate limiting (Phase 3G-2)
@@ -37,6 +43,11 @@
 
 ## Completed phases
 
+- **Phase 3G-5e — Updated/Token since + displayOrder-driven custom columns**: share-link row now shows `Updated` + `Token since` (alongside Created/Accessed/Expires); `GET /bookings` + CSV endpoint build/echo `customFieldOrder` (sorted by `displayOrder ?? id`) so public-page columns, the edit modal, and the CSV all follow the owner's custom-field ordering; `orderedVisibleCustomFieldIds` (server) + updated `visibleCustomFieldIds` (client) use identical comparators (`3b7626a`)
+- **Phase 3G-5d — custom-field data-wipe fix**: `setBookingCustomFieldValues` is replace-all (DELETE+INSERT), so the share PATCH (which sends only changed fields) wiped every other custom field's value. Added `mergeBookingCustomFieldValues` (read existing → upsert incoming → delete-on-empty → write back full set) used only by the share PATCH; owner-edit replace-all + chatbot untouched; reverted the 4 temporary diagnostic `console.log`s (`376e413`)
+- **Phase 3G-5c — remove legacy customField1/2 + per-type custom inputs**: legacy `customField1`/`customField2` removed end-to-end (server `STANDARD_PROJECTORS`/`SHARE_FIELD_ORDER`/CSV builders/PATCH validator + owner `STANDARD_FIELDS` + client); `GET /bookings` echoes `customFieldTypes` + `customFieldOptions`; share edit modal renders per-type inputs (text/number/date/boolean/select; calculation omitted); `hasWritableField` + `visibleCustomFieldIds` exclude ghosts/stale/calculation keys; table made full-width (`max-w-7xl` dropped) (`37aeecb`)
+- **Phase 3G-5b — logout + real custom-field names + wider table + refresh**: `POST /api/public/share/:token/logout` (no auth; `clearCookie` options match `res.cookie`); `GET /bookings` echoes `customFieldNames`; client "Sign out" + "Refresh" buttons; `cache: "no-store"` on the list fetch (`e4997b3`)
+- **Phase 3G-5 — public page (`/share/:token`)**: `client/src/pages/public-share.tsx` (standalone page, no DashboardLayout — password gate, projected list driven by `config.fieldPermissions`, pagination, CSV download via fetch+blob+anchor, edit/cancel/confirm gated by `allowedActions`, 401→gate / 404→unavailable / 429→Retry-After countdown states); `client/src/lib/share-api.ts` (`ShareApiError` carrying `status`/`retryAfter`; fetch helpers with `credentials: "include"`); `client/src/lib/share-fields.ts` (field metadata); `client/src/components/share-edit-dialog.tsx` (writable-only edit modal); route registered in `App.tsx` (`1fe1856`)
 - **Phase 3G-4 — owner UI for share links (Settings tab)**: `client/src/components/share-links-settings.tsx` (new `ShareLinksSettings` Card — list, create/edit dialog, token reveal, toggle, regenerate, delete; mirrors `custom-fields-settings.tsx` patterns; field-permission matrix grouped (Scheduling/Customer/Details/Legacy/Custom) with service/provider/status read-only; "Set all visible to Read"; token reveal modal with exact warning text, cleared on close; Delete + Regenerate via `AlertDialog`; N/2 counter); mounted after `<CustomFieldsSettings />` in the settings tab (`e9aa29b`). **Deployed at `e9aa29b`; UI confirmed rendering correctly (Share Links card visible, link rows display, create button shows N/2 counter); full 11-step interactive verification (create → reveal → copy → toggle → edit → regenerate → delete → max-2 → incognito URL test) still pending.**
 - **Phase 3G-3 — public list + CSV + write actions**: `todayInBahrain()` + `visibleCustomFieldIds()` in `server/share-links.ts`; `buildCsvHeader(config, customFieldNames)` with real (csvCell-sanitized) custom-field names; `buildCsvRow` aligned to the same id order; `enrichBookingsForUser()` + `getShareBookingsForLink()` single row source (fetch 5000 → enrich → filter); 5 public endpoints behind `requireShareSession` — `GET /bookings` (paginated 50, cap 200, echoes `config` + `today`), `GET /bookings.csv` (cap 5000, BOM, `X-Truncated`/`X-Truncated-At`), `PATCH /bookings/:id` (write-perm whitelist, service/provider/status rejected, `checkBookingOverlap` with `excludeBookingId`), `POST /bookings/:id/cancel`, `POST /bookings/:id/confirm`; `resolveShareBookingInScope()` enforces ownership + link visibility on all writes; write rate limit (60/5 min) + audit logging (`third_party_edit/cancel/confirm`); projected responses; removed temporary `/ping` (`f296755`)
 - **Phase 3G-2 — public auth + session + rate limiting**: derived `SHARE_SECRET` (HMAC of `SESSION_SECRET` + namespace); `signShareSession`/`verifyShareSession` (12h, payload-shape validated); `requireShareSession` middleware (fail-closed: cookie → JWT → link lookup → enabled → not-expired → `configVersion` match; 401 vs 404 split); `server/share-rate-limit.ts` (in-memory token lockout 10 fails/15 min + IP throttle 20/5 min, lazy expiry + sweep, `getClientIp` via `req.ip`); `DUMMY_PASSWORD_HASH` + `timingEqualizeCompare` (timing-equalized 404); `POST /api/public/share/:token/auth` (rate limit → lookup → timing-equalize 404 → bcrypt → 401/200 + `share_session` cookie); `GET /api/public/share/:token/ping` (temporary); `server/index.ts` path redaction (`/share/[redacted]`) (`b2c3fd6`)
@@ -75,25 +86,52 @@
 
 - Set up `pm2-logrotate` (or scheduled truncation) to prevent the ~4.7 GB log growth from recurring.
 
-## In progress — Feature 3 (shareable booking links)
+## Feature 3 — shareable booking links (COMPLETE ✅)
 
-Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete. Session ended at ~48% (3G-1 + 3G-2 + 3G-3 done; 3G-4 deployed, verification pending).
+Password-protected public links granting field-scoped access to a subset of a user's bookings. Per-user max 2 links, enable/disable/delete.
 
 - **3G-1** ✅ schema + owner endpoints
 - **3G-2** ✅ public auth + session + rate limiting
 - **3G-3** ✅ public list + CSV + edit/cancel/confirm
-- **3G-4** ⏳ owner UI in the Settings tab — deployed, manual verification pending
-- **3G-5** — public UI page (`/share/:token`)
+- **3G-4** ✅ owner UI in the Settings tab (deployed + render-verified)
+- **3G-5** ✅ public UI page (`/share/:token`)
+- **3G-5b…3G-5e** ✅ fix passes (logout/names, legacy-field removal + per-type inputs, data-wipe fix, Updated/Token since + displayOrder)
 
-## Next session — start here
+All shipped + deployed. One enhancement remains: **3G-6** (below).
 
-**Phase 3G-5 — public page at `/share/:token`** — password gate + bookings list + CSV export + edit/cancel/confirm UI. Backend is complete (3G-1..3G-3); this is client-only.
+## Next phase — 3G-6 (share-link column control + public-page enhancements)
 
-Optionally finish 3G-4's 11-step interactive verification first (fast, ~5 min): create → reveal → copy → toggle → edit → regenerate → delete → max-2 → incognito URL test. Or defer entirely and mark 3G-4 ✅ as "deployed + render-verified" (card + rows + N/2 counter already confirmed rendering).
+Estimated ~20-25% across a fresh session.
+
+### A. Reorder all columns per link (owner UI + config + public page + CSV)
+- Add up/down arrow buttons (stacked, left side — mirroring the Custom Fields settings pattern) to every row in the Edit Share Link modal's field-permission list.
+- Remove the group headers (Scheduling / Customer / Details / Custom) — show one flat reorderable list.
+- Reorder saves only on modal Save (Cancel discards).
+- Store the order in `config.fieldOrder: string[]` — array of field keys (standard keys + `custom:<id>`).
+- Server + client both respect `fieldOrder` when rendering: public-page table columns, CSV export columns (must match table order), edit-modal control order.
+- Fallback: if `fieldOrder` is empty (existing links), use the current fixed `SHARE_FIELD_ORDER`.
+- **Risk to handle**: the `ShareLinkConfig` zod schema — add `fieldOrder` as optional with default `[]` so existing links don't fail validation. Check the schema definition (`shared/schema.ts` ~1157) before implementing.
+
+### B. Sortable columns on the public page
+- Click a column header → sort the current page's rows (asc/desc).
+- Visual indicator on active sort column (▲/▼).
+- Sort by type: date = chronological, number = numeric, text = alphabetical.
+- Client-side only (sort the 50 rows already fetched per page) — no server change.
+
+### C. Mobile-responsive public page
+- The current horizontal-scroll table is technically usable but cramped on phones.
+- Design options: card-stack on mobile (one card per booking) vs improved table (sticky first column, condensed layout).
+- Decide in the 3G-6 design phase.
 
 ## Follow-ups
 
 - **nginx log redaction** — `/var/log/nginx/my-app-access.log` records the raw `/api/public/share/<token>/*` URI (nginx logs the request before Express can redact). Add a custom nginx `log_format` to redact `/share/<token>` → `/share/[redacted]`. Note: app-log redaction (`server/index.ts`) already works.
+- **Add `description` to the public list response** — for a real header title on the public page (currently a generic "Shared bookings" header).
+- **Owner UI: prune stale `fieldPermissions` keys** — existing links may carry `custom:<id>` or legacy `customField1/2` keys that no longer render; a save-time prune (drop keys not in the current STANDARD_FIELDS + custom fields) would clean the JSONB.
+- **CSV vs table field-visibility nuance** — confirm CSV columns exactly match the table columns (both driven by the same field order + visibility); note the server-side `visibleCustomFieldIds` doesn't filter calculation/ghost ids (relies on the projected `customFieldValues`).
+- **Inline editing on the public page** — potential 3G-7.
+- **Session-expiry UX polish** — the 12h `share_session` TTL returns the visitor to the password gate mid-use; consider a friendlier "session expired, re-enter password" toast vs. the bare gate.
+- **3G-4 owner UI interactive verification** — the 11-step create→reveal→copy→toggle→edit→regenerate→delete→max-2→incognito flow was render-verified but never interactively exercised; worth a manual pass.
 - ~~Remove `GET /api/public/share/:token/ping`~~ — **done** (removed in 3G-3).
 - **Minor (non-blocking)**: `/confirm` allows confirming an already-cancelled booking (no `status === "cancelled"` guard) — business rule, not a security issue. Also `parseInt` on `page`/`pageSize` is lenient (`"1abc"` → 1), already clamped by `Math.max`/`Math.min`.
 
