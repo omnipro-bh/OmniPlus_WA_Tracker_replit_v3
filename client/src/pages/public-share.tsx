@@ -271,6 +271,10 @@ export default function PublicSharePage() {
   const customFieldNames = data?.customFieldNames ?? {};
   const customFieldTypes = data?.customFieldTypes ?? {};
   const customFieldOptions = data?.customFieldOptions ?? {};
+  console.log('[debug] customFieldNames:', customFieldNames);
+  console.log('[debug] customFieldTypes:', customFieldTypes);
+  console.log('[debug] customFieldOptions:', customFieldOptions);
+  console.log('[debug] bookings[0].customFieldValues:', bookings[0]?.customFieldValues);
 
   function handleSessionExpired() {
     setEditingBooking(null);

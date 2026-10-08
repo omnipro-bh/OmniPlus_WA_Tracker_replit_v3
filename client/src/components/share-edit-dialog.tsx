@@ -144,6 +144,7 @@ export function ShareEditDialog({
   // (Re)initialize the form whenever the dialog opens for a booking.
   useEffect(() => {
     if (!open) return;
+    console.log("[ShareEditDialog] effect fired", { open, bookingId: booking.id, controlsCount: controls.length });
     const init: Record<string, string> = {};
     for (const c of controls) init[c.wireKey] = initialValue(booking, c.wireKey);
     setInitial(init);
