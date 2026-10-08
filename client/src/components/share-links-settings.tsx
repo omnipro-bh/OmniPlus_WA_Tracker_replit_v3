@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, RefreshCw, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Copy, ChevronUp, ChevronDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -98,6 +98,7 @@ export function ShareLinksSettings() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [fieldPermissions, setFieldPermissions] = useState<Record<string, FieldPerm>>({});
+  const [fieldOrder, setFieldOrder] = useState<string[]>([]);
   const [actions, setActions] = useState({ edit: false, cancel: false, confirm: false, exportCsv: false });
   const [expiresAt, setExpiresAt] = useState("");
 
@@ -176,13 +177,53 @@ export function ShareLinksSettings() {
     .sort((a, b) => (a.displayOrder ?? a.id) - (b.displayOrder ?? b.id))
     .map((cf) => ({ key: `custom:${cf.id}`, label: cf.name, writable: true }));
 
-  const groups: Array<{ name: string; fields: Array<{ key: string; label: string; writable: boolean }> }> = [
-    { name: "Scheduling", fields: STANDARD_FIELDS.filter((f) => f.group === "Scheduling") },
-    { name: "Customer", fields: STANDARD_FIELDS.filter((f) => f.group === "Customer") },
-    { name: "Details (read-only)", fields: STANDARD_FIELDS.filter((f) => f.group === "Details") },
-    { name: "Legacy custom fields", fields: STANDARD_FIELDS.filter((f) => f.group === "Legacy") },
-    { name: "Custom fields", fields: customFieldRows },
+  // Flat list of every field (standard + custom) with its label + writability.
+  // Used by the reorderable permission list; the Details group stays read-only.
+  const allFields: Array<{ key: string; label: string; writable: boolean }> = [
+    ...STANDARD_FIELDS.map((f) => ({ key: f.key, label: f.label, writable: f.writable })),
+    ...customFieldRows,
   ];
+
+  const fieldLabel = (key: string): string =>
+    allFields.find((f) => f.key === key)?.label ?? key;
+
+  // Build the full ordered list: config.fieldOrder (valid keys) → remaining
+  // standard keys (SHARE_FIELD_ORDER order) → remaining custom keys (displayOrder).
+  function buildFieldOrder(link: ShareLink | null): string[] {
+    const known = new Set(allFields.map((f) => f.key));
+    const saved = link?.config?.fieldOrder ?? [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const k of saved) {
+      if (known.has(k) && !seen.has(k)) {
+        seen.add(k);
+        out.push(k);
+      }
+    }
+    for (const f of STANDARD_FIELDS) {
+      if (!seen.has(f.key)) {
+        seen.add(f.key);
+        out.push(f.key);
+      }
+    }
+    for (const cf of customFieldRows) {
+      if (!seen.has(cf.key)) {
+        seen.add(cf.key);
+        out.push(cf.key);
+      }
+    }
+    return out;
+  }
+
+  function moveField(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= fieldOrder.length) return;
+    setFieldOrder((prev) => {
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   function emptyFieldPermissions(): Record<string, FieldPerm> {
     const perms: Record<string, FieldPerm> = {};
@@ -202,11 +243,13 @@ export function ShareLinksSettings() {
     setFieldPermissions({});
     setActions({ edit: false, cancel: false, confirm: false, exportCsv: false });
     setExpiresAt("");
+    setFieldOrder([]);
   }
 
   function openAdd() {
     resetForm();
     setFieldPermissions(emptyFieldPermissions());
+    setFieldOrder(buildFieldOrder(null));
     setDialogOpen(true);
   }
 
@@ -219,6 +262,7 @@ export function ShareLinksSettings() {
     setDateFrom(link.config.dateRange?.from || "");
     setDateTo(link.config.dateRange?.to || "");
     setFieldPermissions({ ...emptyFieldPermissions(), ...(link.config.fieldPermissions || {}) });
+    setFieldOrder(buildFieldOrder(link));
     setActions({
       edit: link.config.allowedActions?.edit ?? false,
       cancel: link.config.allowedActions?.cancel ?? false,
@@ -274,6 +318,7 @@ export function ShareLinksSettings() {
       statuses: visibility === "statuses" ? statuses : [],
       dateRange: dateFrom || dateTo ? { from: dateFrom || null, to: dateTo || null } : null,
       fieldPermissions,
+      fieldOrder,
       allowedActions: actions,
     };
 
@@ -443,29 +488,54 @@ export function ShareLinksSettings() {
                   Set all visible to Read
                 </Button>
               </div>
-              <div className="space-y-3 rounded-md border p-3">
-                {groups.map((group) =>
-                  group.fields.length === 0 ? null : (
-                    <div key={group.name} className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground">{group.name}</p>
-                      {group.fields.map((f) => (
-                        <div key={f.key} className="flex items-center justify-between gap-2">
-                          <span className="text-sm">{f.label}</span>
-                          <Select value={fieldPermissions[f.key] ?? "hidden"} onValueChange={(v) => setPerm(f.key, v as FieldPerm)}>
-                            <SelectTrigger className="w-28" data-testid={`select-share-perm-${f.key}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="hidden">Hidden</SelectItem>
-                              <SelectItem value="read">Read</SelectItem>
-                              {f.writable && <SelectItem value="write">Write</SelectItem>}
-                            </SelectContent>
-                          </Select>
+              <div className="space-y-1 rounded-md border p-3">
+                {fieldOrder.map((key, index) => {
+                  const f = allFields.find((x) => x.key === key);
+                  const writable = f?.writable ?? false;
+                  return (
+                    <div key={key} className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex flex-col shrink-0">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => moveField(index, -1)}
+                            disabled={index === 0}
+                            aria-label={`Move ${fieldLabel(key)} up`}
+                            data-testid={`button-share-order-up-${key}`}
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => moveField(index, 1)}
+                            disabled={index === fieldOrder.length - 1}
+                            aria-label={`Move ${fieldLabel(key)} down`}
+                            data-testid={`button-share-order-down-${key}`}
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
                         </div>
-                      ))}
+                        <span className="text-sm truncate">{fieldLabel(key)}</span>
+                      </div>
+                      <Select value={fieldPermissions[key] ?? "hidden"} onValueChange={(v) => setPerm(key, v as FieldPerm)}>
+                        <SelectTrigger className="w-28 shrink-0" data-testid={`select-share-perm-${key}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hidden">Hidden</SelectItem>
+                          <SelectItem value="read">Read</SelectItem>
+                          {writable && <SelectItem value="write">Write</SelectItem>}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )
-                )}
+                  );
+                })}
               </div>
             </div>
 

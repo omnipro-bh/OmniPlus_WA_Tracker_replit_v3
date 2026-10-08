@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRoute } from "wouter";
@@ -21,8 +21,10 @@ import {
 import {
   AlertCircle,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   Loader2,
   Lock,
@@ -47,10 +49,11 @@ import {
   STANDARD_FIELD_LABELS,
   STATUS_LABELS,
   statusBadgeVariant,
-  visibleCustomFieldIds,
-  visibleFieldKeys,
+  orderedVisibleFields,
+  compareBookingFields,
   hasWritableField,
   customFieldLabel,
+  type OrderedField,
 } from "@/lib/share-fields";
 import { ShareEditDialog } from "@/components/share-edit-dialog";
 import { formatLongDate } from "@/lib/booking-date";
@@ -234,6 +237,7 @@ export default function PublicSharePage() {
 
   const [page, setPage] = useState(1);
   const [unavailable, setUnavailable] = useState(false);
+  const [sort, setSort] = useState<{ key: string | null; dir: "asc" | "desc" }>({ key: null, dir: "asc" });
 
   // Password gate state
   const [password, setPassword] = useState("");
@@ -272,6 +276,28 @@ export default function PublicSharePage() {
   const customFieldTypes = data?.customFieldTypes ?? {};
   const customFieldOptions = data?.customFieldOptions ?? {};
   const customFieldOrder = data?.customFieldOrder ?? [];
+
+  // Merged ordered visible columns (respects config.fieldOrder).
+  const columns = config
+    ? orderedVisibleFields(config, customFieldNames, customFieldTypes, customFieldOrder)
+    : [];
+
+  // Reset a stale sort key when the column set changes (e.g. reorder/hide).
+  useEffect(() => {
+    if (sort.key && !columns.some((c) => c.key === sort.key)) {
+      setSort({ key: null, dir: "asc" });
+    }
+  }, [columns, sort.key]);
+
+  const sortedBookings = useMemo(() => {
+    if (!sort.key) return bookings;
+    const copy = [...bookings];
+    copy.sort((a, b) => {
+      const c = compareBookingFields(a, b, sort.key!, customFieldTypes);
+      return sort.dir === "asc" ? c : -c;
+    });
+    return copy;
+  }, [bookings, sort, customFieldTypes]);
 
   function handleSessionExpired() {
     setEditingBooking(null);
@@ -413,13 +439,63 @@ export default function PublicSharePage() {
 
   // ----- ready: booking list -----
 
-  const standardCols = visibleFieldKeys(config);
-  const customColIds = visibleCustomFieldIds(config, customFieldNames, customFieldTypes, customFieldOrder);
   const showEdit = !!config.allowedActions?.edit && hasWritableField(config, customFieldNames, customFieldTypes);
   const showCancel = !!config.allowedActions?.cancel;
   const showConfirm = !!config.allowedActions?.confirm;
   const showActions = showEdit || showCancel || showConfirm;
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+
+  const columnLabel = (c: OrderedField): string =>
+    c.kind === "standard"
+      ? STANDARD_FIELD_LABELS[c.key] ?? c.key
+      : customFieldLabel(c.id, customFieldNames);
+
+  const cellValue = (c: OrderedField, b: ShareBooking, values: Map<number, string>): ReactNode =>
+    c.kind === "standard" ? renderStandardCell(c.key, b) : values.get(c.id) ?? "—";
+
+  function toggleSort(key: string) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+  }
+
+  const renderActions = (b: ShareBooking, variant: "icons" | "labels"): ReactNode => {
+    if (!showActions) return null;
+    const gap = variant === "icons" ? "gap-1" : "gap-2";
+    return (
+      <div className={`flex items-center ${gap}`}>
+        {showEdit && (variant === "icons" ? (
+          <Button variant="ghost" size="icon" onClick={() => setEditingBooking(b)} aria-label="Edit booking" data-testid={`share-action-edit-${b.id}`}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setEditingBooking(b)} data-testid={`share-action-edit-${b.id}`}>
+            Edit
+          </Button>
+        ))}
+        {showConfirm && b.status === "pending" && (variant === "icons" ? (
+          <Button variant="ghost" size="icon" onClick={() => setConfirmTarget(b)} aria-label="Confirm booking" data-testid={`share-action-confirm-${b.id}`}>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setConfirmTarget(b)} data-testid={`share-action-confirm-${b.id}`}>
+            Confirm
+          </Button>
+        ))}
+        {showCancel && b.status !== "cancelled" && (variant === "icons" ? (
+          <Button variant="ghost" size="icon" onClick={() => setCancelTarget(b)} aria-label="Cancel booking" data-testid={`share-action-cancel-${b.id}`}>
+            <XCircle className="h-4 w-4 text-destructive" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setCancelTarget(b)} data-testid={`share-action-cancel-${b.id}`}>
+            Cancel
+          </Button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -467,85 +543,82 @@ export default function PublicSharePage() {
                 No bookings to show for this link.
               </p>
             ) : (
-              <div className="overflow-x-auto md:overflow-visible">
-                <Table className="[&_td]:px-3 [&_th]:px-3">
-                  <TableHeader>
-                    <TableRow>
-                      {standardCols.map((k) => (
-                        <TableHead key={k} className="whitespace-nowrap">
-                          {STANDARD_FIELD_LABELS[k] ?? k}
-                        </TableHead>
-                      ))}
-                      {customColIds.map((id) => (
-                        <TableHead key={`custom:${id}`} className="whitespace-nowrap">
-                          {customFieldLabel(id, customFieldNames)}
-                        </TableHead>
-                      ))}
-                      {showActions && <TableHead className="whitespace-nowrap">Actions</TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {bookings.map((b) => {
-                      const values = new Map(
-                        (b.customFieldValues ?? []).map((v) => [v.fieldId, v.value]),
-                      );
-                      return (
-                        <TableRow key={b.id} data-testid={`share-booking-row-${b.id}`}>
-                          {standardCols.map((k) => (
-                            <TableCell key={k} className="whitespace-nowrap">
-                              {renderStandardCell(k, b)}
-                            </TableCell>
-                          ))}
-                          {customColIds.map((id) => (
-                            <TableCell key={`custom:${id}`} className="whitespace-nowrap">
-                              {values.get(id) ?? "—"}
-                            </TableCell>
+              <>
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <Table className="[&_td]:px-3 [&_th]:px-3">
+                    <TableHeader>
+                      <TableRow>
+                        {columns.map((c) => (
+                          <TableHead
+                            key={c.key}
+                            className="whitespace-nowrap"
+                            aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleSort(c.key)}
+                              className="inline-flex items-center gap-1 hover:text-foreground"
+                              data-testid={`share-sort-${c.key}`}
+                            >
+                              {columnLabel(c)}
+                              {sort.key === c.key && (sort.dir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
+                            </button>
+                          </TableHead>
+                        ))}
+                        {showActions && <TableHead className="whitespace-nowrap">Actions</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedBookings.map((b) => {
+                        const values = new Map(
+                          (b.customFieldValues ?? []).map((v) => [v.fieldId, v.value]),
+                        );
+                        return (
+                          <TableRow key={b.id} data-testid={`share-booking-row-${b.id}`}>
+                            {columns.map((c) => (
+                              <TableCell key={c.key} className="whitespace-nowrap">
+                                {cellValue(c, b, values)}
+                              </TableCell>
+                            ))}
+                            {showActions && (
+                              <TableCell className="whitespace-nowrap">
+                                {renderActions(b, "icons")}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile card stack */}
+                <div className="md:hidden space-y-3">
+                  {sortedBookings.map((b) => {
+                    const values = new Map(
+                      (b.customFieldValues ?? []).map((v) => [v.fieldId, v.value]),
+                    );
+                    return (
+                      <Card key={b.id} data-testid={`share-booking-card-${b.id}`}>
+                        <CardContent className="p-4 space-y-2">
+                          {columns.map((c) => (
+                            <div key={c.key} className="flex justify-between gap-3 text-sm">
+                              <span className="text-muted-foreground shrink-0">{columnLabel(c)}</span>
+                              <span className="text-right font-medium">{cellValue(c, b, values)}</span>
+                            </div>
                           ))}
                           {showActions && (
-                            <TableCell className="whitespace-nowrap">
-                              <div className="flex items-center gap-1">
-                                {showEdit && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setEditingBooking(b)}
-                                    aria-label="Edit booking"
-                                    data-testid={`share-action-edit-${b.id}`}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                {showConfirm && b.status === "pending" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setConfirmTarget(b)}
-                                    aria-label="Confirm booking"
-                                    data-testid={`share-action-confirm-${b.id}`}
-                                  >
-                                    <CheckCircle className="h-4 w-4 text-green-600" />
-                                  </Button>
-                                )}
-                                {showCancel && b.status !== "cancelled" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setCancelTarget(b)}
-                                    aria-label="Cancel booking"
-                                    data-testid={`share-action-cancel-${b.id}`}
-                                  >
-                                    <XCircle className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
+                            <div className="pt-2 border-t">
+                              {renderActions(b, "labels")}
+                            </div>
                           )}
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

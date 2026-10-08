@@ -1,4 +1,5 @@
 import type { ShareLinkConfig } from "@shared/schema";
+import type { ShareBooking } from "@/lib/share-api";
 
 // ---------------------------------------------------------------------------
 // Feature 3G-5 — shared field metadata for the public share-link page.
@@ -142,4 +143,139 @@ export function hasWritableField(
 // echoes customFieldNames), else a placeholder fallback.
 export function customFieldLabel(id: number, customFieldNames?: Record<number, string>): string {
   return customFieldNames?.[id] ?? `Custom Field ${id}`;
+}
+
+// ---------------------------------------------------------------------------
+// Feature 3G-6 — fieldOrder-aware ordering + public-page sorting.
+// ---------------------------------------------------------------------------
+
+export type OrderedField =
+  | { kind: "standard"; key: string }
+  | { kind: "custom"; id: number; key: string };
+
+// Single merged, ordered, VISIBLE field list (table columns = mobile card fields).
+// Respects config.fieldOrder first, then appends anything visible but missing in
+// canonical order (standard by SHARE_FIELD_ORDER, custom by displayOrder). Mirrors
+// the server's orderedVisibleFieldKeys (server/share-links.ts) so the public table
+// columns line up exactly with the CSV export.
+export function orderedVisibleFields(
+  config: ShareLinkConfig,
+  customFieldNames: Record<number, string>,
+  customFieldTypes: Record<number, string>,
+  customFieldOrder: number[] = [],
+): OrderedField[] {
+  const perms = config.fieldPermissions || {};
+  const names = customFieldNames || {};
+  const types = customFieldTypes || {};
+  const order: string[] = [];
+  for (const key of config.fieldOrder ?? []) {
+    if (order.includes(key) || (perms[key] ?? "hidden") === "hidden") continue;
+    if (key.startsWith("custom:")) {
+      const id = parseInt(key.slice("custom:".length), 10);
+      if (
+        !Number.isInteger(id) ||
+        !Object.prototype.hasOwnProperty.call(names, id) ||
+        types[id] === "calculation"
+      ) {
+        continue;
+      }
+    } else if (!SHARE_FIELD_ORDER.includes(key)) {
+      continue;
+    }
+    order.push(key);
+  }
+  for (const key of SHARE_FIELD_ORDER) {
+    if (!order.includes(key) && (perms[key] ?? "hidden") !== "hidden") order.push(key);
+  }
+  for (const id of visibleCustomFieldIds(config, names, types, customFieldOrder)) {
+    const key = `custom:${id}`;
+    if (!order.includes(key)) order.push(key);
+  }
+  return order.map((key) =>
+    key.startsWith("custom:")
+      ? { kind: "custom", id: parseInt(key.slice("custom:".length), 10), key }
+      : { kind: "standard", key },
+  );
+}
+
+// Ordered list of WRITABLE field keys (perm === "write"), in fieldOrder order.
+// Drives the public edit modal's control order.
+export function orderedWritableFieldKeys(
+  config: ShareLinkConfig,
+  customFieldNames: Record<number, string>,
+  customFieldTypes: Record<number, string>,
+  customFieldOrder: number[] = [],
+): string[] {
+  return orderedVisibleFields(config, customFieldNames, customFieldTypes, customFieldOrder)
+    .filter((c) => (config.fieldPermissions?.[c.key] ?? "hidden") === "write")
+    .map((c) => c.key);
+}
+
+// ---- public-page sorting ---------------------------------------------------
+
+// Workflow-priority status order (needs-action first), not alphabetical.
+export const STATUS_ORDER = ["pending", "confirmed", "cancelled", "completed", "no_show"];
+
+// Sort type per standard key; custom keys look up customFieldTypes instead.
+const STANDARD_FIELD_SORT_TYPES: Record<string, "date" | "time" | "status" | "number" | "text"> = {
+  slotDate: "date",
+  endDate: "date",
+  startTime: "time",
+  endTime: "time",
+  endDayTime: "time",
+  status: "status",
+  bookingLabel: "text",
+  customerName: "text",
+  customerPhone: "text",
+  service: "text",
+  provider: "text",
+};
+
+// Raw sort value for a booking + column key. `endDayTime` is a composite column
+// that sorts by its start time; custom fields read from customFieldValues.
+function sortValue(key: string, b: ShareBooking): string | null {
+  if (key === "endDayTime") return b.endDayStartTime ?? null;
+  if (key.startsWith("custom:")) {
+    const id = parseInt(key.slice("custom:".length), 10);
+    return b.customFieldValues?.find((v) => v.fieldId === id)?.value ?? null;
+  }
+  return (b as unknown as Record<string, unknown>)[key] == null
+    ? null
+    : String((b as unknown as Record<string, unknown>)[key]);
+}
+
+// Type-aware comparator for a single column. Blank values always sort last,
+// regardless of direction. Dates/times are ISO strings so lexical == chronological.
+export function compareBookingFields(
+  a: ShareBooking,
+  b: ShareBooking,
+  key: string,
+  customFieldTypes: Record<number, string>,
+): number {
+  const type = key.startsWith("custom:")
+    ? customFieldTypes[parseInt(key.slice("custom:".length), 10)] ?? "text"
+    : STANDARD_FIELD_SORT_TYPES[key] ?? "text";
+  const av = sortValue(key, a);
+  const bv = sortValue(key, b);
+  const as = av == null ? "" : String(av);
+  const bs = bv == null ? "" : String(bv);
+  const aBlank = as.trim() === "";
+  const bBlank = bs.trim() === "";
+  if (aBlank !== bBlank) return aBlank ? 1 : -1;
+  switch (type) {
+    case "number": {
+      const an = parseFloat(as);
+      const bn = parseFloat(bs);
+      return (Number.isNaN(an) ? -Infinity : an) - (Number.isNaN(bn) ? -Infinity : bn);
+    }
+    case "status": {
+      const ai = STATUS_ORDER.indexOf(as);
+      const bi = STATUS_ORDER.indexOf(bs);
+      return (ai === -1 ? STATUS_ORDER.length : ai) - (bi === -1 ? STATUS_ORDER.length : bi);
+    }
+    case "date":
+    case "time":
+    default:
+      return as.localeCompare(bs, undefined, { numeric: true });
+  }
 }

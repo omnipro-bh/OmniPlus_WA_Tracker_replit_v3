@@ -21,7 +21,7 @@ import {
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { patchBooking, retryAfterMessage, type ShareBooking } from "@/lib/share-api";
-import { SHARE_FIELD_ORDER, customFieldLabel } from "@/lib/share-fields";
+import { orderedWritableFieldKeys, customFieldLabel } from "@/lib/share-fields";
 import type { ShareLinkConfig } from "@shared/schema";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -58,44 +58,28 @@ function writableControls(
   customFieldOptions: Record<number, string[]>,
   customFieldOrder: number[],
 ): Control[] {
-  const perms = config.fieldPermissions || {};
   const names = customFieldNames || {};
   const types = customFieldTypes || {};
   const options = customFieldOptions || {};
-  const orderIndex = new Map(customFieldOrder.map((id, i) => [id, i]));
   const out: Control[] = [];
-  for (const key of SHARE_FIELD_ORDER) {
-    if (perms[key] !== "write") continue;
-    out.push(...(STANDARD_CONTROLS[key] ?? []));
-  }
-  const customIds = Object.keys(perms)
-    .filter((k) => k.startsWith("custom:") && perms[k] === "write")
-    .map((k) => parseInt(k.slice("custom:".length), 10))
-    .filter(
-      (id) =>
-        Number.isInteger(id) &&
-        Object.prototype.hasOwnProperty.call(names, id) &&
-        types[id] !== "calculation",
-    )
-    .sort((a, b) => {
-      const ai = orderIndex.has(a) ? orderIndex.get(a)! : Infinity;
-      const bi = orderIndex.has(b) ? orderIndex.get(b)! : Infinity;
-      if (ai !== bi) return ai - bi;
-      return a - b;
-    });
-  for (const id of customIds) {
-    const label = customFieldLabel(id, names);
-    const fieldType = types[id] ?? "text";
-    if (fieldType === "boolean") {
-      out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: ["true", "false"] });
-    } else if (fieldType === "select") {
-      out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: options[id] ?? [] });
-    } else if (fieldType === "number") {
-      out.push({ wireKey: `custom:${id}`, label, type: "number", nullable: false, required: false });
-    } else if (fieldType === "date") {
-      out.push({ wireKey: `custom:${id}`, label, type: "date", nullable: false, required: false });
+  for (const key of orderedWritableFieldKeys(config, names, types, customFieldOrder)) {
+    if (key.startsWith("custom:")) {
+      const id = parseInt(key.slice("custom:".length), 10);
+      const label = customFieldLabel(id, names);
+      const fieldType = types[id] ?? "text";
+      if (fieldType === "boolean") {
+        out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: ["true", "false"] });
+      } else if (fieldType === "select") {
+        out.push({ wireKey: `custom:${id}`, label, type: "select", nullable: false, required: false, options: options[id] ?? [] });
+      } else if (fieldType === "number") {
+        out.push({ wireKey: `custom:${id}`, label, type: "number", nullable: false, required: false });
+      } else if (fieldType === "date") {
+        out.push({ wireKey: `custom:${id}`, label, type: "date", nullable: false, required: false });
+      } else {
+        out.push({ wireKey: `custom:${id}`, label, type: "text", nullable: false, required: false });
+      }
     } else {
-      out.push({ wireKey: `custom:${id}`, label, type: "text", nullable: false, required: false });
+      out.push(...(STANDARD_CONTROLS[key] ?? []));
     }
   }
   return out;

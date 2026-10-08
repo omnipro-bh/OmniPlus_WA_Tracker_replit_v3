@@ -1168,6 +1168,7 @@ export const shareLinkConfigSchema = z.object({
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format").nullable(),
   }).nullable().default(null),
   fieldPermissions: z.record(z.string(), shareLinkFieldPermissionSchema).default({}),
+  fieldOrder: z.array(z.string()).optional().default([]),
   allowedActions: z.object({
     edit: z.boolean().default(false),
     cancel: z.boolean().default(false),

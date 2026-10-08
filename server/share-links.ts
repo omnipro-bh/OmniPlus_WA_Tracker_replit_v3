@@ -188,22 +188,53 @@ function orderedVisibleCustomFieldIds(config: ShareLinkConfig, customFieldOrder:
   });
 }
 
+// Single merged, ordered, VISIBLE field-key list (standard keys + `custom:<id>`).
+// Respects config.fieldOrder first, then appends any visible-but-missing keys in
+// canonical order (standard by SHARE_FIELD_ORDER, custom by displayOrder). This is
+// the single source for CSV column order — the client's orderedVisibleFields in
+// share-fields.ts mirrors this exact algorithm so table columns line up with CSV.
+export function orderedVisibleFieldKeys(
+  config: ShareLinkConfig,
+  customFieldOrder: number[] = [],
+): string[] {
+  const perms = config.fieldPermissions || {};
+  const out: string[] = [];
+  for (const key of config.fieldOrder ?? []) {
+    if (out.includes(key) || (perms[key] ?? "hidden") === "hidden") continue;
+    if (key.startsWith("custom:")) {
+      const id = parseInt(key.slice("custom:".length), 10);
+      if (!Number.isInteger(id)) continue;
+    } else if (!SHARE_FIELD_ORDER.includes(key)) {
+      continue;
+    }
+    out.push(key);
+  }
+  for (const key of SHARE_FIELD_ORDER) {
+    if (!out.includes(key) && (perms[key] ?? "hidden") !== "hidden") out.push(key);
+  }
+  for (const id of orderedVisibleCustomFieldIds(config, customFieldOrder)) {
+    const key = `custom:${id}`;
+    if (!out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
 export function buildCsvHeader(
   config: ShareLinkConfig,
   customFieldNames: Record<number, string> = {},
   customFieldOrder: number[] = [],
 ): string {
-  const cells = visibleFieldKeys(config).map((k) => {
-    switch (k) {
+  const cells = orderedVisibleFieldKeys(config, customFieldOrder).map((key) => {
+    if (key.startsWith("custom:")) {
+      const id = parseInt(key.slice("custom:".length), 10);
+      // Custom-field columns use their real names (owner-controlled → sanitize).
+      return csvCell(customFieldNames[id] ?? `Custom Field ${id}`);
+    }
+    switch (key) {
       case "endDayTime": return csvCell("Last day time");
-      default: return csvCell(k);
+      default: return csvCell(key);
     }
   });
-  // Custom-field columns use their real names (owner-controlled → sanitize),
-  // ordered by the owner's displayOrder (customFieldOrder).
-  for (const id of orderedVisibleCustomFieldIds(config, customFieldOrder)) {
-    cells.push(csvCell(customFieldNames[id] ?? `Custom Field ${id}`));
-  }
   return cells.join(",");
 }
 
@@ -212,20 +243,21 @@ export function buildCsvRow(
   config: ShareLinkConfig,
   customFieldOrder: number[] = [],
 ): string {
-  const cells = visibleFieldKeys(config).map((k) => {
-    if (k === "endDayTime") {
+  // Custom-field values in the same order as the header.
+  const values = (projected["customFieldValues"] as Array<{ fieldId: number; value: string }> || []);
+  const byId = new Map(values.map((v) => [v.fieldId, v.value]));
+  const cells = orderedVisibleFieldKeys(config, customFieldOrder).map((key) => {
+    if (key.startsWith("custom:")) {
+      const id = parseInt(key.slice("custom:".length), 10);
+      return csvCell(byId.get(id) ?? "");
+    }
+    if (key === "endDayTime") {
       const s = projected["endDayStartTime"];
       const e = projected["endDayEndTime"];
       return csvCell(s && e ? `${s}-${e}` : (s || e || ""));
     }
-    return csvCell(projected[k]);
+    return csvCell(projected[key]);
   });
-  // Custom-field values in the same order as the header.
-  const values = (projected["customFieldValues"] as Array<{ fieldId: number; value: string }> || []);
-  const byId = new Map(values.map((v) => [v.fieldId, v.value]));
-  for (const id of orderedVisibleCustomFieldIds(config, customFieldOrder)) {
-    cells.push(csvCell(byId.get(id) ?? ""));
-  }
   return cells.join(",");
 }
 
