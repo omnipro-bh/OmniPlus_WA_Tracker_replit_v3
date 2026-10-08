@@ -39,6 +39,7 @@ interface CustomFieldDef {
   id: number;
   name: string;
   displayOrder: number | null;
+  fieldType: string;
 }
 
 const MAX_LINKS = 2;
@@ -173,7 +174,11 @@ export function ShareLinksSettings() {
   });
 
   // Custom-field permission rows, ordered by displayOrder (fallback id).
-  const customFieldRows = [...customFields]
+  // Fields that can appear on the public page (excludes calculation fields —
+  // they have no stored value; orderedVisibleFields filters them at render).
+  const visibleCustomFields = customFields.filter((cf) => cf.fieldType !== "calculation");
+
+  const customFieldRows = [...visibleCustomFields]
     .sort((a, b) => (a.displayOrder ?? a.id) - (b.displayOrder ?? b.id))
     .map((cf) => ({ key: `custom:${cf.id}`, label: cf.name, writable: true }));
 
@@ -228,7 +233,7 @@ export function ShareLinksSettings() {
   function emptyFieldPermissions(): Record<string, FieldPerm> {
     const perms: Record<string, FieldPerm> = {};
     for (const f of STANDARD_FIELDS) perms[f.key] = "hidden";
-    for (const cf of customFields) perms[`custom:${cf.id}`] = "hidden";
+    for (const cf of visibleCustomFields) perms[`custom:${cf.id}`] = "hidden";
     return perms;
   }
 
