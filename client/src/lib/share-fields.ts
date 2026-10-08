@@ -82,12 +82,19 @@ export function visibleFieldKeys(config: ShareLinkConfig): string[] {
 }
 
 // Visible user-defined custom field ids, sorted ascending (stable column order).
-export function visibleCustomFieldIds(config: ShareLinkConfig): number[] {
+// Only ids present in `customFieldNames` are rendered, so ghost permissions the
+// owner never configured (e.g. after "Set all visible to Read") don't produce
+// empty columns.
+export function visibleCustomFieldIds(
+  config: ShareLinkConfig,
+  customFieldNames: Record<number, string>,
+): number[] {
   const perms = config.fieldPermissions || {};
+  const names = customFieldNames || {};
   return Object.keys(perms)
     .filter((k) => k.startsWith("custom:") && perms[k] !== "hidden")
     .map((k) => parseInt(k.slice("custom:".length), 10))
-    .filter((id) => Number.isInteger(id))
+    .filter((id) => Number.isInteger(id) && Object.prototype.hasOwnProperty.call(names, id))
     .sort((a, b) => a - b);
 }
 
@@ -97,7 +104,8 @@ export function hasWritableField(config: ShareLinkConfig): boolean {
   return Object.values(perms).some((v) => v === "write");
 }
 
-// Placeholder column header until the server includes custom-field names (follow-up).
-export function customFieldLabel(id: number): string {
-  return `Custom Field ${id}`;
+// Column header for a custom field: the real name when provided (the server now
+// echoes customFieldNames), else a placeholder fallback.
+export function customFieldLabel(id: number, customFieldNames?: Record<number, string>): string {
+  return customFieldNames?.[id] ?? `Custom Field ${id}`;
 }

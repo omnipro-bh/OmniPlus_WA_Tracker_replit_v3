@@ -35,6 +35,7 @@ export interface ShareListResponse {
   pageSize: number;
   config: ShareLinkConfig;
   today: string;
+  customFieldNames: Record<number, string>;
 }
 
 export class ShareApiError extends Error {
@@ -94,6 +95,7 @@ function base(token: string): string {
 export async function fetchBookings(token: string, page: number): Promise<ShareListResponse> {
   const res = await fetch(`${base(token)}/bookings?page=${page}&pageSize=50`, {
     credentials: "include",
+    cache: "no-store",
   });
   if (!res.ok) throw await toShareApiError(res);
   return res.json();
@@ -105,6 +107,14 @@ export async function authenticate(token: string, password: string): Promise<voi
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw await toShareApiError(res);
+}
+
+export async function logout(token: string): Promise<void> {
+  const res = await fetch(`${base(token)}/logout`, {
+    method: "POST",
+    credentials: "include",
   });
   if (!res.ok) throw await toShareApiError(res);
 }

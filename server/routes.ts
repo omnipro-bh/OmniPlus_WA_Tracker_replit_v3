@@ -6265,6 +6265,19 @@ export function registerRoutes(app: Express) {
     res.json({ ok: true });
   });
 
+  // Clear the share_session cookie. No auth required — idempotent and safe to
+  // call regardless of session state (a visitor with a valid session for a link
+  // that was just disabled/expired should still be able to end their session).
+  app.post("/api/public/share/:token/logout", (_req: Request, res: Response) => {
+    res.clearCookie("share_session", {
+      path: "/",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+    });
+    res.json({ ok: true });
+  });
+
   // Public bookings list (projected to the link's permitted fields).
   app.get("/api/public/share/:token/bookings", requireShareSession, async (req: ShareRequest, res: Response) => {
     try {
@@ -6277,6 +6290,10 @@ export function registerRoutes(app: Express) {
       const start = (page - 1) * pageSize;
       const paged = rows.slice(start, start + pageSize);
 
+      const customFields = await storage.getBookingCustomFieldsForUser(link.userId);
+      const customFieldNames: Record<number, string> = {};
+      for (const f of customFields) customFieldNames[f.id] = f.name;
+
       res.json({
         bookings: paged.map((b) => projectBooking(b, link.config)),
         count,
@@ -6284,6 +6301,7 @@ export function registerRoutes(app: Express) {
         pageSize,
         config: link.config,
         today: todayInBahrain(),
+        customFieldNames,
       });
     } catch (error: any) {
       console.error("Public share bookings error:", error);

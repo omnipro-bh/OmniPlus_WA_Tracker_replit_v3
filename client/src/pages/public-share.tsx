@@ -27,6 +27,7 @@ import {
   Loader2,
   Lock,
   Pencil,
+  RefreshCw,
   XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +38,7 @@ import {
   confirmBooking,
   downloadCsv,
   fetchBookings,
+  logout,
   retryAfterMessage,
   type ShareBooking,
   type ShareListResponse,
@@ -276,6 +278,7 @@ export default function PublicSharePage() {
   const config = data?.config;
   const bookings = data?.bookings ?? [];
   const count = data?.count ?? 0;
+  const customFieldNames = data?.customFieldNames ?? {};
 
   function handleSessionExpired() {
     setEditingBooking(null);
@@ -351,6 +354,19 @@ export default function PublicSharePage() {
     onError: (e: any) => handleWriteError(e, "Failed to confirm booking"),
   });
 
+  const logoutMutation = useMutation({
+    mutationFn: () => logout(token),
+    onSuccess: () => {
+      setPassword("");
+      setAuthError(null);
+      setLockedUntil(null);
+      queryClient.invalidateQueries({ queryKey: ["share", token, "bookings"] });
+    },
+    onError: () => {
+      toast({ title: "Sign out failed", description: "Please try again.", variant: "destructive" });
+    },
+  });
+
   async function handleCsv() {
     try {
       await downloadCsv(token);
@@ -405,7 +421,7 @@ export default function PublicSharePage() {
   // ----- ready: booking list -----
 
   const standardCols = visibleFieldKeys(config);
-  const customColIds = visibleCustomFieldIds(config);
+  const customColIds = visibleCustomFieldIds(config, customFieldNames);
   const showEdit = !!config.allowedActions?.edit && hasWritableField(config);
   const showCancel = !!config.allowedActions?.cancel;
   const showConfirm = !!config.allowedActions?.confirm;
@@ -414,18 +430,38 @@ export default function PublicSharePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold">Shared bookings</h1>
             <p className="text-sm text-muted-foreground">Bookings shared with you.</p>
           </div>
-          {config.allowedActions?.exportCsv && (
-            <Button variant="outline" size="sm" onClick={handleCsv} data-testid="button-share-export-csv">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => bookingsQuery.refetch()}
+              data-testid="button-share-refresh"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
             </Button>
-          )}
+            {config.allowedActions?.exportCsv && (
+              <Button variant="outline" size="sm" onClick={handleCsv} data-testid="button-share-export-csv">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+              data-testid="button-share-sign-out"
+            >
+              {logoutMutation.isPending ? "Signing out…" : "Sign out"}
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -449,7 +485,7 @@ export default function PublicSharePage() {
                       ))}
                       {customColIds.map((id) => (
                         <TableHead key={`custom:${id}`} className="whitespace-nowrap">
-                          {customFieldLabel(id)}
+                          {customFieldLabel(id, customFieldNames)}
                         </TableHead>
                       ))}
                       {showActions && <TableHead className="whitespace-nowrap">Actions</TableHead>}
@@ -562,6 +598,7 @@ export default function PublicSharePage() {
           token={token}
           booking={editingBooking}
           config={config}
+          customFieldNames={customFieldNames}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ["share", token, "bookings"] })}
           onSessionExpired={handleSessionExpired}
           onUnavailable={handleUnavailable}

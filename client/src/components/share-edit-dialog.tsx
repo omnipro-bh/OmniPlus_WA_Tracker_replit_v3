@@ -51,8 +51,9 @@ const STANDARD_CONTROLS: Record<string, Control[]> = {
   ],
 };
 
-function writableControls(config: ShareLinkConfig): Control[] {
+function writableControls(config: ShareLinkConfig, customFieldNames: Record<number, string>): Control[] {
   const perms = config.fieldPermissions || {};
+  const names = customFieldNames || {};
   const out: Control[] = [];
   for (const key of SHARE_FIELD_ORDER) {
     if (perms[key] !== "write") continue;
@@ -61,12 +62,12 @@ function writableControls(config: ShareLinkConfig): Control[] {
   const customIds = Object.keys(perms)
     .filter((k) => k.startsWith("custom:") && perms[k] === "write")
     .map((k) => parseInt(k.slice("custom:".length), 10))
-    .filter((id) => Number.isInteger(id))
+    .filter((id) => Number.isInteger(id) && Object.prototype.hasOwnProperty.call(names, id))
     .sort((a, b) => a - b);
   for (const id of customIds) {
     out.push({
       wireKey: `custom:${id}`,
-      label: customFieldLabel(id),
+      label: customFieldLabel(id, names),
       type: "text",
       nullable: false,
       required: false,
@@ -91,6 +92,7 @@ interface ShareEditDialogProps {
   token: string;
   booking: ShareBooking;
   config: ShareLinkConfig;
+  customFieldNames: Record<number, string>;
   onSaved: () => void;
   onSessionExpired: () => void;
   onUnavailable: () => void;
@@ -102,6 +104,7 @@ export function ShareEditDialog({
   token,
   booking,
   config,
+  customFieldNames,
   onSaved,
   onSessionExpired,
   onUnavailable,
@@ -111,7 +114,7 @@ export function ShareEditDialog({
   const [initial, setInitial] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
-  const controls = useMemo(() => writableControls(config), [config]);
+  const controls = useMemo(() => writableControls(config, customFieldNames), [config, customFieldNames]);
 
   // (Re)initialize the form whenever the dialog opens for a booking.
   useEffect(() => {
