@@ -36,4 +36,5 @@ export interface CustomField {
   calcOperation: CalcOperation | null;
   calcFieldAId: number | null;
   calcFieldBId: number | null;
+  calcFormula: string | null;
 }

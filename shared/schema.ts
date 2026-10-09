@@ -1111,6 +1111,9 @@ export const bookingCustomFields = pgTable("booking_custom_fields", {
   calcOperation: bookingCalculationOperationEnum("calc_operation"),
   calcFieldAId: integer("calc_field_a_id").references((): AnyPgColumn => bookingCustomFields.id, { onDelete: "set null" }),
   calcFieldBId: integer("calc_field_b_id").references((): AnyPgColumn => bookingCustomFields.id, { onDelete: "set null" }),
+  // Formula mode (Phase 3G-7): nullable, canonical {id} form. When set, evaluation
+  // uses the formula; when null, the legacy 2-operand path applies.
+  calcFormula: text("calc_formula"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

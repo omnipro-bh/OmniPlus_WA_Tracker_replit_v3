@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertCircle, Loader2 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { computeCalcValue, OPERATION_SYMBOLS, type CalcOperation } from "@/lib/calc";
+import { resolveCalcValues, OPERATION_SYMBOLS, rehydrateFormula, type CalcOperation } from "@/lib/calc";
 import { format } from "date-fns";
 
 // ---- local types (mirror server responses) ----
@@ -29,6 +29,7 @@ interface CustomField {
   calcOperation: CalcOperation | null;
   calcFieldAId: number | null;
   calcFieldBId: number | null;
+  calcFormula: string | null;
   isActive: boolean;
 }
 
@@ -485,17 +486,16 @@ export function ManualBookingDialog({ open, onOpenChange }: { open: boolean; onO
                 const value = form.customFieldValues[String(field.id)] ?? "";
 
                 if (field.fieldType === "calculation") {
-                  const a = field.calcFieldAId == null ? undefined : form.customFieldValues[String(field.calcFieldAId)];
-                  const b = field.calcFieldBId == null ? undefined : form.customFieldValues[String(field.calcFieldBId)];
-                  const result = computeCalcValue(field.calcOperation, a, b);
-                  const symbol = OPERATION_SYMBOLS[field.calcOperation ?? "add"];
-                  const aName = fieldNameById.get(field.calcFieldAId ?? -1) ?? "?";
-                  const bName = fieldNameById.get(field.calcFieldBId ?? -1) ?? "?";
+                  const valuesMap = new Map<number, string>(Object.entries(form.customFieldValues).map(([k, v]) => [Number(k), String(v)]));
+                  const result = resolveCalcValues(customFields, valuesMap).get(field.id) ?? null;
+                  const label = field.calcFormula
+                    ? rehydrateFormula(field.calcFormula, fieldNameById)
+                    : `${fieldNameById.get(field.calcFieldAId ?? -1) ?? "?"} ${OPERATION_SYMBOLS[field.calcOperation ?? "add"]} ${fieldNameById.get(field.calcFieldBId ?? -1) ?? "?"}`;
                   return (
                     <div key={field.id} className="rounded-md border bg-muted/40 px-3 py-2" data-testid={`calc-${field.id}`}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium">{field.name}</span>
-                        <span className="text-xs text-muted-foreground">{aName} {symbol} {bName}</span>
+                        <span className="text-xs text-muted-foreground">{label}</span>
                       </div>
                       <div className="text-lg font-semibold">{result == null ? "—" : result}</div>
                     </div>

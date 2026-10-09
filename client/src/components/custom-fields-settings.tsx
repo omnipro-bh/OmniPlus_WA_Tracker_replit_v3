@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth-context";
 import { CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
+import { compileFormula, rehydrateFormula, FORMULA_FUNCTIONS } from "@shared/calc-formula";
 
 const MAX_OPTIONS = 20;
 
@@ -33,6 +34,15 @@ const OPERATION_SYMBOLS: Record<string, string> = {
   add: "+", subtract: "−", multiply: "×", divide: "÷",
 };
 
+const FUNCTION_TEMPLATES: Record<string, string> = {
+  Round: "Round(, 2)",
+  Abs: "Abs()",
+  Min: "Min(, )",
+  Max: "Max(, )",
+  Floor: "Floor()",
+  Ceil: "Ceil()",
+};
+
 interface CustomField {
   id: number;
   name: string;
@@ -44,6 +54,7 @@ interface CustomField {
   calcOperation: "add" | "subtract" | "multiply" | "divide" | null;
   calcFieldAId: number | null;
   calcFieldBId: number | null;
+  calcFormula: string | null;
   isActive: boolean;
 }
 
@@ -66,6 +77,10 @@ export function CustomFieldsSettings() {
   const [calcOperation, setCalcOperation] = useState("add");
   const [calcFieldAId, setCalcFieldAId] = useState<number | null>(null);
   const [calcFieldBId, setCalcFieldBId] = useState<number | null>(null);
+  const [calcMode, setCalcMode] = useState<"simple" | "formula">("simple");
+  const [calcFormula, setCalcFormula] = useState("");
+  const [formulaError, setFormulaError] = useState<string | null>(null);
+  const formulaInputRef = useRef<HTMLInputElement>(null);
 
   const { data: fields = [], isLoading } = useQuery<CustomField[]>({
     queryKey: ["/api/booking/custom-fields"],
@@ -83,7 +98,15 @@ export function CustomFieldsSettings() {
       resetForm();
       toast({ title: "Custom field added" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message || "Failed to add field", variant: "destructive" }),
+    onError: (e: any) => {
+      const code = e?.data?.code;
+      if (code) {
+        setFormulaError(e?.data?.error || e?.message || "Invalid formula");
+        invalidate(); // refresh the field list so the next validation is against fresh fields
+      } else {
+        toast({ title: "Error", description: e.message || "Failed to add field", variant: "destructive" });
+      }
+    },
   });
 
   const updateMutation = useMutation({
@@ -96,7 +119,15 @@ export function CustomFieldsSettings() {
       resetForm();
       toast({ title: "Custom field updated" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message || "Failed to update field", variant: "destructive" }),
+    onError: (e: any) => {
+      const code = e?.data?.code;
+      if (code) {
+        setFormulaError(e?.data?.error || e?.message || "Invalid formula");
+        invalidate();
+      } else {
+        toast({ title: "Error", description: e.message || "Failed to update field", variant: "destructive" });
+      }
+    },
   });
 
   const deleteMutation = useMutation({
@@ -125,6 +156,24 @@ export function CustomFieldsSettings() {
     (f) => f.fieldType === "number" && (!editingField || f.id !== editingField.id),
   );
 
+  // Fields available for formula references: number + calculation (excluding self)
+  const formulaFields = fields.filter(
+    (f) => (f.fieldType === "number" || f.fieldType === "calculation") && (!editingField || f.id !== editingField.id),
+  );
+
+  // Field refs for client-side formula validation (excludes self when editing, mirrors server)
+  const formulaFieldRefs = useMemo(() => {
+    return fields
+      .filter((f) => !editingField || f.id !== editingField.id)
+      .map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType }));
+  }, [fields, editingField]);
+
+  const fieldNameMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const f of fields) m.set(f.id, f.name);
+    return m;
+  }, [fields]);
+
   function fieldNameById(id: number | null): string {
     if (id == null) return "—";
     const f = fields.find((f) => f.id === id);
@@ -140,6 +189,9 @@ export function CustomFieldsSettings() {
     setCalcOperation("add");
     setCalcFieldAId(null);
     setCalcFieldBId(null);
+    setCalcMode("simple");
+    setCalcFormula("");
+    setFormulaError(null);
     setEditingField(null);
   }
 
@@ -158,6 +210,14 @@ export function CustomFieldsSettings() {
     setCalcOperation(field.calcOperation || "add");
     setCalcFieldAId(field.calcFieldAId ?? null);
     setCalcFieldBId(field.calcFieldBId ?? null);
+    if (field.calcFormula) {
+      setCalcMode("formula");
+      setCalcFormula(rehydrateFormula(field.calcFormula, fieldNameMap));
+    } else {
+      setCalcMode("simple");
+      setCalcFormula("");
+    }
+    setFormulaError(null);
     setDialogOpen(true);
   }
 
@@ -190,6 +250,51 @@ export function CustomFieldsSettings() {
     setOptions(options.filter((_, idx) => idx !== i));
   }
 
+  function insertTextAtCursor(text: string, cursorOffset?: number) {
+    const el = formulaInputRef.current;
+    const current = calcFormula;
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + text + current.slice(end);
+    setCalcFormula(next);
+    const pos = start + (cursorOffset ?? text.length);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
+  function insertFieldRef(id: number) {
+    const f = fields.find((x) => x.id === id);
+    if (f) insertTextAtCursor(`[${f.name}]`);
+  }
+
+  function insertFunction(fn: string) {
+    const template = FUNCTION_TEMPLATES[fn];
+    if (template) insertTextAtCursor(template, template.indexOf("(") + 1);
+  }
+
+  function validateFormulaText(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return "Formula is required";
+    try {
+      compileFormula(trimmed, formulaFieldRefs);
+      return null;
+    } catch (e: any) {
+      return e?.message || "Invalid formula";
+    }
+  }
+
+  // Debounced live validation (~400ms) while in formula mode.
+  useEffect(() => {
+    if (calcMode !== "formula") return;
+    const t = setTimeout(() => {
+      setFormulaError(validateFormulaText(calcFormula));
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calcFormula, calcMode, formulaFieldRefs]);
+
   function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -203,7 +308,7 @@ export function CustomFieldsSettings() {
         return;
       }
     }
-    if (fieldType === "calculation") {
+    if (fieldType === "calculation" && calcMode === "simple") {
       if (calcFieldAId == null || calcFieldBId == null) {
         toast({ title: "Error", description: "Calculation fields require two referenced fields", variant: "destructive" });
         return;
@@ -213,16 +318,25 @@ export function CustomFieldsSettings() {
         return;
       }
     }
+    if (fieldType === "calculation" && calcMode === "formula") {
+      const err = validateFormulaText(calcFormula);
+      if (err) {
+        setFormulaError(err);
+        return;
+      }
+    }
 
+    const isFormulaMode = fieldType === "calculation" && calcMode === "formula";
     const payload = {
       name: trimmed,
       fieldType,
       isRequired: fieldType === "calculation" ? false : isRequired,
       options: fieldType === "select" ? options.map((o) => o.trim()).filter(Boolean) : null,
       defaultValue: defaultValue.trim() || null,
-      calcOperation: fieldType === "calculation" ? calcOperation : null,
-      calcFieldAId: fieldType === "calculation" ? calcFieldAId : null,
-      calcFieldBId: fieldType === "calculation" ? calcFieldBId : null,
+      calcOperation: fieldType === "calculation" && !isFormulaMode ? calcOperation : null,
+      calcFieldAId: fieldType === "calculation" && !isFormulaMode ? calcFieldAId : null,
+      calcFieldBId: fieldType === "calculation" && !isFormulaMode ? calcFieldBId : null,
+      calcFormula: isFormulaMode ? calcFormula.trim() : null,
     };
 
     if (editingField) {
@@ -231,6 +345,11 @@ export function CustomFieldsSettings() {
       createMutation.mutate(payload);
     }
   }
+
+  const saveDisabled =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    (fieldType === "calculation" && calcMode === "formula" && formulaError != null);
 
   return (
     <Card>
@@ -293,9 +412,13 @@ export function CustomFieldsSettings() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       {field.fieldType === "calculation" ? (
-                        <Badge variant="outline">
-                          calc: {fieldNameById(field.calcFieldAId)} {OPERATION_SYMBOLS[field.calcOperation ?? "add"]} {fieldNameById(field.calcFieldBId)}
-                        </Badge>
+                        field.calcFormula ? (
+                          <Badge variant="outline">calc: {truncateFormula(field.calcFormula, fieldNameMap)}</Badge>
+                        ) : (
+                          <Badge variant="outline">
+                            calc: {fieldNameById(field.calcFieldAId)} {OPERATION_SYMBOLS[field.calcOperation ?? "add"]} {fieldNameById(field.calcFieldBId)}
+                          </Badge>
+                        )
                       ) : (
                         <Badge variant="outline">{TYPE_LABELS[field.fieldType] || field.fieldType}</Badge>
                       )}
@@ -368,55 +491,125 @@ export function CustomFieldsSettings() {
 
             {fieldType === "calculation" ? (
               <div className="space-y-3">
-                <div>
-                  <Label>Operation</Label>
-                  <Select value={calcOperation} onValueChange={setCalcOperation}>
-                    <SelectTrigger data-testid="select-calc-operation">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="add">Add (+)</SelectItem>
-                      <SelectItem value="subtract">Subtract (−)</SelectItem>
-                      <SelectItem value="multiply">Multiply (×)</SelectItem>
-                      <SelectItem value="divide">Divide (÷)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="flex items-center gap-3">
+                  <Label>Mode</Label>
+                  <div className="flex rounded-md border bg-muted p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setCalcMode("simple"); setFormulaError(null); }}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${calcMode === "simple" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                      data-testid="calc-mode-simple"
+                    >
+                      Simple (2 operands)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCalcMode("formula")}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${calcMode === "formula" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                      data-testid="calc-mode-formula"
+                    >
+                      Formula
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <Label>Field A</Label>
-                  <Select
-                    value={calcFieldAId != null ? String(calcFieldAId) : ""}
-                    onValueChange={(v) => setCalcFieldAId(parseInt(v))}
-                  >
-                    <SelectTrigger data-testid="select-calc-field-a">
-                      <SelectValue placeholder="Select field" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {numericFields.map((f) => (
-                        <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Field B</Label>
-                  <Select
-                    value={calcFieldBId != null ? String(calcFieldBId) : ""}
-                    onValueChange={(v) => setCalcFieldBId(parseInt(v))}
-                  >
-                    <SelectTrigger data-testid="select-calc-field-b">
-                      <SelectValue placeholder="Select field" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {numericFields.map((f) => (
-                        <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {name.trim() || "Field"} = {fieldNameById(calcFieldAId)} {OPERATION_SYMBOLS[calcOperation]} {fieldNameById(calcFieldBId)}
-                </p>
+
+                {calcMode === "simple" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <Label>Operation</Label>
+                      <Select value={calcOperation} onValueChange={setCalcOperation}>
+                        <SelectTrigger data-testid="select-calc-operation">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="add">Add (+)</SelectItem>
+                          <SelectItem value="subtract">Subtract (−)</SelectItem>
+                          <SelectItem value="multiply">Multiply (×)</SelectItem>
+                          <SelectItem value="divide">Divide (÷)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Field A</Label>
+                      <Select
+                        value={calcFieldAId != null ? String(calcFieldAId) : ""}
+                        onValueChange={(v) => setCalcFieldAId(parseInt(v))}
+                      >
+                        <SelectTrigger data-testid="select-calc-field-a">
+                          <SelectValue placeholder="Select field" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {numericFields.map((f) => (
+                            <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Field B</Label>
+                      <Select
+                        value={calcFieldBId != null ? String(calcFieldBId) : ""}
+                        onValueChange={(v) => setCalcFieldBId(parseInt(v))}
+                      >
+                        <SelectTrigger data-testid="select-calc-field-b">
+                          <SelectValue placeholder="Select field" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {numericFields.map((f) => (
+                            <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {name.trim() || "Field"} = {fieldNameById(calcFieldAId)} {OPERATION_SYMBOLS[calcOperation]} {fieldNameById(calcFieldBId)}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="cf-formula">Formula</Label>
+                      <div className="flex items-center gap-1">
+                        <Select value="" onValueChange={(v) => insertFieldRef(parseInt(v))}>
+                          <SelectTrigger className="h-7 px-2 text-xs w-auto" data-testid="select-formula-field-picker">
+                            <SelectValue placeholder="+ Field" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {formulaFields.map((f) => (
+                              <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select value="" onValueChange={(fn) => insertFunction(fn)}>
+                          <SelectTrigger className="h-7 px-2 text-xs w-auto" data-testid="select-formula-function-picker">
+                            <SelectValue placeholder="+ Function" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {FORMULA_FUNCTIONS.map((fn) => (
+                              <SelectItem key={fn} value={fn}>{fn}()</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Input
+                      id="cf-formula"
+                      ref={formulaInputRef}
+                      value={calcFormula}
+                      onChange={(e) => setCalcFormula(e.target.value)}
+                      onBlur={() => setFormulaError(validateFormulaText(calcFormula))}
+                      className="font-mono text-sm"
+                      placeholder="e.g., ( [Price] + [Tax] ) * [Qty] / 100"
+                      data-testid="input-calc-formula"
+                    />
+                    {formulaError && (
+                      <p className="text-xs text-destructive" data-testid="formula-error">{formulaError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Reference fields as [Name]. Functions: Round(x, decimals), Abs(x), Min(a, b, …), Max(a, b, …), Floor(x), Ceil(x).
+                    </p>
+                  </div>
+                )}
               </div>
             ) : fieldType === "select" ? (
               <div className="space-y-2">
@@ -457,7 +650,7 @@ export function CustomFieldsSettings() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={handleSave}
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={saveDisabled}
               data-testid="button-save-custom-field"
             >
               {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
@@ -467,4 +660,9 @@ export function CustomFieldsSettings() {
       </Dialog>
     </Card>
   );
+}
+
+function truncateFormula(canonical: string, nameById: Map<number, string>): string {
+  const rehydrated = rehydrateFormula(canonical, nameById);
+  return rehydrated.length > 40 ? rehydrated.slice(0, 40) + "…" : rehydrated;
 }

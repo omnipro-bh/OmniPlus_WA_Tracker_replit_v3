@@ -6,6 +6,7 @@ import timezone from "dayjs/plugin/timezone.js";
 import { comparePassword } from "./auth";
 import { storage } from "./storage";
 import type { Booking, BookingShareLink, ShareLinkConfig } from "@shared/schema";
+import { resolveCalcValues, compileCanonical, type CalcFieldDescriptor, type FormulaNode } from "@shared/calc-formula";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -265,32 +266,12 @@ export function buildCsvRow(
 
 // ---- enrichment + shared row fetch ----------------------------------------
 
-// Mirrors client/src/lib/calc.ts — keep in sync. Returns null on missing
-// operand, non-finite, or divide-by-zero.
-function computeCalcValue(
-  op: "add" | "subtract" | "multiply" | "divide" | null | undefined,
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number | null {
-  if (!op) return null;
-  if (a == null || b == null || a.trim() === "" || b.trim() === "") return null;
-  const na = Number(a);
-  const nb = Number(b);
-  if (!Number.isFinite(na) || !Number.isFinite(nb)) return null;
-  switch (op) {
-    case "add": return na + nb;
-    case "subtract": return na - nb;
-    case "multiply": return na * nb;
-    case "divide": return nb === 0 ? null : na / nb;
-    default: return null;
-  }
-}
-
 // Enrich raw bookings with derived names + custom field values (the shape
 // `projectBooking` needs). Mirrors the owner list's enrichment (per-row N+1).
 // Calculation fields are computed at read time and inlined into customFieldValues
 // as `{ fieldId, value: String(result) }` so the public page/CSV render them like
-// any other custom field.
+// any other custom field. Formula-mode calc fields (3G-7) evaluate via the shared
+// resolver; legacy 2-operand fields fall back inside resolveCalcValues.
 export async function enrichBookingsForUser(userId: number, bookings: Booking[]): Promise<EnrichedBooking[]> {
   if (bookings.length === 0) return [];
   const bookingIds = bookings.map((b) => b.id);
@@ -301,9 +282,28 @@ export async function enrichBookingsForUser(userId: number, bookings: Booking[])
     list.push({ fieldId: v.fieldId, value: v.value });
     valuesByBooking.set(v.bookingId, list);
   }
-  // Calculation field definitions (computed, never stored).
-  const calcFields = (await storage.getBookingCustomFieldsForUser(userId))
-    .filter((f) => f.fieldType === "calculation");
+  // Full field list (not just calc fields) — needed for formula name resolution + type info.
+  const allFields = await storage.getBookingCustomFieldsForUser(userId);
+  const descriptors: CalcFieldDescriptor[] = allFields.map((f) => ({
+    id: f.id,
+    name: f.name,
+    fieldType: f.fieldType,
+    calcFormula: f.calcFormula,
+    calcOperation: f.calcOperation,
+    calcFieldAId: f.calcFieldAId,
+    calcFieldBId: f.calcFieldBId,
+  }));
+  // Pre-compile each formula once per request (avoids per-booking re-parse at 5000 rows).
+  const compiled = new Map<number, FormulaNode | null>();
+  for (const f of allFields) {
+    if (f.fieldType === "calculation" && f.calcFormula) {
+      try {
+        compiled.set(f.id, compileCanonical(f.calcFormula));
+      } catch {
+        compiled.set(f.id, null); // uncomputable → null
+      }
+    }
+  }
   return await Promise.all(bookings.map(async (b) => {
     const [department, staff] = await Promise.all([
       b.departmentId ? storage.getBookingDepartment(b.departmentId) : null,
@@ -311,12 +311,10 @@ export async function enrichBookingsForUser(userId: number, bookings: Booking[])
     ]);
     const values = valuesByBooking.get(b.id) ?? [];
     const byId = new Map(values.map((v) => [v.fieldId, v.value]));
-    for (const cf of calcFields) {
-      const a = cf.calcFieldAId != null ? byId.get(cf.calcFieldAId) : undefined;
-      const bv = cf.calcFieldBId != null ? byId.get(cf.calcFieldBId) : undefined;
-      const result = computeCalcValue(cf.calcOperation, a, bv);
-      if (result != null) values.push({ fieldId: cf.id, value: String(result) });
-    }
+    const resolved = resolveCalcValues(descriptors, byId, compiled);
+    resolved.forEach((result, fieldId) => {
+      if (result != null) values.push({ fieldId, value: String(result) });
+    });
     return {
       ...b,
       departmentName: department?.name ?? null,

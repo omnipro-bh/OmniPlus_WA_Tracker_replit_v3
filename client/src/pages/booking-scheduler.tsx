@@ -23,7 +23,7 @@ import { CustomFieldsSettings } from "@/components/custom-fields-settings";
 import { ShareLinksSettings } from "@/components/share-links-settings";
 import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
-import { computeCalcValue } from "@/lib/calc";
+import { resolveCalcValues } from "@/lib/calc";
 import { Booking, CustomField } from "@/lib/booking-types";
 import { formatDateRangeLong, formatDateRangeShort, dayCount, formatDateTimeRangeLong, formatEndDayWindow, END_DAY_SAME } from "@/lib/booking-date";
 
@@ -977,11 +977,10 @@ export default function BookingScheduler() {
     ];
     const rows = bookingsData.bookings.map((booking: any) => {
       const values = new Map<number, string>((booking.customFieldValues ?? []).map((v: any) => [v.fieldId, v.value]));
+      const resolvedCalc = resolveCalcValues(sortedCustomFields, values);
       const regularCells = sortedCustomFields.filter(f => f.fieldType !== 'calculation').map(f => values.get(f.id) ?? '');
       const calcCells = sortedCustomFields.filter(f => f.fieldType === 'calculation').map(f => {
-        const a = f.calcFieldAId != null ? values.get(f.calcFieldAId) : undefined;
-        const b = f.calcFieldBId != null ? values.get(f.calcFieldBId) : undefined;
-        const result = computeCalcValue(f.calcOperation, a, b);
+        const result = resolvedCalc.get(f.id) ?? null;
         return result == null ? '' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(result);
       });
       return [
@@ -1937,12 +1936,11 @@ export default function BookingScheduler() {
                   <TableBody>
                     {bookingsData.bookings.map((booking: any) => {
                       const values = new Map<number, string>((booking.customFieldValues ?? []).map((v: any) => [v.fieldId, v.value]));
+                      const resolvedCalc = resolveCalcValues(sortedCustomFields, values);
                       const summaryItems = sortedCustomFields.map((field) => {
                         let display: string;
                         if (field.fieldType === 'calculation') {
-                          const a = field.calcFieldAId != null ? values.get(field.calcFieldAId) : undefined;
-                          const b = field.calcFieldBId != null ? values.get(field.calcFieldBId) : undefined;
-                          const result = computeCalcValue(field.calcOperation, a, b);
+                          const result = resolvedCalc.get(field.id) ?? null;
                           display = result == null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(result);
                         } else {
                           display = formatCustomFieldValue(field, values.get(field.id));
@@ -2724,9 +2722,8 @@ export default function BookingScheduler() {
               <div className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calculated</h3>
                 {sortedCustomFields.filter(f => f.fieldType === 'calculation').map((field) => {
-                  const a = field.calcFieldAId != null ? editCustomFieldValues[String(field.calcFieldAId)] : undefined;
-                  const b = field.calcFieldBId != null ? editCustomFieldValues[String(field.calcFieldBId)] : undefined;
-                  const result = computeCalcValue(field.calcOperation, a, b);
+                  const valuesMap = new Map<number, string>(Object.entries(editCustomFieldValues).map(([k, v]) => [Number(k), String(v)]));
+                  const result = resolveCalcValues(sortedCustomFields, valuesMap).get(field.id) ?? null;
                   return (
                     <div key={field.id} className="rounded-md border bg-muted/40 px-3 py-2" data-testid={`edit-calc-${field.id}`}>
                       <div className="flex items-center justify-between">

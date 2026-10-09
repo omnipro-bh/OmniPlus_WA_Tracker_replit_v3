@@ -8,6 +8,7 @@ import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin
 import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare, projectBooking, filterBookingsByConfig, buildCsvHeader, buildCsvRow, getShareBookingsForLink, enrichBookingsForUser } from "./share-links";
 import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess, checkWriteThrottled, recordWrite } from "./share-rate-limit";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
+import { compileFormula, detectCalcCycle } from "@shared/calc-formula";
 import { z } from "zod";
 import type { InsertUser, InsertChannel, InsertTemplate, InsertJob, InsertMessage, InsertWorkflow, InsertOfflinePayment, InsertPlan } from "@shared/schema";
 import { 
@@ -4692,6 +4693,7 @@ export function registerRoutes(app: Express) {
         calcOperation: f.calcOperation,
         calcFieldAId: f.calcFieldAId,
         calcFieldBId: f.calcFieldBId,
+        calcFormula: f.calcFormula,
       }));
 
       res.json({ bookings: enrichedBookings, customFields: customFieldsForClient, total: result.total });
@@ -5796,7 +5798,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/booking/custom-fields", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
-      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId } = req.body;
+      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId, calcFormula } = req.body;
 
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Field name is required" });
@@ -5848,35 +5850,53 @@ export function registerRoutes(app: Express) {
       let calcOperationVal: "add" | "subtract" | "multiply" | "divide" | null = null;
       let calcFieldAIdVal: number | null = null;
       let calcFieldBIdVal: number | null = null;
+      let calcFormulaVal: string | null = null;
       if (type === "calculation") {
-        const validOps = ["add", "subtract", "multiply", "divide"];
-        if (!validOps.includes(calcOperation)) {
-          return res.status(400).json({ error: "Calculation fields require a valid operation" });
+        const rawFormula = calcFormula != null ? String(calcFormula).trim() : "";
+        if (rawFormula) {
+          // Formula mode (Phase 3G-7): parse → resolve → validate → canonicalize.
+          const tenantFields = await storage.getBookingCustomFieldsForUser(effectiveUserId);
+          const refs = tenantFields.map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType }));
+          let canonical: string;
+          try {
+            canonical = compileFormula(rawFormula, refs).canonical;
+          } catch (err: any) {
+            return res.status(400).json({ error: err?.message || "Invalid formula", code: err?.code || "PARSE_ERROR" });
+          }
+          if (detectCalcCycle(tenantFields, null, canonical)) {
+            return res.status(400).json({ error: "Formula creates a circular reference", code: "CIRCULAR_REF" });
+          }
+          calcFormulaVal = canonical;
+        } else {
+          const validOps = ["add", "subtract", "multiply", "divide"];
+          if (!validOps.includes(calcOperation)) {
+            return res.status(400).json({ error: "Calculation fields require a valid operation" });
+          }
+          const aId = parseInt(calcFieldAId);
+          const bId = parseInt(calcFieldBId);
+          if (isNaN(aId) || isNaN(bId)) {
+            return res.status(400).json({ error: "Calculation fields require two referenced fields" });
+          }
+          if (aId === bId) {
+            return res.status(400).json({ error: "Calculation fields must reference two different fields" });
+          }
+          const [refA, refB] = await Promise.all([
+            storage.getBookingCustomField(aId),
+            storage.getBookingCustomField(bId),
+          ]);
+          if (!refA || !refB || refA.userId !== effectiveUserId || refB.userId !== effectiveUserId) {
+            return res.status(404).json({ error: "Referenced field not found" });
+          }
+          if (refA.fieldType !== "number" || refB.fieldType !== "number") {
+            return res.status(400).json({ error: "Calculation fields can only reference number fields" });
+          }
+          if (!refA.isActive || !refB.isActive) {
+            return res.status(400).json({ error: "Calculation fields can only reference active fields" });
+          }
+          calcOperationVal = calcOperation;
+          calcFieldAIdVal = aId;
+          calcFieldBIdVal = bId;
         }
-        const aId = parseInt(calcFieldAId);
-        const bId = parseInt(calcFieldBId);
-        if (isNaN(aId) || isNaN(bId)) {
-          return res.status(400).json({ error: "Calculation fields require two referenced fields" });
-        }
-        if (aId === bId) {
-          return res.status(400).json({ error: "Calculation fields must reference two different fields" });
-        }
-        const [refA, refB] = await Promise.all([
-          storage.getBookingCustomField(aId),
-          storage.getBookingCustomField(bId),
-        ]);
-        if (!refA || !refB || refA.userId !== effectiveUserId || refB.userId !== effectiveUserId) {
-          return res.status(404).json({ error: "Referenced field not found" });
-        }
-        if (refA.fieldType !== "number" || refB.fieldType !== "number") {
-          return res.status(400).json({ error: "Calculation fields can only reference number fields" });
-        }
-        if (!refA.isActive || !refB.isActive) {
-          return res.status(400).json({ error: "Calculation fields can only reference active fields" });
-        }
-        calcOperationVal = calcOperation;
-        calcFieldAIdVal = aId;
-        calcFieldBIdVal = bId;
       }
 
       const field = await storage.createBookingCustomField({
@@ -5890,6 +5910,7 @@ export function registerRoutes(app: Express) {
         calcOperation: calcOperationVal,
         calcFieldAId: calcFieldAIdVal,
         calcFieldBId: calcFieldBIdVal,
+        calcFormula: calcFormulaVal,
       });
 
       res.json(field);
@@ -5935,7 +5956,7 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Custom field not found" });
       }
 
-      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId } = req.body;
+      const { name, fieldType, isRequired, options, defaultValue, calcOperation, calcFieldAId, calcFieldBId, calcFormula } = req.body;
       const updateData: Record<string, any> = {};
 
       if (name !== undefined) {
@@ -5977,38 +5998,63 @@ export function registerRoutes(app: Express) {
       }
 
       if (effectiveType === "calculation") {
-        const validOps = ["add", "subtract", "multiply", "divide"];
-        if (!validOps.includes(calcOperation)) {
-          return res.status(400).json({ error: "Calculation fields require a valid operation" });
+        const rawFormula = calcFormula != null ? String(calcFormula).trim() : "";
+        if (rawFormula) {
+          // Formula mode (Phase 3G-7): resolve against the tenant's fields
+          // (excluding self) so a self-reference resolves to UNKNOWN_FIELD.
+          const tenantFields = await storage.getBookingCustomFieldsForUser(getEffectiveUserId(req));
+          const refs = tenantFields
+            .filter((f) => f.id !== fieldId)
+            .map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType }));
+          let canonical: string;
+          try {
+            canonical = compileFormula(rawFormula, refs).canonical;
+          } catch (err: any) {
+            return res.status(400).json({ error: err?.message || "Invalid formula", code: err?.code || "PARSE_ERROR" });
+          }
+          if (detectCalcCycle(tenantFields, fieldId, canonical)) {
+            return res.status(400).json({ error: "Formula creates a circular reference", code: "CIRCULAR_REF" });
+          }
+          updateData.calcFormula = canonical;
+          updateData.calcOperation = null;
+          updateData.calcFieldAId = null;
+          updateData.calcFieldBId = null;
+        } else {
+          const validOps = ["add", "subtract", "multiply", "divide"];
+          if (!validOps.includes(calcOperation)) {
+            return res.status(400).json({ error: "Calculation fields require a valid operation" });
+          }
+          const aId = parseInt(calcFieldAId);
+          const bId = parseInt(calcFieldBId);
+          if (isNaN(aId) || isNaN(bId)) {
+            return res.status(400).json({ error: "Calculation fields require two referenced fields" });
+          }
+          if (aId === bId) {
+            return res.status(400).json({ error: "Calculation fields must reference two different fields" });
+          }
+          const [refA, refB] = await Promise.all([
+            storage.getBookingCustomField(aId),
+            storage.getBookingCustomField(bId),
+          ]);
+          if (!refA || !refB || refA.userId !== getEffectiveUserId(req) || refB.userId !== getEffectiveUserId(req)) {
+            return res.status(404).json({ error: "Referenced field not found" });
+          }
+          if (refA.fieldType !== "number" || refB.fieldType !== "number") {
+            return res.status(400).json({ error: "Calculation fields can only reference number fields" });
+          }
+          if (!refA.isActive || !refB.isActive) {
+            return res.status(400).json({ error: "Calculation fields can only reference active fields" });
+          }
+          updateData.calcOperation = calcOperation;
+          updateData.calcFieldAId = aId;
+          updateData.calcFieldBId = bId;
+          updateData.calcFormula = null;
         }
-        const aId = parseInt(calcFieldAId);
-        const bId = parseInt(calcFieldBId);
-        if (isNaN(aId) || isNaN(bId)) {
-          return res.status(400).json({ error: "Calculation fields require two referenced fields" });
-        }
-        if (aId === bId) {
-          return res.status(400).json({ error: "Calculation fields must reference two different fields" });
-        }
-        const [refA, refB] = await Promise.all([
-          storage.getBookingCustomField(aId),
-          storage.getBookingCustomField(bId),
-        ]);
-        if (!refA || !refB || refA.userId !== getEffectiveUserId(req) || refB.userId !== getEffectiveUserId(req)) {
-          return res.status(404).json({ error: "Referenced field not found" });
-        }
-        if (refA.fieldType !== "number" || refB.fieldType !== "number") {
-          return res.status(400).json({ error: "Calculation fields can only reference number fields" });
-        }
-        if (!refA.isActive || !refB.isActive) {
-          return res.status(400).json({ error: "Calculation fields can only reference active fields" });
-        }
-        updateData.calcOperation = calcOperation;
-        updateData.calcFieldAId = aId;
-        updateData.calcFieldBId = bId;
       } else {
         updateData.calcOperation = null;
         updateData.calcFieldAId = null;
         updateData.calcFieldBId = null;
+        updateData.calcFormula = null;
       }
 
       if (defaultValue !== undefined) {

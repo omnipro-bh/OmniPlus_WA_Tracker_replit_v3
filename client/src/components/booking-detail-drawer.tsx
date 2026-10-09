@@ -2,7 +2,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { computeCalcValue, OPERATION_SYMBOLS } from "@/lib/calc";
+import { resolveCalcValues, OPERATION_SYMBOLS, rehydrateFormula } from "@/lib/calc";
 import type { Booking, CustomField } from "@/lib/booking-types";
 import { formatDateRangeLong, dayCount, formatEndDayWindow } from "@/lib/booking-date";
 
@@ -72,6 +72,7 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
   const fieldNameById = new Map<number, string>(customFields.map((f) => [f.id, f.name]));
   const regularFields = customFields.filter((f) => f.fieldType !== 'calculation');
   const calcFields = customFields.filter((f) => f.fieldType === 'calculation');
+  const resolvedCalc = resolveCalcValues(customFields, values);
 
   return (
     <Sheet open onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -121,15 +122,13 @@ export function BookingDetailDrawer({ booking, customFields, onClose, onEdit, on
           {calcFields.length > 0 && (
             <Section label="Calculated">
               {calcFields.map((f) => {
-                const a = f.calcFieldAId != null ? values.get(f.calcFieldAId) : undefined;
-                const b = f.calcFieldBId != null ? values.get(f.calcFieldBId) : undefined;
-                const result = computeCalcValue(f.calcOperation, a, b);
-                const symbol = OPERATION_SYMBOLS[f.calcOperation ?? 'add'];
-                const aName = fieldNameById.get(f.calcFieldAId ?? -1) ?? '?';
-                const bName = fieldNameById.get(f.calcFieldBId ?? -1) ?? '?';
+                const result = resolvedCalc.get(f.id) ?? null;
+                const label = f.calcFormula
+                  ? `${f.name} = ${rehydrateFormula(f.calcFormula, fieldNameById)}`
+                  : `${f.name} = ${fieldNameById.get(f.calcFieldAId ?? -1) ?? '?'} ${OPERATION_SYMBOLS[f.calcOperation ?? 'add']} ${fieldNameById.get(f.calcFieldBId ?? -1) ?? '?'}`;
                 return (
                   <div key={f.id} className="flex items-center justify-between gap-4 py-1" data-testid={`drawer-calc-${f.id}`}>
-                    <span className="text-sm text-muted-foreground">{f.name} = {aName} {symbol} {bName}</span>
+                    <span className="text-sm text-muted-foreground">{label}</span>
                     <span className="text-sm font-semibold text-right">
                       {result == null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(result)}
                     </span>
