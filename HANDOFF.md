@@ -9,13 +9,16 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `3b7626a` (Feature 3G-5e — share-link UI polish).
-- Repo HEAD: `3b7626a` (+ this commit: docs-only HANDOFF update).
+- Production HEAD (deployed/running on VPS): `629924d` (Feature 3G-6c — calc fields + Created/Updated columns).
+- Repo HEAD: `629924d` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
 
 ## Recent commits
 
+- `629924d` feat(booking): render calc fields + add Created/Updated columns on public share page (3G-6c)
+- `2018c95` fix(booking): exclude calculation fields from share-link permission list (3G-6b)
+- `a40a3df` feat(booking): owner-controlled column order + sortable + mobile public page (3G-6)
 - `3b7626a` feat(booking): share-link UI polish — Updated/Token since + displayOrder-driven columns (3G-5e)
 - `376e413` fix(booking): preserve unmentioned custom field values on share PATCH (3G-5d)
 - `9d2ded5` chore(debug): temporary diagnostic logs for share edit modal (3G-5d-diagnostic)
@@ -43,6 +46,9 @@
 
 ## Completed phases
 
+- **Phase 3G-6c — calc fields render + Created/Updated columns**: reversed 3G-6b — calculation fields now render their computed values on the public page (server `enrichBookingsForUser` computes via a `computeCalcValue` mirror and inlines `{ fieldId, value: String(result) }` into `customFieldValues`, flowing to JSON list + CSV + PATCH response); added `createdAt`/`updatedAt` as standard Hidden/Read fields (ISO projectors, "Created"/"Updated" labels, date sort, `formatTimestamp` render); public PATCH rejects writes to calc fields (hoisted `calcIds` guard); client `compareBookingFields` maps `"calculation"` → `"number"`; defensive `writableControls` skip prevents legacy calc write perms rendering an input (`629924d`)
+- **Phase 3G-6b — calc-field exclusion (reverted by 3G-6c)**: `visibleCustomFields = customFields.filter(fieldType !== "calculation")` removed calc fields from the Edit Share Link modal list + `emptyFieldPermissions` (misread of intent — undone in 3G-6c) (`2018c95`)
+- **Phase 3G-6 — column reorder + sortable + mobile public page**: `fieldOrder: string[]` on `ShareLinkConfig` (optional, default `[]`, JSONB-only, no DB migration); owner modal → flat reorderable list (▲▼ arrows left, mirroring custom-fields-settings, reorder saved on modal Save only); `orderedVisibleFieldKeys` (server) + `orderedVisibleFields` (client) drive table/CSV/edit-modal order respecting `fieldOrder` (fallback `SHARE_FIELD_ORDER`); sortable headers (asc→desc→asc, type-aware, blank-last, client-side only); mobile card stack (`md:hidden`) + desktop table (`hidden md:block`) sharing `columns`/`sortedBookings`/`renderActions` (`a40a3df`)
 - **Phase 3G-5e — Updated/Token since + displayOrder-driven custom columns**: share-link row now shows `Updated` + `Token since` (alongside Created/Accessed/Expires); `GET /bookings` + CSV endpoint build/echo `customFieldOrder` (sorted by `displayOrder ?? id`) so public-page columns, the edit modal, and the CSV all follow the owner's custom-field ordering; `orderedVisibleCustomFieldIds` (server) + updated `visibleCustomFieldIds` (client) use identical comparators (`3b7626a`)
 - **Phase 3G-5d — custom-field data-wipe fix**: `setBookingCustomFieldValues` is replace-all (DELETE+INSERT), so the share PATCH (which sends only changed fields) wiped every other custom field's value. Added `mergeBookingCustomFieldValues` (read existing → upsert incoming → delete-on-empty → write back full set) used only by the share PATCH; owner-edit replace-all + chatbot untouched; reverted the 4 temporary diagnostic `console.log`s (`376e413`)
 - **Phase 3G-5c — remove legacy customField1/2 + per-type custom inputs**: legacy `customField1`/`customField2` removed end-to-end (server `STANDARD_PROJECTORS`/`SHARE_FIELD_ORDER`/CSV builders/PATCH validator + owner `STANDARD_FIELDS` + client); `GET /bookings` echoes `customFieldTypes` + `customFieldOptions`; share edit modal renders per-type inputs (text/number/date/boolean/select; calculation omitted); `hasWritableField` + `visibleCustomFieldIds` exclude ghosts/stale/calculation keys; table made full-width (`max-w-7xl` dropped) (`37aeecb`)
@@ -93,47 +99,40 @@ Password-protected public links granting field-scoped access to a subset of a us
 - **3G-1** ✅ schema + owner endpoints
 - **3G-2** ✅ public auth + session + rate limiting
 - **3G-3** ✅ public list + CSV + edit/cancel/confirm
-- **3G-4** ✅ owner UI in the Settings tab (deployed + render-verified)
+- **3G-4** ✅ owner UI in the Settings tab
 - **3G-5** ✅ public UI page (`/share/:token`)
 - **3G-5b…3G-5e** ✅ fix passes (logout/names, legacy-field removal + per-type inputs, data-wipe fix, Updated/Token since + displayOrder)
+- **3G-6** ✅ column reorder + sortable columns + mobile-responsive public page
+- **3G-6b / 3G-6c** ✅ calc-field fix passes (calc fields render computed values; Created/Updated columns)
 
-All shipped + deployed. One enhancement remains: **3G-6** (below).
+All shipped + deployed. Feature 3 is complete. Next: **3G-7** (below).
 
-## Next phase — 3G-6 (share-link column control + public-page enhancements)
+## Next phase — 3G-7 (multi-field formula for calculation custom fields)
 
-Estimated ~20-25% across a fresh session.
+Estimated ~25-35% across a fresh session.
 
-### A. Reorder all columns per link (owner UI + config + public page + CSV)
-- Add up/down arrow buttons (stacked, left side — mirroring the Custom Fields settings pattern) to every row in the Edit Share Link modal's field-permission list.
-- Remove the group headers (Scheduling / Customer / Details / Custom) — show one flat reorderable list.
-- Reorder saves only on modal Save (Cancel discards).
-- Store the order in `config.fieldOrder: string[]` — array of field keys (standard keys + `custom:<id>`).
-- Server + client both respect `fieldOrder` when rendering: public-page table columns, CSV export columns (must match table order), edit-modal control order.
-- Fallback: if `fieldOrder` is empty (existing links), use the current fixed `SHARE_FIELD_ORDER`.
-- **Risk to handle**: the `ShareLinkConfig` zod schema — add `fieldOrder` as optional with default `[]` so existing links don't fail validation. Check the schema definition (`shared/schema.ts` ~1157) before implementing.
+### Goal
 
-### B. Sortable columns on the public page
-- Click a column header → sort the current page's rows (asc/desc).
-- Visual indicator on active sort column (▲/▼).
-- Sort by type: date = chronological, number = numeric, text = alphabetical.
-- Client-side only (sort the 50 rows already fetched per page) — no server change.
+Allow the owner to define a calculation custom field using a free-text formula expression referencing multiple fields, operators, and whitelisted functions — e.g. `(FieldA + FieldB) * FieldC / 100`, `Round(Price * 0.15, 2)`.
 
-### C. Mobile-responsive public page
-- The current horizontal-scroll table is technically usable but cramped on phones.
-- Design options: card-stack on mobile (one card per booking) vs improved table (sticky first column, condensed layout).
-- Decide in the 3G-6 design phase.
+### Locked-in design decisions (do not re-litigate)
+
+- **No eval** — hand-rolled tokenizer + parser for a limited grammar (numbers, field references, `+ - * / ( )`, whitelisted functions like `Round`, `Abs`, `Min`, `Max`, `Floor`, `Ceil`). Target ~300 lines in `shared/calc-formula.ts` (usable by both server and client).
+- **Keep both models** — do NOT migrate existing fields. Existing calc fields continue to use `calcOperation` + `calcFieldAId` + `calcFieldBId` (two operands, one operator). New fields can use the formula. Rendering/evaluation checks `calcFormula` first, falls back to the legacy 2-operand path when null. Non-breaking; owner gets a choice.
+- **Schema**: add nullable `calcFormula` TEXT to `booking_custom_fields`. No changes to existing columns. No backfill.
+- **Validation**: parser must reject unknown field references, type mismatches, and circular references (formula referencing another calc field that references back). Division-by-zero → null (matching current `computeCalcValue` behavior).
+- **Evaluation** must run identically on server and client — server `enrichBookingsForUser` inlines computed values (as it does today for the 2-operand model); client just renders.
+- **Owner UI**: free-text formula input with field-reference support (autocomplete or a picker), plus syntax validation on blur/save. Design to decide the exact UX.
 
 ## Follow-ups
 
-- **nginx log redaction** — `/var/log/nginx/my-app-access.log` records the raw `/api/public/share/<token>/*` URI (nginx logs the request before Express can redact). Add a custom nginx `log_format` to redact `/share/<token>` → `/share/[redacted]`. Note: app-log redaction (`server/index.ts`) already works.
-- **Add `description` to the public list response** — for a real header title on the public page (currently a generic "Shared bookings" header).
-- **Owner UI: prune stale `fieldPermissions` keys** — existing links may carry `custom:<id>` or legacy `customField1/2` keys that no longer render; a save-time prune (drop keys not in the current STANDARD_FIELDS + custom fields) would clean the JSONB.
-- **CSV vs table field-visibility nuance** — confirm CSV columns exactly match the table columns (both driven by the same field order + visibility); note the server-side `visibleCustomFieldIds` doesn't filter calculation/ghost ids (relies on the projected `customFieldValues`).
-- **Inline editing on the public page** — potential 3G-7.
-- **Session-expiry UX polish** — the 12h `share_session` TTL returns the visitor to the password gate mid-use; consider a friendlier "session expired, re-enter password" toast vs. the bare gate.
-- **3G-4 owner UI interactive verification** — the 11-step create→reveal→copy→toggle→edit→regenerate→delete→max-2→incognito flow was render-verified but never interactively exercised; worth a manual pass.
-- ~~Remove `GET /api/public/share/:token/ping`~~ — **done** (removed in 3G-3).
-- **Minor (non-blocking)**: `/confirm` allows confirming an already-cancelled booking (no `status === "cancelled"` guard) — business rule, not a security issue. Also `parseInt` on `page`/`pageSize` is lenient (`"1abc"` → 1), already clamped by `Math.max`/`Math.min`.
+- **nginx log redaction** — `/var/log/nginx/my-app-access.log` records the raw `/api/public/share/<token>/*` URI. Add a custom nginx `log_format` to redact `/share/<token>` → `/share/[redacted]`. (App-level redaction in `server/index.ts` already works.)
+- **Add `description` to the public list response** — for a real header title.
+- **CSV vs table field-visibility nuance** — server's `orderedVisibleFieldKeys` doesn't filter custom ids by `customFieldNames`; the client does. Rare edge case (deleted custom field after giving it a permission). Document with a code comment so a future maintainer doesn't "fix" it accidentally.
+- **computeCalcValue duplication** — client + server copies (intentionally duplicated; cross-reference comments already present). If drift becomes a concern, extract to `shared/calc.ts`. Will be resolved naturally when 3G-7 moves formula evaluation to `shared/calc-formula.ts`.
+- **Inline editing on the public page** — UX enhancement.
+- **Session-expiry UX polish** — invalidate-based transition to gate has a one-render delay.
+- **3G-4 owner UI interactive verification** — the 11-step checklist has never been formally run end-to-end.
 
 ## Known pre-existing issues (do NOT chase)
 
