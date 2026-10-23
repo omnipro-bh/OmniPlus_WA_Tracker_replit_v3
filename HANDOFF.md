@@ -14,28 +14,38 @@
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1 and 4A-1.5 add no schema change and require no db:push.**
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
-- **Phase 4A-1.5: committed `a77db76`, deployed, NOT browser-verified.** Browser verification is the first task next session — see "Next session — start here".
-- Last session (Phase 4A-1.5 implementation + deploy) ended at ~80% context usage.
+- **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
+- Last session (Phase 4A-1.5 browser verification) ended at ~15% context usage.
 
-## Next session — start here
+## Next phase — 4A-2 (live demo / test panel)
 
-**Phase 4A-1.5 browser verification.** At 0% budget. Code is deployed and the build is clean; only human/browser checks remain. No engine re-investigation needed.
+**Status:** design pass is the next task — **design-only, no implementation until the design is approved.** Starting context budget ~15%.
 
-1. **Palette structure.** Open `/workflows` → click a workflow to open the builder → verify the left palette is a SINGLE scrollable list with section headers in this exact order: Messages, End Messages, Triggers, Inputs, Logic, Actions, Booking. No tabs.
-2. **Search filters.** Type `text` in the search box → only sections containing a node whose label/description/id includes "text" remain (expect Inputs → Text Input, End Messages → Text Message). Clear → all sections return.
-3. **Empty state.** Type `xyz` → verify the "No nodes match" message renders.
-4. **Add-node paths.** Drag a node from the palette to the canvas → it lands. Click a node → it adds to canvas. Confirm `data-testid="node-type-<id>"` still fires (DevTools inspect).
-5. **Fullscreen palette.** Trigger the fullscreen palette (the F11-style button) → same list with section headers + its own search box. Type in the fullscreen search → verify it filters independently of the left-panel search.
-6. **Canvas width.** At ≥1536px viewport, the canvas is visibly wider (extends to full viewport minus sidebar; +384px at 1920px). At <1536px, no visible change expected — the `max-w-7xl` cap was never binding there.
+**Goal.** A live demo / test panel inside the workflow builder: a Typebot-style preview pane on the right that runs the flow against synthetic input and shows the resulting conversation, the variable values, and an execution trace.
 
-**Scroll-chain regression check:** drag the palette panel to `minSize` (15%) and confirm the list still scrolls. If it does not, the `flex flex-col h-full min-h-0` → `ScrollArea flex-1 min-h-0` chain is broken and needs a fix.
+**Core problem.** The flow runner is **duplicated** — one loop lives inside the `button_reply` branch of `server/routes.ts`, the other inside `resumeFlowAfterTextInput`. Both must be extracted into a **single shared runner** before the sandbox can behave correctly; otherwise the sandbox would become a third divergent copy.
 
-- All 6 pass → mark 4A-1.5 verified, then decide whether to start 4A-2 (live demo panel).
-- Any fail → diagnose + fix before 4A-2.
+**Approach (high-level; the design pass must confirm):**
+
+- **Option A** — a `sandbox` mode flag that can be set per-request on the existing webhook handler, or
+- **Option B** — a new endpoint (e.g. `POST /api/workflows/:id/sandbox-tick`) that drives the flow in-memory: no `conversation_states` persistence, no real Whapi sends, outbound payloads captured as JSON in the response.
+- **Frontend** — a right-side panel in `WorkflowBuilder` rendering a chat UI + variables inspector + execution trace. Reuse the existing component primitives; no new tabs.
+
+**Key design questions for the design pass:**
+
+1. Which approach — sandbox flag on the existing handler, or a separate sandbox endpoint? (Trade-offs: auth surface, blast radius, how much engine code each touches.)
+2. How is sandbox state held — an in-memory map keyed by sandbox session id? Lifetime, eviction, and concurrency rules?
+3. How does it interact with the Save state — does the sandbox run the **in-memory draft** graph or the persisted `definitionJson`?
+4. What happens on node-edit modal open / unsaved changes mid-session — restart the sandbox, hot-swap the graph, or block?
+5. Variables inspector UX — layout, live updates, reserved keys, redaction of captured PII.
+6. Panel geometry — how does the existing 20/60/20 `ResizablePanel` split absorb the preview pane without regressing the 4A-1.5 layout/scroll behaviour?
+
+**Estimated effort:** ~25% context across 2–3 sub-phases — (a) extract the shared runner, (b) build the sandbox execution path, (c) build the preview UI + wire it up. No schema change expected.
 
 ## Recent commits
 
-- docs: HANDOFF — 4A-1 + 4A-1.5 closed out; next: 4A-1.5 browser verification **← this commit (HEAD)**
+- docs: HANDOFF — 4A-1.5 browser-verified (7/7); next: Phase 4A-2 design **← this commit (HEAD)**
+- docs: HANDOFF — 4A-1 + 4A-1.5 closed out; next: 4A-1.5 browser verification
 - `a77db76` feat(workflow): Phase 4A-1.5 — single scrollable palette + full-width builder
 - `3fa2e67` feat(workflow): Phase 4A-1 — HTTP handle fix + input.text, condition, setVariable nodes
 - `2a427af` docs: HANDOFF — Phase 4A-1 implemented in working tree (uncommitted); next: review
@@ -74,7 +84,7 @@
 
 ## Completed phases
 
-- **Phase 4A-1.5 — single scrollable palette + full-width builder** (`a77db76`, deployed 2026-10-23, **browser verification pending**): replaced the 7-tab palette with one scrollable `NodePalette` component — section headers in an explicit `CATEGORY_ORDER` (Messages, End Messages, Triggers, Inputs, Logic, Actions, Booking), a search box filtering on label/description/id, and a "No nodes match" empty state. Added `PaletteNode` + `satisfies Record<string, PaletteNode[]>`, `PaletteCategory`, `CATEGORY_ORDER`; ACTION icon differentiated to `text-amber-500` (BOOKING stays `text-cyan-500`); both call sites (left panel + fullscreen Sheet) render the same component with independent search state; deleted ~250 lines of copy-pasted `renderNodePalette` (net −118 lines). Canvas: `fullWidth` on the `/workflows` `DashboardLayout` (removes the `max-w-7xl` cap → +384px at 1920px, no change below ~1536px); the list view was re-capped with `max-w-7xl mx-auto` so only the builder goes full-bleed. All `node-type-<id>` testids preserved; panel sizes untouched (20/60/20); no schema change; no new deps.
+- **Phase 4A-1.5 — single scrollable palette + full-width builder** (`a77db76`, deployed 2026-10-23, **browser-verified — 7/7 checks passed**): replaced the 7-tab palette with one scrollable `NodePalette` component — section headers in an explicit `CATEGORY_ORDER` (Messages, End Messages, Triggers, Inputs, Logic, Actions, Booking), a search box filtering on label/description/id, and a "No nodes match" empty state. Added `PaletteNode` + `satisfies Record<string, PaletteNode[]>`, `PaletteCategory`, `CATEGORY_ORDER`; ACTION icon differentiated to `text-amber-500` (BOOKING stays `text-cyan-500`); both call sites (left panel + fullscreen Sheet) render the same component with independent search state; deleted ~250 lines of copy-pasted `renderNodePalette` (net −118 lines). Canvas: `fullWidth` on the `/workflows` `DashboardLayout` (removes the `max-w-7xl` cap → +384px at 1920px, no change below ~1536px); the list view was re-capped with `max-w-7xl mx-auto` so only the builder goes full-bleed. All `node-type-<id>` testids preserved; panel sizes untouched (20/60/20); no schema change; no new deps.
 - **Phase 4A-1 — workflow primitives: HTTP handle fix + input.text, condition, setVariable** (`3fa2e67`, deployed + **verified in-session, 10/10 tests passed**): one-line fix to `CustomWorkflowNode.tsx:19` (`'httpRequest'` → `'action.http_request'`) so the HTTP node's success/error handles render; three new node types — `input.text` (stop-and-wait capture into `conversation_states.context`, 2000-char cap, min/max validation with re-prompt, unlimited retries), `condition` (8 operators, `true`/`false` handles, `operator || 'equals'` default), `setVariable` (literal + `{{template}}` via `resolveTemplate`, soft 64 KB context ceiling); `resumeFlowAfterTextInput` parallel runner (condition/setVariable/HTTP/message/input.text, 25-step cap, trigger-message passthrough to `executeHttpNode`); `sendNodeMessage` gained the `input.text` prompt branch; new `server/workflows/flowControl.ts` (pure helpers) and `shared/workflow-validation.ts` (client + server save validation: errors block, warnings allow); `getNestedValue` exported with a prototype-segment guard (`__proto__`/`constructor`/`prototype`, including the `name[0]` form). Full design + locked decisions in "Session 4A-1 implementation" below.
 - **Phase 3G-7 — multi-field formula for calculation custom fields**: added nullable `calcFormula` TEXT to `booking_custom_fields` (no backfill; existing calc fields untouched); new `shared/calc-formula.ts` (~683 lines, no deps) with hand-rolled tokenizer + recursive-descent parser + compiler + evaluator + cycle detection (no `eval`/`new Function`); grammar `numbers`, `[Name]`/`{id}` refs, `+ - * / ( )`, functions `Round Abs Min Max Floor Ceil`; precedence `+ -` < `* /` < unary `-` < primary, left-associative; canonical storage `{id}` (rename-stable) with `[Name]` rehydrated on edit; null propagation everywhere (div-by-zero → null) matching legacy `computeCalcValue`; caps 1000 chars / 200 nodes / 50 depth; save-time DFS cycle detection + read-time memoized DAG eval (calc→calc chaining allowed; boolean/date/text/select refs rejected with "Formulas can only reference number fields"); POST/PATCH return structured `{ error, code }` (`PARSE_ERROR, UNKNOWN_FIELD, TYPE_MISMATCH, CIRCULAR_REF, SIZE_LIMIT, DEPTH_LIMIT`); `enrichBookingsForUser` pre-compiles each formula once per request and calls `resolveCalcValues`; owner UI gained Simple/Formula mode toggle, formula input + `+ Field`/`+ Function` pickers, debounced + blur validation with inline code→error mapping; 5 client call sites switched to `resolveCalcValues`; legacy 2-operand path preserved (`ed97b8a`)
 - **Phase 3G-6c — calc fields render + Created/Updated columns**: reversed 3G-6b — calculation fields now render their computed values on the public page (server `enrichBookingsForUser` computes via a `computeCalcValue` mirror and inlines `{ fieldId, value: String(result) }` into `customFieldValues`, flowing to JSON list + CSV + PATCH response); added `createdAt`/`updatedAt` as standard Hidden/Read fields (ISO projectors, "Created"/"Updated" labels, date sort, `formatTimestamp` render); public PATCH rejects writes to calc fields (hoisted `calcIds` guard); client `compareBookingFields` maps `"calculation"` → `"number"`; defensive `writableControls` skip prevents legacy calc write perms rendering an input (`629924d`)
@@ -156,8 +166,8 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 ### Sub-phases
 
 - **4A-1 (DONE — `3fa2e67`, deployed, 10/10 verified):** HTTP handle fix + three new node types (`input.text`, `condition`, `setVariable`). Additive, no engine refactor. Design record in "Session 4A-1 implementation" below.
-- **4A-1.5 (DONE, deployed, browser verification pending — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
-- **4A-2 (next):** Live Test Panel. Requires a `sandbox` mode in the webhook handler + a chat UI on the frontend.
+- **4A-1.5 (DONE, deployed, browser-verified 7/7 — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
+- **4A-2 (next — design pass pending):** Live demo / test panel. Requires the two duplicated flow runners to be extracted into one shared runner first, then a sandbox execution path + a chat/preview UI. See "Next phase — 4A-2" near the top.
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
 ### Constraints for 4A
@@ -176,7 +186,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-1.5 browser verification** (see "Next session — start here" near the top), then decide 4A-2.
+**Next session: Phase 4A-2 design** (see "Next phase — 4A-2" near the top). 4A-1.5 is closed out — browser-verified 7/7.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
@@ -264,13 +274,22 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership keys on Whapi's `message_id`, which blocks non-Whapi channels until 4A-3.
 - Also accepted: unlimited invalid-input re-prompts (no attempt cap); duplicated routing logic between `resumeFlowAfterTextInput` and the inline loop (collapse when the 4A-2 runner exists); the soft context ceiling still allows up to 5 MB per HTTP response; no idempotency / per-conversation locking for concurrent webhook deliveries (pre-existing); captured PII lives in `conversation_states.context` in plaintext (same class as existing booking data).
 
-### Session 4A-1.5 (2026-10-23) — committed `a77db76`, deployed, verification deferred
+### Session 4A-1.5 (2026-10-23) — committed `a77db76`, deployed, browser-verified (7/7)
 
 - Design-first session: read-only investigation of the palette and layout, then implementation after approval. Ended at ~80% context.
 - **Palette.** 7 tabs at `text-[9px]` (~34px per tab in a 243px panel) replaced by a single scrollable `NodePalette` in `WorkflowBuilder.tsx`. Module-scope additions: `PaletteNode`, `nodeTypes ... satisfies Record<string, PaletteNode[]>`, `PaletteCategory`, `CATEGORY_ORDER` (explicit order + display labels + per-category icon colour + `requiresBookingAccess`). Search filters case-insensitively on label/description/id with no debounce (16 nodes — debounce deliberately skipped); empty state renders "No nodes match". `renderNodePalette` deleted (251 lines), both call sites swapped to the component. Each instance owns its own `query` state, so the fullscreen Sheet filters independently.
 - **Width.** `fullWidth` on the `/workflows` route was the correct lever: `DashboardLayout`'s non-`fullWidth` branch applies `max-w-7xl` (1280px → 1216px usable), which is the entire constraint. Below ~1536px viewport the cap was never binding, so those users see no change. `App.tsx` +1/−1; the list view re-capped with `max-w-7xl mx-auto` so only the builder is full-bleed.
 - **Deliberately unchanged.** Panel sizes (20/60/20), `nodeTypes` content, `WorkflowNodeConfig.tsx`, `CustomWorkflowNode.tsx`, all server files, schema.
-- **Verification.** `npm run check` clean in changed files; `npm run build` succeeded locally and on the VPS with identical asset hashes (`index-vyHxOcNb.js`, `index-D8eGdqiY.css`), client bundle −5.04 kB. Deployed: fast-forward `3fa2e67..a77db76`, backup `omniplus-pre-deploy-2026-10-23-1307.tar.gz`, PM2 online, error log shows only the two known pre-existing entries. **Browser verification not run** — deferred to next session.
+- **Verification (build/deploy).** `npm run check` clean in changed files; `npm run build` succeeded locally and on the VPS with identical asset hashes (`index-vyHxOcNb.js`, `index-D8eGdqiY.css`), client bundle −5.04 kB. Deployed: fast-forward `3fa2e67..a77db76`, backup `omniplus-pre-deploy-2026-10-23-1307.tar.gz`, PM2 online, error log shows only the two known pre-existing entries.
+- **Browser verification (2026-10-23) — 7/7 PASS:**
+  1. **Single scrollable palette** — correct section order (Messages → End Messages → Triggers → Inputs → Logic → Actions → Booking), all 16 nodes, search box at top, zero tabs.
+  2. **Search filter** — `text` narrowed to Inputs → Text Input + End Messages → Text Message; clearing restored all 7 sections.
+  3. **Empty state** — "No nodes match 'xyz'" rendered.
+  4. **Add-node paths** — palette drag-and-drop and click-to-add both place a node; `data-testid="node-type-<id>"` present on the card.
+  5. **Fullscreen palette** — same single-list palette with section headers; fullscreen search filters independently of the left panel; closing the Sheet preserved the left-panel search string.
+  6. **Canvas width** — visibly wider at ≥1536px viewport, no change below it, and the `/workflows` list view still capped at `max-w-7xl`.
+  7. **Regression — scroll chain** — at `minSize` (15%) the palette list still scrolls and the search box stays pinned to the top.
+- Verification session ended at ~15% context usage.
 
 ## Follow-ups
 
