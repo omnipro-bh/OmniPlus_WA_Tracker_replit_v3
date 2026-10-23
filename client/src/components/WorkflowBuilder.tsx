@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/sheet';
 import { NodeConfigPanel } from '@/components/WorkflowNodeConfig';
 import { CustomWorkflowNode } from '@/components/CustomWorkflowNode';
+import WorkflowTestPanel from '@/components/WorkflowTestPanel';
 import {
   MessageCircle,
   Image as ImageIcon,
@@ -368,6 +369,19 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => 
   return { nodes: layoutedNodes, edges };
 };
 
+/** Below-`lg` (1024px) viewport detection for the test-panel Sheet fallback. */
+function useIsBelowLg() {
+  const [below, setBelow] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 1023px)");
+    const onChange = () => setBelow(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return below;
+}
+
 interface WorkflowBuilderProps {
   initialNodes?: Node[];
   initialEdges?: Edge[];
@@ -431,6 +445,10 @@ export default function WorkflowBuilder({
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [showNodePaletteSheet, setShowNodePaletteSheet] = useState(false);
   const [showConfigSheet, setShowConfigSheet] = useState(false);
+  const isBelowLg = useIsBelowLg();
+  const [showTestPanel, setShowTestPanel] = useState(
+    () => localStorage.getItem('workflow-builder-show-test-panel') === 'true'
+  );
   
   // Load panel preferences from localStorage
   useEffect(() => {
@@ -449,6 +467,10 @@ export default function WorkflowBuilder({
   useEffect(() => {
     localStorage.setItem('workflow-builder-right-collapsed', rightPanelCollapsed.toString());
   }, [rightPanelCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('workflow-builder-show-test-panel', showTestPanel.toString());
+  }, [showTestPanel]);
   
   // Auto-expand right panel when node is selected (only if in normal mode)
   useEffect(() => {
@@ -464,20 +486,6 @@ export default function WorkflowBuilder({
     }
   }, [isFullscreen, selectedNodeId]);
   
-  // Restore panel sizes from localStorage on mount
-  const [savedPanelSizes, setSavedPanelSizes] = useState<number[]>([]);
-  
-  useEffect(() => {
-    const saved = localStorage.getItem('workflow-builder-panel-sizes');
-    if (saved) {
-      try {
-        setSavedPanelSizes(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse saved panel sizes:', e);
-      }
-    }
-  }, []);
-  
   // Derive selectedNode from nodes array to always have latest data
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null;
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -485,6 +493,9 @@ export default function WorkflowBuilder({
   
   // Register custom node types for ReactFlow
   const customNodeTypes = useMemo(() => ({ custom: CustomWorkflowNode }), []);
+
+  // In-memory draft graph passed to the test panel (hot-swaps on every edit).
+  const draftDefinition = useMemo(() => ({ nodes, edges }), [nodes, edges]);
 
   // Add entryNodeId to each node's data for visual indication
   const nodesWithEntryData = useMemo(() => 
@@ -806,13 +817,32 @@ export default function WorkflowBuilder({
     }
   }, [isFullscreen]);
 
+  // Programmatic selection (used by the test-panel trace rows). Sets both our
+  // selectedNodeId and ReactFlow's `selected` flag, then zooms to the node when
+  // it still exists in the current graph (deleted nodes skip the zoom only).
+  const selectNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === nodeId })));
+    if (reactFlowInstance) {
+      try {
+        const node = reactFlowInstance.getNode(nodeId);
+        if (node) {
+          reactFlowInstance.fitView({ nodes: [{ id: nodeId }], maxZoom: 1, duration: 300 });
+        }
+      } catch {
+        /* node not found — skip zoom, selection still set */
+      }
+    }
+    if (isFullscreen) setShowConfigSheet(true);
+  }, [reactFlowInstance, isFullscreen, setNodes]);
+
   return (
     <>
       <ResizablePanelGroup 
         direction="horizontal" 
         className="h-full w-full"
         onLayout={(sizes) => {
-          localStorage.setItem('workflow-builder-panel-sizes', JSON.stringify(sizes));
+          localStorage.setItem('workflow-builder-panel-sizes-v2', JSON.stringify(sizes));
         }}
       >
         {/* Left Panel - Node Palette */}
@@ -875,7 +905,7 @@ export default function WorkflowBuilder({
         )}
 
         {/* Center Panel - ReactFlow Canvas */}
-        <ResizablePanel defaultSize={60} className="relative">
+        <ResizablePanel defaultSize={60} minSize={25} className="relative">
           <div className="h-full w-full border rounded-lg" ref={reactFlowWrapper}>
             <ReactFlow
               nodes={nodesWithEntryData}
@@ -936,6 +966,17 @@ export default function WorkflowBuilder({
                   >
                     <Network className="h-4 w-4 mr-2" />
                     Auto Layout
+                  </Button>
+                  <div className="w-px h-6 bg-border mx-1" />
+                  <Button
+                    size="sm"
+                    variant={showTestPanel ? "default" : "outline"}
+                    onClick={() => setShowTestPanel((v) => !v)}
+                    title="Toggle test panel"
+                    data-testid="button-toggle-test-panel"
+                  >
+                    <TestTube className="h-4 w-4 mr-2" />
+                    Test Panel
                   </Button>
                   <div className="w-px h-6 bg-border mx-1" />
                   <Button 
@@ -1057,6 +1098,22 @@ export default function WorkflowBuilder({
             </ReactFlow>
           </div>
         </ResizablePanel>
+
+        {/* Test Panel (4th panel) — desktop + not fullscreen */}
+        {showTestPanel && !isFullscreen && !isBelowLg && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={22} minSize={18} maxSize={34}>
+              <WorkflowTestPanel
+                workflowId={initialWorkflowId!}
+                definitionJson={draftDefinition}
+                entryNodeId={entryNodeId ?? null}
+                onSelectNode={selectNode}
+                onClose={() => setShowTestPanel(false)}
+              />
+            </ResizablePanel>
+          </>
+        )}
 
         {/* Right Panel - Node Configuration */}
         {!isFullscreen && (
@@ -1239,6 +1296,27 @@ export default function WorkflowBuilder({
               </ScrollArea>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Test Panel Sheet — below-lg or fullscreen fallback */}
+      <Sheet open={showTestPanel && (isFullscreen || isBelowLg)} onOpenChange={setShowTestPanel}>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px] flex flex-col">
+          <SheetHeader className="flex-shrink-0">
+            <SheetTitle className="flex items-center gap-2">
+              <TestTube className="h-5 w-5" />
+              Test Flow
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 min-h-0 mt-6">
+            <WorkflowTestPanel
+              workflowId={initialWorkflowId!}
+              definitionJson={draftDefinition}
+              entryNodeId={entryNodeId ?? null}
+              onSelectNode={selectNode}
+              onClose={() => setShowTestPanel(false)}
+            />
+          </div>
         </SheetContent>
       </Sheet>
     </>
