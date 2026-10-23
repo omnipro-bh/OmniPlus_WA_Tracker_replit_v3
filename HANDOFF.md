@@ -10,13 +10,15 @@
 ## Current state
 
 - Production HEAD (deployed/running on VPS): `ed97b8a` (Feature 3G-7 — multi-field formula for calculation custom fields).
-- Repo HEAD: `ed97b8a` (+ this commit: docs-only HANDOFF update).
+- Repo HEAD: `ed97b8a` (+ this commit: docs-only HANDOFF update — Phase 4A diagnostic findings).
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09.
-- Last session (3G-7) ended at ~28% context usage — a fresh session has ample room for the Phase 4A diagnostic.
+- Last session (Phase 4A diagnostic) ended at ~50% context usage.
 
 ## Recent commits
 
+- docs: Phase 4A diagnostic findings + sub-phase split (4A-1/4A-2/4A-3) **← this commit (HEAD)**
+- `99a0a87` docs: update HANDOFF.md (3G-7 complete; next: Phase 4A)
 - `ed97b8a` feat(booking): multi-field formula for calculation custom fields (3G-7)
 - `8e2291c` docs: update HANDOFF.md (Feature 3 complete; next: 3G-7)
 - `629924d` feat(booking): render calc fields + add Created/Updated columns on public share page (3G-6c)
@@ -112,11 +114,43 @@ Password-protected public links granting field-scoped access to a subset of a us
 
 All shipped + deployed. Feature 3 is complete. Next: **Phase 4A** (below).
 
-## Next phase — Phase 4A (Workflow Primitives + Web Channel)
+## Phase 4A — Workflow Enhancement (in progress)
 
-**Diagnostic pending** — scope not yet defined; first task is discovery/investigation before design.
+Working name for the phase that adds workflow primitives (Webhook/HTTP, Condition, Set Variable, Live Test Panel) plus a Web channel adapter so one flow runs on both WhatsApp and a browser widget.
 
-Estimated session cost TBD after diagnostic.
+### Architecture findings (from the 2026-10-23 diagnostic) — permanent reference
+
+- **No workflow engine module exists.** The entire runtime is a ~2,400-line inline block inside `server/routes.ts` (lines 8780–11179). The execution loop is at `routes.ts:10675`, nested inside the `button_reply` branch. Text messages never reach it. Helpers are limited to `server/workflows/httpExecutor.ts` (generic HTTP client + `{{variable}}` resolution) and `server/workflows/httpNodeExecutor.ts` (`executeHttpNode` + `getNextNodeByHandle`).
+- **No channel abstraction.** `sendNodeMessage` calls `whapi.*` functions directly via dynamic import (`routes.ts:11819-11844`). Whapi concerns are threaded through the whole engine: token resolution (`storage.getChannelsForUser` → `.whapiChannelToken`), WhatsApp payload shapes, `sent_messages.message_id` ownership checks, and label side-effects (`handleChatLabelAsync`).
+- **State:** `conversation_states` keyed by `(workflow_id, phone)` only — no channel/user/session column. `current_node_id` is bookkeeping: routing actually resumes from the clicked button's edge (`sourceHandle`), not the stored node. All variables live in `conversation_states.context` (free-form JSONB).
+- **Node types:** 13 palette entries, 3 runtime branches (`action.http_request`, `booking.*`, `message.*`/interactive). No TypeScript node interface — the graph is `any` end-to-end; `definitionJson` is JSONB with no structural validation on save (`z.record(z.any())`) and no `schemaVersion` persisted.
+- **Free-text input not supported.** The `while` loop is unreachable from text messages — only booking capture + first-message-of-day text handlers exist (`routes.ts:9708/9825/9930/10013-10206`). No generic text-input node in the palette.
+- **HTTP node is 80% built but broken.** `CustomWorkflowNode.tsx:19` checks `'httpRequest'`, but the palette id is `'action.http_request'`. Handles never render, so the loop breaks after execution (`routes.ts:10713-10716`). Fix is one line.
+- **`action.http_request` runtime already has:** method, URL, auth (none/bearer/basic), headers, query params, templated body (`{{variable}}`), response mapping → context variables, and `success`/`error` branching (`server/workflows/httpExecutor.ts`).
+
+### Sub-phases
+
+- **4A-1 (next):** Fix the HTTP node handle bug + add three new node types (`input.text`, `condition`, `setVariable`). Small, surgical, additive. No engine refactor.
+- **4A-2 (deferred):** Live Test Panel. Requires a `sandbox` mode in the webhook handler + a chat UI on the frontend.
+- **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
+
+### Constraints for 4A
+
+- Do NOT refactor the engine into modules. Work with the inline handler by adding branches to the `while` loop.
+- Do NOT touch the chatbot booking flow (`routes.ts` ~8247–8873).
+- Session state uses `conversation_states.context` (free-form JSONB) for all variables.
+
+### Follow-ups surfaced by the diagnostic (not blocking 4A-1)
+
+- `message.text` documented "terminal" but runtime continues if an edge exists — editor/runtime disagreement.
+- `firstMessageTrigger` palette node has no runtime handler (actual trigger is `workflows.entry_node_id`).
+- Legacy button types (`callButton`, `urlButton`, `copyButton`) in config panel but no palette entry / no runtime.
+- No `GET /api/workflows/:id` — builder seeds from list query cache. Add when 4A-2 needs it.
+- No structural validation of `definitionJson` on save (`z.record(z.any())`), no `schemaVersion` persisted.
+- `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
+- `first_message_flags` keyed by phone only, not scoped to workflow/user.
+
+**Next session: 4A-1 design.** No code written yet for 4A.
 
 ## Follow-ups
 
