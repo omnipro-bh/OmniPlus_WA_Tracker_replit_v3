@@ -177,7 +177,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     setHttpTestResult(null);
 
     try {
-      const result: any = await apiRequest('POST', '/api/workflows/test-http-request', {
+      const res = await apiRequest('POST', '/api/workflows/test-http-request', {
         config: {
           method: config.method || 'GET',
           url: config.url,
@@ -194,6 +194,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         },
         testContext: {}, // Empty context for testing
       });
+      const result: any = await res.json();
 
       setHttpTestResult(result);
       setHttpTestDialogOpen(true);

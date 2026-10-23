@@ -12319,27 +12319,31 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "allowedDomains must be an array" });
       }
 
-      // Validate all domains
+      // Normalize + validate all domains (strip protocol + trailing slash, lowercase)
       const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
-      for (const domain of allowedDomains) {
-        if (typeof domain !== 'string' || !domainPattern.test(domain.toLowerCase().trim())) {
+      const normalizedDomains = allowedDomains.map((domain: any) => {
+        if (typeof domain !== 'string') return '';
+        return domain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+      });
+      for (const domain of normalizedDomains) {
+        if (!domainPattern.test(domain)) {
           return res.status(400).json({ error: `Invalid domain: ${domain}` });
         }
       }
 
-      await storage.setSetting("http_allowed_domains", JSON.stringify(allowedDomains));
+      await storage.setSetting("http_allowed_domains", JSON.stringify(normalizedDomains));
 
       await storage.createAuditLog({
         actorUserId: req.userId!,
         action: "UPDATE_SETTINGS",
         meta: {
           entity: "http_allowlist",
-          domainCount: allowedDomains.length,
+          domainCount: normalizedDomains.length,
           adminId: req.userId
         },
       });
 
-      res.json({ success: true, allowedDomains });
+      res.json({ success: true, allowedDomains: normalizedDomains });
     } catch (error: any) {
       console.error("Update HTTP allowlist settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });

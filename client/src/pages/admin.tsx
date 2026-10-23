@@ -598,7 +598,7 @@ function HttpAllowlistSettings() {
   });
 
   const handleAddDomain = () => {
-    const trimmed = newDomain.trim().toLowerCase();
+    const trimmed = newDomain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
     if (!trimmed) {
       toast({
         title: "Invalid domain",
@@ -663,7 +663,7 @@ function HttpAllowlistSettings() {
         <Label>Add Domain</Label>
         <div className="flex gap-2">
           <Input
-            placeholder="example.com"
+            placeholder="Domain only (no https://). Example: api.mybackend.com, gate.whapi.cloud"
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
@@ -678,7 +678,7 @@ function HttpAllowlistSettings() {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Examples: api.mybackend.com, gate.whapi.cloud, hooks.zapier.com
+          Enter bare domains (no protocol).
         </p>
       </div>
 
