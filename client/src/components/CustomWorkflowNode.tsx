@@ -16,7 +16,14 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   const isEndNode = nodeType.startsWith('message.');
   
   // Check if this is an HTTP Request node (has success and error outputs)
-  const isHttpNode = nodeType === 'httpRequest';
+  const isHttpNode = nodeType === 'action.http_request';
+  
+  // Check if this is a Condition node (has true and false outputs)
+  const isConditionNode = nodeType === 'condition';
+
+  // Phase 4A-1 badges
+  const isInputTextNode = nodeType === 'input.text';
+  const isSetVariableNode = nodeType === 'setVariable';
   
   // Check if this is a booking node
   const isBookingNode = nodeType.startsWith('booking.');
@@ -110,6 +117,32 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           style={{ zIndex: 1 }}
         >
           END
+        </Badge>
+      )}
+
+      {/* Phase 4A-1 type badges - top right (avoids the Entry badge) */}
+      {isInputTextNode && (
+        <Badge
+          className="absolute -top-2 right-2 bg-blue-600 text-white text-[10px] px-1.5 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          INPUT
+        </Badge>
+      )}
+      {isConditionNode && (
+        <Badge
+          className="absolute -top-2 right-2 bg-violet-600 text-white text-[10px] px-1.5 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          IF
+        </Badge>
+      )}
+      {isSetVariableNode && (
+        <Badge
+          className="absolute -top-2 right-2 bg-teal-600 text-white text-[10px] px-1.5 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          SET
         </Badge>
       )}
       
@@ -363,8 +396,56 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
           
-          {/* Default single output handle if no buttons/options and not HTTP node and not Booking node */}
-          {!hasMultipleOutputs && !isHttpNode && !isBookingNode && (
+          {/* Condition Node - true and false outputs */}
+          {isConditionNode && (
+            <div className="space-y-1 mt-3">
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge
+                  variant="secondary"
+                  className="text-xs truncate max-w-[140px] bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20"
+                  title="Condition is true"
+                >
+                  True
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="true"
+                  className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge
+                  variant="secondary"
+                  className="text-xs truncate max-w-[140px] bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20"
+                  title="Condition is false"
+                >
+                  False
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="false"
+                  className="!w-3 !h-3 !bg-red-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Default single output handle if no buttons/options and not HTTP/Condition/Booking node */}
+          {!hasMultipleOutputs && !isHttpNode && !isConditionNode && !isBookingNode && (
             <Handle
               type="source"
               position={Position.Right}

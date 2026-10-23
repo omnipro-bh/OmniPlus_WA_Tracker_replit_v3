@@ -13,6 +13,7 @@ import { useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
+import { RESERVED_CONTEXT_KEYS, VARIABLE_NAME_RE, VARIABLE_PATH_RE } from '@shared/workflow-validation';
 
 // Generate random unique ID
 function generateId(prefix: string = 'btn'): string {
@@ -2844,6 +2845,240 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         <p className="text-xs text-amber-600 mt-4">
           Note: Customer is identified by their WhatsApp phone number.
         </p>
+      </div>
+    );
+  }
+
+  // Phase 4A-1: Text Input node
+  if (nodeType === 'input.text') {
+    const variableName = (config.variableName || '') as string;
+    const variableNameInvalid = !!variableName && !VARIABLE_NAME_RE.test(variableName);
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="input-text-prompt">Prompt *</Label>
+          <Textarea
+            id="input-text-prompt"
+            placeholder="What is your full name?"
+            value={config.prompt || ''}
+            onChange={(e) => updateConfig('prompt', e.target.value)}
+            rows={3}
+            data-testid="input-text-prompt"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Sent as a static message. Template variables such as {`{{name}}`} are not supported in prompts.
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="input-text-variable">Save reply to variable *</Label>
+          <Input
+            id="input-text-variable"
+            placeholder="customer_name"
+            value={variableName}
+            onChange={(e) => updateConfig('variableName', e.target.value)}
+            data-testid="input-text-variable"
+          />
+          {variableNameInvalid ? (
+            <p className="text-xs text-destructive mt-1">
+              Use letters, numbers and underscores only, and do not start with a digit.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">
+              Stored in the conversation context for later Condition, Set Variable and HTTP nodes.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="input-text-min">Min length</Label>
+            <Input
+              id="input-text-min"
+              type="number"
+              min={0}
+              max={2000}
+              placeholder="0"
+              value={config.minLength ?? ''}
+              onChange={(e) =>
+                updateConfig(
+                  'minLength',
+                  e.target.value === ''
+                    ? undefined
+                    : Math.max(0, Math.min(2000, parseInt(e.target.value) || 0))
+                )
+              }
+              data-testid="input-text-min-length"
+            />
+          </div>
+          <div>
+            <Label htmlFor="input-text-max">Max length</Label>
+            <Input
+              id="input-text-max"
+              type="number"
+              min={1}
+              max={2000}
+              placeholder="2000"
+              value={config.maxLength ?? ''}
+              onChange={(e) =>
+                updateConfig(
+                  'maxLength',
+                  e.target.value === ''
+                    ? undefined
+                    : Math.max(1, Math.min(2000, parseInt(e.target.value) || 1))
+                )
+              }
+              data-testid="input-text-max-length"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="input-text-invalid">Validation message (optional)</Label>
+          <Textarea
+            id="input-text-invalid"
+            placeholder="Please enter at least 3 characters."
+            value={config.invalidMessage || ''}
+            onChange={(e) => updateConfig('invalidMessage', e.target.value)}
+            rows={2}
+            data-testid="input-text-invalid-message"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Sent when the reply fails the length rules. The customer is re-prompted.
+          </p>
+        </div>
+
+        <div className="bg-muted/40 border rounded-md p-3 text-xs text-muted-foreground space-y-1">
+          <p>Replies are trimmed. Maximum captured length is 2000 characters.</p>
+          <p>Booking nodes must be reached via button replies, not directly after text input.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase 4A-1: Condition node
+  if (nodeType === 'condition') {
+    const variablePath = (config.variable || '') as string;
+    const variablePathInvalid = !!variablePath && !VARIABLE_PATH_RE.test(variablePath);
+    const operator = (config.operator || 'equals') as string;
+    const valueHidden = ['exists', 'not_exists', 'is_empty', 'is_not_empty'].includes(operator);
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="condition-variable">Variable path *</Label>
+          <Input
+            id="condition-variable"
+            placeholder="bookingState.status"
+            value={variablePath}
+            onChange={(e) => updateConfig('variable', e.target.value)}
+            data-testid="condition-variable"
+          />
+          {variablePathInvalid ? (
+            <p className="text-xs text-destructive mt-1">
+              Use dot notation, for example bookingState.status or http.node_123.data.id.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">
+              Dot notation, e.g. {`http.node_123.status`} or {`bookingState.status`}. Array items use [0].
+            </p>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="condition-operator">Operator *</Label>
+          <Select value={operator} onValueChange={(value) => updateConfig('operator', value)}>
+            <SelectTrigger id="condition-operator" data-testid="condition-operator">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="equals">Equals</SelectItem>
+              <SelectItem value="not_equals">Does not equal</SelectItem>
+              <SelectItem value="greater_than">Greater than</SelectItem>
+              <SelectItem value="less_than">Less than</SelectItem>
+              <SelectItem value="is_empty">Is empty</SelectItem>
+              <SelectItem value="is_not_empty">Is not empty</SelectItem>
+              <SelectItem value="exists">Exists</SelectItem>
+              <SelectItem value="not_exists">Does not exist</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {!valueHidden && (
+          <div>
+            <Label htmlFor="condition-value">Comparison value</Label>
+            <Input
+              id="condition-value"
+              placeholder="confirmed"
+              value={config.value ?? ''}
+              onChange={(e) => updateConfig('value', e.target.value)}
+              data-testid="condition-value"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Literal only — templates are not resolved here.
+            </p>
+          </div>
+        )}
+
+        <div className="bg-muted/40 border rounded-md p-3 text-xs text-muted-foreground space-y-1">
+          <p>Comparisons are case-sensitive. Numeric operators coerce both sides to numbers.</p>
+          <p>Whitespace-only values are treated as empty. 0 and false are not empty.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase 4A-1: Set Variable node
+  if (nodeType === 'setVariable') {
+    const variableName = (config.variable || '') as string;
+    const variableNameInvalid = !!variableName && !VARIABLE_NAME_RE.test(variableName);
+    const variableNameReserved = RESERVED_CONTEXT_KEYS.includes(variableName);
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="set-variable-name">Variable name *</Label>
+          <Input
+            id="set-variable-name"
+            placeholder="appointment_confirmed"
+            value={variableName}
+            onChange={(e) => updateConfig('variable', e.target.value)}
+            data-testid="set-variable-name"
+          />
+          {variableNameInvalid ? (
+            <p className="text-xs text-destructive mt-1">
+              Use letters, numbers and underscores only, and do not start with a digit.
+            </p>
+          ) : variableNameReserved ? (
+            <p className="text-xs text-destructive mt-1">
+              "{variableName}" is a reserved internal variable and cannot be overwritten.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">
+              Letters, numbers and underscores only. Dots are not allowed.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="set-variable-value">Value</Label>
+          <Textarea
+            id="set-variable-value"
+            placeholder="appointment_confirmed"
+            value={config.value ?? ''}
+            onChange={(e) => updateConfig('value', e.target.value)}
+            rows={3}
+            data-testid="set-variable-value"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Use {`{{path.to.value}}`} to interpolate. Unresolved references become an empty string.
+          </p>
+        </div>
+
+        <div className="bg-muted/40 border rounded-md p-3 text-xs text-muted-foreground">
+          Values are stored as text. Condition numeric operators coerce them when comparing.
+        </div>
       </div>
     );
   }

@@ -13,6 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { Node, Edge } from "@xyflow/react";
 import { useEffectiveUser } from "@/hooks/use-effective-user";
+import { validateWorkflowNodeConfigs } from "@shared/workflow-validation";
 
 export default function Workflows() {
   const { toast } = useToast();
@@ -65,7 +66,16 @@ export default function Workflows() {
     },
     onError: (error: any) => {
       console.error('[workflows updateWorkflow] Error:', error);
-      toast({ title: "Failed to save workflow", variant: "destructive" });
+      const details = error?.data?.details;
+      let description = error?.message || 'Please try again.';
+      if (Array.isArray(details) && details.length > 0) {
+        description = details
+          .slice(0, 3)
+          .map((detail: any) => (typeof detail === 'string' ? detail : detail?.message))
+          .filter(Boolean)
+          .join(' • ');
+      }
+      toast({ title: "Failed to save workflow", description, variant: "destructive" });
     },
   });
 
@@ -148,6 +158,35 @@ export default function Workflows() {
   const handleSaveWorkflow = (nodes: Node[], edges: Edge[], entryNodeId?: string | null) => {
     if (selectedWorkflow) {
       console.log('[workflows handleSaveWorkflow] Received entryNodeId:', entryNodeId);
+
+      // Phase 4A-1: per-node config validation for the new node types.
+      // Errors block the save; warnings are surfaced but allow saving.
+      const issues = validateWorkflowNodeConfigs({ nodes, edges }, entryNodeId ?? null);
+      const errors = issues.filter((issue) => issue.level === 'error');
+      const warnings = issues.filter((issue) => issue.level === 'warning');
+
+      if (errors.length > 0) {
+        toast({
+          title: "Workflow has validation errors",
+          description: errors
+            .slice(0, 3)
+            .map((issue) => issue.message)
+            .join(' • '),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (warnings.length > 0) {
+        toast({
+          title: "Workflow has warnings",
+          description: warnings
+            .slice(0, 3)
+            .map((issue) => issue.message)
+            .join(' • '),
+        });
+      }
+
       updateWorkflow.mutate({ id: selectedWorkflow.id, nodes, edges, entryNodeId });
     }
   };

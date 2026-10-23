@@ -74,6 +74,9 @@ import {
   Plus,
   CalendarCheck,
   CalendarSearch,
+  TextCursorInput,
+  GitBranch,
+  Variable,
 } from 'lucide-react';
 
 // Node type definitions for WHAPI Interactive Messages
@@ -161,6 +164,31 @@ export const nodeTypes = {
       icon: Network,
       cost: 0,
       description: 'Call external APIs with custom HTTP requests'
+    },
+  ],
+  INPUTS: [
+    {
+      id: 'input.text',
+      label: 'Text Input',
+      icon: TextCursorInput,
+      cost: 0,
+      description: 'Ask the customer for free-text input'
+    },
+  ],
+  LOGIC: [
+    {
+      id: 'condition',
+      label: 'Condition',
+      icon: GitBranch,
+      cost: 0,
+      description: 'Branch the flow on a context variable'
+    },
+    {
+      id: 'setVariable',
+      label: 'Set Variable',
+      icon: Variable,
+      cost: 0,
+      description: 'Assign a literal or {{template}} value to the context'
     },
   ],
   BOOKING: [
@@ -657,7 +685,7 @@ export default function WorkflowBuilder({
   // Node Palette Content (reusable)
   const renderNodePalette = () => (
     <Tabs defaultValue="message" className="flex flex-col h-full">
-      <TabsList className="grid w-full grid-cols-5 flex-shrink-0 h-auto p-0.5">
+      <TabsList className={`grid w-full ${hasBookingAccess ? 'grid-cols-7' : 'grid-cols-6'} flex-shrink-0 h-auto p-0.5`}>
         <TabsTrigger value="message" data-testid="tab-message" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
           <span className="truncate">MSG</span>
         </TabsTrigger>
@@ -669,6 +697,12 @@ export default function WorkflowBuilder({
         </TabsTrigger>
         <TabsTrigger value="action" data-testid="tab-action" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
           <span className="truncate">ACT</span>
+        </TabsTrigger>
+        <TabsTrigger value="inputs" data-testid="tab-inputs" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">INPUT</span>
+        </TabsTrigger>
+        <TabsTrigger value="logic" data-testid="tab-logic" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
+          <span className="truncate">LOGIC</span>
         </TabsTrigger>
         {hasBookingAccess && (
           <TabsTrigger value="booking" data-testid="tab-booking" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
@@ -785,6 +819,68 @@ export default function WorkflowBuilder({
               >
                 <div className="flex items-start gap-2">
                   <node.icon className="h-5 w-5 text-cyan-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{node.label}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {node.description}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {node.cost} tokens
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="inputs" className="flex-1 min-h-0 mt-4">
+        <ScrollArea className="h-full">
+          <div className="space-y-2 pr-4">
+            {nodeTypes.INPUTS.map((node) => (
+              <div
+                key={node.id}
+                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                draggable
+                onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                onClick={() => addNodeToCanvas(node.id, node.label)}
+                data-testid={`node-type-${node.id}`}
+                title={`Click to add or drag to canvas`}
+              >
+                <div className="flex items-start gap-2">
+                  <node.icon className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{node.label}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {node.description}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {node.cost} tokens
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="logic" className="flex-1 min-h-0 mt-4">
+        <ScrollArea className="h-full">
+          <div className="space-y-2 pr-4">
+            {nodeTypes.LOGIC.map((node) => (
+              <div
+                key={node.id}
+                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                draggable
+                onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                onClick={() => addNodeToCanvas(node.id, node.label)}
+                data-testid={`node-type-${node.id}`}
+                title={`Click to add or drag to canvas`}
+              >
+                <div className="flex items-start gap-2">
+                  <node.icon className="h-5 w-5 text-violet-500 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm">{node.label}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 truncate">

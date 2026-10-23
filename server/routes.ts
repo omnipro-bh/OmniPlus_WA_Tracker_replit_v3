@@ -33,6 +33,15 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
+import { getNestedValue, resolveTemplate } from "./workflows/httpExecutor";
+import {
+  enforceContextCeiling,
+  evaluateCondition,
+  getNextNodeBySingleEdge,
+  MAX_CAPTURE_LENGTH,
+  MAX_CONTEXT_BYTES,
+} from "./workflows/flowControl";
+import { VARIABLE_NAME_RE, validateWorkflowNodeConfigs } from "@shared/workflow-validation";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -6639,6 +6648,19 @@ export function registerRoutes(app: Express) {
 
       const { name, definitionJson } = validationResult.data;
 
+      // Phase 4A-1: validate the new node types' configs only. Errors block.
+      const workflowIssues = validateWorkflowNodeConfigs(definitionJson);
+      const workflowErrors = workflowIssues.filter((issue) => issue.level === 'error');
+      if (workflowErrors.length > 0) {
+        return res.status(400).json({
+          error: "Workflow validation failed",
+          details: workflowErrors,
+        });
+      }
+      workflowIssues
+        .filter((issue) => issue.level === 'warning')
+        .forEach((issue) => console.warn(`[Workflow validation] ${issue.nodeId}: ${issue.message}`));
+
       const workflow = await storage.createWorkflow({
         userId: effectiveUserId,
         name,
@@ -6679,6 +6701,23 @@ export function registerRoutes(app: Express) {
       }
 
       const { name, definitionJson, entryNodeId } = validationResult.data;
+
+      // Phase 4A-1: validate the new node types' configs only. Errors block;
+      // warnings (including unsupported entry node types) are logged and allowed.
+      if (definitionJson !== undefined) {
+        const workflowIssues = validateWorkflowNodeConfigs(definitionJson, entryNodeId);
+        const workflowErrors = workflowIssues.filter((issue) => issue.level === 'error');
+        if (workflowErrors.length > 0) {
+          return res.status(400).json({
+            error: "Workflow validation failed",
+            details: workflowErrors,
+          });
+        }
+        workflowIssues
+          .filter((issue) => issue.level === 'warning')
+          .forEach((issue) => console.warn(`[Workflow validation] ${issue.nodeId}: ${issue.message}`));
+      }
+
       const updated = await storage.updateWorkflow(workflowId, {
         name,
         definitionJson,
@@ -9704,7 +9743,123 @@ export function registerRoutes(app: Express) {
           
           const nameCheckContext = (nameCheckState?.context || {}) as any;
           const nameCheckBookingState = nameCheckContext.bookingState;
-          
+
+          // ── Phase 4A-1: generic text input capture ────────────────────────
+          // Runs before the booking-capture handlers so that an input.text node
+          // owns the reply. The awaiting node is derived from
+          // conversation_states.current_node_id, which is written whenever a
+          // node that expects user input is sent.
+          const textDefinition = (activeWorkflow.definitionJson || {}) as { nodes?: any[]; edges?: any[] };
+          const awaitingNodeId = nameCheckState?.currentNodeId || null;
+          const awaitingNode = awaitingNodeId
+            ? textDefinition.nodes?.find((n: any) => n.id === awaitingNodeId)
+            : undefined;
+          const awaitingNodeType = awaitingNode?.data?.type || awaitingNode?.data?.nodeType;
+
+          if (awaitingNodeType === 'input.text' && awaitingNode && nameCheckState) {
+            const inputConfig = awaitingNode.data?.config || {};
+            const variableName = typeof inputConfig.variableName === 'string'
+              ? inputConfig.variableName.trim()
+              : '';
+
+            if (!VARIABLE_NAME_RE.test(variableName)) {
+              console.error(`[Input.text] Node ${awaitingNodeId} has an invalid variable name "${variableName}" - capture skipped`);
+              executionLog.responsesSent.push({
+                nodeId: awaitingNodeId,
+                nodeType: 'input.text',
+                success: false,
+                error: 'invalid_variable_name',
+              });
+              await db.insert(workflowExecutions).values(executionLog);
+              return res.status(200).json({ success: true });
+            }
+
+            const rawText = (incomingMessage.text?.body || '').trim();
+            const minLength = Math.max(0, Number(inputConfig.minLength) || 0);
+            const maxLength = Math.min(
+              MAX_CAPTURE_LENGTH,
+              Math.max(minLength, Number(inputConfig.maxLength) || MAX_CAPTURE_LENGTH)
+            );
+
+            if (rawText.length < minLength || rawText.length > maxLength) {
+              const invalidMessage = typeof inputConfig.invalidMessage === 'string' && inputConfig.invalidMessage.trim()
+                ? inputConfig.invalidMessage.trim()
+                : (minLength && maxLength
+                    ? `Please enter between ${minLength} and ${maxLength} characters.`
+                    : minLength
+                      ? `Please enter at least ${minLength} characters.`
+                      : `Please enter no more than ${maxLength} characters.`);
+
+              try {
+                const userChannelsForInput = await storage.getChannelsForUser(activeWorkflow.userId);
+                const activeChannelForInput = userChannelsForInput.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
+                if (activeChannelForInput?.whapiChannelToken) {
+                  await whapi.sendTextMessage(activeChannelForInput.whapiChannelToken, {
+                    to: phone,
+                    body: invalidMessage,
+                  });
+                }
+              } catch (validationSendError: any) {
+                console.error(`[Input.text] Failed to send validation message: ${validationSendError.message}`);
+              }
+
+              executionLog.responsesSent.push({
+                nodeId: awaitingNodeId,
+                nodeType: 'input.text',
+                success: false,
+                error: 'validation_failed',
+              });
+              await db.insert(workflowExecutions).values(executionLog);
+              return res.status(200).json({ success: true });
+            }
+
+            const capturedValue = rawText.slice(0, MAX_CAPTURE_LENGTH);
+            const fitted = enforceContextCeiling(nameCheckContext, variableName, capturedValue);
+            if (fitted.truncated) {
+              console.warn(`[Input.text] Context exceeded ${MAX_CONTEXT_BYTES} bytes; truncated "${variableName}" to ${fitted.value.length} chars`);
+            }
+
+            const nextContext: any = { ...nameCheckContext, [variableName]: fitted.value };
+
+            // Advance the cursor before resuming so a flow that ends immediately
+            // can never re-capture the next message with this same node.
+            const nextNodeId = getNextNodeBySingleEdge(awaitingNode.id, textDefinition.edges);
+
+            await db
+              .update(conversationStates)
+              .set({
+                lastMessageAt: new Date(),
+                currentNodeId: nextNodeId,
+                context: nextContext,
+                updatedAt: new Date(),
+              })
+              .where(eq(conversationStates.id, nameCheckState.id));
+
+            executionLog.responsesSent.push({
+              nodeId: awaitingNodeId,
+              nodeType: 'input.text',
+              variable: variableName,
+              valueLength: fitted.value.length,
+              success: true,
+            });
+
+            await resumeFlowAfterTextInput(
+              phone,
+              activeWorkflow,
+              { ...nameCheckState, context: nextContext },
+              nextContext,
+              nextNodeId,
+              incomingMessage,
+              executionLog
+            );
+
+            if (executionLog.responsesSent.length === 0) {
+              executionLog.errorMessage = 'Flow ended after text input with no outbound message.';
+            }
+            await db.insert(workflowExecutions).values(executionLog);
+            return res.status(200).json({ success: true });
+          }
+
           if (nameCheckBookingState?.step === 'enter_name') {
             // Customer is providing their name
             const customerName = incomingMessage.text?.body?.trim() || '';
@@ -10724,7 +10879,101 @@ export function registerRoutes(app: Express) {
                   // Continue to next node - UPDATE BOTH!
                   currentNode = nextNode;
                   currentNodeId = nextNodeId;
-                  
+
+                // Condition Node - evaluate and follow true/false
+                } else if (currentNodeType === 'condition') {
+                  const config = currentNode.data?.config || {};
+                  const context = (state.context || {}) as any;
+                  const passed = evaluateCondition(
+                    config.operator || 'equals',
+                    getNestedValue(context, config.variable),
+                    config.value
+                  );
+                  const handle = passed ? 'true' : 'false';
+
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: 'condition',
+                    result: passed,
+                    handle,
+                    success: true,
+                  });
+
+                  const nextNodeId = getNextNodeByHandle(currentNodeId, handle, definition.edges);
+                  if (!nextNodeId) {
+                    console.log(`[Condition] Node ${currentNodeId} has no ${handle} edge connected - workflow ends here`);
+                    break;
+                  }
+
+                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                  if (!nextNode) {
+                    console.log(`[Condition] Next node ${nextNodeId} not found`);
+                    break;
+                  }
+
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+
+                // Set Variable Node - assign a literal/template into context
+                } else if (currentNodeType === 'setVariable') {
+                  const config = currentNode.data?.config || {};
+                  const context = (state.context || {}) as any;
+                  const resolvedValue = resolveTemplate(String(config.value ?? ''), context);
+                  const fitted = enforceContextCeiling(context, config.variable, resolvedValue);
+                  if (fitted.truncated) {
+                    console.warn(`[Set Variable] Context exceeded ${MAX_CONTEXT_BYTES} bytes; truncated "${config.variable}" to ${fitted.value.length} chars`);
+                  }
+
+                  const nextContext = { ...context, [config.variable]: fitted.value };
+
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      context: nextContext,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(conversationStates.id, state.id));
+
+                  state = { ...state, context: nextContext };
+
+                  executionLog.responsesSent.push({
+                    nodeId: currentNodeId,
+                    nodeType: 'setVariable',
+                    variable: config.variable,
+                    success: true,
+                  });
+
+                  const nextNodeId = getNextNodeBySingleEdge(currentNodeId, definition.edges);
+                  if (!nextNodeId) {
+                    console.log(`[Set Variable] Node ${currentNodeId} has no outgoing edge - workflow ends here`);
+                    break;
+                  }
+
+                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
+                  if (!nextNode) {
+                    console.log(`[Set Variable] Next node ${nextNodeId} not found`);
+                    break;
+                  }
+
+                  currentNode = nextNode;
+                  currentNodeId = nextNodeId;
+
+                // Text Input Node - send the prompt and wait for the next text
+                } else if (currentNodeType === 'input.text') {
+                  const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId, activeWorkflow.id);
+
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      lastMessageAt: new Date(),
+                      currentNodeId: currentNodeId,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(conversationStates.id, state.id));
+
+                  executionLog.responsesSent.push(response);
+                  break;
+
                 // Booking Node - handle appointment booking
                 } else if (currentNodeType === 'booking.book_appointment') {
                   const config = currentNode.data?.config || {};
@@ -11843,6 +12092,15 @@ export function registerRoutes(app: Express) {
       });
     }
 
+    // Text Input prompt (Phase 4A-1). Sends the static prompt; the reply is
+    // captured by the text webhook branch when currentNodeId points at this node.
+    else if (nodeType === 'input.text') {
+      return await sendTextMessage(channelToken, {
+        to: phone,
+        body: config.prompt || 'Please type your response.',
+      });
+    }
+
     // Media Message (image/video/audio/document)
     else if (nodeType === 'message.media') {
       return await sendMediaMessage(channelToken, {
@@ -12128,6 +12386,183 @@ export function registerRoutes(app: Express) {
 
     console.log(`Unsupported node type: ${nodeType}`);
     return { success: false, message: "Unsupported node type" };
+  }
+
+  /**
+   * Phase 4A-1 — resume a workflow after an input.text reply.
+   *
+   * The main execution loop lives inside the button_reply branch and cannot be
+   * entered from the text branch without refactoring it. This helper mirrors
+   * the non-booking subset of that loop (condition / setVariable / HTTP /
+   * message / input.text) and is bounded to 25 node transitions to avoid
+   * cycles. It never throws: per-node failures are logged and recorded on the
+   * execution log.
+   *
+   * Accepted 4A-1 limitation: booking.* nodes are NOT executed here. Booking
+   * nodes must be reached via a button reply.
+   */
+  async function resumeFlowAfterTextInput(
+    phone: string,
+    activeWorkflow: any,
+    state: any,
+    context: any,
+    startNodeId: string | null,
+    incomingMessage: any,
+    executionLog: any
+  ): Promise<void> {
+    const definition = (activeWorkflow.definitionJson || {}) as { nodes?: any[]; edges?: any[] };
+    const INTERACTIVE_TYPES = ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'];
+    const MAX_STEPS = 25;
+
+    let currentNodeId = startNodeId;
+    let ctx = context;
+    let steps = 0;
+
+    const persistContext = async (nextContext: any) => {
+      await db
+        .update(conversationStates)
+        .set({ context: nextContext, updatedAt: new Date() })
+        .where(eq(conversationStates.id, state.id));
+    };
+
+    const persistCursor = async (nodeId: string | null) => {
+      await db
+        .update(conversationStates)
+        .set({
+          lastMessageAt: new Date(),
+          currentNodeId: nodeId,
+          context: ctx,
+          updatedAt: new Date(),
+        })
+        .where(eq(conversationStates.id, state.id));
+    };
+
+    while (currentNodeId && steps < MAX_STEPS) {
+      steps++;
+      const currentId = currentNodeId;
+      const node = definition.nodes?.find((n: any) => n.id === currentId);
+
+      if (!node) {
+        console.warn(`[Flow] Node ${currentId} not found after text input - stopping`);
+        break;
+      }
+
+      const nodeType = node.data?.type || node.data?.nodeType;
+      const config = node.data?.config || {};
+
+      try {
+        if (nodeType === 'condition') {
+          const passed = evaluateCondition(
+            config.operator || 'equals',
+            getNestedValue(ctx, config.variable),
+            config.value
+          );
+          const handle = passed ? 'true' : 'false';
+
+          executionLog.responsesSent.push({
+            nodeId: currentId,
+            nodeType: 'condition',
+            result: passed,
+            handle,
+            success: true,
+          });
+
+          currentNodeId = getNextNodeByHandle(currentId, handle, definition.edges || []);
+          continue;
+        }
+
+        if (nodeType === 'setVariable') {
+          const resolvedValue = resolveTemplate(String(config.value ?? ''), ctx);
+          const fitted = enforceContextCeiling(ctx, config.variable, resolvedValue);
+          if (fitted.truncated) {
+            console.warn(`[Set Variable] Context exceeded ${MAX_CONTEXT_BYTES} bytes; truncated "${config.variable}" to ${fitted.value.length} chars`);
+          }
+
+          const nextContext = { ...ctx, [config.variable]: fitted.value };
+          await persistContext(nextContext);
+          ctx = nextContext;
+
+          executionLog.responsesSent.push({
+            nodeId: currentId,
+            nodeType: 'setVariable',
+            variable: config.variable,
+            success: true,
+          });
+
+          currentNodeId = getNextNodeBySingleEdge(currentId, definition.edges);
+          continue;
+        }
+
+        if (nodeType === 'action.http_request') {
+          const httpResult = await executeHttpNode(
+            node,
+            { ...state, context: ctx } as any,
+            incomingMessage,
+            { phone, userId: activeWorkflow.userId }
+          );
+
+          ctx = httpResult.stateUpdate;
+          await db
+            .update(conversationStates)
+            .set({
+              lastMessageAt: new Date(),
+              currentNodeId: currentId,
+              context: ctx,
+              updatedAt: new Date(),
+            })
+            .where(eq(conversationStates.id, state.id));
+
+          executionLog.responsesSent.push({
+            nodeId: currentId,
+            nodeType: 'action.http_request',
+            success: httpResult.success,
+            handle: httpResult.nextHandle,
+            result: httpResult.result,
+          });
+
+          currentNodeId = getNextNodeByHandle(currentId, httpResult.nextHandle, definition.edges || []);
+          continue;
+        }
+
+        if (nodeType === 'input.text') {
+          const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+          executionLog.responsesSent.push(response);
+          await persistCursor(currentId);
+          break;
+        }
+
+        if (nodeType && (nodeType.startsWith('message.') || INTERACTIVE_TYPES.includes(nodeType))) {
+          const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+          executionLog.responsesSent.push(response);
+          await persistCursor(currentId);
+
+          if (INTERACTIVE_TYPES.includes(nodeType)) {
+            break;
+          }
+
+          currentNodeId = getNextNodeBySingleEdge(currentId, definition.edges);
+          continue;
+        }
+
+        console.warn(`[Flow] Node type "${nodeType}" (${currentId}) is not supported after text input - stopping. Booking nodes must be reached via button replies.`);
+        executionLog.responsesSent.push({
+          nodeId: currentId,
+          nodeType,
+          success: false,
+          error: 'unsupported_after_text_input',
+        });
+        break;
+      } catch (nodeError: any) {
+        console.error(`[Flow] Error while resuming at node ${currentId}: ${nodeError.message}`);
+        executionLog.errorMessage = nodeError.message;
+        break;
+      }
+    }
+
+    if (steps >= MAX_STEPS) {
+      console.warn(`[Flow] Step limit (${MAX_STEPS}) reached after text input - stopping to avoid a cycle`);
+      executionLog.errorMessage = `Flow step limit (${MAX_STEPS}) reached after text input`;
+    }
   }
 
   // Test HTTP Request Node

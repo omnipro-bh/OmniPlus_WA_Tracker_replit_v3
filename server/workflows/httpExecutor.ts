@@ -52,10 +52,16 @@ export function resolveTemplate(template: string, context: HttpExecutionContext)
   });
 }
 
+/** Path segments that would reach the prototype chain / pollute it. */
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Get nested value from object using dot notation
+ *
+ * Exported for the Phase 4A-1 condition node. Prototype-chain segments are
+ * rejected so a crafted path can never read (or write through) Object.prototype.
  */
-function getNestedValue(obj: any, path: string): any {
+export function getNestedValue(obj: any, path: string): any {
   if (!path) return obj;
   
   const parts = path.split('.');
@@ -64,6 +70,12 @@ function getNestedValue(obj: any, path: string): any {
   for (const part of parts) {
     // Handle array indices like data[0]
     const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
+    const rawKey = arrayMatch ? arrayMatch[1] : part;
+
+    if (FORBIDDEN_PATH_SEGMENTS.has(rawKey)) {
+      return undefined;
+    }
+
     if (arrayMatch) {
       const key = arrayMatch[1];
       const index = parseInt(arrayMatch[2]);
