@@ -33,10 +33,9 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
-import { getNestedValue, resolveTemplate } from "./workflows/httpExecutor";
+import { FLOW_STEP_LIMITS, resolveButtonTarget, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
   enforceContextCeiling,
-  evaluateCondition,
   getNextNodeBySingleEdge,
   MAX_CAPTURE_LENGTH,
   MAX_CONTEXT_BYTES,
@@ -10447,201 +10446,9 @@ export function registerRoutes(app: Express) {
             }, null, 2));
           });
           
-          // Try to find edge by sourceHandle first (new multi-handle workflows)
-          // The sourceHandle is automatically set by ReactFlow when connecting from a specific handle
-          let targetEdge = definition.edges?.find((edge: any) => edge.sourceHandle === buttonId);
-          
-          if (targetEdge) {
-            console.log(`[Button Reply Debug] Found edge by sourceHandle: ${JSON.stringify(targetEdge)}`);
-          }
-          
-          // FALLBACK 1: For legacy workflows without sourceHandle, check node button configs
-          // This maintains backward compatibility with existing workflows
-          if (!targetEdge) {
-            console.log(`[Button Reply Debug] No edge found by sourceHandle, trying fallback 1 (buttons/list rows)...`);
-            targetEdge = definition.edges?.find((edge: any) => {
-              const sourceNode = definition.nodes?.find((n: any) => n.id === edge.source);
-              if (!sourceNode) return false;
-              
-              // Check if this node has a button with matching ID
-              const buttons = sourceNode.data?.config?.buttons || [];
-              const hasMatchingButton = buttons.some((btn: any) => btn.id === buttonId);
-              
-              // Also check list message rows
-              const sections = sourceNode.data?.config?.sections || [];
-              const hasMatchingRow = sections.some((section: any) => 
-                section.rows?.some((row: any) => row.id === buttonId)
-              );
-              
-              const found = hasMatchingButton || hasMatchingRow;
-              if (found) {
-                console.log(`[Button Reply Debug] Found matching button in node ${sourceNode.id}`);
-              }
-              
-              return found;
-            });
-            
-            if (targetEdge) {
-              console.log(`[Button Reply Debug] Found edge by fallback 1: ${JSON.stringify(targetEdge)}`);
-            }
-          }
-          
-          // FALLBACK 2: For carousel buttons - check carousel card buttons
-          if (!targetEdge) {
-            console.log(`[Button Reply Debug] No edge found by fallback 1, trying fallback 2 (carousel cards)...`);
-            
-            // Find carousel node that has a button with matching ID
-            for (const node of (definition.nodes || [])) {
-              const nodeType = node.data?.type || node.data?.nodeType;
-              if (nodeType !== 'carousel') continue;
-              
-              const cards = node.data?.config?.cards || [];
-              for (const card of cards) {
-                const matchingBtn = (card.buttons || []).find((btn: any) => btn.id === buttonId);
-                if (matchingBtn) {
-                  console.log(`[Button Reply Debug] Found matching button "${buttonId}" in carousel card "${card.id}"`);
-                  
-                  // Find edge that originates from this carousel node
-                  // Try matching by button ID in sourceHandle first
-                  targetEdge = definition.edges?.find((e: any) => 
-                    e.source === node.id && e.sourceHandle === buttonId
-                  );
-                  
-                  // If not found, try by card ID (some workflows use card ID as handle)
-                  if (!targetEdge) {
-                    targetEdge = definition.edges?.find((e: any) => 
-                      e.source === node.id && e.sourceHandle === card.id
-                    );
-                    if (targetEdge) {
-                      console.log(`[Button Reply Debug] Found edge by card ID handle: ${JSON.stringify(targetEdge)}`);
-                    }
-                  }
-                  
-                  // If still not found, just get any edge from this carousel node with a matching button title
-                  if (!targetEdge) {
-                    // Check if edge sourceHandle contains button title (some implementations use title)
-                    targetEdge = definition.edges?.find((e: any) => 
-                      e.source === node.id && e.sourceHandle?.includes(matchingBtn.title)
-                    );
-                    if (targetEdge) {
-                      console.log(`[Button Reply Debug] Found edge by button title handle: ${JSON.stringify(targetEdge)}`);
-                    }
-                  }
-                  
-                  // Last resort - if there's only one edge from this carousel, use it
-                  if (!targetEdge) {
-                    const carouselEdges = definition.edges?.filter((e: any) => e.source === node.id) || [];
-                    console.log(`[Button Reply Debug] Carousel edges from node ${node.id}: ${JSON.stringify(carouselEdges)}`);
-                    
-                    // If there are multiple edges, try matching based on edge order and button position
-                    if (carouselEdges.length > 0) {
-                      // Find button index across all cards
-                      let btnIndex = 0;
-                      let found = false;
-                      for (const c of cards) {
-                        for (const b of (c.buttons || [])) {
-                          if (b.id === buttonId) {
-                            found = true;
-                            break;
-                          }
-                          if (b.type === 'quick_reply') btnIndex++;
-                        }
-                        if (found) break;
-                      }
-                      
-                      // Use the button index to select the corresponding edge
-                      if (found && btnIndex < carouselEdges.length) {
-                        targetEdge = carouselEdges[btnIndex];
-                        console.log(`[Button Reply Debug] Using carousel edge by index ${btnIndex}: ${JSON.stringify(targetEdge)}`);
-                      }
-                    }
-                  }
-                  
-                  if (targetEdge) break;
-                }
-              }
-              if (targetEdge) break;
-            }
-            
-            if (targetEdge) {
-              console.log(`[Button Reply Debug] Found edge by fallback 2 (carousel): ${JSON.stringify(targetEdge)}`);
-            }
-          }
-          
-          // FALLBACK 3: Last resort - find ANY edge from a node that could have sent this button
-          // This handles cases where sourceHandle doesn't match exactly
-          if (!targetEdge) {
-            console.log(`[Button Reply Debug] No edge found by fallbacks 1 & 2, trying fallback 3 (any matching interactive node)...`);
-            
-            // Find all interactive nodes (carousel, quickReply, listMessage, buttons)
-            const interactiveNodes = definition.nodes?.filter((n: any) => {
-              const nodeType = n.data?.type || n.data?.nodeType;
-              return ['carousel', 'quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons'].includes(nodeType);
-            }) || [];
-            
-            console.log(`[Button Reply Debug] Found ${interactiveNodes.length} interactive nodes`);
-            
-            for (const node of interactiveNodes) {
-              const nodeType = node.data?.type || node.data?.nodeType;
-              const config = node.data?.config || {};
-              
-              // Check if this node has a button/row with matching ID
-              let hasMatchingButton = false;
-              
-              // Check carousel cards
-              if (nodeType === 'carousel') {
-                const cards = config.cards || [];
-                for (const card of cards) {
-                  if ((card.buttons || []).some((btn: any) => btn.id === buttonId)) {
-                    hasMatchingButton = true;
-                    console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in carousel node ${node.id}`);
-                    break;
-                  }
-                }
-              }
-              
-              // Check quickReply/buttons
-              if (['quickReply', 'quickReplyImage', 'quickReplyVideo', 'buttons'].includes(nodeType)) {
-                if ((config.buttons || []).some((btn: any) => btn.id === buttonId)) {
-                  hasMatchingButton = true;
-                  console.log(`[Button Reply Debug] Fallback 3: Found button "${buttonId}" in ${nodeType} node ${node.id}`);
-                }
-              }
-              
-              // Check listMessage sections
-              if (nodeType === 'listMessage') {
-                const sections = config.sections || [];
-                for (const section of sections) {
-                  if ((section.rows || []).some((row: any) => row.id === buttonId)) {
-                    hasMatchingButton = true;
-                    console.log(`[Button Reply Debug] Fallback 3: Found row "${buttonId}" in listMessage node ${node.id}`);
-                    break;
-                  }
-                }
-              }
-              
-              if (hasMatchingButton) {
-                // Get all edges from this node
-                const nodeEdges = definition.edges?.filter((e: any) => e.source === node.id) || [];
-                console.log(`[Button Reply Debug] Fallback 3: Node ${node.id} has ${nodeEdges.length} outgoing edges`);
-                
-                // Try to find edge with matching sourceHandle
-                targetEdge = nodeEdges.find((e: any) => e.sourceHandle === buttonId);
-                
-                if (!targetEdge && nodeEdges.length > 0) {
-                  // If no exact match, use first available edge (for simple workflows)
-                  // This assumes buttons are connected in order
-                  console.log(`[Button Reply Debug] Fallback 3: No exact sourceHandle match, using first available edge`);
-                  targetEdge = nodeEdges[0];
-                }
-                
-                if (targetEdge) {
-                  console.log(`[Button Reply Debug] Fallback 3: Using edge ${JSON.stringify(targetEdge)}`);
-                  break;
-                }
-              }
-            }
-          }
+          // Phase 4A-2a: button -> edge resolution moved to ./workflows/flowRunner
+          // so the sandbox routes simulated clicks exactly like production.
+          const targetEdge = resolveButtonTarget(definition, buttonId);
 
           if (targetEdge) {
             const targetNodeId = targetEdge.target;
@@ -10661,12 +10468,8 @@ export function registerRoutes(app: Express) {
             }
             
             if (targetNode) {
-              const nodeType = targetNode.data?.type || targetNode.data?.nodeType;
-              console.log(`[Button Reply Debug] Target node type: ${nodeType}`);
-              
-              // Execute node chain starting from targetNode
-              // HTTP nodes execute automatically and continue, message nodes stop and wait for user
-              let currentNode = targetNode;
+              // Phase 4A-2a: the execution loop moved to ./workflows/flowRunner.
+              // Booking nodes are still handled inline below (handleBookingNode).
               let currentNodeId = targetNodeId;
               
               // Get or create conversation state once
@@ -10826,156 +10629,26 @@ export function registerRoutes(app: Express) {
                   .where(eq(conversationStates.id, state.id));
               }
               
-              // Execute nodes in sequence until we hit a message node or end of workflow
-              while (currentNode) {
+              // Execute the flow until it needs user input, ends, or fails.
+              // Phase 4A-2a: control flow lives in ./workflows/flowRunner; every
+              // side effect is supplied through liveHost below.
+              //
+              // Booking nodes are NOT part of the runner. They stay inline here and
+              // are delegated through handleBookingNode(), which returns the next
+              // node id (or null when the flow is waiting on the user / has ended).
+              const handleBookingNode = async (
+                currentNode: any,
+                currentNodeId: string,
+                ctx: any
+              ): Promise<{ nextNodeId: string | null; context: any } | null> => {
                 const currentNodeType = currentNode.data?.type || currentNode.data?.nodeType;
-                
-                // HTTP Request node - execute and continue
-                if (currentNodeType === 'action.http_request') {
-                  const httpResult = await executeHttpNode(
-                    currentNode,
-                    state,
-                    incomingMessage,
-                    { phone, userId: activeWorkflow.userId }
-                  );
-                  
-                  // Update conversation state with HTTP result
-                  await db
-                    .update(conversationStates)
-                    .set({
-                      lastMessageAt: new Date(),
-                      currentNodeId: currentNodeId,
-                      context: httpResult.stateUpdate,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(conversationStates.id, state.id));
-                  
-                  // Refresh state for next iteration
-                  state = { ...state, context: httpResult.stateUpdate };
-                  
-                  // Log HTTP execution
-                  executionLog.responsesSent.push({
-                    nodeId: currentNodeId,
-                    nodeType: 'action.http_request',
-                    success: httpResult.success,
-                    handle: httpResult.nextHandle,
-                    result: httpResult.result,
-                  });
-                  
-                  // Find next node based on success/error handle
-                  const nextNodeId = getNextNodeByHandle(currentNodeId, httpResult.nextHandle, definition.edges);
-                  
-                  if (!nextNodeId) {
-                    console.log(`HTTP node ${currentNodeId} has no ${httpResult.nextHandle} handle connected - workflow ends here`);
-                    break;
-                  }
-                  
-                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                  if (!nextNode) {
-                    console.log(`Next node ${nextNodeId} not found in workflow definition after HTTP node`);
-                    break;
-                  }
-                  
-                  // Continue to next node - UPDATE BOTH!
-                  currentNode = nextNode;
-                  currentNodeId = nextNodeId;
+                const startNodeId = currentNodeId;
 
-                // Condition Node - evaluate and follow true/false
-                } else if (currentNodeType === 'condition') {
-                  const config = currentNode.data?.config || {};
-                  const context = (state.context || {}) as any;
-                  const passed = evaluateCondition(
-                    config.operator || 'equals',
-                    getNestedValue(context, config.variable),
-                    config.value
-                  );
-                  const handle = passed ? 'true' : 'false';
+                // Keep state.context in sync with the runner's working context so the
+                // moved booking code reads it unchanged.
+                state = { ...state, context: ctx };
 
-                  executionLog.responsesSent.push({
-                    nodeId: currentNodeId,
-                    nodeType: 'condition',
-                    result: passed,
-                    handle,
-                    success: true,
-                  });
-
-                  const nextNodeId = getNextNodeByHandle(currentNodeId, handle, definition.edges);
-                  if (!nextNodeId) {
-                    console.log(`[Condition] Node ${currentNodeId} has no ${handle} edge connected - workflow ends here`);
-                    break;
-                  }
-
-                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                  if (!nextNode) {
-                    console.log(`[Condition] Next node ${nextNodeId} not found`);
-                    break;
-                  }
-
-                  currentNode = nextNode;
-                  currentNodeId = nextNodeId;
-
-                // Set Variable Node - assign a literal/template into context
-                } else if (currentNodeType === 'setVariable') {
-                  const config = currentNode.data?.config || {};
-                  const context = (state.context || {}) as any;
-                  const resolvedValue = resolveTemplate(String(config.value ?? ''), context);
-                  const fitted = enforceContextCeiling(context, config.variable, resolvedValue);
-                  if (fitted.truncated) {
-                    console.warn(`[Set Variable] Context exceeded ${MAX_CONTEXT_BYTES} bytes; truncated "${config.variable}" to ${fitted.value.length} chars`);
-                  }
-
-                  const nextContext = { ...context, [config.variable]: fitted.value };
-
-                  await db
-                    .update(conversationStates)
-                    .set({
-                      context: nextContext,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(conversationStates.id, state.id));
-
-                  state = { ...state, context: nextContext };
-
-                  executionLog.responsesSent.push({
-                    nodeId: currentNodeId,
-                    nodeType: 'setVariable',
-                    variable: config.variable,
-                    success: true,
-                  });
-
-                  const nextNodeId = getNextNodeBySingleEdge(currentNodeId, definition.edges);
-                  if (!nextNodeId) {
-                    console.log(`[Set Variable] Node ${currentNodeId} has no outgoing edge - workflow ends here`);
-                    break;
-                  }
-
-                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                  if (!nextNode) {
-                    console.log(`[Set Variable] Next node ${nextNodeId} not found`);
-                    break;
-                  }
-
-                  currentNode = nextNode;
-                  currentNodeId = nextNodeId;
-
-                // Text Input Node - send the prompt and wait for the next text
-                } else if (currentNodeType === 'input.text') {
-                  const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId, activeWorkflow.id);
-
-                  await db
-                    .update(conversationStates)
-                    .set({
-                      lastMessageAt: new Date(),
-                      currentNodeId: currentNodeId,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(conversationStates.id, state.id));
-
-                  executionLog.responsesSent.push(response);
-                  break;
-
-                // Booking Node - handle appointment booking
-                } else if (currentNodeType === 'booking.book_appointment') {
+                if (currentNodeType === 'booking.book_appointment') {
                   const config = currentNode.data?.config || {};
                   const context = (state.context || {}) as any;
                   
@@ -11026,12 +10699,10 @@ export function registerRoutes(app: Express) {
                       
                       // Follow no_slots path
                       const noSlotsNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
-                      if (!noSlotsNodeId) break;
+                      if (!noSlotsNodeId) return null;
                       const noSlotsNode = definition.nodes?.find((n: any) => n.id === noSlotsNodeId);
-                      if (!noSlotsNode) break;
-                      currentNode = noSlotsNode;
-                      currentNodeId = noSlotsNodeId;
-                      continue;
+                      if (!noSlotsNode) return null;
+                      return { nextNodeId: noSlotsNodeId, context: ctx };
                     }
                     
                     if (activeChannel?.whapiChannelToken) {
@@ -11085,12 +10756,12 @@ export function registerRoutes(app: Express) {
                       });
                       
                       // Wait for user input - exit the loop
-                      break;
+                      return null;
                     }
                   }
                   
                   // This shouldn't happen in normal flow
-                  break;
+                  return null;
                   
                 // Check Bookings Node - handle viewing customer bookings
                 } else if (currentNodeType === 'booking.check_bookings') {
@@ -11182,9 +10853,9 @@ export function registerRoutes(app: Express) {
                       
                       // Continue to next node
                       const nextNodeId = getNextNodeByHandle(currentNodeId, 'booked', definition.edges);
-                      if (!nextNodeId) break;
+                      if (!nextNodeId) return null;
                       const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                      if (!nextNode) break;
+                      if (!nextNode) return null;
                       currentNode = nextNode;
                       currentNodeId = nextNodeId;
                       
@@ -11199,9 +10870,9 @@ export function registerRoutes(app: Express) {
                         
                         // Continue to next node (no_slots path)
                         const nextNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
-                        if (!nextNodeId) break;
+                        if (!nextNodeId) return null;
                         const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                        if (!nextNode) break;
+                        if (!nextNode) return null;
                         currentNode = nextNode;
                         currentNodeId = nextNodeId;
                       } else {
@@ -11277,7 +10948,7 @@ export function registerRoutes(app: Express) {
                           bookingsCount: activeBookings.length,
                           success: true,
                         });
-                        break;
+                        return null;
                       }
                     }
                   }
@@ -11289,95 +10960,119 @@ export function registerRoutes(app: Express) {
                     success: true,
                   });
                   
-                } else if (currentNodeType && (currentNodeType.startsWith('message.') || 
-                           ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType))) {
-                  // Message node - send message
-                  console.log(`[Button Reply Debug] Sending message node: ${currentNodeId}, type: ${currentNodeType}`);
-                  console.log(`[Button Reply Debug] Node config: ${JSON.stringify(currentNode.data?.config)}`);
-                  
-                  try {
-                    const response = await sendNodeMessage(phone, currentNode, activeWorkflow.userId, activeWorkflow.id);
-                    console.log(`[Button Reply Debug] Message sent successfully: ${JSON.stringify(response)}`);
-                    executionLog.responsesSent.push(response);
-                    console.log(`[Button Reply Debug] Responses sent count: ${executionLog.responsesSent.length}`);
-                  } catch (sendError: any) {
-                    console.error(`[Button Reply Debug] Failed to send message: ${sendError.message}`);
-                    throw sendError;
+                  // Fall-through: the branch only advances the cursor when it found a
+                  // next node. Otherwise there is nothing left to do (and, before
+                  // 4A-2a, this path looped forever).
+                  if (currentNodeId !== startNodeId) {
+                    return { nextNodeId: currentNodeId, context: ctx };
                   }
-                  
-                  // DATA CAPTURE: Check if this node starts a capture sequence
-                  const nodeConfig = currentNode.data?.config || {};
+                }
+                return null;
+              };
+
+              const liveHost: FlowHost = {
+                errorPolicy: 'throw',
+                maxSteps: FLOW_STEP_LIMITS.live,
+
+                sendMessage: async (node, nodeId) => {
+                  const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+                  executionLog.responsesSent.push(response);
+                  return { ok: true, payload: response };
+                },
+
+                runHttp: async (node, nodeId, ctx) => {
+                  const httpResult = await executeHttpNode(
+                    node,
+                    { ...state, context: ctx } as any,
+                    incomingMessage,
+                    { phone, userId: activeWorkflow.userId }
+                  );
+
+                  executionLog.responsesSent.push({
+                    nodeId,
+                    nodeType: 'action.http_request',
+                    success: httpResult.success,
+                    handle: httpResult.nextHandle,
+                    result: httpResult.result,
+                  });
+
+                  return {
+                    ok: httpResult.success,
+                    nextHandle: httpResult.nextHandle,
+                    context: httpResult.stateUpdate,
+                  };
+                },
+
+                persist: async (ctx, cursor, mode) => {
+                  state = { ...state, context: ctx };
+                  if (mode === 'none') return;
+
+                  if (mode === 'context') {
+                    await db
+                      .update(conversationStates)
+                      .set({ context: ctx, updatedAt: new Date() })
+                      .where(eq(conversationStates.id, state.id));
+                    return;
+                  }
+
+                  await db
+                    .update(conversationStates)
+                    .set({
+                      lastMessageAt: new Date(),
+                      currentNodeId: cursor,
+                      context: ctx,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(conversationStates.id, state.id));
+                },
+
+                afterNodeSent: async (node, nodeId, ctx) => {
+                  // DATA CAPTURE: does this node start a capture sequence?
+                  const nodeConfig = node.data?.config || {};
                   if (nodeConfig.isCaptureStart && nodeConfig.captureSequenceName) {
-                    console.log(`[Data Capture] Starting capture sequence: "${nodeConfig.captureSequenceName}"`);
-                    const updatedContext = {
-                      ...(state.context as any),
+                    return {
+                      ...(ctx as any),
                       captureActive: true,
                       captureSequenceName: nodeConfig.captureSequenceName,
-                      captureStartNodeId: currentNodeId,
+                      captureStartNodeId: nodeId,
                       capturedClicks: [],
                     };
-                    state = { ...state, context: updatedContext };
-                    
-                    // Save capture start state immediately
-                    await db
-                      .update(conversationStates)
-                      .set({
-                        lastMessageAt: new Date(),
-                        currentNodeId: currentNodeId,
-                        context: updatedContext,
-                        updatedAt: new Date(),
-                      })
-                      .where(eq(conversationStates.id, state.id));
-                  } else {
-                    // Update current node (normal case)
-                    await db
-                      .update(conversationStates)
-                      .set({
-                        lastMessageAt: new Date(),
-                        currentNodeId: currentNodeId,
-                        updatedAt: new Date(),
-                      })
-                      .where(eq(conversationStates.id, state.id));
                   }
-                  
-                  // Check if this message node has interactive elements (requires user input)
-                  const hasInteractiveElements = ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'].includes(currentNodeType);
-                  
-                  if (hasInteractiveElements) {
-                    // Interactive message (has buttons/lists) - stop and wait for user response
-                    console.log(`[Button Reply Debug] Stopping execution - message node has interactive elements (${currentNodeType})`);
-                    break;
+                  return ctx;
+                },
+
+                handleBookingNode,
+
+                recordTrace: (entry) => {
+                  // condition / setVariable entries are mirrored into the execution
+                  // log; messages and HTTP pushes happen inside the host methods.
+                  if (entry.nodeType === 'condition') {
+                    executionLog.responsesSent.push({
+                      nodeId: entry.nodeId,
+                      nodeType: 'condition',
+                      result: (entry.detail as any)?.result,
+                      handle: entry.handle,
+                      success: true,
+                    });
+                  } else if (entry.nodeType === 'setVariable') {
+                    executionLog.responsesSent.push({
+                      nodeId: entry.nodeId,
+                      nodeType: 'setVariable',
+                      variable: (entry.detail as any)?.variable,
+                      success: true,
+                    });
                   }
-                  
-                  // Simple message (text/media only) - check if there's a next node
-                  const outgoingEdges = definition.edges?.filter((e: any) => e.source === currentNodeId) || [];
-                  
-                  if (outgoingEdges.length === 0) {
-                    // No next node - end workflow
-                    console.log(`[Button Reply Debug] No outgoing edges from message node ${currentNodeId} - workflow ends here`);
-                    break;
-                  }
-                  
-                  // Continue to next node (for simple text/media messages)
-                  const nextEdge = outgoingEdges[0]; // Simple messages have only one edge
-                  const nextNodeId = nextEdge.target;
-                  const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                  
-                  if (!nextNode) {
-                    console.log(`[Button Reply Debug] Next node ${nextNodeId} not found - workflow ends here`);
-                    break;
-                  }
-                  
-                  console.log(`[Button Reply Debug] Continuing to next node: ${nextNodeId} (simple message, no user input required)`);
-                  currentNode = nextNode;
-                  currentNodeId = nextNodeId;
-                  
-                } else {
-                  console.log(`[Button Reply Debug] Unknown node type: ${currentNodeType} - stopping execution`);
-                  console.log(`[Button Reply Debug] Node data: ${JSON.stringify(currentNode.data)}`);
-                  break;
-                }
-              }
+                },
+              };
+
+              const flowResult = await runFlow({
+                definition,
+                startNodeId: targetNodeId,
+                context: (state.context || {}) as any,
+                host: liveHost,
+              });
+
+              state = { ...state, context: flowResult.context };
               
               console.log(`[Button Reply Debug] While loop finished. Total responses sent: ${executionLog.responsesSent.length}`);
               
@@ -12401,6 +12096,13 @@ export function registerRoutes(app: Express) {
    * Accepted 4A-1 limitation: booking.* nodes are NOT executed here. Booking
    * nodes must be reached via a button reply.
    */
+  /**
+   * Phase 4A-2a — resume a workflow after an input.text reply.
+   *
+   * Thin wrapper over the shared runner (./workflows/flowRunner). The contract is
+   * unchanged from 4A-1: bounded to 25 transitions, never throws, and booking.*
+   * nodes are not executed here (they must be reached via a button reply).
+   */
   async function resumeFlowAfterTextInput(
     phone: string,
     activeWorkflow: any,
@@ -12411,157 +12113,108 @@ export function registerRoutes(app: Express) {
     executionLog: any
   ): Promise<void> {
     const definition = (activeWorkflow.definitionJson || {}) as { nodes?: any[]; edges?: any[] };
-    const INTERACTIVE_TYPES = ['quickReply', 'quickReplyImage', 'quickReplyVideo', 'listMessage', 'buttons', 'carousel'];
-    const MAX_STEPS = 25;
 
-    let currentNodeId = startNodeId;
-    let ctx = context;
-    let steps = 0;
+    const liveHost: FlowHost = {
+      errorPolicy: 'stop',
+      maxSteps: FLOW_STEP_LIMITS.textResume,
 
-    const persistContext = async (nextContext: any) => {
-      await db
-        .update(conversationStates)
-        .set({ context: nextContext, updatedAt: new Date() })
-        .where(eq(conversationStates.id, state.id));
-    };
+      sendMessage: async (node, nodeId) => {
+        const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+        executionLog.responsesSent.push(response);
+        return { ok: true, payload: response };
+      },
 
-    const persistCursor = async (nodeId: string | null) => {
-      await db
-        .update(conversationStates)
-        .set({
-          lastMessageAt: new Date(),
-          currentNodeId: nodeId,
-          context: ctx,
-          updatedAt: new Date(),
-        })
-        .where(eq(conversationStates.id, state.id));
-    };
+      runHttp: async (node, nodeId, ctx) => {
+        const httpResult = await executeHttpNode(
+          node,
+          { ...state, context: ctx } as any,
+          incomingMessage,
+          { phone, userId: activeWorkflow.userId }
+        );
 
-    while (currentNodeId && steps < MAX_STEPS) {
-      steps++;
-      const currentId = currentNodeId;
-      const node = definition.nodes?.find((n: any) => n.id === currentId);
+        executionLog.responsesSent.push({
+          nodeId,
+          nodeType: 'action.http_request',
+          success: httpResult.success,
+          handle: httpResult.nextHandle,
+          result: httpResult.result,
+        });
 
-      if (!node) {
-        console.warn(`[Flow] Node ${currentId} not found after text input - stopping`);
-        break;
-      }
+        return {
+          ok: httpResult.success,
+          nextHandle: httpResult.nextHandle,
+          context: httpResult.stateUpdate,
+        };
+      },
 
-      const nodeType = node.data?.type || node.data?.nodeType;
-      const config = node.data?.config || {};
+      persist: async (ctx, cursor, mode) => {
+        if (mode === 'none') return;
 
-      try {
-        if (nodeType === 'condition') {
-          const passed = evaluateCondition(
-            config.operator || 'equals',
-            getNestedValue(ctx, config.variable),
-            config.value
-          );
-          const handle = passed ? 'true' : 'false';
-
-          executionLog.responsesSent.push({
-            nodeId: currentId,
-            nodeType: 'condition',
-            result: passed,
-            handle,
-            success: true,
-          });
-
-          currentNodeId = getNextNodeByHandle(currentId, handle, definition.edges || []);
-          continue;
-        }
-
-        if (nodeType === 'setVariable') {
-          const resolvedValue = resolveTemplate(String(config.value ?? ''), ctx);
-          const fitted = enforceContextCeiling(ctx, config.variable, resolvedValue);
-          if (fitted.truncated) {
-            console.warn(`[Set Variable] Context exceeded ${MAX_CONTEXT_BYTES} bytes; truncated "${config.variable}" to ${fitted.value.length} chars`);
-          }
-
-          const nextContext = { ...ctx, [config.variable]: fitted.value };
-          await persistContext(nextContext);
-          ctx = nextContext;
-
-          executionLog.responsesSent.push({
-            nodeId: currentId,
-            nodeType: 'setVariable',
-            variable: config.variable,
-            success: true,
-          });
-
-          currentNodeId = getNextNodeBySingleEdge(currentId, definition.edges);
-          continue;
-        }
-
-        if (nodeType === 'action.http_request') {
-          const httpResult = await executeHttpNode(
-            node,
-            { ...state, context: ctx } as any,
-            incomingMessage,
-            { phone, userId: activeWorkflow.userId }
-          );
-
-          ctx = httpResult.stateUpdate;
+        if (mode === 'context') {
           await db
             .update(conversationStates)
-            .set({
-              lastMessageAt: new Date(),
-              currentNodeId: currentId,
-              context: ctx,
-              updatedAt: new Date(),
-            })
+            .set({ context: ctx, updatedAt: new Date() })
             .where(eq(conversationStates.id, state.id));
+          return;
+        }
 
+        await db
+          .update(conversationStates)
+          .set({
+            lastMessageAt: new Date(),
+            currentNodeId: cursor,
+            context: ctx,
+            updatedAt: new Date(),
+          })
+          .where(eq(conversationStates.id, state.id));
+      },
+
+      recordTrace: (entry) => {
+        if (entry.nodeType === 'condition') {
           executionLog.responsesSent.push({
-            nodeId: currentId,
-            nodeType: 'action.http_request',
-            success: httpResult.success,
-            handle: httpResult.nextHandle,
-            result: httpResult.result,
+            nodeId: entry.nodeId,
+            nodeType: 'condition',
+            result: (entry.detail as any)?.result,
+            handle: entry.handle,
+            success: true,
           });
-
-          currentNodeId = getNextNodeByHandle(currentId, httpResult.nextHandle, definition.edges || []);
-          continue;
+        } else if (entry.nodeType === 'setVariable') {
+          executionLog.responsesSent.push({
+            nodeId: entry.nodeId,
+            nodeType: 'setVariable',
+            variable: (entry.detail as any)?.variable,
+            success: true,
+          });
+        } else if (
+          entry.outcome === 'stopped' &&
+          (entry.detail as any)?.reason === 'unsupported_node'
+        ) {
+          executionLog.responsesSent.push({
+            nodeId: entry.nodeId,
+            nodeType: entry.nodeType,
+            success: false,
+            error: 'unsupported_after_text_input',
+          });
         }
+      },
+    };
 
-        if (nodeType === 'input.text') {
-          const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
-          executionLog.responsesSent.push(response);
-          await persistCursor(currentId);
-          break;
-        }
+    const result = await runFlow({
+      definition,
+      startNodeId,
+      context,
+      host: liveHost,
+    });
 
-        if (nodeType && (nodeType.startsWith('message.') || INTERACTIVE_TYPES.includes(nodeType))) {
-          const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
-          executionLog.responsesSent.push(response);
-          await persistCursor(currentId);
-
-          if (INTERACTIVE_TYPES.includes(nodeType)) {
-            break;
-          }
-
-          currentNodeId = getNextNodeBySingleEdge(currentId, definition.edges);
-          continue;
-        }
-
-        console.warn(`[Flow] Node type "${nodeType}" (${currentId}) is not supported after text input - stopping. Booking nodes must be reached via button replies.`);
-        executionLog.responsesSent.push({
-          nodeId: currentId,
-          nodeType,
-          success: false,
-          error: 'unsupported_after_text_input',
-        });
-        break;
-      } catch (nodeError: any) {
-        console.error(`[Flow] Error while resuming at node ${currentId}: ${nodeError.message}`);
-        executionLog.errorMessage = nodeError.message;
-        break;
-      }
+    if (result.error) {
+      executionLog.errorMessage = result.error.message;
     }
 
-    if (steps >= MAX_STEPS) {
-      console.warn(`[Flow] Step limit (${MAX_STEPS}) reached after text input - stopping to avoid a cycle`);
-      executionLog.errorMessage = `Flow step limit (${MAX_STEPS}) reached after text input`;
+    if (result.stopReason === 'step_limit') {
+      console.warn(
+        `[Flow] Step limit (${liveHost.maxSteps}) reached after text input - stopping to avoid a cycle`
+      );
+      executionLog.errorMessage = `Flow step limit (${liveHost.maxSteps}) reached after text input`;
     }
   }
 
