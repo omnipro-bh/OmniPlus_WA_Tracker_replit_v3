@@ -29,7 +29,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -77,7 +76,17 @@ import {
   TextCursorInput,
   GitBranch,
   Variable,
+  Search,
 } from 'lucide-react';
+
+/** A single draggable entry in the node palette. */
+interface PaletteNode {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  cost: number;
+  description: string;
+}
 
 // Node type definitions for WHAPI Interactive Messages
 export const nodeTypes = {
@@ -207,7 +216,122 @@ export const nodeTypes = {
       description: 'Check customer bookings and availability'
     },
   ],
-};
+} satisfies Record<string, PaletteNode[]>;
+
+interface PaletteCategory {
+  key: keyof typeof nodeTypes;
+  label: string;
+  iconClassName: string;
+  requiresBookingAccess?: boolean;
+}
+
+const CATEGORY_ORDER: PaletteCategory[] = [
+  { key: 'MESSAGE',     label: 'Messages',     iconClassName: 'text-primary' },
+  { key: 'END_MESSAGE', label: 'End Messages', iconClassName: 'text-destructive' },
+  { key: 'TRIGGER',     label: 'Triggers',     iconClassName: 'text-primary' },
+  { key: 'INPUTS',      label: 'Inputs',       iconClassName: 'text-blue-500' },
+  { key: 'LOGIC',       label: 'Logic',        iconClassName: 'text-violet-500' },
+  { key: 'ACTION',      label: 'Actions',      iconClassName: 'text-amber-500' },
+  { key: 'BOOKING',     label: 'Booking',      iconClassName: 'text-cyan-500', requiresBookingAccess: true },
+];
+
+/**
+ * Phase 4A-1.5 — single scrollable node palette with section headers.
+ *
+ * Replaces the previous 7-tab palette. Rendered in both the left panel and the
+ * fullscreen Sheet; each instance owns its own search query.
+ */
+function NodePalette({
+  hasBookingAccess,
+  onDragStart,
+  onAddNode,
+}: {
+  hasBookingAccess: boolean;
+  onDragStart: (event: React.DragEvent, nodeType: string, label: string) => void;
+  onAddNode: (nodeType: string, label: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+
+  const sections = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return CATEGORY_ORDER
+      .filter((c) => !c.requiresBookingAccess || hasBookingAccess)
+      .map((c) => {
+        const allNodes = nodeTypes[c.key] as PaletteNode[];
+        const nodes = q
+          ? allNodes.filter(
+              (n) =>
+                n.label.toLowerCase().includes(q) ||
+                n.description.toLowerCase().includes(q) ||
+                n.id.toLowerCase().includes(q)
+            )
+          : allNodes;
+        return { ...c, nodes };
+      })
+      .filter((s) => s.nodes.length > 0);
+  }, [query, hasBookingAccess]);
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="relative flex-shrink-0 px-1 pb-3">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search nodes…"
+          className="h-8 pl-8 text-xs"
+          data-testid="input-node-search"
+        />
+      </div>
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="space-y-5 pr-3 pb-2">
+          {sections.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-6 px-2">
+              No nodes match "{query}".
+            </p>
+          )}
+          {sections.map((section) => (
+            <section
+              key={section.key}
+              aria-label={section.label}
+              data-testid={`node-section-${section.key.toLowerCase()}`}
+            >
+              <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
+                {section.label}
+              </h4>
+              <div className="space-y-2">
+                {section.nodes.map((node) => (
+                  <div
+                    key={node.id}
+                    className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
+                    draggable
+                    onDragStart={(e) => onDragStart(e, node.id, node.label)}
+                    onClick={() => onAddNode(node.id, node.label)}
+                    data-testid={`node-type-${node.id}`}
+                    title="Click to add or drag to canvas"
+                  >
+                    <div className="flex items-start gap-2">
+                      <node.icon className={`h-5 w-5 ${section.iconClassName} mt-0.5 flex-shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm">{node.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {node.description}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {node.cost} tokens
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
 
 // Auto-layout function using dagre for horizontal left-to-right arrangement
 const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => {
@@ -682,256 +806,6 @@ export default function WorkflowBuilder({
     }
   }, [isFullscreen]);
 
-  // Node Palette Content (reusable)
-  const renderNodePalette = () => (
-    <Tabs defaultValue="message" className="flex flex-col h-full">
-      <TabsList className={`grid w-full ${hasBookingAccess ? 'grid-cols-7' : 'grid-cols-6'} flex-shrink-0 h-auto p-0.5`}>
-        <TabsTrigger value="message" data-testid="tab-message" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">MSG</span>
-        </TabsTrigger>
-        <TabsTrigger value="end" data-testid="tab-end" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">END</span>
-        </TabsTrigger>
-        <TabsTrigger value="trigger" data-testid="tab-trigger" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">TRIG</span>
-        </TabsTrigger>
-        <TabsTrigger value="action" data-testid="tab-action" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">ACT</span>
-        </TabsTrigger>
-        <TabsTrigger value="inputs" data-testid="tab-inputs" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">INPUT</span>
-        </TabsTrigger>
-        <TabsTrigger value="logic" data-testid="tab-logic" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-          <span className="truncate">LOGIC</span>
-        </TabsTrigger>
-        {hasBookingAccess && (
-          <TabsTrigger value="booking" data-testid="tab-booking" className="text-[9px] leading-tight py-1.5 px-0.5 h-auto min-w-0">
-            <span className="truncate">BOOK</span>
-          </TabsTrigger>
-        )}
-      </TabsList>
-      
-      <TabsContent value="message" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.MESSAGE.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="end" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.END_MESSAGE.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="trigger" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.TRIGGER.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="action" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.ACTION.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-cyan-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="inputs" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.INPUTS.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="logic" className="flex-1 min-h-0 mt-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-2 pr-4">
-            {nodeTypes.LOGIC.map((node) => (
-              <div
-                key={node.id}
-                className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                draggable
-                onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                onClick={() => addNodeToCanvas(node.id, node.label)}
-                data-testid={`node-type-${node.id}`}
-                title={`Click to add or drag to canvas`}
-              >
-                <div className="flex items-start gap-2">
-                  <node.icon className="h-5 w-5 text-violet-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{node.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {node.description}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {node.cost} tokens
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      {hasBookingAccess && (
-        <TabsContent value="booking" className="flex-1 min-h-0 mt-4">
-          <ScrollArea className="h-full">
-            <div className="space-y-2 pr-4">
-              {nodeTypes.BOOKING.map((node) => (
-                <div
-                  key={node.id}
-                  className="p-3 border rounded-md cursor-pointer hover-elevate active-elevate-2"
-                  draggable
-                  onDragStart={(e) => onDragStart(e, node.id, node.label)}
-                  onClick={() => addNodeToCanvas(node.id, node.label)}
-                  data-testid={`node-type-${node.id}`}
-                  title={`Click to add or drag to canvas`}
-                >
-                  <div className="flex items-start gap-2">
-                    <node.icon className="h-5 w-5 text-cyan-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm">{node.label}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {node.description}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {node.cost} tokens
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </TabsContent>
-      )}
-    </Tabs>
-  );
-
   return (
     <>
       <ResizablePanelGroup 
@@ -971,7 +845,11 @@ export default function WorkflowBuilder({
                   </Button>
                 </div>
                 <div className="flex-1 min-h-0">
-                  {renderNodePalette()}
+                  <NodePalette
+                    hasBookingAccess={hasBookingAccess}
+                    onDragStart={onDragStart}
+                    onAddNode={addNodeToCanvas}
+                  />
                 </div>
               </Card>
               )}
@@ -1297,7 +1175,11 @@ export default function WorkflowBuilder({
             </SheetTitle>
           </SheetHeader>
           <div className="flex-1 min-h-0 mt-6">
-            {renderNodePalette()}
+            <NodePalette
+              hasBookingAccess={hasBookingAccess}
+              onDragStart={onDragStart}
+              onAddNode={addNodeToCanvas}
+            />
           </div>
         </SheetContent>
       </Sheet>

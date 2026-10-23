@@ -90,7 +90,7 @@ function Router() {
         </DashboardLayout>
       </Route>
       <Route path="/workflows">
-        <DashboardLayout>
+        <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="workflows">
             <Workflows />
           </ProtectedRoute>

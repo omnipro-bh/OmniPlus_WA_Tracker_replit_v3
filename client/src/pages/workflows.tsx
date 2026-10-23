@@ -302,7 +302,7 @@ export default function Workflows() {
 
   // Default view: workflow list
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold">Workflows & Chatbot</h1>
