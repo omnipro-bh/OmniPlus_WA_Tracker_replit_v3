@@ -41,6 +41,8 @@ import {
   MAX_CONTEXT_BYTES,
 } from "./workflows/flowControl";
 import { VARIABLE_NAME_RE, validateWorkflowNodeConfigs } from "@shared/workflow-validation";
+import { buildSandboxHost, resolveSandboxStartNode, captureSandboxText, assembleSandboxResponse, sandboxTickSchema } from "./workflows/sandbox";
+import { checkSandboxThrottled, recordSandboxTick } from "./workflows/sandbox-rate-limit";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -6867,6 +6869,147 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Test message error:", error);
       res.status(500).json({ error: error.message || "Failed to send test message" });
+    }
+  });
+
+  // Phase 4A-2b — sandbox tick. Stateless: the client sends the draft graph +
+  // cursor + context on every tick. No conversation_states / sent_messages /
+  // workflow_executions writes; no Whapi sends. Booking nodes stop with
+  // unsupported_node (the sandbox host omits handleBookingNode).
+  app.post("/api/workflows/:id/sandbox-tick", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const { throttled, retryAfter } = checkSandboxThrottled(effectiveUserId);
+      if (throttled) {
+        return res.status(429).json({ error: "Too many sandbox ticks", retryAfter });
+      }
+
+      if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > 400 * 1024) {
+        return res.status(413).json({ error: "Payload too large" });
+      }
+
+      const parsed = sandboxTickSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+      }
+      recordSandboxTick(effectiveUserId);
+
+      const body = parsed.data;
+      const definition = {
+        nodes: Array.isArray(body.definitionJson?.nodes) ? body.definitionJson.nodes : [],
+        edges: Array.isArray(body.definitionJson?.edges) ? body.definitionJson.edges : [],
+      };
+
+      const { host, messages } = buildSandboxHost({
+        httpMode: body.httpMode,
+        userId: effectiveUserId,
+        maxSteps: body.maxSteps,
+      });
+
+      // ── start ──────────────────────────────────────────────────────────
+      if (body.input.type === "start") {
+        const startNodeId = resolveSandboxStartNode(definition, body.entryNodeId);
+
+        // Null-start short-circuit: returns 'done'/'no_next_node' directly, NOT via
+        // assembleSandboxResponse, because the runner would return 'done' with no
+        // stopReason for a null start node. Do not refactor this into the assembler.
+        if (!startNodeId) {
+          return res.json({
+            status: "done",
+            stopReason: "no_next_node",
+            cursor: null,
+            context: body.context,
+            messages: [],
+            awaiting: null,
+            trace: [],
+            steps: 0,
+            error: null,
+          });
+        }
+
+        const result = await runFlow({ definition, startNodeId, context: body.context, host });
+        return res.json(assembleSandboxResponse(result, definition, messages));
+      }
+
+      // ── button ─────────────────────────────────────────────────────────
+      if (body.input.type === "button") {
+        const buttonId = body.input.buttonId;
+        if (!buttonId) {
+          return res.status(400).json({ error: "buttonId required for button input" });
+        }
+
+        const edge = resolveButtonTarget(definition, buttonId);
+        if (!edge || !edge.target) {
+          return res.status(400).json({ error: "button_not_routed" });
+        }
+
+        const result = await runFlow({
+          definition,
+          startNodeId: edge.target,
+          context: body.context,
+          host,
+        });
+        return res.json(assembleSandboxResponse(result, definition, messages));
+      }
+
+      // ── text ───────────────────────────────────────────────────────────
+      // Fresh-start semantics: a null cursor is only valid for 'start' (§C.15).
+      const cursorId = body.cursor as string;
+      if (!cursorId) {
+        return res.status(400).json({ error: "cursor required for text input" });
+      }
+
+      const cursorNode = definition.nodes.find((n: any) => n?.id === cursorId);
+      const cursorType = cursorNode?.data?.type || cursorNode?.data?.nodeType;
+      if (!cursorNode || cursorType !== "input.text") {
+        return res.status(409).json({ error: "not_awaiting_text" });
+      }
+
+      const capture = captureSandboxText(
+        cursorNode,
+        typeof body.input.text === "string" ? body.input.text : "",
+        body.context,
+        definition.edges
+      );
+
+      // Invalid-text path: no runFlow called, so trace/steps are empty. The invalid
+      // re-prompt bubble IS in messages[], the panel renders it there.
+      if (capture.kind === "invalid") {
+        messages.push({
+          nodeId: cursorId,
+          nodeType: "input.text",
+          type: "text",
+          text: capture.invalidMessage,
+        });
+        return res.json({
+          status: "awaiting_input",
+          cursor: cursorId,
+          context: body.context,
+          messages,
+          awaiting: { kind: "text", nodeId: cursorId },
+          trace: [],
+          steps: 0,
+          error: null,
+        });
+      }
+
+      const result = await runFlow({
+        definition,
+        startNodeId: capture.nextNodeId,
+        context: capture.nextContext,
+        host,
+      });
+      return res.json(assembleSandboxResponse(result, definition, messages));
+    } catch (error: any) {
+      console.error("Sandbox tick error:", error);
+      return res.status(500).json({ error: error.message || "Sandbox tick failed" });
     }
   });
 
