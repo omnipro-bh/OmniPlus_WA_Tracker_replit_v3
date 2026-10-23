@@ -9,25 +9,27 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `a77db76` (Phase 4A-1.5 — single scrollable palette + full-width builder).
+- Production HEAD (deployed/running on VPS): `99aceaf` (Phase 4A-2a verified 12/12 + HTTP test-request / allowlist fixes).
 - Repo HEAD: this docs-only HANDOFF commit.
-- **Working tree: Phase 4A-2a code is UNCOMMITTED** — `M server/routes.ts` (+226 / −573) and `?? server/workflows/flowRunner.ts` (new, 654 lines). See "Phase 4A-2a — implemented, awaiting deploy + verification" below. **`flowRunner.ts` is untracked: it exists only in this working tree.**
+- Working tree: clean (no uncommitted code).
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1 and 4A-1.5 add no schema change and require no db:push.**
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5 and 4A-2a add no schema change and require no db:push.**
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
-- Last session (Phase 4A-1.5 browser verification) ended at ~15% context usage.
+- **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
+- **HTTP test-request + allowlist fixes: committed `99aceaf`, deployed, browser-verified. COMPLETE.**
+- Last session (4A-2a verification + HTTP fixes) ended at ~22% context usage.
 
-## Phase 4A-2a — implemented, awaiting deploy + verification
+## Phase 4A-2a — VERIFIED ✅ (deployed `6845bef` + `99aceaf`, 12/12 regression green)
 
-**Status:** code written and reviewed in-session; **all 10 parity invariants confirmed and all 6 deliberate divergences approved**. **NOT committed, NOT pushed, NOT deployed** — working tree only.
+**Status:** implemented, committed, deployed and browser-verified — **all 12 live regression points passed**. The section below is retained as the design/parity record.
 
-**Files in the working tree (not in git):**
+**Files (committed in `6845bef`):**
 
 | Status | File | Size |
 |---|---|---|
 | M | `server/routes.ts` | +226 / −573 (13,438 → 13,091 lines) |
-| ?? | `server/workflows/flowRunner.ts` | new, 654 lines |
+| A | `server/workflows/flowRunner.ts` | new, 654 lines |
 
 **Backups / reference**
 
@@ -68,15 +70,13 @@ These temp paths may not survive a machine/session — **the working-tree files 
 5. `[Button Reply Debug]` logs removed from routing + message send (they logged full node config and raw Whapi response bodies).
 6. Booking "next node not found" now reports on the next iteration (`stopReason: 'node_not_found'`) instead of a silent `break`.
 
-### Next session — start here
+### Result (2026-10-23)
 
-1. `npm run check` + `npm run build` (expect the 9 pre-existing errors only).
-2. Commit 4A-2a (`server/workflows/flowRunner.ts` + `server/routes.ts`), push.
-3. Deploy per the manual workflow in `AGENTS.md` (backup → pull → `npm ci` → build → `pm2 restart`) — **no `db:push`**.
-4. Run the 12-point browser regression checklist below against production.
-5. **Do not start 4A-2b (sandbox endpoint) until all 12 points are green.** If a test fails: diagnose + fix before anything else.
-
-**Context budget note:** 4A-2a itself was implemented + reviewed in one session and this is the most critical code path in the app (the WhatsApp button handler), so deploy + verification were deliberately deferred to a fresh session at ~0% budget.
+- Deployed `6845bef` + `99aceaf` to production and ran the 12-point live regression: **all 12 passed**.
+- Two pre-existing client bugs surfaced during verification and were fixed in `99aceaf`:
+  1. **Test Request** treated the raw `Response` object as parsed JSON, so it rendered "✗ Failed" on every successful request. Fixed in `client/src/components/WorkflowNodeConfig.tsx` (`const res = await apiRequest(…)` then `await res.json()`). Introduced in `cbdbf2e` — unrelated to 4A-2a.
+  2. **Allowlist input** rejected full URLs like `https://api.github.com/`. Now normalized (strip protocol + trailing slash, lowercase) client-side in `client/src/pages/admin.tsx` and server-side in `server/routes.ts` (`PUT /api/admin/settings/http-allowlist`); placeholder/help text clarified to "domain only".
+- The 12-point checklist below is retained as the regression record (all green).
 
 ### 12-point live regression checklist (design §8.1)
 
@@ -102,7 +102,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Next phase — 4A-2 (live demo / test panel)
 
-**Status:** design **approved** — all 10 open questions answered and both refinements accepted (sandbox payload carries type-discriminating fields; every preview bubble carries a "Preview" indicator). **4A-2a (runner extraction) is implemented in the working tree** — see "Phase 4A-2a — implemented, awaiting deploy + verification" above. 4A-2b and 4A-2c are blocked until 4A-2a is deployed and its 12-point regression is green.
+**Status:** design **approved** — all 10 open questions answered and both refinements accepted (sandbox payload carries type-discriminating fields; every preview bubble carries a "Preview" indicator). **4A-2a (runner extraction) is DONE + verified (12/12)** — see "Phase 4A-2a — VERIFIED" above. 4A-2b is unblocked and is the next sub-phase; 4A-2c follows 2b.
 
 **Goal.** A live demo / test panel inside the workflow builder: a Typebot-style preview pane on the right that runs the flow against synthetic input and shows the resulting conversation, the variable values, and an execution trace.
 
@@ -140,7 +140,9 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Recent commits
 
-- docs: HANDOFF — Phase 4A-2a implemented in working tree (uncommitted); next: deploy + 12-point regression **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-2a + HTTP fixes verified (12/12); next: 4A-2b **← this commit (HEAD)**
+- `99aceaf` fix(workflow): parse Test Request response + normalize allowlist domain input
+- `6845bef` refactor(workflow): Phase 4A-2a — extract shared flow runner
 - `2895ea8` docs: HANDOFF — 4A-1.5 browser-verified (7/7); next: Phase 4A-2 design
 - docs: HANDOFF — 4A-1 + 4A-1.5 closed out; next: 4A-1.5 browser verification
 - `a77db76` feat(workflow): Phase 4A-1.5 — single scrollable palette + full-width builder
@@ -181,6 +183,8 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Completed phases
 
+- **HTTP test-request + allowlist fixes** (`99aceaf`, deployed 2026-10-23, browser-verified): two pre-existing client bugs surfaced during 4A-2a verification. (1) Test Request treated the raw `Response` as parsed JSON, so every successful request rendered "✗ Failed"; fixed with `await res.json()` in `client/src/components/WorkflowNodeConfig.tsx` (introduced in `cbdbf2e`, unrelated to 4A-2a). (2) Allowlist input rejected full URLs (`https://…`); now normalized (strip protocol + trailing slash, lowercase) client-side in `client/src/pages/admin.tsx` and server-side in `server/routes.ts` `PUT /api/admin/settings/http-allowlist`; placeholder/help text clarified to "domain only". No schema change, no new deps.
+- **Phase 4A-2a — shared flow runner extraction** (`6845bef`, deployed 2026-10-23, **browser-verified — 12/12 regression points passed**): extracted the duplicated execution loops (the webhook `button_reply` loop and `resumeFlowAfterTextInput`) into `server/workflows/flowRunner.ts` (`runFlow`, `resolveButtonTarget`, `INTERACTIVE_NODE_TYPES`, `FLOW_STEP_LIMITS { live:100, textResume:25, sandbox:25 }`). `resolveButtonTarget` is a pure port of the 4-tier button→edge fallback; `runFlow` executes non-booking nodes via an injected `FlowHost`; the ~310-line booking branch moved verbatim into a closure-local `handleBookingNode` (only 12 control-flow lines changed — `break`→`return null`, `continue`→`return {nextNodeId, context}`); `resumeFlowAfterTextInput` is now a ~30-line wrapper; `[Button Reply Debug]` logs removed; live step cap 100 (was unbounded). Six approved divergences (see the 4A-2a section). `npm run build`/`check` clean (9 pre-existing errors only); no schema change; no new deps; chatbot booking flow untouched. Two non-regression findings during verification: the booking was persisting correctly all along (UI visibility was a persisted sort/filter), and the Test Request "failure" was the client parse bug fixed in `99aceaf`.
 - **Phase 4A-1.5 — single scrollable palette + full-width builder** (`a77db76`, deployed 2026-10-23, **browser-verified — 7/7 checks passed**): replaced the 7-tab palette with one scrollable `NodePalette` component — section headers in an explicit `CATEGORY_ORDER` (Messages, End Messages, Triggers, Inputs, Logic, Actions, Booking), a search box filtering on label/description/id, and a "No nodes match" empty state. Added `PaletteNode` + `satisfies Record<string, PaletteNode[]>`, `PaletteCategory`, `CATEGORY_ORDER`; ACTION icon differentiated to `text-amber-500` (BOOKING stays `text-cyan-500`); both call sites (left panel + fullscreen Sheet) render the same component with independent search state; deleted ~250 lines of copy-pasted `renderNodePalette` (net −118 lines). Canvas: `fullWidth` on the `/workflows` `DashboardLayout` (removes the `max-w-7xl` cap → +384px at 1920px, no change below ~1536px); the list view was re-capped with `max-w-7xl mx-auto` so only the builder goes full-bleed. All `node-type-<id>` testids preserved; panel sizes untouched (20/60/20); no schema change; no new deps.
 - **Phase 4A-1 — workflow primitives: HTTP handle fix + input.text, condition, setVariable** (`3fa2e67`, deployed + **verified in-session, 10/10 tests passed**): one-line fix to `CustomWorkflowNode.tsx:19` (`'httpRequest'` → `'action.http_request'`) so the HTTP node's success/error handles render; three new node types — `input.text` (stop-and-wait capture into `conversation_states.context`, 2000-char cap, min/max validation with re-prompt, unlimited retries), `condition` (8 operators, `true`/`false` handles, `operator || 'equals'` default), `setVariable` (literal + `{{template}}` via `resolveTemplate`, soft 64 KB context ceiling); `resumeFlowAfterTextInput` parallel runner (condition/setVariable/HTTP/message/input.text, 25-step cap, trigger-message passthrough to `executeHttpNode`); `sendNodeMessage` gained the `input.text` prompt branch; new `server/workflows/flowControl.ts` (pure helpers) and `shared/workflow-validation.ts` (client + server save validation: errors block, warnings allow); `getNestedValue` exported with a prototype-segment guard (`__proto__`/`constructor`/`prototype`, including the `name[0]` form). Full design + locked decisions in "Session 4A-1 implementation" below.
 - **Phase 3G-7 — multi-field formula for calculation custom fields**: added nullable `calcFormula` TEXT to `booking_custom_fields` (no backfill; existing calc fields untouched); new `shared/calc-formula.ts` (~683 lines, no deps) with hand-rolled tokenizer + recursive-descent parser + compiler + evaluator + cycle detection (no `eval`/`new Function`); grammar `numbers`, `[Name]`/`{id}` refs, `+ - * / ( )`, functions `Round Abs Min Max Floor Ceil`; precedence `+ -` < `* /` < unary `-` < primary, left-associative; canonical storage `{id}` (rename-stable) with `[Name]` rehydrated on edit; null propagation everywhere (div-by-zero → null) matching legacy `computeCalcValue`; caps 1000 chars / 200 nodes / 50 depth; save-time DFS cycle detection + read-time memoized DAG eval (calc→calc chaining allowed; boolean/date/text/select refs rejected with "Formulas can only reference number fields"); POST/PATCH return structured `{ error, code }` (`PARSE_ERROR, UNKNOWN_FIELD, TYPE_MISMATCH, CIRCULAR_REF, SIZE_LIMIT, DEPTH_LIMIT`); `enrichBookingsForUser` pre-compiles each formula once per request and calls `resolveCalcValues`; owner UI gained Simple/Formula mode toggle, formula input + `+ Field`/`+ Function` pickers, debounced + blur validation with inline code→error mapping; 5 client call sites switched to `resolveCalcValues`; legacy 2-operand path preserved (`ed97b8a`)
@@ -264,10 +268,10 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 - **4A-1 (DONE — `3fa2e67`, deployed, 10/10 verified):** HTTP handle fix + three new node types (`input.text`, `condition`, `setVariable`). Additive, no engine refactor. Design record in "Session 4A-1 implementation" below.
 - **4A-1.5 (DONE, deployed, browser-verified 7/7 — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
-- **4A-2 (design approved; 2a implemented, 2b/2c blocked):** Live demo / test panel. Split into three sub-phases.
-  - **4A-2a (implemented, NOT committed / NOT deployed):** shared runner extraction — new `server/workflows/flowRunner.ts` (654 lines) + `server/routes.ts` rewired. See "Phase 4A-2a — implemented, awaiting deploy + verification" near the top.
-  - **4A-2b (blocked):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows.
-  - **4A-2c (blocked):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`).
+- **4A-2 (design approved; 2a DONE/VERIFIED, 2b next):** Live demo / test panel. Split into three sub-phases.
+  - **4A-2a (DONE / VERIFIED — `6845bef`, 12/12 regression green):** shared runner extraction — new `server/workflows/flowRunner.ts` + `server/routes.ts` rewired. See "Phase 4A-2a — VERIFIED" near the top.
+  - **4A-2b (NEXT):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows.
+  - **4A-2c (after 2b):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`).
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
 ### Constraints for 4A
@@ -286,7 +290,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: deploy 4A-2a + run the 12-point regression** (see "Phase 4A-2a — implemented, awaiting deploy + verification" near the top). 4A-1.5 is closed out — browser-verified 7/7.
+**Next session: Phase 4A-2b — sandbox endpoint** (`POST /api/workflows/:id/sandbox-tick`). Design is approved in "Next phase — 4A-2" below; re-read design §3.3 (sandbox endpoint contract) and the "Notes for 4A-2b" list before implementing. 4A-2a is closed out — 12/12 verified; the HTTP test-request + allowlist fixes shipped at `99aceaf`.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
