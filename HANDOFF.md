@@ -9,13 +9,16 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `629924d` (Feature 3G-6c — calc fields + Created/Updated columns).
-- Repo HEAD: `629924d` (+ this commit: docs-only HANDOFF update).
+- Production HEAD (deployed/running on VPS): `ed97b8a` (Feature 3G-7 — multi-field formula for calculation custom fields).
+- Repo HEAD: `ed97b8a` (+ this commit: docs-only HANDOFF update).
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index) — db:push applied.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09.
+- Last session (3G-7) ended at ~28% context usage — a fresh session has ample room for the Phase 4A diagnostic.
 
 ## Recent commits
 
+- `ed97b8a` feat(booking): multi-field formula for calculation custom fields (3G-7)
+- `8e2291c` docs: update HANDOFF.md (Feature 3 complete; next: 3G-7)
 - `629924d` feat(booking): render calc fields + add Created/Updated columns on public share page (3G-6c)
 - `2018c95` fix(booking): exclude calculation fields from share-link permission list (3G-6b)
 - `a40a3df` feat(booking): owner-controlled column order + sortable + mobile public page (3G-6)
@@ -46,6 +49,7 @@
 
 ## Completed phases
 
+- **Phase 3G-7 — multi-field formula for calculation custom fields**: added nullable `calcFormula` TEXT to `booking_custom_fields` (no backfill; existing calc fields untouched); new `shared/calc-formula.ts` (~683 lines, no deps) with hand-rolled tokenizer + recursive-descent parser + compiler + evaluator + cycle detection (no `eval`/`new Function`); grammar `numbers`, `[Name]`/`{id}` refs, `+ - * / ( )`, functions `Round Abs Min Max Floor Ceil`; precedence `+ -` < `* /` < unary `-` < primary, left-associative; canonical storage `{id}` (rename-stable) with `[Name]` rehydrated on edit; null propagation everywhere (div-by-zero → null) matching legacy `computeCalcValue`; caps 1000 chars / 200 nodes / 50 depth; save-time DFS cycle detection + read-time memoized DAG eval (calc→calc chaining allowed; boolean/date/text/select refs rejected with "Formulas can only reference number fields"); POST/PATCH return structured `{ error, code }` (`PARSE_ERROR, UNKNOWN_FIELD, TYPE_MISMATCH, CIRCULAR_REF, SIZE_LIMIT, DEPTH_LIMIT`); `enrichBookingsForUser` pre-compiles each formula once per request and calls `resolveCalcValues`; owner UI gained Simple/Formula mode toggle, formula input + `+ Field`/`+ Function` pickers, debounced + blur validation with inline code→error mapping; 5 client call sites switched to `resolveCalcValues`; legacy 2-operand path preserved (`ed97b8a`)
 - **Phase 3G-6c — calc fields render + Created/Updated columns**: reversed 3G-6b — calculation fields now render their computed values on the public page (server `enrichBookingsForUser` computes via a `computeCalcValue` mirror and inlines `{ fieldId, value: String(result) }` into `customFieldValues`, flowing to JSON list + CSV + PATCH response); added `createdAt`/`updatedAt` as standard Hidden/Read fields (ISO projectors, "Created"/"Updated" labels, date sort, `formatTimestamp` render); public PATCH rejects writes to calc fields (hoisted `calcIds` guard); client `compareBookingFields` maps `"calculation"` → `"number"`; defensive `writableControls` skip prevents legacy calc write perms rendering an input (`629924d`)
 - **Phase 3G-6b — calc-field exclusion (reverted by 3G-6c)**: `visibleCustomFields = customFields.filter(fieldType !== "calculation")` removed calc fields from the Edit Share Link modal list + `emptyFieldPermissions` (misread of intent — undone in 3G-6c) (`2018c95`)
 - **Phase 3G-6 — column reorder + sortable + mobile public page**: `fieldOrder: string[]` on `ShareLinkConfig` (optional, default `[]`, JSONB-only, no DB migration); owner modal → flat reorderable list (▲▼ arrows left, mirroring custom-fields-settings, reorder saved on modal Save only); `orderedVisibleFieldKeys` (server) + `orderedVisibleFields` (client) drive table/CSV/edit-modal order respecting `fieldOrder` (fallback `SHARE_FIELD_ORDER`); sortable headers (asc→desc→asc, type-aware, blank-last, client-side only); mobile card stack (`md:hidden`) + desktop table (`hidden md:block`) sharing `columns`/`sortedBookings`/`renderActions` (`a40a3df`)
@@ -104,32 +108,24 @@ Password-protected public links granting field-scoped access to a subset of a us
 - **3G-5b…3G-5e** ✅ fix passes (logout/names, legacy-field removal + per-type inputs, data-wipe fix, Updated/Token since + displayOrder)
 - **3G-6** ✅ column reorder + sortable columns + mobile-responsive public page
 - **3G-6b / 3G-6c** ✅ calc-field fix passes (calc fields render computed values; Created/Updated columns)
+- **3G-7** ✅ multi-field formula for calculation custom fields (see Completed phases)
 
-All shipped + deployed. Feature 3 is complete. Next: **3G-7** (below).
+All shipped + deployed. Feature 3 is complete. Next: **Phase 4A** (below).
 
-## Next phase — 3G-7 (multi-field formula for calculation custom fields)
+## Next phase — Phase 4A (Workflow Primitives + Web Channel)
 
-Estimated ~25-35% across a fresh session.
+**Diagnostic pending** — scope not yet defined; first task is discovery/investigation before design.
 
-### Goal
-
-Allow the owner to define a calculation custom field using a free-text formula expression referencing multiple fields, operators, and whitelisted functions — e.g. `(FieldA + FieldB) * FieldC / 100`, `Round(Price * 0.15, 2)`.
-
-### Locked-in design decisions (do not re-litigate)
-
-- **No eval** — hand-rolled tokenizer + parser for a limited grammar (numbers, field references, `+ - * / ( )`, whitelisted functions like `Round`, `Abs`, `Min`, `Max`, `Floor`, `Ceil`). Target ~300 lines in `shared/calc-formula.ts` (usable by both server and client).
-- **Keep both models** — do NOT migrate existing fields. Existing calc fields continue to use `calcOperation` + `calcFieldAId` + `calcFieldBId` (two operands, one operator). New fields can use the formula. Rendering/evaluation checks `calcFormula` first, falls back to the legacy 2-operand path when null. Non-breaking; owner gets a choice.
-- **Schema**: add nullable `calcFormula` TEXT to `booking_custom_fields`. No changes to existing columns. No backfill.
-- **Validation**: parser must reject unknown field references, type mismatches, and circular references (formula referencing another calc field that references back). Division-by-zero → null (matching current `computeCalcValue` behavior).
-- **Evaluation** must run identically on server and client — server `enrichBookingsForUser` inlines computed values (as it does today for the 2-operand model); client just renders.
-- **Owner UI**: free-text formula input with field-reference support (autocomplete or a picker), plus syntax validation on blur/save. Design to decide the exact UX.
+Estimated session cost TBD after diagnostic.
 
 ## Follow-ups
 
+- **Supabase pooler CA → VPS trust store** — `db:push` currently requires `NODE_TLS_REJECT_UNAUTHORIZED=0` because the Supabase pooler (`aws-1-eu-west-1.pooler.supabase.com`) presents a self-signed cert. Investigate whether the pooler CA can be added to the VPS trust store (or via `NODE_EXTRA_CA_CERTS`) so the env-var workaround is no longer needed.
+- **Formula preview (optional polish for 3G-7)** — live preview of a calculation formula's computed value inside the owner's custom-fields editor. Deliberately deferred out of 3G-7; validation-only for now.
 - **nginx log redaction** — `/var/log/nginx/my-app-access.log` records the raw `/api/public/share/<token>/*` URI. Add a custom nginx `log_format` to redact `/share/<token>` → `/share/[redacted]`. (App-level redaction in `server/index.ts` already works.)
 - **Add `description` to the public list response** — for a real header title.
 - **CSV vs table field-visibility nuance** — server's `orderedVisibleFieldKeys` doesn't filter custom ids by `customFieldNames`; the client does. Rare edge case (deleted custom field after giving it a permission). Document with a code comment so a future maintainer doesn't "fix" it accidentally.
-- **computeCalcValue duplication** — client + server copies (intentionally duplicated; cross-reference comments already present). If drift becomes a concern, extract to `shared/calc.ts`. Will be resolved naturally when 3G-7 moves formula evaluation to `shared/calc-formula.ts`.
+- ~~**computeCalcValue duplication**~~ — **resolved in 3G-7**: evaluation now lives in `shared/calc-formula.ts`; `client/src/lib/calc.ts` is a thin re-export barrel.
 - **Inline editing on the public page** — UX enhancement.
 - **Session-expiry UX polish** — invalidate-based transition to gate has a one-render delay.
 - **3G-4 owner UI interactive verification** — the 11-step checklist has never been formally run end-to-end.
@@ -154,6 +150,7 @@ Allow the owner to define a calculation custom field using a free-text formula e
 - PM2 process: `omniplus` (entry `/opt/omniplus/server-dist/index.js`)
 - Port: 5000 (nginx 80/443 → 127.0.0.1:5000)
 - Deploy (manual): `git pull` → `npm ci --include=dev` → (optional `db:push`) → `npm run build` → `pm2 restart omniplus --update-env`
+- **Schema migrations (`db:push`) require `NODE_TLS_REJECT_UNAUTHORIZED=0`** — the Supabase pooler presents a self-signed cert that `pg`/drizzle-kit reject (`SELF_SIGNED_CERT_IN_CHAIN`), even with `sslmode=require`. Run: `NODE_TLS_REJECT_UNAUTHORIZED=0 npm run db:push`. Scoped to that one process; the app itself uses `@neondatabase/serverless` (WebSocket) and is unaffected. Standing step for all future schema migrations until the pooler CA is trusted (see Follow-ups).
 - Git remote on VPS: `git@github.com:omnipro-bh/OmniPlus_WA_Tracker_replit_v3.git` (SSH deploy key)
 
 ## Outstanding cleanup
