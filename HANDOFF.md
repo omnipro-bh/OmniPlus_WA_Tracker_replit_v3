@@ -152,6 +152,14 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 **Next session: 4A-1 design.** No code written yet for 4A.
 
+### Session 4A pre-design (2026-10-23) — no code
+
+- Session ended at ~17% context (fresh session).
+- **Wrong cwd detected early:** the session opened in `C:\Users\HP\Desktop\app\Odoo_OmniPlus` (Odoo addons folder — no git repo, no `HANDOFF.md`). Nothing was read or modified there; **no rework needed**.
+- **Correct project root:** `C:\Users\HP\Projects\OmniPlus_WA_Tracker_replit_v3` — session cwd moved to it.
+- Repo state confirmed at session start: clean working tree, `main` up to date with `origin/main`, HEAD `7a96a21`.
+- **Next session: Phase 4A-1 design** — the design prompt will be sent fresh. No design or implementation work begun.
+
 ## Follow-ups
 
 - **Supabase pooler CA → VPS trust store** — `db:push` currently requires `NODE_TLS_REJECT_UNAUTHORIZED=0` because the Supabase pooler (`aws-1-eu-west-1.pooler.supabase.com`) presents a self-signed cert. Investigate whether the pooler CA can be added to the VPS trust store (or via `NODE_EXTRA_CA_CERTS`) so the env-var workaround is no longer needed.
