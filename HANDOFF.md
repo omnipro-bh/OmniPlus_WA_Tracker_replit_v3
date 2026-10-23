@@ -11,27 +11,123 @@
 
 - Production HEAD (deployed/running on VPS): `a77db76` (Phase 4A-1.5 — single scrollable palette + full-width builder).
 - Repo HEAD: this docs-only HANDOFF commit.
+- **Working tree: Phase 4A-2a code is UNCOMMITTED** — `M server/routes.ts` (+226 / −573) and `?? server/workflows/flowRunner.ts` (new, 654 lines). See "Phase 4A-2a — implemented, awaiting deploy + verification" below. **`flowRunner.ts` is untracked: it exists only in this working tree.**
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1 and 4A-1.5 add no schema change and require no db:push.**
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - Last session (Phase 4A-1.5 browser verification) ended at ~15% context usage.
 
+## Phase 4A-2a — implemented, awaiting deploy + verification
+
+**Status:** code written and reviewed in-session; **all 10 parity invariants confirmed and all 6 deliberate divergences approved**. **NOT committed, NOT pushed, NOT deployed** — working tree only.
+
+**Files in the working tree (not in git):**
+
+| Status | File | Size |
+|---|---|---|
+| M | `server/routes.ts` | +226 / −573 (13,438 → 13,091 lines) |
+| ?? | `server/workflows/flowRunner.ts` | new, 654 lines |
+
+**Backups / reference**
+
+- Original file: `%TEMP%\opencode\4a2a-backup\routes.ts.orig`
+- Patch (`routes.ts`, `-U1`): `%TEMP%\opencode\4a2a.patch`
+
+These temp paths may not survive a machine/session — **the working-tree files are the ground truth**. Note that `flowRunner.ts` is untracked, so `git diff` will not show it; only `git status` proves it still exists. If it is missing, it was never committed and must be rebuilt from the 4A-2a review record.
+
+**Build / check:** clean. `npm run check` reports only the 9 known pre-existing errors (0 in `routes.ts` / `flowRunner.ts`); `npm run build` succeeds and the client asset hashes are unchanged (no client change). No schema change → **no `db:push`**.
+
+**What changed**
+
+- **`server/workflows/flowRunner.ts` (new).** `runFlow`, `resolveButtonTarget`, `INTERACTIVE_NODE_TYPES`, `FLOW_STEP_LIMITS` (`live: 100`, `textResume: 25`, `sandbox: 25`), and the types `FlowHost`, `TraceEntry`, `PersistMode`, `SentMessage`, `HttpRunResult`, `BookingNodeResult`, `RunOptions`, `RunResult`. Pure module: no Express, drizzle or Whapi imports; every side effect is injected through `FlowHost`.
+- **`server/routes.ts`.** The 195-line, 4-tier inline button→edge fallback chain is now `resolveButtonTarget(definition, buttonId)` (console.log noise removed). The `while (currentNode)` loop is replaced by `runFlow` + a closure-local `liveHost` (`errorPolicy: 'throw'`, `maxSteps: FLOW_STEP_LIMITS.live`). `resumeFlowAfterTextInput` is now a thin wrapper over `runFlow` (`errorPolicy: 'stop'`, `maxSteps: FLOW_STEP_LIMITS.textResume`), keeping its 25-transition bound and never-throw contract.
+- **Booking branch** (~310 lines) moved **verbatim** into a closure-local `handleBookingNode(currentNode, currentNodeId, ctx)` that stays inline in `routes.ts`; the runner delegates to it. Only 12 control-flow lines changed — `break` → `return null`, `continue` → `return { nextNodeId, context: ctx }` — verified by line-by-line extraction and comparison (13 removed / 11 added; the two advancing booking paths keep their `currentNode/currentNodeId` assignments verbatim).
+- **`afterNodeSent` hook** carries the `isCaptureStart` capture-sequence context so the post-loop capture reset and the `captured_data` writes are untouched (the persist still happens exactly once per node, inside the host).
+- **`recordTrace`** mirrors only `condition` / `setVariable` into `execution_log`; message and HTTP entries are pushed by the host methods themselves, so the execution-log shapes stay byte-identical.
+
+**Parity checklist (design §3.1) — all 10 confirmed**
+
+1. Interactive node sends, stays on the node, awaits input.
+2. `message.*` follows the single edge; no edge ⇒ done.
+3. `input.text` sends the prompt, stops on it, awaits input.
+4. HTTP persists the cursor **on the HTTP node** and routes `success` / `error`.
+5. `condition` persists nothing.
+6. `setVariable` persists context only.
+7. Booking without a host handler ⇒ stopped / `unsupported_node` (log entry preserved).
+8. Missing node id ⇒ stop.
+9. Live errors still escape unchanged (`ERROR` row + HTTP 500).
+10. `options.definition` is never mutated.
+
+**Deliberate divergences (all approved)**
+
+1. Live step cap **100** (previously unbounded).
+2. `booking.check_bookings` no-channel fall-through now stops instead of re-entering the loop with an unchanged cursor (this was a genuine infinite loop).
+3. Message-node edge resolution uses `getNextNodeBySingleEdge` (was `outgoingEdges[0]`); identical for correctly wired nodes.
+4. The message-node cursor update also writes `context` (value-identical) so capture-start and the sandbox share one persist path.
+5. `[Button Reply Debug]` logs removed from routing + message send (they logged full node config and raw Whapi response bodies).
+6. Booking "next node not found" now reports on the next iteration (`stopReason: 'node_not_found'`) instead of a silent `break`.
+
+### Next session — start here
+
+1. `npm run check` + `npm run build` (expect the 9 pre-existing errors only).
+2. Commit 4A-2a (`server/workflows/flowRunner.ts` + `server/routes.ts`), push.
+3. Deploy per the manual workflow in `AGENTS.md` (backup → pull → `npm ci` → build → `pm2 restart`) — **no `db:push`**.
+4. Run the 12-point browser regression checklist below against production.
+5. **Do not start 4A-2b (sandbox endpoint) until all 12 points are green.** If a test fails: diagnose + fix before anything else.
+
+**Context budget note:** 4A-2a itself was implemented + reviewed in one session and this is the most critical code path in the app (the WhatsApp button handler), so deploy + verification were deliberately deferred to a fresh session at ~0% budget.
+
+### 12-point live regression checklist (design §8.1)
+
+1. Button click → correct target; interactive node sends and stops.
+2. Button click → `message.text` chain of 3 → sends all 3, ends.
+3. HTTP success (2xx) follows `success`; non-2xx / timeout follows `error`.
+4. `condition` true and false branches; `is_empty` with whitespace / `0` / missing.
+5. `setVariable` literal + `{{template}}`; next condition / HTTP template consumes it.
+6. `input.text`: prompt → valid reply captured → flow continues to next message.
+7. `input.text`: too short → same `invalidMessage`, no advance, retry works.
+8. `booking.book_appointment` end-to-end: department list → staff → slot → name → booking created → `booked` handle.
+9. `booking.check_bookings` (my_bookings and reschedule paths) → `booked` / `no_slots` handles.
+10. Capture sequence: `isCaptureStart` node sets context, subsequent clicks recorded, Save writes `captured_data` + post-loop reset.
+11. Subscriber keyword branch, inactive-workflow logging, "button belongs to different workflow" guard — all unchanged.
+12. Cycle graph now stops at 100 with a logged `step_limit` instead of hanging.
+
+### Notes for 4A-2b (already prepared by 4A-2a)
+
+- `FLOW_STEP_LIMITS.sandbox` (25) and `INTERACTIVE_NODE_TYPES` are already exported.
+- Sandbox start-node resolution: `entryNodeId` → first node with no incoming edge → `nodes[0]`. **"Start from this node" is a v1.1 follow-up.**
+- Sandbox host must omit `handleBookingNode` (booking nodes then stop with `unsupported_node` — the panel footnote must say "Booking nodes are not executed in the sandbox") and must never persist.
+- `FlowHost.sendMessage` returns `{ ok, payload }` where `payload` is the Whapi-shaped response — 4A-2b can capture each bubble type (text/body, `buttons[]`, `rows[]`, `cards[]`) straight from it.
+
 ## Next phase — 4A-2 (live demo / test panel)
 
-**Status:** design pass is the next task — **design-only, no implementation until the design is approved.** Starting context budget ~15%.
+**Status:** design **approved** — all 10 open questions answered and both refinements accepted (sandbox payload carries type-discriminating fields; every preview bubble carries a "Preview" indicator). **4A-2a (runner extraction) is implemented in the working tree** — see "Phase 4A-2a — implemented, awaiting deploy + verification" above. 4A-2b and 4A-2c are blocked until 4A-2a is deployed and its 12-point regression is green.
 
 **Goal.** A live demo / test panel inside the workflow builder: a Typebot-style preview pane on the right that runs the flow against synthetic input and shows the resulting conversation, the variable values, and an execution trace.
 
 **Core problem.** The flow runner is **duplicated** — one loop lives inside the `button_reply` branch of `server/routes.ts`, the other inside `resumeFlowAfterTextInput`. Both must be extracted into a **single shared runner** before the sandbox can behave correctly; otherwise the sandbox would become a third divergent copy.
 
-**Approach (high-level; the design pass must confirm):**
+**Design decisions (approved 2026-10-23 — all 10 open questions answered)**
+
+1. **Endpoint, not a flag** — `POST /api/workflows/:id/sandbox-tick` behind `requireAuth` + `getEffectiveUserId`. The webhook path gains no sandbox flag.
+2. **Stateless tick** — the client sends draft + cursor + context on every tick; no server-side session map.
+3. **HTTP in sandbox** — default mock, per-session live toggle; "live" is still bound by https-only + admin allowlist + no-redirect. Every HTTP trace entry is tagged `[mocked]` or `[live]`.
+4. **Live step cap 100** — approved; the previous unbounded loop was a latent infinite-loop hazard.
+5. **Panel** — conditional 4th `ResizablePanel` (`defaultSize 22 / min 18 / max 34`), canvas `minSize 25`, right `Sheet` fallback below `lg`, sizes key `-v2`, toggle `data-testid="button-toggle-test-panel"`.
+6. **Booking nodes** — stop + `unsupported_node`; panel footnote "Booking nodes are not executed in the sandbox."
+7. **Start node** — `entryNodeId` → first node with no incoming edge → `nodes[0]`; no dropdown in v1 ("Start from this node" = v1.1).
+8. **Trace click selects the node** — in scope.
+9. **`resolveButtonTarget` extracted** — sandbox routing must be identical to production (done in 4A-2a).
+10. **Ship order** — 2a alone (verified) → 2b alone (curl-verified) → 2c. Never two at once.
+
+**Approach (approved):**
 
 - **Option A** — a `sandbox` mode flag that can be set per-request on the existing webhook handler, or
 - **Option B** — a new endpoint (e.g. `POST /api/workflows/:id/sandbox-tick`) that drives the flow in-memory: no `conversation_states` persistence, no real Whapi sends, outbound payloads captured as JSON in the response.
 - **Frontend** — a right-side panel in `WorkflowBuilder` rendering a chat UI + variables inspector + execution trace. Reuse the existing component primitives; no new tabs.
 
-**Key design questions for the design pass:**
+**Key design questions (all answered — see the decision list above):**
 
 1. Which approach — sandbox flag on the existing handler, or a separate sandbox endpoint? (Trade-offs: auth surface, blast radius, how much engine code each touches.)
 2. How is sandbox state held — an in-memory map keyed by sandbox session id? Lifetime, eviction, and concurrency rules?
@@ -44,7 +140,8 @@
 
 ## Recent commits
 
-- docs: HANDOFF — 4A-1.5 browser-verified (7/7); next: Phase 4A-2 design **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-2a implemented in working tree (uncommitted); next: deploy + 12-point regression **← this commit (HEAD)**
+- `2895ea8` docs: HANDOFF — 4A-1.5 browser-verified (7/7); next: Phase 4A-2 design
 - docs: HANDOFF — 4A-1 + 4A-1.5 closed out; next: 4A-1.5 browser verification
 - `a77db76` feat(workflow): Phase 4A-1.5 — single scrollable palette + full-width builder
 - `3fa2e67` feat(workflow): Phase 4A-1 — HTTP handle fix + input.text, condition, setVariable nodes
@@ -167,7 +264,10 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 - **4A-1 (DONE — `3fa2e67`, deployed, 10/10 verified):** HTTP handle fix + three new node types (`input.text`, `condition`, `setVariable`). Additive, no engine refactor. Design record in "Session 4A-1 implementation" below.
 - **4A-1.5 (DONE, deployed, browser-verified 7/7 — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
-- **4A-2 (next — design pass pending):** Live demo / test panel. Requires the two duplicated flow runners to be extracted into one shared runner first, then a sandbox execution path + a chat/preview UI. See "Next phase — 4A-2" near the top.
+- **4A-2 (design approved; 2a implemented, 2b/2c blocked):** Live demo / test panel. Split into three sub-phases.
+  - **4A-2a (implemented, NOT committed / NOT deployed):** shared runner extraction — new `server/workflows/flowRunner.ts` (654 lines) + `server/routes.ts` rewired. See "Phase 4A-2a — implemented, awaiting deploy + verification" near the top.
+  - **4A-2b (blocked):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows.
+  - **4A-2c (blocked):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`).
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
 ### Constraints for 4A
@@ -186,7 +286,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-2 design** (see "Next phase — 4A-2" near the top). 4A-1.5 is closed out — browser-verified 7/7.
+**Next session: deploy 4A-2a + run the 12-point regression** (see "Phase 4A-2a — implemented, awaiting deploy + verification" near the top). 4A-1.5 is closed out — browser-verified 7/7.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
