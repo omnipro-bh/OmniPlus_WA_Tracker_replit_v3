@@ -10,14 +10,16 @@
 ## Current state
 
 - Production HEAD (deployed/running on VPS): `ed97b8a` (Feature 3G-7 — multi-field formula for calculation custom fields).
-- Repo HEAD: `ed97b8a` (+ this commit: docs-only HANDOFF update — Phase 4A diagnostic findings).
+- Repo HEAD: this docs-only HANDOFF commit. **The entire Phase 4A-1 implementation is uncommitted in the working tree** — 6 modified files + 2 new files (see "Session 4A-1 implementation" below).
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09.
-- Last session (Phase 4A diagnostic) ended at ~50% context usage.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1 adds no schema change and requires no db:push.**
+- Last session (Phase 4A-1 implementation) ended at ~85% context usage.
 
 ## Recent commits
 
-- docs: Phase 4A diagnostic findings + sub-phase split (4A-1/4A-2/4A-3) **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-1 implemented in working tree (uncommitted); next: review **← this commit (HEAD)**
+- `e6350f1` docs: log 4A pre-design session (correct project root, no code)
+- `7a96a21` docs: Phase 4A diagnostic findings + sub-phase split (4A-1/4A-2/4A-3)
 - `99a0a87` docs: update HANDOFF.md (3G-7 complete; next: Phase 4A)
 - `ed97b8a` feat(booking): multi-field formula for calculation custom fields (3G-7)
 - `8e2291c` docs: update HANDOFF.md (Feature 3 complete; next: 3G-7)
@@ -130,7 +132,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 ### Sub-phases
 
-- **4A-1 (next):** Fix the HTTP node handle bug + add three new node types (`input.text`, `condition`, `setVariable`). Small, surgical, additive. No engine refactor.
+- **4A-1 (implemented, uncommitted, awaiting review):** Fix the HTTP node handle bug + add three new node types (`input.text`, `condition`, `setVariable`). Small, surgical, additive. No engine refactor. See "Session 4A-1 implementation" below.
 - **4A-2 (deferred):** Live Test Panel. Requires a `sandbox` mode in the webhook handler + a chat UI on the frontend.
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
@@ -150,7 +152,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: 4A-1 design.** No code written yet for 4A.
+**Next session: review the 4A-1 diff, then commit/deploy/verify.** See "Session 4A-1 implementation" below.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
@@ -159,6 +161,81 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - **Correct project root:** `C:\Users\HP\Projects\OmniPlus_WA_Tracker_replit_v3` — session cwd moved to it.
 - Repo state confirmed at session start: clean working tree, `main` up to date with `origin/main`, HEAD `7a96a21`.
 - **Next session: Phase 4A-1 design** — the design prompt will be sent fresh. No design or implementation work begun.
+
+### Session 4A-1 implementation (2026-10-23) — code written, NOT reviewed / NOT committed / NOT deployed
+
+**Status.** The full 4A-1 implementation exists in the working tree only. Nothing has been human-reviewed, committed, pushed, deployed, or db-pushed. `npm run build` passes (client + esbuild server bundle); `npm run check` reports **zero errors in changed files** — only the 9 known pre-existing errors remain. Session ended at ~85% context usage.
+
+**First task next session (do this before anything else):** paste the diff of all 8 files inline, review line-by-line, then commit → push → deploy (code-only) → run the 10 verification tests below → close the HANDOFF. Do **not** re-investigate the engine; the design + findings below are enough.
+
+**Files changed (exact `git status` at session end):**
+
+| Status | File | Size |
+|---|---|---|
+| M | `client/src/components/CustomWorkflowNode.tsx` | +87 / -8 |
+| M | `client/src/components/WorkflowBuilder.tsx` | +98 |
+| M | `client/src/components/WorkflowNodeConfig.tsx` | +235 |
+| M | `client/src/pages/workflows.tsx` | +41 / -4 |
+| M | `server/routes.ts` | +437 |
+| M | `server/workflows/httpExecutor.ts` | +14 / -2 |
+| ?? | `server/workflows/flowControl.ts` | new, 166 lines |
+| ?? | `shared/workflow-validation.ts` | new, 228 lines |
+
+**Patch for reference:** `C:\Users\HP\AppData\Local\Temp\opencode\phase-4a1.patch` (1,499 lines). This temp path may not survive the machine/session — **the source files above are the ground truth**; regenerate the patch with `git diff` plus `git diff --no-index -- /dev/null <newfile>` if needed.
+
+**What was implemented**
+
+- **HTTP handle fix (1 line):** `CustomWorkflowNode.tsx:19` now checks `nodeType === 'action.http_request'` instead of `'httpRequest'`. The already-written success/error handle block (ids `success` / `error`) now renders. No retro-wiring: existing HTTP nodes still have no edges until the owner reconnects them.
+- **`input.text`:** new `INPUTS` palette category + config panel (prompt, variableName, min/max, optional invalidMessage). Capture lives in the text webhook branch **before** the booking-capture handlers; the awaiting node is derived from `conversation_states.current_node_id`. Prompt sending added to `sendNodeMessage`. Loop branch sends the prompt and breaks (stop-and-wait). After capture, `currentNodeId` is advanced before resuming, so a flow that ends cannot re-capture the next message.
+- **`resumeFlowAfterTextInput` helper** (new, after `sendNodeMessage`): mirrors the non-booking subset of the button loop (condition / setVariable / HTTP / message / input.text), bounded to 25 transitions, never throws.
+- **`condition`:** two source handles (`true` / `false`), config panel with 8 operators and a value input hidden for `exists` / `not_exists` / `is_empty` / `is_not_empty`. Runtime branch evaluates and follows the handle.
+- **`setVariable`:** one value field; literal and `{{path}}` interpolation both go through the existing `resolveTemplate`. Runtime branch writes context (with the soft ceiling) and follows the single edge.
+- **Validation:** new `shared/workflow-validation.ts`, used by the client before save and by the server in `POST /api/workflows` + `PUT /api/workflows/:id` (400 `{ error, details }` on errors). Errors block save; warnings allow save (toast client-side, `console.warn` server-side). Entry-node type is warn-only.
+- **Hardening:** `getNestedValue` is exported and rejects `__proto__` / `constructor` / `prototype` path segments.
+
+**Locked design decisions (all 9 open-question answers)**
+
+1. Booking nodes after `input.text` → **not executed**; stop + log. Documented in the config panel hint.
+2. Condition operators = **8**: `equals`, `not_equals`, `greater_than`, `less_than`, `is_empty`, `is_not_empty`, `exists`, `not_exists`. `is_empty` = undefined / null / whitespace-only string; `0` and `false` are **not** empty.
+3. `input.text` prompts are **static** — no template interpolation.
+4. Per-capture **2000-char hard cap**; **64 KB soft context ceiling** (truncate + `console.warn`, never throw). The HTTP node's 5 MB response storage remains a documented follow-up.
+5. **Errors block save**; warnings allow. Reserved-key **writes** are errors; reserved-key **reads** in a condition are warnings. Duplicate variable writers are warnings.
+6. Node names kept exactly: `input.text`, `condition`, `setVariable`.
+7. Single-output handles stay **id-less** (`sourceHandle: null`); `getNextNodeBySingleEdge` accepts nullish/`'out'`.
+8. **Unlimited re-prompts** on invalid `input.text` input (follow-up: attempt cap).
+9. Entry nodes: **warn-only**, never blocked.
+
+**Known limitation fixed during self-review (verify in review).** A freshly dropped Condition node displayed "Equals" in the panel but had no persisted `operator`, so save-time validation would have blocked it and runtime would have failed closed. Fixed in the uncommitted tree: validator normalises `config.operator ?? 'equals'`; both runtime call sites use `config.operator || 'equals'`. Confirm the fix is present in the working tree.
+
+**Critical review focus**
+
+1. `input.text` guard/insertion point in the text branch — must be before `if (nameCheckBookingState?.step === 'enter_name')`, null-safe on `currentNodeId`, and must not shadow booking capture.
+2. `resumeFlowAfterTextInput` — does it faithfully mirror the button loop's condition / setVariable / HTTP / message semantics, and does the 25-step cap + `currentNodeId` advance prevent re-capture and cycles?
+3. Reserved-keys guard — confirm `http`, `bookingState`, `checkBookingsState`, capture keys and `lastBookingId` cannot be overwritten by `setVariable`/`input.text` (error) and that condition reads only warn.
+4. Prototype guard on `getNestedValue` — confirm `__proto__`, `constructor`, `prototype` segments are rejected, including `data[0]` parsing.
+5. `operator: 'equals'` default — validator + runtime + panel must agree.
+
+**Verification checklist after deploy (10 tests)**
+
+1. HTTP node renders both Success and Error handles; both can be connected and survive save/reload.
+2. HTTP node executes and routes down `success` (2xx).
+3. HTTP error path routes down `error` (non-2xx / timeout).
+4. `input.text` basic: prompt sent, reply stored in `context.<variable>`, flow advances to the next message.
+5. `input.text` validation: too-short / too-long reply re-prompts with the configured/generated message and does not advance; unlimited retries.
+6. `input.text` with no outgoing edge: reply captured, flow ends cleanly, next text is not re-captured by the same node.
+7. `condition` true and false branches each route correctly (e.g. `context.status == confirmed`).
+8. `condition is_empty`: whitespace-only → true; `0` and `false` → false; missing → true; `is_not_empty` inverse.
+9. `setVariable` with a literal and with `{{template}}` (including unresolved → `''`), consumed by a following condition or HTTP template.
+10. Save validation: invalid variable name / malformed path / reserved-key write blocks save (client toast + server 400); duplicate-writer and reserved-read warnings still allow save; legacy button/booking flow unaffected.
+
+**Known limitations / follow-ups (all accepted for 4A-1)**
+
+- Booking nodes cannot be reached directly after text capture — must be via a button reply.
+- Unlimited invalid-input re-prompts (no attempt cap).
+- Duplicate routing logic: `resumeFlowAfterTextInput` mirrors part of the inline loop; collapse when the 4A-2 runner exists.
+- Context ceiling is soft; the HTTP node can still store up to 5 MB per response.
+- No idempotency / per-conversation locking for concurrent webhook deliveries (pre-existing).
+- Captured PII now lives in `conversation_states.context` in plaintext (same class as existing booking data).
 
 ## Follow-ups
 
