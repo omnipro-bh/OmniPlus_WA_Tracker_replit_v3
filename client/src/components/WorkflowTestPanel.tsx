@@ -532,8 +532,16 @@ export default function WorkflowTestPanel({
       {status === "stopped" && !error ? (
         <div className="px-3 pt-2 flex-shrink-0">
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-            Flow stopped — see trace
-            {stopReason === "unsupported_node" ? " (Booking nodes are not executed in the sandbox.)" : ""}
+            {(() => {
+              if (stopReason !== "unsupported_node") return "Flow stopped — see trace";
+              // Find the stopped trace entry to determine the actual node type
+              const stoppedEntry = [...trace].reverse().find(t => t.outcome === "stopped");
+              const nodeType = stoppedEntry?.nodeType || "unknown";
+              if (nodeType.startsWith("booking.")) {
+                return "Flow stopped — see trace (Booking nodes are not executed in the sandbox.)";
+              }
+              return `Flow stopped — see trace (Unsupported node type: "${nodeType}". Replace or remove this node to run the full flow in the sandbox.)`;
+            })()}
           </div>
         </div>
       ) : null}
