@@ -1,5 +1,63 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-2d — implemented, awaiting review (NOT committed, NOT deployed)
+
+### Status
+
+- **4A-2d code written; working tree uncommitted.** `npm run build` passes; `npm run check` reports **0 new TS errors** (9 pre-existing only).
+- **NOT reviewed.** Deferred: the implementation session ended at ~76% context, and a 1,125-line security-sensitive booking mock deserves a full read at 0% budget.
+- **NOT committed, NOT deployed, NOT verified** (no curl, no browser, no safety test 14b).
+- Backups: `%TEMP%\opencode\4a2d-backup\` (`sandbox.ts.orig`, `routes.ts.orig`, `WorkflowTestPanel.tsx.orig`).
+- Full patch: `%TEMP%\opencode\4a2d.patch` (1,462 lines). **The working-tree source files are the ground truth** — temp paths may not survive the machine/session.
+- Regenerate the patch if needed:
+  - `git diff -- server/workflows/sandbox.ts server/routes.ts client/src/components/WorkflowTestPanel.tsx`
+  - `git diff --no-index -- /dev/null server/workflows/sandbox-booking.ts`
+
+### Files in working tree
+
+| Status | File | Size |
+|---|---|---|
+| **NEW** | `server/workflows/sandbox-booking.ts` | 1,125 lines |
+| M | `server/workflows/sandbox.ts` | +45 / −6 |
+| M | `server/routes.ts` | +45 / −6 |
+| M | `client/src/components/WorkflowTestPanel.tsx` | +28 / −3 |
+
+**Untouched (verify):** `server/workflows/flowRunner.ts`, `client/src/lib/workflow-sandbox.ts` (frozen contract), `sendNodeMessage`, chatbot booking flow (`routes.ts` 8247–8873), `shared/schema.ts` (no `db:push`).
+
+### Verification already done (implementation session)
+
+- `npm run check` — 9 pre-existing errors only, **0 in changed files**.
+- `npm run build` — **success**; client `index-BRiu9BQK.js` 2,828.90 kB + `index-DAPYGFes.css`, server `server-dist/index.js` 764.5 kB (782,815 bytes). Both hashes changed.
+- **Grep guard** — literal pattern (`storage\.|createBooking\(|drizzle|whapi\.`) hits 3 lines: 1 header comment + `mockCreateBooking` definition/call site (the mandated function name contains the substring). Refined `\bcreateBooking\(` → **0 matches**.
+- **No write-capable runtime imports** in `sandbox-booking.ts` — only `getNextNodeByHandle` from `./httpNodeExecutor`; every other import is `import type`.
+
+### Next session — start here: review the diff
+
+Critical review focus (priority order):
+
+1. **Structural safety of `sandbox-booking.ts`** — grep for any real `storage.*`, `whapi.*`, `db.*`, `drizzle.*` call (must be zero outside comments). This is the guarantee that the mock cannot touch production bookings.
+2. **`mockCreateBooking` returns a plain object literal** — never inserts. Prove no code path reaches `storage.createBooking`.
+3. **`assembleSandboxResponse` awaiting normalization** — `status === 'done'` + `context.bookingState.mock` → `awaiting_input`. Verify the fail-graceful guard (Refinement 1: `deriveBookingAwaiting` returns `null` on malformed state, never throws).
+4. **Pre-dispatch wiring in `routes.ts`** — button branch (~6941) and text branch (~6962). Booking sub-flow steps must fire **before** `resolveButtonTarget` / the `cursorType !== 'input.text'` guard.
+5. **`dispatchSandboxBookingTick` 3-way union** — `handled:false` | `response` | `resumeFrom`. Verify every branch routes correctly and the resume path re-enters `runFlow` with the right context/host.
+6. **State-machine fidelity** — `book_appointment`: service → provider → slot → [name] → [custom1] → [custom2] → complete. `check_bookings`: my_bookings | reschedule | cancel. Both must mirror production prompts/defaults/handles (`booked` / `no_slots`).
+7. **`deriveBookingAwaiting` handles both `bookingState` and `checkBookingsState`** — the assembler must check both keys, otherwise reschedule/cancel lists report "flow finished".
+8. **Fixtures disjoint from real ids** — services 9001–9003, providers 9101/9102/9111/9121, slots 9401–9403, bookings `demo_booking_*`. No collision with production data.
+9. **Five deviations flagged by the implementer — verify each is acceptable:** (a) size 1,125 lines vs ~370 estimate; (b) grep-guard nuance (`mockCreateBooking` hits the literal pattern); (c) 3-way union return; (d) `deriveBookingAwaiting` also handles `checkBookingsState`; (e) trace ordering — entries appended after `result.trace`, so on a resume tick the booking entry lands after downstream entries (cosmetic; prepend is the alternative).
+10. **Banner text change** — "Booking nodes are not executed" → `Unsupported booking node type: "<type>"` (now only reachable for unreachable/legacy booking types).
+
+### After diff review passes: deploy + verify
+
+Deploy (backup → pull → `npm ci --include=dev` → build → `pm2 restart omniplus --update-env` → log check; **no `db:push`**).
+
+Verify — the 14 checks in the 4A-2d design (§9):
+
+- Build/grep guards (already done, re-run after any review edits).
+- curl: `start` → awaiting department; `button booking_dept_9001` → awaiting staff; `button booking_staff_9101` → awaiting slot; `button booking_slot_9401_<d+2>` → awaiting name; `text "Bad"` → re-prompt (no advance); `text "Demo Customer"` → success + `context.lastBookingId`; `my_bookings`; reschedule flow; cancel flow; `statusFilter:'cancelled'` → `noBookingsMessage` + `no_slots` handle.
+- Cross-tenant 404, body > 400 KB 413, 61st tick in 5 min 429.
+- Browser: MOCK pill + banner appear, full sequence runs, Restart clears, non-booking flows unaffected.
+- **CRITICAL safety test 14b:** count `bookings` before → run the full sandbox booking → count again → **must be identical (zero new rows)**; grep the PM2 log for `[Booking] Created booking` during the sandbox window → **must be zero matches**; confirm **no new `conversation_states` rows** for the owner's workflow from sandbox ticks. If this fails, it is a production data-corruption bug — stop and revert.
+
 ## ✅ Security — Supabase DB password rotation (DONE 2026-10-06)
 
 - **Rotated 2026-10-06.** The `DATABASE_URL` (including password) was exposed in the 2026-10-06 session's tool output during a `psql` parsing error.
@@ -10,8 +68,9 @@
 ## Current state
 
 - Production HEAD (deployed/running on VPS): `f8a0457` (Phase 4A-2c — test panel UI, all checks passed; 4A-2 closed).
-- Repo HEAD: this docs-only HANDOFF commit.
-- Working tree: clean (no uncommitted code).
+- Repo HEAD: this docs-only HANDOFF commit (no code committed for 4A-2d).
+- **Working tree: DIRTY — 4A-2d is written but uncommitted** (1 new file + 3 modified; see "Phase 4A-2d — implemented, awaiting review" at the top).
+- **Next session starts with the 4A-2d diff review** (fresh 0% context), then deploy + verify. Do not commit 4A-2d before that review.
 - Deploy target: `wt.omniplus-bh.com`
 - Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b and 4A-2c add no schema change and require no db:push.**
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
@@ -21,6 +80,7 @@
 - **Phase 4A-2b: committed `c97d3c5`, deployed, curl-verified — 11/11 scenarios passed. COMPLETE.**
 - **Phase 4A-2c: committed `0699312` (+ fixes `ddeba05`, `b1dcdd5`, `7914546`, `f8a0457`), deployed, browser-verified — all checks passed. COMPLETE.**
 - Last session (4A-2c test panel) ended at ~40% context usage.
+- Session 4A-2d (implementation) ended at ~76% context; review + deploy + verify deferred to a fresh session.
 
 ## Phase 4A-2b — VERIFIED ✅ (deployed `c97d3c5`, 11/11 curl scenarios green)
 
@@ -230,7 +290,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Next phase — 4A-2d (mock booking in the sandbox)
 
-**Status:** not started. 4A-2a, 4A-2b and 4A-2c are closed out; 4A-2d is the next sub-phase.
+**Status:** **implemented in the working tree, awaiting review** — not committed, not deployed, not verified. Session ended at ~76% context; see the top section for the review checklist and the 14 verified/deferred test points.
 
 **Goal.** Let owners demo the full booking sequence inside the test panel without touching the production DB. Today the sandbox host omits `handleBookingNode`, so `booking.*` nodes stop with `unsupported_node` + the amber banner.
 
@@ -250,7 +310,8 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Recent commits
 
-- docs: HANDOFF — Phase 4A-2c verified; 4A-2 closed; next: 4A-2d (mock booking) **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-2d implemented, awaiting review (no code committed) **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-2c verified; 4A-2 closed; next: 4A-2d (mock booking)
 - `f8a0457` fix(workflow): test panel — make CTA buttons clickable with simulated toast
 - `7914546` fix(workflow): test panel — wrap long text + constrain transcript width
 - `b1dcdd5` fix(workflow): test panel — width, images, tick timeout
@@ -394,7 +455,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
   - **4A-2a (DONE / VERIFIED — `6845bef`, 12/12 regression green):** shared runner extraction — new `server/workflows/flowRunner.ts` + `server/routes.ts` rewired. See "Phase 4A-2a — VERIFIED" near the top.
   - **4A-2b (DONE / VERIFIED — `c97d3c5`, 11/11 curl scenarios):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows. See "Phase 4A-2b — VERIFIED" near the top.
   - **4A-2c (DONE / VERIFIED — `f8a0457`, browser-verified):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`) + four fix passes. See "Phase 4A-2c — VERIFIED" near the top.
-  - **4A-2d (NEXT):** mock booking execution in the sandbox (see "Next phase — 4A-2d" above).
+  - **4A-2d (IMPLEMENTED — uncommitted, awaiting review):** mock booking execution in the sandbox (see "Phase 4A-2d — implemented, awaiting review" at the top).
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
 ### Constraints for 4A
@@ -413,7 +474,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-2d — mock booking execution in the sandbox.** See "Next phase — 4A-2d" above. 4A-2a, 4A-2b and 4A-2c are closed out.
+**Next session: Phase 4A-2d — review, then deploy + verify.** The code is written and uncommitted (see the top section); 4A-2a, 4A-2b and 4A-2c are closed out. Nothing is committed or deployed for 4A-2d.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
