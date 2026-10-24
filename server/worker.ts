@@ -507,8 +507,12 @@ export class BackgroundWorker {
   // Send appointment reminders for upcoming bookings
   private async sendAppointmentReminders() {
     try {
-      // Get all confirmed bookings with reminders enabled and not yet sent
-      const bookingsNeedingReminders = await storage.getBookingsNeedingReminders();
+      // Get all confirmed bookings with reminders enabled and not yet sent.
+      // Web-chat bookings use an opaque `web_<uuid>` customer_phone — there is no
+      // WhatsApp number to deliver to, so they are skipped defensively (4A-3b).
+      const bookingsNeedingReminders = (await storage.getBookingsNeedingReminders()).filter(
+        (booking) => !booking.customerPhone.startsWith("web_")
+      );
       
       if (bookingsNeedingReminders.length === 0) {
         return; // Silent return when no reminders pending

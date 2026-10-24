@@ -45,11 +45,75 @@ import { VARIABLE_NAME_RE, validateWorkflowNodeConfigs } from "@shared/workflow-
 import { buildSandboxHost, resolveSandboxStartNode, captureSandboxText, assembleSandboxResponse, sandboxTickSchema } from "./workflows/sandbox";
 import { checkSandboxThrottled, recordSandboxTick } from "./workflows/sandbox-rate-limit";
 import { dispatchSandboxBookingTick } from "./workflows/sandbox-booking";
+import { runBookingNode, runBookingStep, isBookingTextStep, type BookingEngine } from "./workflows/booking-engine";
 import { checkIpSessionThrottled, recordIpSession, checkMessageThrottled, recordMessage, checkPollThrottled, recordPoll, checkRestartThrottled, recordRestart } from "./chat-rate-limit";
 import { bootstrapSession, handleChatMessage, getChatMessages, getRecentMessages, restartChatSession, endChatSession } from "./workflows/chat-tick";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// ---------------------------------------------------------------------------
+// Phase 4A-3b-1 — WhatsApp adapter for the shared booking engine.
+//
+// The engine (./workflows/booking-engine) owns the booking state machine; this
+// adapter owns the WhatsApp side effects: Whapi delivery and the
+// `conversation_states` writes. `canSend` mirrors the old ACTIVE/AUTHORIZED
+// channel requirement, so a missing channel keeps the historical silent 200.
+//
+// `saveState` maps 1:1 onto the three `db.update(conversationStates)` shapes the
+// inline code used:
+//   - `{ context }`                  → context only
+//   - `{ context, touch: true }`     → context + last_message_at
+//   - `{ context, cursor }`          → context + current_node_id
+// ---------------------------------------------------------------------------
+function buildWhatsAppBookingEngine(args: {
+  userId: number;
+  workflowId: number;
+  definition: { nodes?: any[]; edges: any[] };
+  customerPhone: string;
+  conversationStateId: number;
+  activeChannel: any;
+  onLog?: (entry: Record<string, any>) => void;
+}): BookingEngine {
+  const token = args.activeChannel?.whapiChannelToken as string | undefined;
+
+  return {
+    userId: args.userId,
+    workflowId: args.workflowId,
+    definition: args.definition,
+    customerPhone: args.customerPhone,
+    remindersSupported: true,
+    effects: {
+      canSend: Boolean(token),
+      sendText: async (body) => {
+        await whapi.sendTextMessage(token!, { to: args.customerPhone, body });
+      },
+      sendList: async (message) => {
+        await whapi.sendInteractiveMessage(token!, {
+          to: args.customerPhone,
+          type: "list",
+          body: { text: message.body },
+          action: {
+            list: {
+              sections: message.sections,
+              label: message.buttonLabel,
+            },
+          },
+        });
+      },
+      saveState: async ({ context, cursor, touch }) => {
+        const patch: any = { context, updatedAt: new Date() };
+        if (touch) patch.lastMessageAt = new Date();
+        if (cursor !== undefined) patch.currentNodeId = cursor;
+        await db
+          .update(conversationStates)
+          .set(patch)
+          .where(eq(conversationStates.id, args.conversationStateId));
+      },
+      log: args.onLog,
+    },
+  };
+}
 
 // Helper function to get the effective user ID (handles impersonation)
 function getEffectiveUserId(req: AuthRequest): number {
@@ -9736,12 +9800,16 @@ export function registerRoutes(app: Express) {
 
       // ============================================================================
       // BOOKING FLOW HANDLER: Process booking step responses
+      // Phase 4A-3b-1: the booking state machine lives in
+      // ./workflows/booking-engine. This block only loads the conversation row,
+      // resolves the WhatsApp channel and delegates. The silent 200 when no
+      // channel can deliver is preserved.
       // ============================================================================
       if (messageType === "button_reply" && buttonId.startsWith("booking_")) {
         try {
           console.log(`[Booking] Processing booking response: ${buttonId}`);
-          
-          // Get current conversation state to check booking state
+
+          // Get current conversation state to check booking state.
           const [currentState] = await db
             .select()
             .from(conversationStates)
@@ -9750,669 +9818,49 @@ export function registerRoutes(app: Express) {
               eq(conversationStates.workflowId, activeWorkflow.id)
             ))
             .limit(1);
-          
-          if (currentState?.context && (currentState.context as any).bookingState) {
-            const context = currentState.context as any;
-            const bookingState = context.bookingState;
-            
-            // Get active channel for sending messages
+
+          const bookingContext = (currentState?.context || null) as any;
+
+          if (
+            currentState &&
+            bookingContext &&
+            (bookingContext.bookingState || bookingContext.checkBookingsState)
+          ) {
+            // Get active channel for sending messages.
             const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-            const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-            
+            const activeChannel = userChannels.find(
+              (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED"
+            );
+
             if (!activeChannel?.whapiChannelToken) {
               console.error(`[Booking] No active channel for user ${activeWorkflow.userId}`);
               return res.status(200).json({ success: true });
             }
-            
-            if ((bookingState.step === 'select_department' || bookingState.step === 'select_staff') && buttonId.startsWith("booking_dept_")) {
-              // User selected a department - show staff list (also allow retry from select_staff step)
-              const deptId = parseInt(buttonId.replace("booking_dept_", ""));
-              
-              // Parallelize: verify department + get staff
-              const [department, staff] = await Promise.all([
-                storage.getBookingDepartment(deptId),
-                storage.getBookingStaffForDepartment(deptId)
-              ]);
-              
-              if (!department || department.userId !== activeWorkflow.userId) {
-                console.error(`[Booking] Invalid department selection: ${deptId} for user ${activeWorkflow.userId}`);
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              if (staff.length === 0) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, no staff available for this department.',
-                });
-                // Reset booking state
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Send staff selection list (using correct WHAPI format)
-              const staffPromptMsg = bookingState.config?.staffPromptMessage || 'Please select a provider:';
-              const listPayload = {
-                to: phone,
-                type: 'list',
-                body: { text: staffPromptMsg },
-                action: {
-                  list: {
-                    sections: [{
-                      title: 'Staff',
-                      rows: staff.map((s: any) => ({
-                        id: `booking_staff_${s.id}`,
-                        title: s.name,
-                        description: s.specialty || '',
-                      })),
-                    }],
-                    label: bookingState.config?.staffButtonLabel || 'Select Provider',
-                  },
-                },
-              };
-              
-              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
-              
-              // Update booking state
-              await db.update(conversationStates).set({
-                context: { ...context, bookingState: { ...bookingState, step: 'select_staff', departmentId: deptId } },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, currentState.id));
-              
-              return res.status(200).json({ success: true });
-              
-            } else if ((bookingState.step === 'select_staff' || bookingState.step === 'select_slot') && buttonId.startsWith("booking_staff_")) {
-              // User selected staff - show available dates (also allow retry from select_slot step)
-              const staffId = parseInt(buttonId.replace("booking_staff_", ""));
-              
-              // Parallelize: verify staff + check existing booking + get slots
-              const [staffMember, existingCountResult, staffSlots] = await Promise.all([
-                storage.getBookingStaff(staffId),
-                !bookingState.config?.allowMultiple 
-                  ? storage.countActiveBookingsForCustomer(phone, activeWorkflow.userId, bookingState.nodeId)
-                  : Promise.resolve(0),
-                storage.getBookingStaffSlots(staffId)
-              ]);
-              
-              if (!staffMember || staffMember.departmentId !== bookingState.departmentId) {
-                console.error(`[Booking] Invalid staff selection: ${staffId}`);
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Check if customer already has booking
-              if (existingCountResult > 0) {
-                const existingBookingMessage = bookingState.config?.existingBookingMessage || 
-                  'You already have an active appointment. Please cancel your existing booking first.';
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: existingBookingMessage,
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              const activeSlots = staffSlots.filter((s: any) => s.isActive);
-              
-              if (activeSlots.length === 0) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: bookingState.config?.noSlotsMessage || 'Sorry, no available time slots.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Generate available date/time combinations - OPTIMIZED with batch query
-              const maxSlots = bookingState.config?.maxAdvanceDays || 30;
-              const startToday = bookingState.config?.startToday !== false;
-              const startOffset = startToday ? 0 : 1;
-              
-              // Calculate date range for batch query - limit to reasonable range
-              const maxDaysToCheck = Math.min(365, maxSlots * 7); // Check ~7 days per slot needed
-              const startDate = dayjs().tz("Asia/Bahrain").add(startOffset, "day").format("YYYY-MM-DD");
-              const endDate = dayjs().tz("Asia/Bahrain").add(startOffset + maxDaysToCheck, "day").format("YYYY-MM-DD");
-              
-              // Get all booking counts in one query
-              const bookingCounts = await storage.getBulkBookingCounts(staffId, { startDate, endDate });
-              
-              const availableDateTimes: { date: string; startTime: string; endTime: string; slotId: number }[] = [];
-              
-              for (let i = startOffset; availableDateTimes.length < maxSlots && i <= startOffset + maxDaysToCheck; i++) {
-                const checkDate = dayjs().tz("Asia/Bahrain").add(i, "day");
-                const dateStr = checkDate.format("YYYY-MM-DD");
-                const dayOfWeek = checkDate.day();
-                
-                for (const slot of activeSlots) {
-                  if (slot.dayOfWeek === dayOfWeek) {
-                    const key = `${dateStr}_${slot.startTime}`;
-                    const existingCount = bookingCounts.get(key) || 0;
-                    if (existingCount < slot.capacity) {
-                      availableDateTimes.push({
-                        date: dateStr,
-                        startTime: slot.startTime,
-                        endTime: slot.endTime,
-                        slotId: slot.id,
-                      });
-                    }
-                  }
-                  if (availableDateTimes.length >= maxSlots) break;
-                }
-              }
-              
-              if (availableDateTimes.length === 0) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: bookingState.config?.noSlotsMessage || 'Sorry, no available time slots.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Build slot rows with date-time combinations
-              const slotRows = availableDateTimes.map((slot) => ({
-                id: `booking_slot_${slot.slotId}_${slot.date}`,
-                title: `${slot.date} at ${slot.startTime}`,
-                description: `${slot.startTime} - ${slot.endTime}`,
-              }));
-              
-              const slotPromptMsg = bookingState.config?.slotPromptMessage || 'Please select an available time slot:';
-              const listPayload = {
-                to: phone,
-                type: 'list',
-                body: { text: slotPromptMsg },
-                action: {
-                  list: {
-                    sections: [{
-                      title: 'Available Times',
-                      rows: slotRows,
-                    }],
-                    label: bookingState.config?.slotButtonLabel || 'Select Time',
-                  },
-                },
-              };
-              
-              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
-              
-              // Update booking state
-              await db.update(conversationStates).set({
-                context: { ...context, bookingState: { ...bookingState, step: 'select_slot', staffId } },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, currentState.id));
-              
-              return res.status(200).json({ success: true });
-              
-            } else if ((bookingState.step === 'select_slot' || bookingState.step === 'enter_name') && buttonId.startsWith("booking_slot_")) {
-              // User selected slot (also allow retry from enter_name step)
-              // Parse ID format: booking_slot_${slotId}_${date}
-              const slotParts = buttonId.replace("booking_slot_", "").split("_");
-              const slotId = parseInt(slotParts[0]);
-              const slotDate = slotParts.slice(1).join("_"); // Handle dates with underscores
-              
-              // Get slot details first to get startTime for availability check
-              const slot = await storage.getBookingStaffSlot(slotId);
-              
-              if (!slot || slot.staffId !== bookingState.staffId) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, this slot is no longer available.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Verify slot is still available for this date
-              const availability = await storage.checkSlotAvailability(
-                bookingState.staffId, slotDate, slot.startTime, slot.endTime
-              );
-              
-              if (!availability.available) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, this slot is no longer available. It may have been taken.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // If requireName is enabled, ask for customer name before creating booking
-              if (bookingState.config?.requireName) {
-                const namePrompt = bookingState.config?.namePromptMessage || 
-                  'Please enter your full name to complete the booking:';
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: namePrompt,
-                });
-                
-                // Update booking state to wait for name
-                await db.update(conversationStates).set({
-                  context: { 
-                    ...context, 
-                    bookingState: { 
-                      ...bookingState, 
-                      step: 'enter_name', 
-                      selectedSlotId: slotId,
-                      selectedSlotDate: slotDate,
-                      selectedStartTime: slot.startTime,
-                      selectedEndTime: slot.endTime,
-                    } 
-                  },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                
-                return res.status(200).json({ success: true });
-              }
-              
-              // Check if custom questions are enabled (without requiring name)
-              const configCheck = bookingState.config || {};
-              if (configCheck.customQuestion1Enabled && configCheck.customQuestion1Prompt) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: configCheck.customQuestion1Prompt,
-                });
-                
-                await db.update(conversationStates).set({
-                  context: { 
-                    ...context, 
-                    bookingState: { 
-                      ...bookingState, 
-                      step: 'enter_custom1',
-                      customerName: '',
-                      selectedSlotId: slotId,
-                      selectedSlotDate: slotDate,
-                      selectedStartTime: slot.startTime,
-                      selectedEndTime: slot.endTime,
-                    } 
-                  },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                
-                return res.status(200).json({ success: true });
-              }
-              
-              // No name or custom questions required - create booking immediately
-              try {
-                const booking = await storage.createBooking({
-                  userId: activeWorkflow.userId,
-                  staffId: bookingState.staffId,
-                  departmentId: bookingState.departmentId,
-                  customerPhone: phone,
-                  customerName: '',
-                  slotDate: slotDate,
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  status: bookingState.config?.defaultBookingStatus || 'confirmed',
-                  nodeId: bookingState.nodeId,
-                  bookingLabel: bookingState.bookingLabel,
-                  reminderEnabled: bookingState.config?.reminderEnabled || false,
-                  reminderHoursBefore: bookingState.config?.reminderHoursBefore || 24,
-                  reminderMessage: bookingState.config?.reminderMessage || null,
-                  reminderSent: false,
-                });
-                
-                // Get staff and department names for success message
-                const staff = await storage.getBookingStaff(bookingState.staffId);
-                const dept = await storage.getBookingDepartment(bookingState.departmentId);
-                
-                // Use pending message if status is pending, otherwise use success message
-                const bookingStatus = bookingState.config?.defaultBookingStatus || 'confirmed';
-                let messageToSend: string;
-                
-                if (bookingStatus === 'pending') {
-                  messageToSend = bookingState.config?.pendingMessage || 
-                    'Your booking request has been submitted. Our team will review and confirm your appointment soon.';
-                } else {
-                  messageToSend = bookingState.config?.successMessage || 
-                    'Your appointment has been booked for {{date}} at {{time}}.';
-                }
-                
-                messageToSend = messageToSend
-                  .replace(/\{\{date\}\}/g, slotDate)
-                  .replace(/\{\{time\}\}/g, slot.startTime)
-                  .replace(/\{\{department\}\}/g, dept?.name || '')
-                  .replace(/\{\{staff\}\}/g, staff?.name || '');
-                
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: messageToSend,
-                });
-                
-                // Clear booking state and continue workflow on "booked" path
-                const definition = activeWorkflow.definitionJson as any;
-                const bookedNodeId = getNextNodeByHandle(bookingState.nodeId, 'booked', definition.edges);
-                
-                await db.update(conversationStates).set({
-                  currentNodeId: bookedNodeId || bookingState.nodeId,
-                  context: { ...context, bookingState: undefined, lastBookingId: booking.id },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                
-                console.log(`[Booking] Created booking ${booking.id} for ${phone}`);
-                
-              } catch (bookingError: any) {
-                console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, we could not book this slot. It may no longer be available.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, bookingState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-              }
-              
-              return res.status(200).json({ success: true });
-            }
-          }
-          
-          // Handle CHECK BOOKINGS state (reschedule/cancel flows)
-          if (currentState?.context && (currentState.context as any).checkBookingsState) {
-            const context = currentState.context as any;
-            const checkBookingsState = context.checkBookingsState;
-            
-            // Get active channel for sending messages
-            const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-            const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-            
-            if (!activeChannel?.whapiChannelToken) {
-              console.error(`[Booking] No active channel for check bookings flow`);
-              return res.status(200).json({ success: true });
-            }
-            
-            // Handle RESCHEDULE booking selection
-            if (checkBookingsState.step === 'select_reschedule' && buttonId.startsWith("booking_reschedule_")) {
-              const bookingId = parseInt(buttonId.replace("booking_reschedule_", ""));
-              console.log(`[Booking] User selected booking ${bookingId} to reschedule`);
-              
-              // Get the booking to verify ownership
-              const booking = await storage.getBooking(bookingId);
-              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
-                console.error(`[Booking] Invalid booking selection for reschedule: ${bookingId}`);
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Get available slots for the same staff member
-              const staffSlots = await storage.getBookingStaffSlots(booking.staffId);
-              
-              if (staffSlots.length === 0) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, no available slots for rescheduling at this time.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Build available date-time combinations (next 7 days)
-              const availableDateTimes: { slotId: number, date: string, startTime: string, endTime: string }[] = [];
-              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-              
-              for (let i = 0; i < 7; i++) {
-                const checkDate = new Date();
-                checkDate.setDate(checkDate.getDate() + i);
-                const dayOfWeek = checkDate.getDay();
-                const dateStr = checkDate.toISOString().split('T')[0];
-                
-                // Find slots for this day
-                const daySlots = staffSlots.filter((s: any) => s.dayOfWeek === dayOfWeek);
-                
-                for (const slot of daySlots) {
-                  // Check availability (capacity not reached)
-                  const availabilityResult = await storage.checkSlotAvailability(booking.staffId, dateStr, slot.startTime, slot.endTime);
-                  if (availabilityResult.available) {
-                    availableDateTimes.push({
-                      slotId: slot.id,
-                      date: dateStr,
-                      startTime: slot.startTime,
-                      endTime: slot.endTime,
-                    });
-                  }
-                }
-              }
-              
-              if (availableDateTimes.length === 0) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, no available slots for rescheduling in the next 7 days.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Build slot rows
-              const slotRows = availableDateTimes.slice(0, 10).map((slot) => ({
-                id: `booking_newslot_${slot.slotId}_${slot.date}`,
-                title: `${slot.date} at ${slot.startTime}`,
-                description: `${slot.startTime} - ${slot.endTime}`,
-              }));
-              
-              const slotPromptMsg = checkBookingsState.config?.rescheduleSlotMessage || 'Select a new time for your appointment:';
-              const slotButtonLabel = checkBookingsState.config?.rescheduleSlotButtonLabel || 'Select New Time';
-              
-              const listPayload = {
-                to: phone,
-                type: 'list',
-                body: { text: slotPromptMsg },
-                action: {
-                  list: {
-                    sections: [{
-                      title: 'Available Times',
-                      rows: slotRows,
-                    }],
-                    label: slotButtonLabel,
-                  },
-                },
-              };
-              
-              await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
-              
-              // Update state with selected booking
-              await db.update(conversationStates).set({
-                context: { 
-                  ...context, 
-                  checkBookingsState: { 
-                    ...checkBookingsState, 
-                    step: 'select_new_slot',
-                    bookingId,
-                    staffId: booking.staffId,
-                  } 
-                },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, currentState.id));
-              
-              return res.status(200).json({ success: true });
-            }
-            
-            // Handle NEW SLOT selection for reschedule
-            if (checkBookingsState.step === 'select_new_slot' && buttonId.startsWith("booking_newslot_")) {
-              const slotParts = buttonId.replace("booking_newslot_", "").split("_");
-              const slotId = parseInt(slotParts[0]);
-              const newSlotDate = slotParts.slice(1).join("_");
-              
-              console.log(`[Booking] Rescheduling booking ${checkBookingsState.bookingId} to slot ${slotId} on ${newSlotDate}`);
-              
-              // Get slot details
-              const slot = await storage.getBookingStaffSlot(slotId);
-              if (!slot || slot.staffId !== checkBookingsState.staffId) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, this slot is no longer available.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Check availability again
-              const availabilityResult = await storage.checkSlotAvailability(checkBookingsState.staffId, newSlotDate, slot.startTime, slot.endTime, checkBookingsState.bookingId);
-              if (!availabilityResult.available) {
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, this slot is no longer available. Please try again.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Update the booking with new date/time
-              try {
-                await storage.updateBooking(checkBookingsState.bookingId, {
-                  slotDate: newSlotDate,
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                });
-                
-                // Get staff and department for success message
-                const staff = await storage.getBookingStaff(checkBookingsState.staffId);
-                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
-                
-                let successMessage = checkBookingsState.config?.rescheduleSuccessMessage || 
-                  'Your appointment has been rescheduled to {{date}} at {{time}}.';
-                successMessage = successMessage
-                  .replace(/\{\{date\}\}/g, newSlotDate)
-                  .replace(/\{\{time\}\}/g, slot.startTime)
-                  .replace(/\{\{department\}\}/g, dept?.name || '')
-                  .replace(/\{\{staff\}\}/g, staff?.name || '');
-                
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: successMessage,
-                });
-                
-                // Clear state and continue to booked path
-                const definition = activeWorkflow.definitionJson as any;
-                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, 'booked', definition.edges);
-                
-                await db.update(conversationStates).set({
-                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                
-                console.log(`[Booking] Rescheduled booking ${checkBookingsState.bookingId} to ${newSlotDate} at ${slot.startTime}`);
-                
-              } catch (updateError: any) {
-                console.error(`[Booking] Failed to reschedule: ${updateError.message}`);
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, we could not reschedule your appointment. Please try again.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-              }
-              
-              return res.status(200).json({ success: true });
-            }
-            
-            // Handle CANCEL booking selection
-            if (checkBookingsState.step === 'select_cancel' && buttonId.startsWith("booking_cancel_")) {
-              const bookingId = parseInt(buttonId.replace("booking_cancel_", ""));
-              console.log(`[Booking] User selected booking ${bookingId} to cancel`);
-              
-              // Get the booking to verify ownership
-              const booking = await storage.getBooking(bookingId);
-              if (!booking || booking.customerPhone !== phone || booking.userId !== activeWorkflow.userId) {
-                console.error(`[Booking] Invalid booking selection for cancel: ${bookingId}`);
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                return res.status(200).json({ success: true });
-              }
-              
-              // Cancel the booking (update status to cancelled)
-              try {
-                await storage.updateBooking(bookingId, { status: 'cancelled' });
-                
-                // Get staff and department for cancel message
-                const staff = await storage.getBookingStaff(booking.staffId);
-                const dept = staff ? await storage.getBookingDepartment(staff.departmentId) : null;
-                
-                let cancelMessage = checkBookingsState.config?.cancelSuccessMessage || 
-                  'Your appointment on {{date}} at {{time}} has been cancelled.';
-                cancelMessage = cancelMessage
-                  .replace(/\{\{date\}\}/g, booking.slotDate)
-                  .replace(/\{\{time\}\}/g, booking.startTime)
-                  .replace(/\{\{department\}\}/g, dept?.name || '')
-                  .replace(/\{\{staff\}\}/g, staff?.name || '');
-                
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: cancelMessage,
-                });
-                
-                // Clear state and continue to booked path
-                const definition = activeWorkflow.definitionJson as any;
-                const bookedNodeId = getNextNodeByHandle(checkBookingsState.nodeId, 'booked', definition.edges);
-                
-                await db.update(conversationStates).set({
-                  currentNodeId: bookedNodeId || checkBookingsState.nodeId,
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-                
-                console.log(`[Booking] Cancelled booking ${bookingId}`);
-                
-              } catch (cancelError: any) {
-                console.error(`[Booking] Failed to cancel booking: ${cancelError.message}`);
-                await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                  to: phone,
-                  body: 'Sorry, we could not cancel your appointment. Please try again.',
-                });
-                await db.update(conversationStates).set({
-                  context: { ...context, checkBookingsState: undefined },
-                  updatedAt: new Date(),
-                }).where(eq(conversationStates.id, currentState.id));
-              }
-              
+
+            const bookingResult = await runBookingStep(
+              buildWhatsAppBookingEngine({
+                userId: activeWorkflow.userId,
+                workflowId: activeWorkflow.id,
+                definition: (activeWorkflow.definitionJson || {}) as any,
+                customerPhone: phone,
+                conversationStateId: currentState.id,
+                activeChannel,
+              }),
+              { type: "button", buttonId },
+              bookingContext
+            );
+
+            // Any recognised booking button is terminal for the webhook: the
+            // historical code never fell through to normal button routing.
+            if (bookingResult.handled) {
               return res.status(200).json({ success: true });
             }
           }
         } catch (bookingError: any) {
           console.error(`[Booking] Error processing booking flow: ${bookingError.message}`);
-          // Return success to prevent falling through to button routing
-          // The error is logged but we don't want to process this as a regular button click
+          // Return success to prevent falling through to button routing.
+          // The error is logged but we do not want to process this as a
+          // regular button click.
           return res.status(200).json({ success: true, error: "Booking flow error" });
         }
       }
@@ -10560,309 +10008,38 @@ export function registerRoutes(app: Express) {
             return res.status(200).json({ success: true });
           }
 
-          if (nameCheckBookingState?.step === 'enter_name') {
-            // Customer is providing their name
-            const customerName = incomingMessage.text?.body?.trim() || '';
-            
-            // Get active channel for sending messages
-            const userChannelsForName = await storage.getChannelsForUser(activeWorkflow.userId);
-            const activeChannelForName = userChannelsForName.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-            
-            if (!activeChannelForName?.whapiChannelToken) {
-              console.error(`[Booking] No active channel for name step, user ${activeWorkflow.userId}`);
+          // ── Booking text steps (enter_name / enter_custom1 / enter_custom2) ──
+          // Phase 4A-3b-1: delegated to ./workflows/booking-engine. A missing
+          // channel keeps the historical silent 200 (no state change).
+          if (isBookingTextStep(nameCheckBookingState?.step)) {
+            const userChannelsForBooking = await storage.getChannelsForUser(activeWorkflow.userId);
+            const activeChannelForBooking = userChannelsForBooking.find(
+              (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED"
+            );
+
+            if (!activeChannelForBooking?.whapiChannelToken) {
+              console.error(
+                `[Booking] No active channel for ${nameCheckBookingState.step} step, user ${activeWorkflow.userId}`
+              );
               return res.status(200).json({ success: true });
             }
-            
-            if (customerName.length < 2) {
-              // Invalid name, ask again
-              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
-                to: phone,
-                body: 'Please enter a valid name (at least 2 characters).',
-              });
-              return res.status(200).json({ success: true });
-            }
-            
-            // Store the name and check if we need to ask custom questions
-            const config = nameCheckBookingState.config || {};
-            
-            // Check if custom question 1 is enabled
-            if (config.customQuestion1Enabled && config.customQuestion1Prompt) {
-              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
-                to: phone,
-                body: config.customQuestion1Prompt,
-              });
-              
-              await db.update(conversationStates).set({
-                context: { 
-                  ...nameCheckContext, 
-                  bookingState: { 
-                    ...nameCheckBookingState, 
-                    step: 'enter_custom1',
-                    customerName: customerName,
-                  } 
-                },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-              
-              return res.status(200).json({ success: true });
-            }
-            
-            // No custom questions - create booking with the provided name
-            try {
-              const bookingStatus = nameCheckBookingState.config?.defaultBookingStatus || 'confirmed';
-              const booking = await storage.createBooking({
+
+            const bookingResult = await runBookingStep(
+              buildWhatsAppBookingEngine({
                 userId: activeWorkflow.userId,
-                staffId: nameCheckBookingState.staffId,
-                departmentId: nameCheckBookingState.departmentId,
+                workflowId: activeWorkflow.id,
+                definition: (activeWorkflow.definitionJson || {}) as any,
                 customerPhone: phone,
-                customerName: customerName,
-                slotDate: nameCheckBookingState.selectedSlotDate,
-                startTime: nameCheckBookingState.selectedStartTime,
-                endTime: nameCheckBookingState.selectedEndTime,
-                status: bookingStatus,
-                nodeId: nameCheckBookingState.nodeId,
-                bookingLabel: nameCheckBookingState.bookingLabel,
-                reminderEnabled: nameCheckBookingState.config?.reminderEnabled || false,
-                reminderHoursBefore: nameCheckBookingState.config?.reminderHoursBefore || 24,
-                reminderMessage: nameCheckBookingState.config?.reminderMessage || null,
-                reminderSent: false,
-              });
-              
-              // Get staff and department names in parallel for speed
-              const [staff, dept] = await Promise.all([
-                storage.getBookingStaff(nameCheckBookingState.staffId),
-                storage.getBookingDepartment(nameCheckBookingState.departmentId)
-              ]);
-              
-              // Use pending message if status is pending, otherwise use success message
-              const messageToSend = (bookingStatus === 'pending' 
-                ? (nameCheckBookingState.config?.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
-                : (nameCheckBookingState.config?.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
-                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
-                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
-                .replace(/\{\{department\}\}/g, dept?.name || '')
-                .replace(/\{\{staff\}\}/g, staff?.name || '')
-                .replace(/\{\{name\}\}/g, customerName);
-              
-              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
-                to: phone,
-                body: messageToSend,
-              });
-              
-              // Clear booking state and continue workflow on "booked" path
-              const definition = activeWorkflow.definitionJson as any;
-              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
-              
-              await db.update(conversationStates).set({
-                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
-                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-              
-              console.log(`[Booking] Created booking ${booking.id} for ${phone} with name: ${customerName}`);
-              
-            } catch (bookingError: any) {
-              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
-              await whapi.sendTextMessage(activeChannelForName.whapiChannelToken, {
-                to: phone,
-                body: 'Sorry, we could not book this slot. It may no longer be available.',
-              });
-              await db.update(conversationStates).set({
-                context: { ...nameCheckContext, bookingState: undefined },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-            }
-            
-            return res.status(200).json({ success: true });
-          }
-          
-          // Handle custom question 1 entry
-          if (nameCheckBookingState?.step === 'enter_custom1') {
-            const customValue1 = incomingMessage.text?.body?.trim() || '';
-            
-            const userChannelsForQ1 = await storage.getChannelsForUser(activeWorkflow.userId);
-            const activeChannelForQ1 = userChannelsForQ1.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-            
-            if (!activeChannelForQ1?.whapiChannelToken) {
-              console.error(`[Booking] No active channel for custom question 1`);
+                conversationStateId: nameCheckState.id,
+                activeChannel: activeChannelForBooking,
+              }),
+              { type: "text", text: incomingMessage.text?.body || "" },
+              nameCheckContext
+            );
+
+            if (bookingResult.handled) {
               return res.status(200).json({ success: true });
             }
-            
-            const config = nameCheckBookingState.config || {};
-            
-            // Check if custom question 2 is enabled
-            if (config.customQuestion2Enabled && config.customQuestion2Prompt) {
-              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
-                to: phone,
-                body: config.customQuestion2Prompt,
-              });
-              
-              await db.update(conversationStates).set({
-                context: { 
-                  ...nameCheckContext, 
-                  bookingState: { 
-                    ...nameCheckBookingState, 
-                    step: 'enter_custom2',
-                    customField1Value: customValue1,
-                    customField1Label: config.customQuestion1Label || 'Question 1',
-                  } 
-                },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-              
-              return res.status(200).json({ success: true });
-            }
-            
-            // No second question - create booking
-            try {
-              const bookingStatus = config.defaultBookingStatus || 'confirmed';
-              const booking = await storage.createBooking({
-                userId: activeWorkflow.userId,
-                staffId: nameCheckBookingState.staffId,
-                departmentId: nameCheckBookingState.departmentId,
-                customerPhone: phone,
-                customerName: nameCheckBookingState.customerName || '',
-                slotDate: nameCheckBookingState.selectedSlotDate,
-                startTime: nameCheckBookingState.selectedStartTime,
-                endTime: nameCheckBookingState.selectedEndTime,
-                status: bookingStatus,
-                nodeId: nameCheckBookingState.nodeId,
-                bookingLabel: nameCheckBookingState.bookingLabel,
-                customField1Label: config.customQuestion1Label || 'Question 1',
-                customField1Value: customValue1,
-                reminderEnabled: config.reminderEnabled || false,
-                reminderHoursBefore: config.reminderHoursBefore || 24,
-                reminderMessage: config.reminderMessage || null,
-                reminderSent: false,
-              });
-              
-              // Parallel lookups for speed
-              const [staff, dept] = await Promise.all([
-                storage.getBookingStaff(nameCheckBookingState.staffId),
-                storage.getBookingDepartment(nameCheckBookingState.departmentId)
-              ]);
-              
-              // Use pending message if status is pending, otherwise use success message
-              const messageToSend = (bookingStatus === 'pending' 
-                ? (config.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
-                : (config.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
-                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
-                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
-                .replace(/\{\{department\}\}/g, dept?.name || '')
-                .replace(/\{\{staff\}\}/g, staff?.name || '')
-                .replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || '');
-              
-              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
-                to: phone,
-                body: messageToSend,
-              });
-              
-              const definition = activeWorkflow.definitionJson as any;
-              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
-              
-              await db.update(conversationStates).set({
-                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
-                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-              
-            } catch (bookingError: any) {
-              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
-              await whapi.sendTextMessage(activeChannelForQ1.whapiChannelToken, {
-                to: phone,
-                body: 'Sorry, we could not book this slot. It may no longer be available.',
-              });
-              await db.update(conversationStates).set({
-                context: { ...nameCheckContext, bookingState: undefined },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-            }
-            
-            return res.status(200).json({ success: true });
-          }
-          
-          // Handle custom question 2 entry
-          if (nameCheckBookingState?.step === 'enter_custom2') {
-            const customValue2 = incomingMessage.text?.body?.trim() || '';
-            
-            const userChannelsForQ2 = await storage.getChannelsForUser(activeWorkflow.userId);
-            const activeChannelForQ2 = userChannelsForQ2.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-            
-            if (!activeChannelForQ2?.whapiChannelToken) {
-              console.error(`[Booking] No active channel for custom question 2`);
-              return res.status(200).json({ success: true });
-            }
-            
-            const config = nameCheckBookingState.config || {};
-            
-            // Create booking with both custom fields
-            try {
-              const bookingStatus = config.defaultBookingStatus || 'confirmed';
-              const booking = await storage.createBooking({
-                userId: activeWorkflow.userId,
-                staffId: nameCheckBookingState.staffId,
-                departmentId: nameCheckBookingState.departmentId,
-                customerPhone: phone,
-                customerName: nameCheckBookingState.customerName || '',
-                slotDate: nameCheckBookingState.selectedSlotDate,
-                startTime: nameCheckBookingState.selectedStartTime,
-                endTime: nameCheckBookingState.selectedEndTime,
-                status: bookingStatus,
-                nodeId: nameCheckBookingState.nodeId,
-                bookingLabel: nameCheckBookingState.bookingLabel,
-                customField1Label: nameCheckBookingState.customField1Label || 'Question 1',
-                customField1Value: nameCheckBookingState.customField1Value || '',
-                customField2Label: config.customQuestion2Label || 'Question 2',
-                customField2Value: customValue2,
-                reminderEnabled: config.reminderEnabled || false,
-                reminderHoursBefore: config.reminderHoursBefore || 24,
-                reminderMessage: config.reminderMessage || null,
-                reminderSent: false,
-              });
-              
-              // Parallel lookups for speed
-              const [staff, dept] = await Promise.all([
-                storage.getBookingStaff(nameCheckBookingState.staffId),
-                storage.getBookingDepartment(nameCheckBookingState.departmentId)
-              ]);
-              
-              // Use pending message if status is pending, otherwise use success message
-              const messageToSend = (bookingStatus === 'pending' 
-                ? (config.pendingMessage || 'Your booking request has been submitted. Our team will review and confirm your appointment soon.')
-                : (config.successMessage || 'Your appointment has been booked for {{date}} at {{time}}.'))
-                .replace(/\{\{date\}\}/g, nameCheckBookingState.selectedSlotDate)
-                .replace(/\{\{time\}\}/g, nameCheckBookingState.selectedStartTime)
-                .replace(/\{\{department\}\}/g, dept?.name || '')
-                .replace(/\{\{staff\}\}/g, staff?.name || '')
-                .replace(/\{\{name\}\}/g, nameCheckBookingState.customerName || '');
-              
-              await whapi.sendTextMessage(activeChannelForQ2.whapiChannelToken, {
-                to: phone,
-                body: messageToSend,
-              });
-              
-              const definition = activeWorkflow.definitionJson as any;
-              const bookedNodeId = getNextNodeByHandle(nameCheckBookingState.nodeId, 'booked', definition.edges);
-              
-              await db.update(conversationStates).set({
-                currentNodeId: bookedNodeId || nameCheckBookingState.nodeId,
-                context: { ...nameCheckContext, bookingState: undefined, lastBookingId: booking.id },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-              
-            } catch (bookingError: any) {
-              console.error(`[Booking] Failed to create booking: ${bookingError.message}`);
-              await whapi.sendTextMessage(activeChannelForQ2.whapiChannelToken, {
-                to: phone,
-                body: 'Sorry, we could not book this slot. It may no longer be available.',
-              });
-              await db.update(conversationStates).set({
-                context: { ...nameCheckContext, bookingState: undefined },
-                updatedAt: new Date(),
-              }).where(eq(conversationStates.id, nameCheckState.id));
-            }
-            
-            return res.status(200).json({ success: true });
           }
           
           // First-message-of-day detection using Asia/Bahrain timezone
@@ -11334,341 +10511,40 @@ export function registerRoutes(app: Express) {
               // Phase 4A-2a: control flow lives in ./workflows/flowRunner; every
               // side effect is supplied through liveHost below.
               //
-              // Booking nodes are NOT part of the runner. They stay inline here and
-              // are delegated through handleBookingNode(), which returns the next
-              // node id (or null when the flow is waiting on the user / has ended).
+              // Booking nodes are NOT part of the runner. They are delegated
+              // through handleBookingNode(), which returns the next node id (or
+              // null when the flow is waiting on the user / has ended).
+              //
+              // Phase 4A-3b-1: the state machine lives in
+              // ./workflows/booking-engine; this function supplies the WhatsApp
+              // side effects. `previousCursor` is the conversation cursor loaded
+              // at webhook start — exactly what the inline code compared against
+              // `state.currentNodeId`.
               const handleBookingNode = async (
                 currentNode: any,
                 currentNodeId: string,
                 ctx: any
               ): Promise<{ nextNodeId: string | null; context: any } | null> => {
-                const currentNodeType = currentNode.data?.type || currentNode.data?.nodeType;
-                const startNodeId = currentNodeId;
+                const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
+                const activeChannel = userChannels.find(
+                  (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED"
+                );
 
-                // Keep state.context in sync with the runner's working context so the
-                // moved booking code reads it unchanged.
-                state = { ...state, context: ctx };
-
-                if (currentNodeType === 'booking.book_appointment') {
-                  const config = currentNode.data?.config || {};
-                  const context = (state.context || {}) as any;
-                  
-                  // Minimal logging for performance - only log key info
-                  console.log(`[Booking] book_appointment node: ${currentNodeId}, state.currentNodeId: ${state.currentNodeId}`);
-                  
-                  // Determine if we should start a fresh booking flow
-                  // Start fresh if:
-                  // 1. No existing bookingState, OR
-                  // 2. Existing bookingState is for a DIFFERENT booking node, OR
-                  // 3. We're navigating TO this booking node from a DIFFERENT node (i.e., user clicked button to start booking)
-                  const existingBookingNodeId = context.bookingState?.nodeId;
-                  const isNavigatingToBookingNode = state.currentNodeId !== currentNodeId;
-                  const shouldStartFresh = !context.bookingState || 
-                    existingBookingNodeId !== currentNodeId ||
-                    isNavigatingToBookingNode;
-                  
-                  // Debug log only when starting fresh (important state transition)
-                  if (shouldStartFresh) console.log(`[Booking] Starting fresh booking flow`);
-                  
-                  // Check if we're in a booking flow already
-                  if (shouldStartFresh) {
-                    // Start new booking flow - send department list
-                    // Filter by serviceId if configured
-                    let departments;
-                    if (config.serviceId) {
-                      console.log(`[Booking] Filtering departments by serviceId: ${config.serviceId}`);
-                      departments = await storage.getBookingDepartmentsForService(config.serviceId);
-                    } else {
-                      console.log(`[Booking] No serviceId configured, getting all departments for user`);
-                      departments = await storage.getBookingDepartmentsForUser(activeWorkflow.userId);
-                    }
-                    
-                    // Fetch channels once for reuse
-                    const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-                    const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-                    
-                    if (departments.length === 0) {
-                      // No departments configured - go to no_slots path
-                      const noSlotsMessage = config.noSlotsMessage || 'Sorry, booking is not available at this time.';
-                      
-                      if (activeChannel?.whapiChannelToken) {
-                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                          to: phone,
-                          body: noSlotsMessage,
-                        });
-                      }
-                      
-                      // Follow no_slots path
-                      const noSlotsNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
-                      if (!noSlotsNodeId) return null;
-                      const noSlotsNode = definition.nodes?.find((n: any) => n.id === noSlotsNodeId);
-                      if (!noSlotsNode) return null;
-                      return { nextNodeId: noSlotsNodeId, context: ctx };
-                    }
-                    
-                    if (activeChannel?.whapiChannelToken) {
-                      const promptMessage = config.promptMessage || 'Please select a service for your appointment:';
-                      
-                      // Build list message with departments (using correct WHAPI format)
-                      const listPayload = {
-                        to: phone,
-                        type: 'list',
-                        body: { text: promptMessage },
-                        action: {
-                          list: {
-                            sections: [{
-                              title: 'Departments',
-                              rows: departments.map((dept: any) => ({
-                                id: `booking_dept_${dept.id}`,
-                                title: dept.name,
-                                description: dept.description || '',
-                              })),
-                            }],
-                            label: config.departmentButtonLabel || 'Select Service',
-                          },
-                        },
-                      };
-                      
-                      await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
-                      
-                      // Save booking state
-                      const bookingState = {
-                        step: 'select_department',
-                        nodeId: currentNodeId,
-                        bookingLabel: config.bookingLabel || 'appointment',
-                        config,
-                      };
-                      
-                      await db
-                        .update(conversationStates)
-                        .set({
-                          lastMessageAt: new Date(),
-                          currentNodeId: currentNodeId,
-                          context: { ...context, bookingState },
-                          updatedAt: new Date(),
-                        })
-                        .where(eq(conversationStates.id, state.id));
-                      
-                      executionLog.responsesSent.push({
-                        nodeId: currentNodeId,
-                        nodeType: 'booking.book_appointment',
-                        step: 'select_department',
-                        success: true,
-                      });
-                      
-                      // Wait for user input - exit the loop
-                      return null;
-                    }
-                  }
-                  
-                  // This shouldn't happen in normal flow
-                  return null;
-                  
-                // Check Bookings Node - handle viewing customer bookings
-                } else if (currentNodeType === 'booking.check_bookings') {
-                  const config = currentNode.data?.config || {};
-                  const checkType = config.checkType || 'my_bookings';
-                  const context = (state.context || {}) as any;
-                  
-                  console.log(`[Booking] Processing check_bookings node: ${currentNodeId}, type: ${checkType}`);
-                  
-                  // Get customer bookings by phone with optional filters
-                  const statusFilter = config.statusFilter || 'upcoming';
-                  const maxBookings = config.maxBookings || 0;
-                  
-                  let allCustomerBookings = await storage.getBookingsForCustomer(phone, activeWorkflow.userId);
-                  
-                  // Apply status filter
-                  let customerBookings = allCustomerBookings;
-                  if (statusFilter === 'upcoming') {
-                    // Upcoming = confirmed and date >= today
-                    const today = new Date().toISOString().split('T')[0];
-                    customerBookings = allCustomerBookings.filter((b: any) => 
-                      b.status === 'confirmed' && b.slotDate >= today
-                    );
-                  } else if (statusFilter === 'confirmed') {
-                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'confirmed');
-                  } else if (statusFilter === 'pending') {
-                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'pending');
-                  } else if (statusFilter === 'completed') {
-                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'completed');
-                  } else if (statusFilter === 'cancelled') {
-                    customerBookings = allCustomerBookings.filter((b: any) => b.status === 'cancelled');
-                  }
-                  // 'all' shows all statuses
-                  
-                  // Apply max bookings limit (sort by date desc, take last N)
-                  if (maxBookings > 0 && customerBookings.length > maxBookings) {
-                    // Sort by date descending and take last N
-                    customerBookings = customerBookings
-                      .sort((a: any, b: any) => new Date(b.slotDate).getTime() - new Date(a.slotDate).getTime())
-                      .slice(0, maxBookings);
-                  }
-                  
-                  // For reschedule/cancel, only show confirmed bookings
-                  const activeBookings = customerBookings.filter((b: any) => b.status === 'confirmed');
-                  
-                  const userChannels = await storage.getChannelsForUser(activeWorkflow.userId);
-                  const activeChannel = userChannels.find((ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED");
-                  
-                  if (activeChannel?.whapiChannelToken) {
-                    if (checkType === 'my_bookings') {
-                      // Original behavior: show text list of bookings
-                      if (customerBookings.length === 0) {
-                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
-                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                          to: phone,
-                          body: noBookingsMessage,
-                        });
-                      } else {
-                        const bookingListFormat = config.bookingListFormat || '{{date}} at {{time}}\n{{department}} - {{staff}}\nStatus: {{status}}';
-                        
-                        // Batch fetch all staff and departments in parallel for speed
-                        const staffIds = Array.from(new Set(customerBookings.map((b: any) => b.staffId)));
-                        const staffList = await Promise.all(staffIds.map(id => storage.getBookingStaff(id)));
-                        const staffMap = new Map(staffList.filter(Boolean).map((s: any) => [s.id, s]));
-                        
-                        const deptIds = Array.from(new Set(staffList.filter(Boolean).map((s: any) => s.departmentId)));
-                        const deptList = await Promise.all(deptIds.map(id => storage.getBookingDepartment(id)));
-                        const deptMap = new Map(deptList.filter(Boolean).map((d: any) => [d.id, d]));
-                        
-                        let bookingsText = 'Your appointments:\n\n';
-                        for (const booking of customerBookings) {
-                          const staff = staffMap.get(booking.staffId);
-                          const dept = staff ? deptMap.get(staff.departmentId) : null;
-                          
-                          let formatted = bookingListFormat
-                            .replace(/\{\{date\}\}/g, booking.slotDate)
-                            .replace(/\{\{time\}\}/g, booking.startTime)
-                            .replace(/\{\{department\}\}/g, dept?.name || '')
-                            .replace(/\{\{staff\}\}/g, staff?.name || '')
-                            .replace(/\{\{status\}\}/g, booking.status);
-                          bookingsText += formatted + '\n\n';
-                        }
-                        
-                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                          to: phone,
-                          body: bookingsText.trim(),
-                        });
-                      }
-                      
-                      // Continue to next node
-                      const nextNodeId = getNextNodeByHandle(currentNodeId, 'booked', definition.edges);
-                      if (!nextNodeId) return null;
-                      const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                      if (!nextNode) return null;
-                      currentNode = nextNode;
-                      currentNodeId = nextNodeId;
-                      
-                    } else if (checkType === 'reschedule' || checkType === 'cancel_booking') {
-                      // Interactive mode: show list of bookings to select
-                      if (activeBookings.length === 0) {
-                        const noBookingsMessage = config.noBookingsMessage || "You don't have any upcoming appointments.";
-                        await whapi.sendTextMessage(activeChannel.whapiChannelToken, {
-                          to: phone,
-                          body: noBookingsMessage,
-                        });
-                        
-                        // Continue to next node (no_slots path)
-                        const nextNodeId = getNextNodeByHandle(currentNodeId, 'no_slots', definition.edges);
-                        if (!nextNodeId) return null;
-                        const nextNode = definition.nodes?.find((n: any) => n.id === nextNodeId);
-                        if (!nextNode) return null;
-                        currentNode = nextNode;
-                        currentNodeId = nextNodeId;
-                      } else {
-                        // Build interactive list of bookings
-                        const actionType = checkType === 'reschedule' ? 'reschedule' : 'cancel';
-                        const promptMessage = checkType === 'reschedule' 
-                          ? (config.reschedulePromptMessage || 'Select the appointment you want to reschedule:')
-                          : (config.cancelPromptMessage || 'Select the appointment you want to cancel:');
-                        const buttonLabel = checkType === 'reschedule'
-                          ? (config.rescheduleButtonLabel || 'Select Appointment')
-                          : (config.cancelButtonLabel || 'Select Appointment');
-                        
-                        // Batch fetch all staff and departments in parallel for speed
-                        const staffIdsForAction = Array.from(new Set(activeBookings.map((b: any) => b.staffId)));
-                        const staffListForAction = await Promise.all(staffIdsForAction.map(id => storage.getBookingStaff(id)));
-                        const staffMapForAction = new Map(staffListForAction.filter(Boolean).map((s: any) => [s.id, s]));
-                        
-                        const deptIdsForAction = Array.from(new Set(staffListForAction.filter(Boolean).map((s: any) => s.departmentId)));
-                        const deptListForAction = await Promise.all(deptIdsForAction.map(id => storage.getBookingDepartment(id)));
-                        const deptMapForAction = new Map(deptListForAction.filter(Boolean).map((d: any) => [d.id, d]));
-                        
-                        // Build rows with booking info
-                        const bookingRows = activeBookings.map((booking: any) => {
-                          const staff = staffMapForAction.get(booking.staffId);
-                          const dept = staff ? deptMapForAction.get(staff.departmentId) : null;
-                          return {
-                            id: `booking_${actionType}_${booking.id}`,
-                            title: `${booking.slotDate} at ${booking.startTime}`,
-                            description: `${dept?.name || ''} - ${staff?.name || ''}`.trim() || 'Appointment',
-                          };
-                        });
-                        
-                        const listPayload = {
-                          to: phone,
-                          type: 'list',
-                          body: { text: promptMessage },
-                          action: {
-                            list: {
-                              sections: [{
-                                title: 'Your Appointments',
-                                rows: bookingRows,
-                              }],
-                              label: buttonLabel,
-                            },
-                          },
-                        };
-                        
-                        await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, listPayload);
-                        
-                        // Save state for handling response
-                        const checkBookingsState = {
-                          step: `select_${actionType}`,
-                          nodeId: currentNodeId,
-                          checkType,
-                          config,
-                        };
-                        
-                        await db
-                          .update(conversationStates)
-                          .set({
-                            lastMessageAt: new Date(),
-                            currentNodeId: currentNodeId,
-                            context: { ...context, checkBookingsState },
-                            updatedAt: new Date(),
-                          })
-                          .where(eq(conversationStates.id, state.id));
-                        
-                        // Don't continue - wait for user selection
-                        executionLog.responsesSent.push({
-                          nodeId: currentNodeId,
-                          nodeType: 'booking.check_bookings',
-                          checkType,
-                          bookingsCount: activeBookings.length,
-                          success: true,
-                        });
-                        return null;
-                      }
-                    }
-                  }
-                  
-                  executionLog.responsesSent.push({
-                    nodeId: currentNodeId,
-                    nodeType: 'booking.check_bookings',
-                    bookingsCount: customerBookings.length,
-                    success: true,
-                  });
-                  
-                  // Fall-through: the branch only advances the cursor when it found a
-                  // next node. Otherwise there is nothing left to do (and, before
-                  // 4A-2a, this path looped forever).
-                  if (currentNodeId !== startNodeId) {
-                    return { nextNodeId: currentNodeId, context: ctx };
-                  }
-                }
-                return null;
+                return runBookingNode(
+                  buildWhatsAppBookingEngine({
+                    userId: activeWorkflow.userId,
+                    workflowId: activeWorkflow.id,
+                    definition: definition as any,
+                    customerPhone: phone,
+                    conversationStateId: state.id,
+                    activeChannel,
+                    onLog: (entry) => executionLog.responsesSent.push(entry),
+                  }),
+                  currentNode,
+                  currentNodeId,
+                  ctx,
+                  state.currentNodeId ?? null
+                );
               };
 
               const liveHost: FlowHost = {
