@@ -1,5 +1,119 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-3a-3 — implemented, awaiting deploy + verify ⏳
+
+> **Read this first.** Local `main` HEAD is **`293de09`** — **committed and pushed, NOT
+> deployed**. Production still runs **`8df98a8`** (4A-3a-2). The public chat UI has never
+> been loaded in a browser: the next session starts with deploy + visual verification.
+> Working tree is **clean** and `main` is **in sync** with `origin/main`.
+
+### Status
+
+- **Committed `293de09`, pushed to `origin/main` (2026-10-24). NOT deployed.** No VPS pull, no
+  `db:push`, no `deploy.sh`/`update.sh`, no force-push.
+- **5 files, +1,490 / −3** — 3 new, 2 modified (below). No backend changes, no schema changes,
+  **no new dependencies**.
+- **Frozen files untouched:** `flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`,
+  `shared/schema.ts`, `auth.ts`, `chat-links.ts`, `routes.ts`. The a-2 endpoints are unchanged
+  and were not re-read by this phase.
+- `npm run check` — **9 pre-existing errors only**, 0 in the changed files (`admin.tsx:1284`,
+  `outbox.tsx:727`, `whapi-settings.tsx:24,25,145`, `storage.ts:1140`, `schema.ts:1447`,
+  `vite.config.ts:14,16`).
+- `npm run build` — **success**. Client `index-DVMAV9_N.js` (hash changed from
+  `index-Btd5eCWG.js`, expected) + `index-BmfVo_vu.css`; server `821.6 kB` unchanged.
+- **0 matches** for `dangerouslySetInnerHTML` across the three new files (one comment that
+  contained the literal token was reworded so the audit grep stays clean).
+
+### Files (committed in `293de09`)
+
+| Status | File | +/− | Contents |
+|---|---|---|---|
+| **A** | `client/src/lib/chat-api.ts` | 281 | 6 typed wrappers, `ChatApiError` (status + `Retry-After`), `mergeMessages`, `maxMessageId`, `newClientMsgId`, `retryAfterSeconds`, `withBusyRetry` |
+| **A** | `client/src/components/chat/ChatBubble.tsx` | 342 | role-first renderer; `text`/`buttons`/`call_to_action_buttons`/`list`/`carousel`/`media`/`location`; `CardImage`/`MediaImage` fallbacks |
+| **A** | `client/src/pages/public-chat.tsx` | 859 | page + inline `usePublicChat` (bootstrap, poll loop, send/restart/end), 5 state screens, 2 confirm dialogs |
+| **M** | `client/src/App.tsx` | +2 | `import PublicChatPage` + `<Route path="/chat/:token" />` |
+| **M** | `client/src/components/chat-widget.tsx` | +6 / −3 | Tawk.to guard for `/chat/*` |
+| | **Total** | **+1,490 / −3** | 5 files (3 new, 2 modified) |
+
+### Design decisions banked in the code
+
+- **Only the poll returns `nextSinceId`.** Bootstrap / message / restart derive the cursor with
+  `maxMessageId(...)`, otherwise the next poll would replay the visitor's own row.
+- **POST and restart responses are appended immediately**, never waited on; `mergeMessages`
+  is id-keyed, so a poll that overlaps a send cannot duplicate rows.
+- **`/restart` returns only the NEW entry rows** (the transcript is preserved server-side) —
+  the client **appends**, it never replaces.
+- **`GET /session` returns 401, not 410, for an ended session** (it is the one endpoint without
+  `chatGoneIfEnded`). The client maps 401 → "expired", 410 → "ended"; both render the same
+  closed screen with an explicit **Start a new chat** action (never auto-bootstrap, or every
+  reload would burn one of the 10/hour per-IP sessions).
+- **Poll state is not trusted while a mutation is pending** — a poll that resolves during a
+  send cannot flip the composer back to "choose an option".
+- **`clientMsgId` is stable per logical message** (including across busy retries and a manual
+  resend of a failed text), so the server replays instead of running the flow twice.
+- **Render by `role`, never by `kind`** (deviation 8 from a-2): visitor button/list clicks are
+  stored as `kind:'text'` with the button title in `payload.text`.
+- **Only the last bot message is interactive** while `awaiting.kind === 'button'`; older
+  buttons/rows are disabled. URL buttons stay live (they do not route the flow).
+- **No booking UI, no booking logic.** The backend gate remains the source of truth — a
+  booking node still stops as `unsupported_node`.
+- **No client-side URL validation** beyond `target="_blank" rel="noopener noreferrer"`; the
+  server https-validates `payload.url`, `buttons[].url`, `cards[].buttons[].url`. `cards[].media`
+  and `media.url` are rendered as `<img>` only (no anchor) with an `onError` fallback.
+- **Generic "Live Chat" title** — the public projection carries no workflow name or link label
+  (deferred to a-3b, which would need a backend change).
+
+### The Tawk.to guard (why not a component early return)
+
+`ChatWidget` is mounted for **every** route (`App.tsx`). The fix is a guard **inside the existing
+effect**, not `return null` at the top of the component:
+
+- a top-of-component early return would either break hook order (`useQuery` sits above it) or
+  skip `cleanupTawkWidget()`, so navigating from any page to `/chat/...` would leave the Tawk
+  bubble on screen;
+- feeding `!isPublicChat` into the existing `shouldShowWidget` branch reuses the existing cleanup
+  path, so the widget is torn down on entry to the chat page exactly like the homepage-only case.
+
+### The 4 accepted review flags
+
+1. **`fetchChatSession()` is exported but unused.** Bootstrap covers the replay path, so the page
+   never calls it. Kept because it completes the six-endpoint wrapper surface. Delete in a-3b if
+   it is still unused.
+2. **`state.sessionId` / `startedAt` / `expiresAt` are stored but unused** by the UI
+   (`canRestart` is used). Kept as the agreed state shape; zero runtime cost.
+3. **`endChat()` swallows transport failures.** If `/end` never reaches the server the cookie
+   survives, so "Start a new chat" would replay the *old* (still active) session instead of
+   creating a new one. Deliberate: the visitor asked to leave, so a network error must not block
+   the ended screen. Rare; record as a known edge.
+4. **One harmless extra timer tick** can be scheduled immediately after a terminal `transition()`
+   from inside `tick()` (the `finally` reads a `stateRef` that has not re-synced yet). It fires
+   once, sees `phase !== "ready"`, and returns — no request, no loop.
+
+### Verification pending — do this first next session
+
+1. **Deploy** (manual, AGENTS.md workflow): backup → `git pull` (fast-forward `8df98a8..293de09`,
+   1 commit) → `NODE_ENV=development npm ci --include=dev` → `npm run build` → `pm2 restart
+   omniplus --update-env` → check `pm2 status` + 20 log lines for module-resolution errors.
+   **No `db:push`** (no schema change).
+2. **Browser tests, desktop + mobile viewport** — open a real `/chat/<token>` link:
+   text send, button click, list row click, carousel + media render, restart (transcript
+   preserved, entry re-run), end (confirm dialog → ended screen → start a new chat).
+3. **Screenshot evidence** of: a text exchange, a buttons bubble (enabled), a list bubble,
+   and the two error states — **410 ended** and **429 countdown**.
+4. **Reload test:** full transcript returns via the cookie-replay path (201 vs 200), poll cursor
+   resumes without duplicates.
+5. **Tawk.to:** no support bubble on `/chat/<token>`; still present on `/`.
+6. **Safety:** a booking node clicked from the UI still stops structurally (backend gate
+   unchanged, zero production writes) — the UI must not offer anything booking-shaped.
+
+### Session ended at ~75%
+
+Code is done and reviewed; only deployment and visual verification remain. Budget did not allow
+deploy + browser verification in this session, so the phase is **implemented, not closed** —
+same discipline as 4A-2a and 4A-3a-1.
+
+> Superseded: 4A-3a-3 (public UI) is implemented and pushed in `293de09` — see the top section.
+
 ## Phase 4A-3a-2 — COMPLETE ✅ (deployed `8df98a8`, 14/14 curl-verified)
 
 > **Read this first.** Production HEAD is **`8df98a8`** — code and schema are **in sync**, and all
@@ -893,3 +1007,4 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 ## Outstanding cleanup
 
 1. ~~Delete the exposed GitHub PAT~~ — **done**. Only an unrelated Th2 token remains in GitHub (not used by this app).
+
