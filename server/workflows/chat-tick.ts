@@ -270,12 +270,47 @@ function stateFromCursor(
   return { status: "done", awaiting: null };
 }
 
+/**
+ * Phase 4A-3b-2. A waiting booking step lives in the CONTEXT, never in the
+ * cursor: the engine persists `bookingState` itself and `flowRunner.ts:524`
+ * sets `cursor = null` (or leaves it on the booking node, whose type is neither
+ * `input.text` nor interactive). Either way the cursor-based derivation below
+ * would answer `done` and disable the visitor's buttons.
+ *
+ * Returns null when no booking step is pending, so callers fall back to the
+ * cursor/status derivation unchanged.
+ */
+function pendingBookingState(context: any, bookingEnabled: boolean): ChatState | null {
+  if (!bookingEnabled) return null;
+  const awaiting = bookingAwaitingFromContext(context);
+  if (!awaiting) return null;
+  return { status: "awaiting_input", awaiting: { kind: awaiting.kind } };
+}
+
+/** Cursor-derived state, with the pending booking step taking precedence. */
+function stateFromContext(args: {
+  definition: { nodes: any[] };
+  cursorId: string | null;
+  context: any;
+  bookingEnabled: boolean;
+}): ChatState {
+  return (
+    pendingBookingState(args.context, args.bookingEnabled) ??
+    stateFromCursor(args.definition, args.cursorId)
+  );
+}
+
 async function stateForSession(
   session: WebChatSession,
   workflow: Workflow
 ): Promise<ChatState> {
   const conv = await ensureConversationState(session);
-  return stateFromCursor(asDefinition(workflow), conv.currentNodeId ?? null);
+  return stateFromContext({
+    definition: asDefinition(workflow),
+    cursorId: conv.currentNodeId ?? null,
+    context: conv.context,
+    bookingEnabled: workflow.webChatBookingEnabled === true,
+  });
 }
 
 function stateFromRunResult(
@@ -299,11 +334,10 @@ function chatStateFrom(args: {
   context: any;
   bookingEnabled: boolean;
 }): ChatState {
-  if (args.bookingEnabled) {
-    const awaiting = bookingAwaitingFromContext(args.context);
-    if (awaiting) return { status: "awaiting_input", awaiting: { kind: awaiting.kind } };
-  }
-  return stateFromRunResult(args.definition, args.result);
+  return (
+    pendingBookingState(args.context, args.bookingEnabled) ??
+    stateFromRunResult(args.definition, args.result)
+  );
 }
 
 /**
@@ -416,7 +450,12 @@ export async function bootstrapSession(
         link,
         workflow,
         initialMessages: rows.map(toPublicMessage),
-        state: stateFromCursor(asDefinition(workflow), conv.currentNodeId ?? null),
+        state: stateFromContext({
+          definition: asDefinition(workflow),
+          cursorId: conv.currentNodeId ?? null,
+          context: conv.context,
+          bookingEnabled: workflow.webChatBookingEnabled === true,
+        }),
       };
     }
   }
@@ -615,7 +654,12 @@ export async function handleChatMessage(
       return {
         ok: true,
         messages: rows.map(toPublicMessage),
-        state: stateFromCursor(definition, conv.currentNodeId ?? null),
+        state: stateFromContext({
+          definition,
+          cursorId: conv.currentNodeId ?? null,
+          context: conv.context,
+          bookingEnabled: workflow.webChatBookingEnabled === true,
+        }),
       };
     }
 
