@@ -51,6 +51,13 @@ import { resolveWebChatLinkByToken } from "../chat-links";
 import { captureSandboxText, resolveSandboxStartNode } from "./sandbox";
 import { INTERACTIVE_NODE_TYPES, resolveButtonTarget, runFlow } from "./flowRunner";
 import { buildChatHost, toPublicMessage, type PublicMessage } from "./chat-host";
+import { bookingAwaitingFromContext } from "./booking-engine";
+import {
+  attachChatBooking,
+  isBookingButtonId,
+  runChatBookingStep,
+  type ChatBookingSession,
+} from "./chat-booking";
 
 export type { PublicMessage } from "./chat-host";
 
@@ -280,6 +287,63 @@ function stateFromRunResult(
   return { status: "done", awaiting: null };
 }
 
+/**
+ * Phase 4A-3b-2. A waiting booking step lives in the CONTEXT, not the cursor:
+ * `flowRunner.ts:524` sets `cursor = null` when the booking handler returns null
+ * (the engine already persisted its own state). So with booking enabled the
+ * context wins, and the cursor-based derivation is only the fallback.
+ */
+function chatStateFrom(args: {
+  definition: { nodes: any[] };
+  result: { status: string; cursor: string | null; stopReason?: string };
+  context: any;
+  bookingEnabled: boolean;
+}): ChatState {
+  if (args.bookingEnabled) {
+    const awaiting = bookingAwaitingFromContext(args.context);
+    if (awaiting) return { status: "awaiting_input", awaiting: { kind: awaiting.kind } };
+  }
+  return stateFromRunResult(args.definition, args.result);
+}
+
+/**
+ * Build the tick's host. When `web_chat_booking_enabled` is true the booking
+ * handler is attached, which is the ONLY thing that lets a booking node run in
+ * web chat; when it is false the host is byte-identical to 4A-3a-2 and a booking
+ * node still stops as `unsupported_node`.
+ *
+ * The booking session shares the host's `messages` array so booking bubbles and
+ * message-node bubbles keep their true transcript order.
+ */
+function buildHostForTick(args: {
+  session: WebChatSession;
+  workflow: Workflow;
+  linkUserId: number;
+  conversationStateId: number;
+  previousCursor: string | null;
+  lastVisitorText?: string;
+  bookingEnabled: boolean;
+}): { host: ReturnType<typeof buildChatHost>["host"]; messages: PublicMessage[]; booking: ChatBookingSession | null } {
+  const { host, messages } = buildChatHost({
+    session: args.session,
+    linkUserId: args.linkUserId,
+    conversationStateId: args.conversationStateId,
+    lastVisitorText: args.lastVisitorText,
+  });
+
+  if (!args.bookingEnabled) return { host, messages, booking: null };
+
+  const booking: ChatBookingSession = {
+    session: args.session,
+    workflow: args.workflow,
+    conversationStateId: args.conversationStateId,
+    previousCursor: args.previousCursor,
+    messages,
+  };
+  attachChatBooking(host, booking);
+  return { host, messages, booking };
+}
+
 // ---------------------------------------------------------------------------
 // Execution logging (Q10: one row per message; transcript is the source of truth)
 // ---------------------------------------------------------------------------
@@ -394,10 +458,14 @@ export async function bootstrapSession(
     };
   }
 
-  const { host, messages } = buildChatHost({
+  const bookingEnabled = workflow.webChatBookingEnabled === true;
+  const { host, messages, booking } = buildHostForTick({
     session,
+    workflow,
     linkUserId: link.userId,
     conversationStateId: conv.id,
+    previousCursor: conv.currentNodeId ?? null,
+    bookingEnabled,
   });
 
   const result = await runFlow({
@@ -414,13 +482,117 @@ export async function bootstrapSession(
     link,
     workflow,
     initialMessages: messages,
-    state: stateFromRunResult(definition, result),
+    state: chatStateFrom({
+      definition,
+      result,
+      context: booking?.lastContext ?? result.context,
+      bookingEnabled,
+    }),
   };
 }
 
 // ---------------------------------------------------------------------------
 // Message handling
 // ---------------------------------------------------------------------------
+
+/**
+ * Phase 4A-3b-2 — answer one waiting booking step.
+ *
+ * Reached only when `web_chat_booking_enabled` is true AND the persisted
+ * context is waiting on the same input kind the visitor just sent. Mirrors the
+ * WhatsApp webhook's booking branch: the visitor row is written first, the step
+ * runs against the shared engine, and a `nextNodeId` continues the flow in-tick
+ * (WhatsApp just returns 200 and lets the next message re-enter).
+ */
+async function answerBookingStep(args: {
+  session: WebChatSession;
+  link: WebChatLink;
+  workflow: Workflow;
+  conv: { id: number; currentNodeId: string | null; context: any };
+  definition: { nodes: any[]; edges: any[] };
+  input: { type: "text" | "button"; text?: string; buttonId?: string; clientMsgId: string };
+}): Promise<ChatMessageResult> {
+  const { session, link, workflow, conv, definition, input } = args;
+
+  const visitorText =
+    input.type === "text"
+      ? input.text ?? ""
+      : findButtonTitle(definition, input.buttonId!) ?? input.buttonId!;
+
+  // Durable BEFORE execution, same ordering as every other path.
+  const visitorRow = await storage.createWebChatMessage({
+    sessionId: session.id,
+    workflowId: session.workflowId,
+    role: "visitor",
+    kind: "text",
+    payload: { type: "text", text: visitorText },
+    clientMsgId: input.clientMsgId,
+  });
+
+  const { host, messages, booking } = buildHostForTick({
+    session,
+    workflow,
+    linkUserId: link.userId,
+    conversationStateId: conv.id,
+    previousCursor: conv.currentNodeId ?? null,
+    lastVisitorText: input.type === "text" ? visitorText : "",
+    bookingEnabled: true,
+  });
+
+  const step = await runChatBookingStep(
+    booking!,
+    input.type === "text"
+      ? { type: "text", text: input.text ?? "" }
+      : { type: "button", buttonId: input.buttonId! },
+    (conv.context || {}) as any
+  );
+
+  const messageType = input.type === "text" ? "text" : "button_reply";
+
+  // Advanced the machine (`booked` / `no_slots`) — keep going in this tick.
+  if (step.handled && step.nextNodeId) {
+    const result = await runFlow({
+      definition,
+      startNodeId: step.nextNodeId,
+      context: step.context,
+      host,
+    });
+
+    await logExecution({
+      workflowId: session.workflowId,
+      sessionKey: session.sessionKey,
+      messageType,
+      errorMessage: result.error?.message ?? null,
+    });
+
+    return {
+      ok: true,
+      messages: [toPublicMessage(visitorRow), ...messages],
+      state: chatStateFrom({
+        definition,
+        result,
+        context: booking?.lastContext ?? result.context,
+        bookingEnabled: true,
+      }),
+    };
+  }
+
+  await logExecution({
+    workflowId: session.workflowId,
+    sessionKey: session.sessionKey,
+    messageType,
+  });
+
+  // Still waiting on the next step (or the step cleared the state).
+  const nextAwaiting = bookingAwaitingFromContext(booking?.lastContext ?? step.context);
+  return {
+    ok: true,
+    messages: [toPublicMessage(visitorRow), ...messages],
+    state: nextAwaiting
+      ? { status: "awaiting_input", awaiting: { kind: nextAwaiting.kind } }
+      : { status: "done", awaiting: null },
+  };
+}
 
 export async function handleChatMessage(
   session: WebChatSession,
@@ -453,6 +625,26 @@ export async function handleChatMessage(
       ? definition.nodes.find((n: any) => n?.id === cursorId)
       : undefined;
     const cursorType = nodeTypeOf(cursorNode);
+
+    // ── booking answers (4A-3b-2) ────────────────────────────────────────
+    // Runs BEFORE the post-done re-entry block. While the machine waits, the
+    // runner returns `cursor = null` (flowRunner.ts:524) because the engine
+    // persists its own state; without this interception the visitor's next
+    // answer would look like the start of a brand-new conversation and the
+    // booking context would be wiped.
+    const bookingEnabled = workflow.webChatBookingEnabled === true;
+    if (bookingEnabled) {
+      const awaiting = bookingAwaitingFromContext(conv.context);
+      const isBookingAnswer =
+        awaiting !== null &&
+        (input.type === "text"
+          ? awaiting.kind === "text"
+          : awaiting.kind === "button" && isBookingButtonId(input.buttonId));
+
+      if (isBookingAnswer) {
+        return answerBookingStep({ session, link, workflow, conv, definition, input });
+      }
+    }
 
     // ── post-done re-entry ───────────────────────────────────────────────
     // A finished conversation is not terminal. In production WhatsApp the next
@@ -494,11 +686,14 @@ export async function handleChatMessage(
         clientMsgId: input.clientMsgId,
       });
 
-      const { host, messages } = buildChatHost({
+      const { host, messages, booking } = buildHostForTick({
         session,
+        workflow,
         linkUserId: link.userId,
         conversationStateId: conv.id,
+        previousCursor: null,
         lastVisitorText: input.type === "text" ? text : "",
+        bookingEnabled,
       });
 
       const result = await runFlow({
@@ -518,7 +713,12 @@ export async function handleChatMessage(
       return {
         ok: true,
         messages: [toPublicMessage(visitorRow), ...messages],
-        state: stateFromRunResult(definition, result),
+        state: chatStateFrom({
+          definition,
+          result,
+          context: booking?.lastContext ?? result.context,
+          bookingEnabled,
+        }),
       };
     }
 
@@ -592,11 +792,14 @@ export async function handleChatMessage(
         };
       }
 
-      const { host, messages } = buildChatHost({
+      const { host, messages, booking } = buildHostForTick({
         session,
+        workflow,
         linkUserId: link.userId,
         conversationStateId: conv.id,
+        previousCursor: cursorId,
         lastVisitorText: text,
+        bookingEnabled,
       });
 
       const result = await runFlow({
@@ -616,7 +819,12 @@ export async function handleChatMessage(
       return {
         ok: true,
         messages: [toPublicMessage(visitorRow), ...messages],
-        state: stateFromRunResult(definition, result),
+        state: chatStateFrom({
+          definition,
+          result,
+          context: booking?.lastContext ?? result.context,
+          bookingEnabled,
+        }),
       };
     }
 
@@ -638,11 +846,14 @@ export async function handleChatMessage(
       clientMsgId: input.clientMsgId,
     });
 
-    const { host, messages } = buildChatHost({
+    const { host, messages, booking } = buildHostForTick({
       session,
+      workflow,
       linkUserId: link.userId,
       conversationStateId: conv.id,
+      previousCursor: cursorId,
       lastVisitorText: "",
+      bookingEnabled,
     });
 
     const result = await runFlow({
@@ -662,7 +873,12 @@ export async function handleChatMessage(
     return {
       ok: true,
       messages: [toPublicMessage(visitorRow), ...messages],
-      state: stateFromRunResult(definition, result),
+      state: chatStateFrom({
+        definition,
+        result,
+        context: booking?.lastContext ?? result.context,
+        bookingEnabled,
+      }),
     };
   } finally {
     release(session.sessionKey);
@@ -737,10 +953,14 @@ export async function restartChatSession(
       return { ok: true, messages: [], state: { status: "done", awaiting: null } };
     }
 
-    const { host, messages } = buildChatHost({
+    const bookingEnabled = workflow.webChatBookingEnabled === true;
+    const { host, messages, booking } = buildHostForTick({
       session,
+      workflow,
       linkUserId: link.userId,
       conversationStateId: conv.id,
+      previousCursor: null,
+      bookingEnabled,
     });
 
     const result = await runFlow({
@@ -750,7 +970,16 @@ export async function restartChatSession(
       host,
     });
 
-    return { ok: true, messages, state: stateFromRunResult(definition, result) };
+    return {
+      ok: true,
+      messages,
+      state: chatStateFrom({
+        definition,
+        result,
+        context: booking?.lastContext ?? result.context,
+        bookingEnabled,
+      }),
+    };
   } finally {
     release(session.sessionKey);
   }

@@ -83,6 +83,9 @@ function buildWhatsAppBookingEngine(args: {
     definition: args.definition,
     customerPhone: args.customerPhone,
     remindersSupported: true,
+    // WhatsApp keeps `bookings.workflow_id` NULL (4A-3b decision 3). Web chat
+    // sets it in ./workflows/chat-booking.ts.
+    bookingWorkflowId: null,
     effects: {
       canSend: Boolean(token),
       sendText: async (body) => {
@@ -6366,11 +6369,14 @@ export function registerRoutes(app: Express) {
 
       const link = await storage.getWebChatLinkForWorkflow(workflowId);
       if (!link) {
-        return res.json({ link: null });
+        return res.json({ link: null, allowBooking: workflow.webChatBookingEnabled === true });
       }
 
       const stats = await storage.getWebChatLinkStats(link.id);
-      res.json({ link: { ...serializeWebChatLink(link), ...stats } });
+      res.json({
+        link: { ...serializeWebChatLink(link), ...stats },
+        allowBooking: workflow.webChatBookingEnabled === true,
+      });
     } catch (error: any) {
       console.error("Get web chat link error:", error);
       res.status(500).json({ error: "Failed to get web chat link" });
@@ -6430,9 +6436,9 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Enable/disable, change expiry. `allowBooking` is rejected before validation
-  // so a 400 for an unsupported field can never be masked by another error:
-  // workflows.web_chat_booking_enabled stays inert in 4A-3a-1.
+  // Enable/disable, change expiry, and (4A-3b-2) toggle booking in web chat.
+  // `allowBooking` targets the workflow's `web_chat_booking_enabled`, not the
+  // link row, so it is validated and applied separately from the link fields.
   app.patch("/api/workflows/:id/web-chat", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
@@ -6446,16 +6452,21 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Workflow not found" });
       }
 
-      if (req.body?.allowBooking === true) {
-        return res.status(400).json({
-          error: "web_chat_booking_not_supported_yet",
-          message: "Booking in web chat is not available yet. This will be enabled in a future release.",
-        });
-      }
-
       const parsed = webChatUpdateSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      // Phase 4A-3b-2: booking in web chat is supported. `allowBooking` is not a
+      // link field — it lives on the workflow (`web_chat_booking_enabled`), which
+      // is exactly what `chat-tick.buildHostForTick` reads to decide whether to
+      // attach the booking handler to the host.
+      const allowBooking = req.body?.allowBooking;
+      if (allowBooking !== undefined && typeof allowBooking !== "boolean") {
+        return res.status(400).json({
+          error: "Invalid input",
+          details: { allowBooking: ["Expected boolean"] },
+        });
       }
 
       const link = await storage.getWebChatLinkForWorkflow(workflowId);
@@ -6467,12 +6478,28 @@ export function registerRoutes(app: Express) {
       if (parsed.data.isEnabled !== undefined) updates.isEnabled = parsed.data.isEnabled;
       if (parsed.data.expiresAt !== undefined) updates.expiresAt = parsed.data.expiresAt;
 
-      if (Object.keys(updates).length === 0) {
+      if (Object.keys(updates).length === 0 && allowBooking === undefined) {
         return res.status(400).json({ error: "No fields to update" });
       }
 
-      const updated = await storage.updateWebChatLink(link.id, updates);
-      res.json({ link: serializeWebChatLink(updated!) });
+      if (allowBooking !== undefined) {
+        await storage.updateWorkflow(workflowId, { webChatBookingEnabled: allowBooking });
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const updated = await storage.updateWebChatLink(link.id, updates);
+        return res.json({
+          link: serializeWebChatLink(updated!),
+          allowBooking:
+            allowBooking !== undefined ? allowBooking : workflow.webChatBookingEnabled === true,
+        });
+      }
+
+      // allowBooking-only PATCH: the link itself is untouched.
+      res.json({
+        link: serializeWebChatLink(link),
+        allowBooking: allowBooking as boolean,
+      });
     } catch (error: any) {
       console.error("Update web chat link error:", error);
       res.status(500).json({ error: "Failed to update web chat link" });

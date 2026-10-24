@@ -8,13 +8,13 @@
  * row so a browser can poll it back.
  *
  * Structural safety properties (load-bearing — do not "improve" these):
- *   - `handleBookingNode` is ABSENT. `flowRunner.ts:504-520` therefore takes the
- *     `!host.handleBookingNode` branch: a booking node stops the run with
- *     `status: 'stopped'`, `stopReason: 'unsupported_node'` and the cursor pinned
- *     to that node. Real bookings are not enabled in web chat (4A-3a-2). This is
- *     a compile-time absence, not a runtime check — there is no code path in this
- *     module that can create a booking row, and no `web_%` customer_phone can
- *     ever be written.
+ *   - `handleBookingNode` is still ABSENT **in this module**. Since 4A-3b-2 it is
+ *     attached from the outside (`chat-tick.buildHostForTick` → `chat-booking`)
+ *     and ONLY when `workflows.web_chat_booking_enabled` is true. For every other
+ *     workflow `flowRunner.ts:504-520` still takes the `!host.handleBookingNode`
+ *     branch: a booking node stops the run with `status: 'stopped'`,
+ *     `stopReason: 'unsupported_node'` and the cursor pinned to that node. This
+ *     module itself contains no code path that can create a booking row.
  *   - This module never imports `routes.ts`, `whapi`, `sendNodeMessage` or
  *     `sandbox-booking`. No WhatsApp traffic can originate here.
  *   - `errorPolicy: 'stop'` — a public endpoint must never 500 with a stack.
@@ -361,7 +361,8 @@ export function buildChatHost(opts: {
       }
     },
 
-    // handleBookingNode: intentionally absent — see the module header.
+    // handleBookingNode: not implemented here — `chat-tick.buildHostForTick`
+    // attaches it from `chat-booking` only when the workflow flag is on.
   };
 
   return { host, messages, inserted };

@@ -89,6 +89,19 @@ export interface BookingEngine {
    * forced off at creation time.
    */
   remindersSupported: boolean;
+  /**
+   * Phase 4A-3b-2. Defaults to true (WhatsApp). Web chat sets false: the
+   * `reschedule` / `cancel_booking` check modes and every mutating button id are
+   * gated off, because an anonymous visitor must not be able to cancel someone
+   * else's appointment. Read-only `my_bookings` stays available.
+   */
+  allowMutations?: boolean;
+  /**
+   * Phase 4A-3b-2. `bookings.workflow_id` written on create. WhatsApp leaves
+   * this unset (NULL, as before); web chat sets it to the owning workflow so a
+   * booking can be traced back to the chat it came from.
+   */
+  bookingWorkflowId?: number | null;
   effects: BookingEffects;
 }
 
@@ -124,6 +137,22 @@ const BOOKING_STEPS = new Set([
 /** True when the visitor is expected to type an answer for this step. */
 export function isBookingTextStep(step: unknown): boolean {
   return typeof step === "string" && TEXT_STEPS.has(step);
+}
+
+/**
+ * Button ids that mutate an existing booking. Gated off when
+ * `engine.allowMutations === false` (web chat): an anonymous visitor holds only
+ * an opaque session key, so a stale/forged id must never reach a cancel or a
+ * reschedule.
+ */
+const MUTATING_BUTTON_PREFIXES = [
+  "booking_reschedule_",
+  "booking_newslot_",
+  "booking_cancel_",
+];
+
+function isMutatingBookingButton(buttonId: string): boolean {
+  return MUTATING_BUTTON_PREFIXES.some((prefix) => buttonId.startsWith(prefix));
 }
 
 /**
@@ -308,7 +337,15 @@ export async function runBookingNode(
   // ── booking.check_bookings ────────────────────────────────────────────
   if (nodeType === "booking.check_bookings") {
     const config = currentNode.data?.config || {};
-    const checkType = config.checkType || "my_bookings";
+    const configuredCheckType = config.checkType || "my_bookings";
+    // Web chat (`allowMutations === false`) must never enter a mutating mode.
+    // Downgrade to the read-only list so the node still answers and continues
+    // to the `booked` handle instead of exposing cancel/reschedule rows.
+    const checkType =
+      engine.allowMutations === false &&
+      (configuredCheckType === "reschedule" || configuredCheckType === "cancel_booking")
+        ? "my_bookings"
+        : configuredCheckType;
     const localContext = (ctx || {}) as any;
 
     console.log(`[Booking] Processing check_bookings node: ${currentNodeId}, type: ${checkType}`);
@@ -558,6 +595,18 @@ export async function runBookingStep(
     const buttonId = input.buttonId;
     const bookingState = ctx.bookingState;
     const checkBookingsState = ctx.checkBookingsState;
+
+    // Phase 4A-3b-2: web chat (`allowMutations === false`) gates every mutating
+    // button id, even a stale or forged one. WhatsApp leaves the flag unset, so
+    // this branch never runs there.
+    if (engine.allowMutations === false && isMutatingBookingButton(buttonId)) {
+      if (canSend) {
+        await engine.effects.sendText(
+          "Managing existing appointments isn't available in web chat yet. Please contact us and we'll help."
+        );
+      }
+      return answered();
+    }
 
     if (bookingState) {
       // Production resolves the channel before dispatching. With no channel it
@@ -863,6 +912,7 @@ export async function runBookingStep(
         try {
           const booking = await storage.createBooking({
             userId: engine.userId,
+            workflowId: engine.bookingWorkflowId ?? null,
             staffId: bookingState.staffId,
             departmentId: bookingState.departmentId,
             customerPhone: engine.customerPhone,
@@ -1281,6 +1331,7 @@ export async function runBookingStep(
       const bookingStatus = bookingState.config?.defaultBookingStatus || "confirmed";
       const booking = await storage.createBooking({
         userId: engine.userId,
+        workflowId: engine.bookingWorkflowId ?? null,
         staffId: bookingState.staffId,
         departmentId: bookingState.departmentId,
         customerPhone: engine.customerPhone,
@@ -1389,6 +1440,7 @@ export async function runBookingStep(
       const bookingStatus = config.defaultBookingStatus || "confirmed";
       const booking = await storage.createBooking({
         userId: engine.userId,
+        workflowId: engine.bookingWorkflowId ?? null,
         staffId: bookingState.staffId,
         departmentId: bookingState.departmentId,
         customerPhone: engine.customerPhone,
@@ -1475,6 +1527,7 @@ export async function runBookingStep(
       const bookingStatus = config.defaultBookingStatus || "confirmed";
       const booking = await storage.createBooking({
         userId: engine.userId,
+        workflowId: engine.bookingWorkflowId ?? null,
         staffId: bookingState.staffId,
         departmentId: bookingState.departmentId,
         customerPhone: engine.customerPhone,

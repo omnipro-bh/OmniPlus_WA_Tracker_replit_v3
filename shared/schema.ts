@@ -491,9 +491,11 @@ export const workflows = pgTable("workflows", {
   isActive: boolean("is_active").notNull().default(true),
   entryNodeId: text("entry_node_id"), // The "welcome" message node ID
   labelManagementEnabled: boolean("label_management_enabled").notNull().default(false), // Per-workflow label assignment toggle
-  // Phase 4A-3a-1 — INERT. Booking nodes in web chat are not supported yet: the
-  // owner PATCH endpoint rejects allowBooking=true with 400, and no code path
-  // reads this column today. Reserved for 4A-3b.
+  // Phase 4A-3b-2 — LIVE. Read by `chat-tick.buildHostForTick`: when true the
+  // web-chat host gets a booking handler (mutations gated off, see
+  // ./server/workflows/chat-booking.ts); when false a booking node still stops as
+  // `unsupported_node`, exactly as in 4A-3a-2. Toggled by the owner
+  // `PATCH /api/workflows/:id/web-chat { allowBooking }`.
   webChatBookingEnabled: boolean("web_chat_booking_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
