@@ -1,5 +1,108 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-3a-1 — schema applied, code awaiting deploy ⏳
+
+> **Read this first.** The production DB is **one deploy cycle ahead of the code**.
+> The 3 tables + 2 columns below are live; the code that uses them is uncommitted
+> in the working tree. This is safe (purely additive) but the next session must
+> deploy the code before starting anything else.
+
+### Status
+
+- **Schema: APPLIED to the production DB** (2026-10-24). 3 tables (`web_chat_links`, `web_chat_sessions`, `web_chat_messages`) + 2 columns (`workflow_executions.channel`, `workflows.web_chat_booking_enabled`).
+- Applied as **17 manually-extracted statements in a single transaction** (`psql -1 -v ON_ERROR_STOP=1 -f apply-17.sql`) after a character-by-character review of the exact SQL. `psql_exit=0`, all 17 committed first attempt, no retry, nothing rolled back.
+- SQL file `sha256` verified immediately before execution: `db6e5e1458583a9ea6f585160c32ea1b18d8294c117364771795b7c2a10851f2` (66 lines, LF-only, tab indentation preserved).
+- **No `drizzle-kit push` was run.** Push proposed **18 pre-existing drift statements** on top of our 17 (4 FK DROP/ADD pairs + 10 SET DEFAULT) which would have altered `sent_messages`, `plans`, `use_cases`, `users`, `channel_days_ledger`, `booking_custom_fields*` — excluded per the do-not-touch constraint. See "The 18 pre-existing drift statements" below.
+- **Code: implemented, `check` + `build` clean, NOT committed, NOT deployed, NOT curl-verified.** Reviewed at diff level and approved; not line-by-line.
+- Progress is deliberately stopping at **~82% session budget** so the deploy + 10-point curl verification get fresh budget — same discipline as 4A-2a and 4A-2d.
+
+### Files in working tree (uncommitted)
+
+| Status | File | +/− |
+|---|---|---|
+| M | `shared/schema.ts` | +115 / −2 |
+| M | `server/storage.ts` | +217 / −1 |
+| M | `server/auth.ts` | +136 / −1 |
+| M | `server/routes.ts` | +213 / −0 |
+| **A** | `server/chat-links.ts` | +110 / −0 |
+| | **Total** | **826 added / 4 removed** |
+
+`HANDOFF.md` (this commit) is the only other change.
+
+### Verification already done
+
+- **`npm run check`** — 9 pre-existing errors only, **0 in changed files**. Two line numbers shifted as a result of the insertions and were confirmed to be the same pre-existing statements: `server/storage.ts:1133` (was 1004, `createLabelLog`) and `shared/schema.ts:1447` (was 1250, `insertLabelLogSchema`).
+- **`npm run build`** — success. Client `index-Btd5eCWG.js` 2,831.05 kB (hash **did** change vs `index-BRiu9BQK.js` 2,828.90 kB, because the client imports `@shared/schema` at runtime — e.g. `CUSTOM_FIELDS_DEFAULT_LIMIT`, `insertUseCaseSchema`). CSS `index-DAPYGFes.css` unchanged. Server `server-dist/index.js` **782.8 kB** (was 764.6 kB).
+- **Security verification** — 0 `/api/public/chat` endpoints; `tokenHash` never referenced in any web-chat route; no `hashPreview`; `serializeWebChatLink` uses an explicit 7-key whitelist (cannot leak by spread); plaintext returned only by POST create (`routes.ts:6352`) and POST rotate (`6439`); 0 client files touched; 0 forbidden files touched (`flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`, `routes.ts:8247-8873`, `sendNodeMessage`, `executeHttpNode`, `conversation_states`, `sent_messages`, `bookings`, enums); `requireChatSession` exported but unimported (intentionally — wired in 4A-3a-2); no new dependencies.
+
+### Schema verification (information_schema, post-apply)
+
+| Check | Expected | Actual | Result |
+|---|---|---|---|
+| Tables | 3 | `web_chat_links`, `web_chat_messages`, `web_chat_sessions` | ✅ |
+| `workflow_executions.channel` | text / NOT NULL / `'whatsapp'` | text / NO / `'whatsapp'::text` | ✅ |
+| `workflows.web_chat_booking_enabled` | boolean / NOT NULL / `false` | boolean / NO / `false` | ✅ |
+| Constraints `web_chat_%` | 9 (3 PK + 6 FK) | 9 — `f`=6, `p`=3 | ✅ |
+| FK definitions | all `ON DELETE CASCADE` | all 6 exact (incl. `messages.session_id → web_chat_sessions.id`, `sessions.link_id → web_chat_links.id`) | ✅ |
+| Indexes `web_chat_%` | 9 (3 pkey + 6 created) | 9 | ✅ |
+| Index definitions | 4 unique + 2 composite | `token_hash`, `workflow_id`, `session_key`, `(session_id, client_msg_id)` unique; `(session_id, id)`, `(workflow_id, last_seen_at)` plain; column order exact | ✅ |
+| Column inventory | 10 / 9 / 10 | 10 / 9 / 10 | ✅ |
+| Identity sequences | 3 | `web_chat_{links,messages,sessions}_id_seq` | ✅ |
+
+### Current DB state
+
+Schema is **ahead of code by one deploy cycle**. Safe because every change is purely additive:
+
+- The 3 new tables are unused by the running `db2c0db` build.
+- Both new columns are `NOT NULL` **with** defaults, so the 11 existing `workflow_executions` insert sites (which omit `channel`) take `'whatsapp'`; `workflows.web_chat_booking_enabled` defaults to `false` and is inert.
+- No behavioural change to WhatsApp traffic, the sandbox, or bookings.
+
+### The 18 pre-existing drift statements (recorded, NOT applied)
+
+**Group A — 4 FK DROP/ADD pairs (PostgreSQL 63-char identifier truncation).** The DB holds the truncated constraint name; drizzle compares against the untruncated name it generates, so it proposes DROP + ADD:
+
+| Current DB constraint | len | Drizzle's desired name | len |
+|---|---|---|---|
+| `channel_days_ledger_balance_transaction_id_balance_transactions` | 63 | `…_balance_transactions_id_fk` | 68 |
+| `booking_custom_fields_calc_field_a_id_booking_custom_fields_id_` | 63 | `…_id_fk` | 64 |
+| `booking_custom_fields_calc_field_b_id_booking_custom_fields_id_` | 63 | `…_id_fk` | 64 |
+| `booking_custom_field_values_field_id_booking_custom_fields_id_f` | 63 | `…_id_fk` | 62 |
+
+Three of the four desired names exceed 63 chars → Postgres truncates them straight back to the existing name → **the same DROP/ADD reappears on every future `db:push`**. Pre-existing; not introduced by 4A-3a-1.
+
+**Group B — 10 `SET DEFAULT` statements (semantic no-ops).** Every proposed default is already in effect, differing only in text form: `plans.*` (`'-1'::integer` vs `-1`, incl. `page_access` jsonb), `use_cases.images` (`'{}'::text[]` vs `'{}'`), `users.bulk_webhook_token` / `workflows.webhook_token` (`(gen_random_uuid())::text` vs `gen_random_uuid()::text`), `sent_messages.expires_at` (`(now() + '24:00:00'::interval)` vs `NOW() + INTERVAL '24 hours'`). Drizzle's textual comparison cannot normalise these.
+
+**Future fix (out of 4A-3a-1 scope, tracked as follow-up):** explicit ≤63-char FK names + normalised defaults in `shared/schema.ts`, touching ~6 unrelated tables. Until then, `db:push` will always show these 18 statements and must not be run blindly.
+
+### Next session — start here
+
+1. `git add` the 5 files → commit — proposed message: `feat(workflow): Phase 4A-3a-1 — web chat schema + auth foundation`
+2. Push `origin main`
+3. VPS: backup → `git pull` → `npm ci --include=dev` → `npm run build` → `pm2 restart omniplus --update-env` → error log check
+4. Run the **10-point curl verification** (sub-phase plan a-1 acceptance criteria):
+   1. `POST /api/workflows/:id/web-chat` → 201 + `{ url, token }`; DB stores only a 64-char SHA-256 hash
+   2. `GET` → link metadata only (no token, no tokenHash)
+   3. `POST` duplicate → 409 `already_exists`
+   4. `POST …/rotate` → new token resolves, old token no longer resolves
+   5. PATCH `isEnabled:false` → resolution returns null
+   6. `DELETE` → row gone + cascaded sessions/messages gone
+   7. Cross-tenant workflow → 404
+   8. PATCH `{ allowBooking: true }` → 400 `web_chat_booking_not_supported_yet`; `false` → 200
+   9. `POST /api/workflows` with `webChatBookingEnabled: true` → created workflow still has `false` (whitelist holds)
+   10. `GET /api/workflow-logs` → rows include `channel='whatsapp'`
+5. If all 10 pass: HANDOFF docs commit + mark 4A-3a-1 complete.
+6. If any fail: diagnose; **do not proceed to 4A-3a-2.**
+
+### Follow-ups (recorded here, deliberately NOT applied to AGENTS.md this phase)
+
+- **AGENTS.md step 3 (`db:push`) is currently broken.** It fails with `SELF_SIGNED_CERT_IN_CHAIN` because drizzle-kit's `pg` driver (≥8.11) verifies the SSL chain for `sslmode=require`, while the pooler presents a self-signed chain. The app is unaffected (`@neondatabase/serverless` over WSS). Adding `dbCredentials.ssl` to the drizzle config is **ignored** — the URL's `sslmode` wins. Documented workaround: for schema pushes, load `DATABASE_URL` from `.env` with `sslmode=require → sslmode=no-verify` **for that one process only**. Note `psql`/libpq is unaffected (`require` ≠ `verify-full`), so a manual apply needs no workaround. **Do NOT modify AGENTS.md in this phase.**
+- **18 pre-existing drift statements** — Group A + Group B above.
+- **Stale lines 90–91 fixed in this same commit** (they still claimed `db2c0db` was repo HEAD and that only `HANDOFF.md` was modified).
+
+### Session ended at ~82%
+
+Stopped before deploy so the 10-point verification has full budget to diagnose a failure rather than rush it.
+
 ## Phase 4A-2d — COMPLETE ✅ (deployed `db2c0db`, browser-verified, test 14b PASS)
 
 ### Status
@@ -87,11 +190,11 @@ Entry → department list (3 demo services) · department → provider list (`De
 ## Current state
 
 - Production HEAD (deployed/running on VPS): **`db2c0db`** (Phase 4A-2d — mock booking in the sandbox; 14/14 checks + safety test 14b PASS).
-- Repo HEAD: `db2c0db` + the pending docs-only HANDOFF update below.
-- **Working tree: only `HANDOFF.md` modified** (pending review/commit). No code changes outstanding, nothing staged.
-- **Next phase: 4A-3 (web chat adapter) — starts with a design pass**, not code. See "Next phase — 4A-3" above.
+- Repo HEAD: **this docs commit** (4A-3a-1 schema applied; code still uncommitted — see the top section).
+- **Working tree: the 5 4A-3a-1 code files remain uncommitted** (`shared/schema.ts`, `server/storage.ts`, `server/auth.ts`, `server/routes.ts`, new `server/chat-links.ts`; +826/−4). Nothing staged.
+- **Next: deploy 4A-3a-1 code + run the 10-point curl verification** — see "Next session — start here" at the top. (The 4A-3 design pass is complete; 4A-3a-2/3 follow.)
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push.**
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push. 4A-3a-1 DOES add schema** — applied manually 2026-10-24 (3 `web_chat_*` tables + 2 columns; see the top section).
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed). COMPLETE.**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
