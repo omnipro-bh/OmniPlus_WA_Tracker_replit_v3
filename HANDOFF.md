@@ -1,8 +1,120 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-3b-1 — booking engine extracted, awaiting commit + deploy + WhatsApp regression
+
+> **Read this first.** The booking state machine now lives in a shared module and production
+> WhatsApp is rewired onto it, but the work is **local only**: `npm run check` and `npm run build`
+> are clean, the changes are **NOT committed** and **NOT deployed**, so the live bot still runs the
+> pre-extraction code. The working tree is **dirty on purpose** (3 files). Next session must
+> commit → deploy → run a full WhatsApp booking regression before 4A-3b-2 begins.
+
+### Status
+
+- **Code: extracted and locally verified. NOT committed, NOT deployed.** No `db:push` (no schema
+  change) and no new dependencies.
+- **WhatsApp booking flow rewired** onto the new shared `server/workflows/booking-engine.ts`
+  (`runBookingNode`, `runBookingStep`). Behaviour is intended to be identical to the inline code,
+  including the production send-then-save ordering and the silent `200` when no channel can send.
+- **Web chat safety gate remains intact.** `chat-host.ts` still has **no** `handleBookingNode`, so
+  `flowRunner.ts` still stops every booking node as `unsupported_node`. `web_chat_booking_enabled`
+  is still read by nothing, and the owner `PATCH /api/workflows/:id/web-chat` still rejects
+  `allowBooking: true` with `400 web_chat_booking_not_supported_yet`.
+- **`chat-host.ts` and `chat-tick.ts` untouched.** `flowRunner.ts`, `shared/schema.ts` and
+  `server/storage.ts` are unchanged too.
+- `booking-engine.ts` imports **no** `whapi`, `express` or `../db` — delivery and persistence are
+  injected through `BookingEffects` (`sendText`, `sendList`, `saveState`, `canSend`, `log`).
+
+### Files in the working tree (uncommitted)
+
+| Status | File | +/− | Contents |
+|---|---|---|---|
+| **??** | `server/workflows/booking-engine.ts` | **+1,555** (new) | shared state machine: `runBookingNode`, `runBookingStep`, `bookingAwaitingFromContext`, `isBookingTextStep`, `BookingEngine` / `BookingEffects` |
+| **M** | `server/routes.ts` | **+157 / −1,281** | three inline blocks replaced by engine calls + a `buildWhatsAppBookingEngine` adapter (import + 3 call sites) |
+| **M** | `server/worker.ts` | **+6 / −2** | reminder loop skips `customer_phone LIKE 'web_%'` (defensive; no web-chat bookings exist yet) |
+| | **Total** | **~+1,718 / −1,283** | 3 files (1 new, 2 modified) |
+
+> `git diff -w --stat` (whitespace-ignoring) reports `265 / 1,389` for `routes.ts` and
+> `+1,826 / −1,391` overall. The in-line diff is larger because the moved blocks change
+> indentation. The authoritative parity check is the call-site table below, not the line count.
+
+### Extraction map
+
+| Engine section | Came from `routes.ts` (pre-extraction) |
+|---|---|
+| `runBookingNode` — `booking.book_appointment` | `11340–11466` |
+| `runBookingNode` — `booking.check_bookings` (`my_bookings`, reschedule/cancel list) | `11468–11670` |
+| `runBookingStep` — `booking_dept_*` / `booking_staff_*` / `booking_slot_*` (+ create) | `9740–10129` |
+| `runBookingStep` — `booking_reschedule_*` / `booking_newslot_*` / `booking_cancel_*` | `10132–10410` |
+| `runBookingStep` — `enter_name` / `enter_custom1` / `enter_custom2` | `10563–10866` |
+
+### Verification already done
+
+- `npm run check` — **9 pre-existing errors only**, 0 in the changed files (`admin.tsx:1284`,
+  `outbox.tsx:727`, `whapi-settings.tsx:24,25,145`, `storage.ts:1140`, `schema.ts:1447`,
+  `vite.config.ts:14,16`).
+- `npm run build` — **success**. Client `index-DVMAV9_N.js` (hash unchanged, expected); server
+  `810.4 kB` (was `821.6 kB`).
+- **Logic parity against the removed blocks:** 35 `saveState` calls, 31 `sendText`, 5 `sendList`,
+  4 `storage.createBooking`, 7 `getNextNodeByHandle`, 7 `booked` / 2 `no_slots` handles and
+  3 execution-log entries — **all match exactly**.
+- **60 literal tokens match** (every default/error message, `booking_*` id prefix, config key,
+  step name, and `{{date}}`/`{{time}}`/`{{department}}`/`{{staff}}`/`{{name}}` placeholder).
+- **0** `whapi.` / `res.` / `db` / `express` references inside `booking-engine.ts`.
+
+### Three documented, behaviour-neutral deviations
+
+1. **Channel gate** is `effects.canSend` instead of an inline `activeChannel?.whapiChannelToken`
+   check. Outcomes are unchanged: departments present + no channel → `null` with no state write;
+   no departments → advance to `no_slots` without a send; a step with no channel → silent `200`
+   with no state write.
+2. **`previousCursor` is passed explicitly** (`state.currentNodeId ?? null`) instead of reading the
+   mutated closure. Production's `liveHost.persist` never updates `state.currentNodeId`, so the
+   value is identical to the old comparison.
+3. **`saveState`** replaces the literal `db.update(conversationStates)` blocks and reproduces all
+   three patch shapes (`{context}`, `{context, lastMessageAt}`, `{context, currentNodeId}`).
+   The historical **send → save** order is preserved deliberately; 3b-2 may change it for web chat
+   only, behind the flag.
+
+`BookingStepResult.nextNodeId` is returned by the engine but **ignored** by the WhatsApp routes
+(they just return `200`, exactly as before). It is inert in 3b-1 and is the field 3b-2 will use to
+continue into the `booked` branch in-tick.
+
+### Decisions carried into 3b-2
+
+1. Split 3b-1 (extract) / 3b-2 (wire web chat).
+2. Ship all three `check_bookings` modes in the engine; gate the mutating ones off in web chat.
+3. Web-chat bookings set `bookings.workflow_id`; WhatsApp keeps it `NULL`.
+4. Web-chat bookings force `reminder_enabled = false` **and** keep the worker `web_%` guard.
+5. Owner surface stays **API only** (no owner UI).
+6. Reproduce the silent `200` for `no_slots` / no-channel in the WhatsApp adapter.
+7. Anonymous cancel/reschedule stay gated off for web chat.
+8. Accept the current name requirement as-is.
+
+### Next session — start here
+
+1. **Commit the 3 files** (engine + routes + worker) with a `feat`/`refactor` message; keep this
+   docs commit separate from the code diff.
+2. **Deploy:** backup → `git pull` → `npm ci --include=dev` → `npm run build` → `pm2 restart` →
+   error-log scan (**no `db:push`** — no schema change).
+3. **REGRESSION TEST (blocking):** run a full live WhatsApp booking
+   (department → staff → slot → name → `booked`) plus one `check_bookings` path, and confirm one
+   booking row is created with the expected `customer_phone`. Also confirm a no-channel / no-slots
+   path still returns silently.
+4. **Only if green:** start 3b-2 — `chat-host.handleBookingNode`, `chat-tick` booking step
+   interception, flip `web_chat_booking_enabled`, remove the owner-API `allowBooking` block, and
+   run the inverted safety gate (gate #10b: exactly one booking with
+   `customer_phone LIKE 'web_%'`).
+
+### Important: do not deploy without the regression
+
+The extraction is mechanically verified (parity + type-check + build) but has **never executed** in
+production. The live bot still uses the old inline code until the deploy in step 2. If the
+regression fails, `git revert` the code commit (this docs commit is independent) — no schema or job
+changes are involved.
+
 ## Phase 4A-3a-3 — COMPLETE ✅ (deployed `0814918`, browser-verified)
 
-> **Read this first.** Production and repo are aligned at **`0814918`** — code `293de09` + docs
+> **Historical.** Production and repo are aligned at **`0814918`** — code `293de09` + docs
 > `0814918` were fast-forwarded (`8df98a8..0814918`) and the public chat UI is **browser-verified
 > on desktop and mobile**. **Feature 4A-3 (Web Chat Adapter) is fully complete.** Next:
 > **4A-3b (real bookings in web chat)** — the extract-once B1 phase. Working tree is **clean** and
