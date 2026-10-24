@@ -541,6 +541,8 @@ export default function WorkflowTestPanel({
 
   const variables = flattenContext(context);
   const canSendText = awaiting?.kind === "text" && !isLoading;
+  // 4A-2d: sticky for the whole session (survives bookingState being cleared).
+  const mockBooking = context.bookingMock === true;
 
   if (!workflowId) {
     return (
@@ -556,6 +558,15 @@ export default function WorkflowTestPanel({
       <div className="flex items-center gap-2 p-3 border-b flex-shrink-0">
         <TestTube className="h-4 w-4 text-primary shrink-0" />
         <span className="font-semibold text-sm">Test flow</span>
+        {mockBooking ? (
+          <Badge
+            variant="outline"
+            className="h-4 shrink-0 border-amber-500/60 px-1.5 text-[10px] text-amber-600 dark:text-amber-400"
+            data-testid="badge-test-panel-mock-booking"
+          >
+            MOCK
+          </Badge>
+        ) : null}
         <Select
           value={httpMode}
           onValueChange={(v) => {
@@ -604,6 +615,16 @@ export default function WorkflowTestPanel({
         </Badge>
       </div>
 
+      {/* Mock booking notice — non-dismissible while bookingMock is set */}
+      {mockBooking ? (
+        <div className="px-3 pt-2 flex-shrink-0" data-testid="banner-test-panel-mock-booking">
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+            Demo booking — synthetic services, providers, times and slots. No booking is created and no
+            message is sent.
+          </div>
+        </div>
+      ) : null}
+
       {/* Banners */}
       {error ? (
         <div className="px-3 pt-2 flex-shrink-0">
@@ -621,7 +642,7 @@ export default function WorkflowTestPanel({
               const stoppedEntry = [...trace].reverse().find(t => t.outcome === "stopped");
               const nodeType = stoppedEntry?.nodeType || "unknown";
               if (nodeType.startsWith("booking.")) {
-                return "Flow stopped — see trace (Booking nodes are not executed in the sandbox.)";
+                return `Flow stopped — see trace (Unsupported booking node type: "${nodeType}".)`;
               }
               return `Flow stopped — see trace (Unsupported node type: "${nodeType}". Replace or remove this node to run the full flow in the sandbox.)`;
             })()}

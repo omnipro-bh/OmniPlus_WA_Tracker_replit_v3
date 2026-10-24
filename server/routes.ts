@@ -43,6 +43,7 @@ import {
 import { VARIABLE_NAME_RE, validateWorkflowNodeConfigs } from "@shared/workflow-validation";
 import { buildSandboxHost, resolveSandboxStartNode, captureSandboxText, assembleSandboxResponse, sandboxTickSchema } from "./workflows/sandbox";
 import { checkSandboxThrottled, recordSandboxTick } from "./workflows/sandbox-rate-limit";
+import { dispatchSandboxBookingTick } from "./workflows/sandbox-booking";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -6874,8 +6875,11 @@ export function registerRoutes(app: Express) {
 
   // Phase 4A-2b — sandbox tick. Stateless: the client sends the draft graph +
   // cursor + context on every tick. No conversation_states / sent_messages /
-  // workflow_executions writes; no Whapi sends. Booking nodes stop with
-  // unsupported_node (the sandbox host omits handleBookingNode).
+  // workflow_executions writes; no Whapi sends.
+  // Phase 4A-2d — booking nodes are executed by a MOCK handler (synthetic
+  // services/providers/slots; nothing is persisted, no row is ever created).
+  // Booking sub-flow responses are dispatched before the normal button/text
+  // routing via dispatchSandboxBookingTick().
   app.post("/api/workflows/:id/sandbox-tick", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const effectiveUserId = getEffectiveUserId(req);
@@ -6907,10 +6911,11 @@ export function registerRoutes(app: Express) {
         edges: Array.isArray(body.definitionJson?.edges) ? body.definitionJson.edges : [],
       };
 
-      const { host, messages } = buildSandboxHost({
+      const { host, messages, drainBookingTrace } = buildSandboxHost({
         httpMode: body.httpMode,
         userId: effectiveUserId,
         maxSteps: body.maxSteps,
+        definition,
       });
 
       // ── start ──────────────────────────────────────────────────────────
@@ -6935,7 +6940,9 @@ export function registerRoutes(app: Express) {
         }
 
         const result = await runFlow({ definition, startNodeId, context: body.context, host });
-        return res.json(assembleSandboxResponse(result, definition, messages));
+        return res.json(
+          assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+        );
       }
 
       // ── button ─────────────────────────────────────────────────────────
@@ -6943,6 +6950,34 @@ export function registerRoutes(app: Express) {
         const buttonId = body.input.buttonId;
         if (!buttonId) {
           return res.status(400).json({ error: "buttonId required for button input" });
+        }
+
+        // 4A-2d: booking sub-flow steps (service/provider/slot/reschedule picks)
+        // are not graph edges — they are answered by the mock state machine.
+        const bookingTick = dispatchSandboxBookingTick({
+          definition,
+          context: body.context,
+          cursor: body.cursor ?? null,
+          input: { type: "button", buttonId },
+          messages,
+        });
+
+        if (bookingTick.handled) {
+          if ("resumeFrom" in bookingTick) {
+            const result = await runFlow({
+              definition,
+              startNodeId: bookingTick.resumeFrom,
+              context: bookingTick.context,
+              host,
+            });
+            return res.json(
+              assembleSandboxResponse(result, definition, messages, [
+                ...bookingTick.trace,
+                ...drainBookingTrace(),
+              ])
+            );
+          }
+          return res.json(bookingTick.response);
         }
 
         const edge = resolveButtonTarget(definition, buttonId);
@@ -6956,10 +6991,40 @@ export function registerRoutes(app: Express) {
           context: body.context,
           host,
         });
-        return res.json(assembleSandboxResponse(result, definition, messages));
+        return res.json(
+          assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+        );
       }
 
       // ── text ───────────────────────────────────────────────────────────
+      // 4A-2d: booking name / custom-question answers are consumed by the mock
+      // state machine before the input.text capture path is considered.
+      const textBookingTick = dispatchSandboxBookingTick({
+        definition,
+        context: body.context,
+        cursor: body.cursor ?? null,
+        input: { type: "text", text: body.input.text },
+        messages,
+      });
+
+      if (textBookingTick.handled) {
+        if ("resumeFrom" in textBookingTick) {
+          const result = await runFlow({
+            definition,
+            startNodeId: textBookingTick.resumeFrom,
+            context: textBookingTick.context,
+            host,
+          });
+          return res.json(
+            assembleSandboxResponse(result, definition, messages, [
+              ...textBookingTick.trace,
+              ...drainBookingTrace(),
+            ])
+          );
+        }
+        return res.json(textBookingTick.response);
+      }
+
       // Fresh-start semantics: a null cursor is only valid for 'start' (§C.15).
       const cursorId = body.cursor as string;
       if (!cursorId) {
@@ -7006,7 +7071,9 @@ export function registerRoutes(app: Express) {
         context: capture.nextContext,
         host,
       });
-      return res.json(assembleSandboxResponse(result, definition, messages));
+      return res.json(
+        assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+      );
     } catch (error: any) {
       console.error("Sandbox tick error:", error);
       return res.status(500).json({ error: error.message || "Sandbox tick failed" });

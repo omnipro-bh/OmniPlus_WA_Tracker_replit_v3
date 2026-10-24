@@ -12,7 +12,10 @@
  *   https-only + admin allowlist + no-redirect rules of production.
  * - `persist` is a no-op; the runner returns its working context/cursor in
  *   `RunResult` and the sandbox must never write conversation_states.
- * - `handleBookingNode` is omitted so booking nodes stop with `unsupported_node`.
+ * - `handleBookingNode` is a MOCK (4A-2d): it walks the booking sub-flow with
+ *   synthetic fixtures via ./sandbox-booking, never touching the DB or Whapi.
+ *   The trace it produces is exposed through `drainBookingTrace()` and merged
+ *   into the response by the assembler.
  * - `recordTrace` is omitted; the response trace comes straight from
  *   `RunResult.trace` (the runner always accumulates it internally).
  * - `sendMessage` builds a normalized, panel-friendly bubble (a discriminated
@@ -31,6 +34,11 @@ import {
   type TraceEntry,
 } from "./flowRunner";
 import { VARIABLE_NAME_RE } from "@shared/workflow-validation";
+import {
+  deriveBookingAwaiting,
+  runMockBookingNode,
+  type MockBookingTraceEntry,
+} from "./sandbox-booking";
 
 /** Sandbox-only cap on a live HTTP response body echoed back to the panel. */
 const SANDBOX_HTTP_DATA_CAP_BYTES = 64 * 1024;
@@ -272,14 +280,23 @@ export interface SandboxHostBundle {
   host: FlowHost;
   /** Exposed so the endpoint can prepend the invalid-text re-prompt bubble. */
   messages: SandboxMessage[];
+  /**
+   * Mock-booking trace entries produced by `handleBookingNode` during this
+   * request. Drain before assembling the response (4A-2d).
+   */
+  drainBookingTrace: () => MockBookingTraceEntry[];
 }
 
 export function buildSandboxHost(opts: {
   httpMode: "mock" | "live";
   userId: number;
   maxSteps?: number;
+  /** Draft graph — only the edges are used, for the `booked` / `no_slots` lookups. */
+  definition?: { nodes?: any[]; edges?: any[] };
 }): SandboxHostBundle {
   const messages: SandboxMessage[] = [];
+  const bookingTrace: MockBookingTraceEntry[] = [];
+  const edges = Array.isArray(opts.definition?.edges) ? (opts.definition!.edges as any[]) : [];
 
   const host: FlowHost = {
     errorPolicy: "stop",
@@ -368,12 +385,23 @@ export function buildSandboxHost(opts: {
       return ctx;
     },
 
-    // handleBookingNode: intentionally absent → booking nodes stop with
-    // unsupported_node (the panel footnote says booking nodes aren't executed).
+    // Phase 4A-2d: mock booking. Synthetic services/providers/slots only —
+    // this module cannot read or write production booking data.
+    handleBookingNode: async (node, nodeId, ctx) =>
+      runMockBookingNode(node, nodeId, ctx, { edges, messages, trace: bookingTrace }),
+
     // recordTrace: intentionally absent → response.trace comes from RunResult.trace.
   };
 
-  return { host, messages };
+  return {
+    host,
+    messages,
+    drainBookingTrace: () => {
+      const drained = [...bookingTrace];
+      bookingTrace.length = 0;
+      return drained;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -476,12 +504,28 @@ export function captureSandboxText(
 export function assembleSandboxResponse(
   result: RunResult,
   definition: { nodes: any[]; edges: any[] },
-  messages: SandboxMessage[]
+  messages: SandboxMessage[],
+  extraTrace: MockBookingTraceEntry[] = []
 ): SandboxTickResponse {
+  // Mock-booking trace entries have no runner sequence number — append and
+  // renumber them after `result.trace` (4A-2d).
+  const trace: TraceEntry[] = [
+    ...result.trace,
+    ...extraTrace.map((entry, index) => ({
+      ...entry,
+      seq: result.trace.length + index + 1,
+    })),
+  ];
+
   const cursorNode = result.cursor
     ? definition.nodes.find((n: any) => n?.id === result.cursor)
     : undefined;
   const cursorType = cursorNode?.data?.type || cursorNode?.data?.nodeType;
+
+  let status: RunStatus = result.status;
+  let cursor: string | null = result.cursor;
+  let stopReason: StopReason | undefined =
+    result.stopReason ?? (result.status === "done" ? "no_next_node" : undefined);
 
   let awaiting: SandboxAwaiting | null = null;
   if (result.status === "awaiting_input" && result.cursor) {
@@ -491,14 +535,30 @@ export function assembleSandboxResponse(
         : { kind: "button", nodeId: result.cursor };
   }
 
+  // A booking prompt returns `{ nextNodeId: null }` from the host, which the
+  // runner reports as `done` (the frozen contract cannot express "awaiting at a
+  // booking node"). Re-derive it here. Fail-graceful: a malformed mock state
+  // yields null and the raw `done` status flows through untouched.
+  if (status === "done") {
+    const pending =
+      deriveBookingAwaiting(result.context?.bookingState) ??
+      deriveBookingAwaiting(result.context?.checkBookingsState);
+    if (pending) {
+      status = "awaiting_input";
+      cursor = pending.nodeId;
+      stopReason = undefined;
+      awaiting = pending;
+    }
+  }
+
   return {
-    status: result.status,
-    stopReason: result.stopReason ?? (result.status === "done" ? "no_next_node" : undefined),
-    cursor: result.cursor,
+    status,
+    stopReason,
+    cursor,
     context: result.context,
     messages,
     awaiting,
-    trace: result.trace,
+    trace,
     steps: result.steps,
     error: result.error ?? null,
   };
