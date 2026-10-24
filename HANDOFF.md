@@ -1,5 +1,101 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-3a-2 — implemented, awaiting fix + commit + deploy 🟡 IN PROGRESS
+
+> **Read this first.** Production HEAD is still **`dec6aa1`** (nothing from this phase is
+> committed or deployed). The 4A-3a-2 code is **complete and verified locally, but sitting
+> in the working tree** — 7 files, ~1,657 added / 3 removed. **ONE REAL BUG is known and
+> deliberately unfixed**; the next session applies that fix, then commits, deploys and runs
+> the 14-point curl verification. Do not run `git checkout`/`git stash` on this tree.
+
+### Status
+
+- **Code: implemented, `check` + `build` clean, NOT committed, NOT deployed, NOT curl-verified.** Production HEAD remains `dec6aa1`.
+- **ONE REAL BUG identified, fix NOT applied — post-done re-entry gap.** Once a flow finishes (`status:'done'`, `cursor:null`), a new text/button message returns `409 not_awaiting_text` forever; only `/restart` recovers. In production WhatsApp a completed conversation's next message re-enters the flow from the entry node. Web chat must match. See "ONE BUG — fix in next session before commit" below.
+- **10 deviations reviewed and accepted** (listed below).
+- **AC #12 "end → 410" implemented via the `chatGoneIfEnded` pre-middleware** — approved. It sits in front of the frozen `requireChatSession` (which reports 401 for ended sessions) and costs one indexed primary-key read per authenticated request.
+- **3 new files are currently intent-to-add** via `git add -N` (they show as `A`, not `??`). `git reset HEAD` reverts them to `??` if preferred. They are **not staged with content**.
+- Phase deliberately stopped at ~86% session budget: deploy + 14-test verification need a fresh budget, and the bug fix needs careful design + review — same discipline as 4A-2a / 4A-2d / 4A-3a-1.
+
+### Files in working tree (7 total)
+
+| Status | File | ~Lines | Contents |
+|---|---|---|---|
+| M | `server/index.ts` | +8 / −2 | `/chat/<token>` log redaction (`{20,}` so `/chat/session` stays readable) |
+| M | `server/storage.ts` | +22 | 16th method `getWebChatMessageByClientMsgId` (interface + impl) |
+| M | `server/worker.ts` | +23 | `purgeWebChat` cron at `15 3 * * *` (03:15) + `stop()` line |
+| M | `server/routes.ts` | +279 / −1 | 6 public endpoints + `chatGoneIfEnded` pre-middleware |
+| **A** | `server/workflows/chat-host.ts` | ~368 | real `FlowHost`, **no `handleBookingNode`** |
+| **A** | `server/workflows/chat-tick.ts` | ~771 | `bootstrapSession`, `handleChatMessage`, `getChatMessages`, `getRecentMessages`, `restartChatSession`, `endChatSession`, `purgeWebChat`, mutex, idempotency, `PII_SECRET` |
+| **A** | `server/chat-rate-limit.ts` | ~186 | 5 buckets / 6 Maps |
+| | **Total** | **~1,657 / 3** | |
+
+**Full diff (1,771 lines):** `C:\Users\HP\AppData\Local\Temp\opencode\4a3a2.diff`
+Regenerate with: `git diff --no-color | Out-File <path> -Encoding utf8` (note: PowerShell 5.1 `>` writes UTF-16 and reads back as binary).
+
+### Verification already done
+
+- **`npm run check`** — 9 pre-existing errors only, **0 in changed files**. `server/storage.ts` labelLog error shifted **1133 → 1140** (the +7 interface lines); same pre-existing statement.
+- **`npm run build`** — success. Server `server-dist/index.js` **819.4 kB** (was 782.8 kB). Client **unchanged**: `index-Btd5eCWG.js` 2,831.05 kB + `index-DAPYGFes.css` — confirming no client file was touched.
+- **Frozen files verified untouched** via `git diff --numstat`: `flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`, `shared/schema.ts`, `package.json`, `auth.ts`, `chat-links.ts` — none appear.
+- **`routes.ts` chatbot booking region 8247–8873 untouched.** The file has exactly **3 hunks** (`@@ -4,7`, `@@ -45,6`, `@@ -6827,6`); the region only *shifted* to **8526–9152** because of the insertions above it.
+- **Structural safety gate verified.** `chat-host.ts` imports ONLY `flowControl`-adjacent constants, `httpNodeExecutor`, `flowRunner` types, `sandbox.buildSandboxMessage`, `storage`, schema types. **NOT** `routes`, **NOT** `whapi`, **NOT** `sandbox-booking`. `handleBookingNode` absent → `flowRunner.ts:504–520` takes the `!host.handleBookingNode` branch → `stopped` / `unsupported_node` with the cursor pinned to the booking node. The gate is a compile-time absence, not a runtime check.
+- **No new dependencies** (`package.json` absent from the diff). **No schema change** (`shared/schema.ts` absent) → **no `db:push`**.
+
+### The 10 accepted deviations
+
+1. **`chatGoneIfEnded` pre-middleware** for 410 on ended sessions — approved. 1 indexed PK read per request; semantically correct (410 Gone ≠ 401 auth failure).
+2. **1,657 vs ~1,045 estimated lines** — comment density and vertical formatting; no logic duplication (7 exported functions in `chat-tick.ts`, verified).
+3. **`getChatMessages(session, workflow, sinceId, limit)`** — needs the workflow definition for state derivation, not just `sessionId`.
+4. **`bootstrapSession` 4th param `existing`** — cookie replay must know `linkId` before deciding create-vs-replay.
+5. **`restartChatSession(session, link, workflow)`** — `buildChatHost` needs `linkUserId`.
+6. **`getRecentMessages` separate from `getChatMessages`** — reload needs the **last** 200; polling needs the **first** N after `sinceId`.
+7. **Captured text persisted before `runFlow`** — prevents variable loss when a captured `input.text` is followed by a condition / terminated flow. Production has the same latent gap; the explicit write is strictly safer.
+8. **Visitor button clicks stored as `kind:'text'`** with the button title in `payload` — the schema's `kind` list is bubble types. **a-3 must render visitor rows by `role`, not `kind`.**
+9. **`cards[].media` not URL-validated** — only the 3 approved URL fields (`payload.url`, `buttons[].url`, `cards[].url`) are https-checked. Follow-up if a-3 renders `media` as anything but `<img>`.
+10. **LF vs CRLF** — new files are LF; repo is CRLF-autocrlf. Git normalizes on commit (warns only).
+
+### ONE BUG — fix in next session before commit
+
+**Post-done re-entry gap.** In `chat-tick.ts` → `handleChatMessage`, the **text path, before the `not_awaiting_text` check**.
+
+- **Fix:** if `cursor === null` AND `input.type === 'text'` → resolve the entry node (first node with no incoming edge, mirroring `resolveSandboxStartNode`), reset context to `{}`, `runFlow` from entry with the fresh context, the visitor's text becomes the first message of the new conversation, return the resulting messages + state.
+- **Buttons:** same for `input.type === 'button'` for parity (click after `done` auto-restarts from entry, then applies the button) — **or** return `409 conversation_ended_use_restart`. Decide next session. **Recommended: both auto-restart** — that is the WhatsApp behaviour, and `409 not_awaiting_text` then becomes unreachable for the `done` state.
+
+**Five properties to verify in the fix diff:**
+
+1. Trigger condition: `cursor === null && (input.type === 'text' || input.type === 'button')`
+2. Entry node resolution mirrors `resolveSandboxStartNode`
+3. Context reset to `{}` before re-running
+4. Visitor's message preserved as the first message of the new conversation (not lost)
+5. Returned state reflects the **new** conversation, not the old `'done'`
+
+### Next session — start here
+
+1. Apply the post-done re-entry fix (~15–25 lines in `chat-tick.ts`).
+2. `npm run check` + `npm run build`.
+3. Show the fix diff (~15–25 lines).
+4. Review against the 5 properties above.
+5. Commit the 7 files with the commit message drafted in the prior session.
+6. Deploy: backup → pull → `npm ci --include=dev` → build → restart → error-log check. **No `db:push`.**
+7. Run the 14-point curl verification on the VPS (**bash, not PowerShell**) — **safety gate #10 is the hard stop**.
+8. If all pass: HANDOFF completion commit, close 4A-3a-2, next phase **4A-3a-3 (public UI)**.
+
+### Follow-ups (carried forward + new)
+
+- **NEW — `cards[].media` URL validation** (deviation 9) if a-3 renders it as anything but `<img>`.
+- **NEW — nginx access log records the `/chat/<token>` page URL.** Accepted risk for a capability-in-URL design; record as a known limitation. Rotate on suspicion.
+- **NEW — post-`done` auto-restart** (the bug above) — must land before commit.
+- AGENTS.md `db:push` SSL workaround (`SELF_SIGNED_CERT_IN_CHAIN`; use `sslmode=no-verify` for that one process only) — from 4A-3a-1.
+- 18 pre-existing schema drift statements (Group A: 4 FK DROP/ADD pairs from 63-char identifier truncation; Group B: 10 `SET DEFAULT` semantic no-ops) — from 4A-3a-1.
+- 4A-2d deferred: resume-tick trace ordering; `??` precedence between `bookingState` / `checkBookingsState`.
+- `message.text` `{{variable}}` non-substitution — pre-existing 4A-2a, identical in production WhatsApp.
+- Visitor variables shadowing HTTP context — pre-existing in WhatsApp (`buildExecutionContext` spreads the conversation context last).
+
+### Session ended at ~86%
+
+Stopped deliberately before the bug fix, commit and deploy. The code is preserved in the working tree; nothing was reverted, staged for commit, or pushed. **This HANDOFF edit is the only commit from this session (docs-only).**
+
 ## Phase 4A-3a-1 — schema + auth foundation ✅ COMPLETE
 
 > **Read this first.** Production HEAD is **`6cbc749`** — deployed, live, and **all 10 curl
