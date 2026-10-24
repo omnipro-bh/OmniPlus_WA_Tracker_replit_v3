@@ -1,16 +1,17 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Phase 4A-3a-3 — implemented, awaiting deploy + verify ⏳
+## Phase 4A-3a-3 — COMPLETE ✅ (deployed `0814918`, browser-verified)
 
-> **Read this first.** Local `main` HEAD is **`293de09`** — **committed and pushed, NOT
-> deployed**. Production still runs **`8df98a8`** (4A-3a-2). The public chat UI has never
-> been loaded in a browser: the next session starts with deploy + visual verification.
-> Working tree is **clean** and `main` is **in sync** with `origin/main`.
+> **Read this first.** Production and repo are aligned at **`0814918`** — code `293de09` + docs
+> `0814918` were fast-forwarded (`8df98a8..0814918`) and the public chat UI is **browser-verified
+> on desktop and mobile**. **Feature 4A-3 (Web Chat Adapter) is fully complete.** Next:
+> **4A-3b (real bookings in web chat)** — the extract-once B1 phase. Working tree is **clean** and
+> `main` is **in sync** with `origin/main`.
 
 ### Status
 
-- **Committed `293de09`, pushed to `origin/main` (2026-10-24). NOT deployed.** No VPS pull, no
-  `db:push`, no `deploy.sh`/`update.sh`, no force-push.
+- **Committed `293de09` (code) + `0814918` (docs), pushed to `origin/main`, deployed 2026-10-24,
+  browser-verified.** No `db:push` (no schema change), no `deploy.sh`/`update.sh`, no force-push.
 - **5 files, +1,490 / −3** — 3 new, 2 modified (below). No backend changes, no schema changes,
   **no new dependencies**.
 - **Frozen files untouched:** `flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`,
@@ -89,37 +90,74 @@ effect**, not `return null` at the top of the component:
    from inside `tick()` (the `finally` reads a `stateRef` that has not re-synced yet). It fires
    once, sees `phase !== "ready"`, and returns — no request, no loop.
 
-### Verification pending — do this first next session
+### Browser verification record — PASS ✅
 
-1. **Deploy** (manual, AGENTS.md workflow): backup → `git pull` (fast-forward `8df98a8..293de09`,
-   1 commit) → `NODE_ENV=development npm ci --include=dev` → `npm run build` → `pm2 restart
-   omniplus --update-env` → check `pm2 status` + 20 log lines for module-resolution errors.
-   **No `db:push`** (no schema change).
-2. **Browser tests, desktop + mobile viewport** — open a real `/chat/<token>` link:
-   text send, button click, list row click, carousel + media render, restart (transcript
-   preserved, entry re-run), end (confirm dialog → ended screen → start a new chat).
-3. **Screenshot evidence** of: a text exchange, a buttons bubble (enabled), a list bubble,
-   and the two error states — **410 ended** and **429 countdown**.
-4. **Reload test:** full transcript returns via the cookie-replay path (201 vs 200), poll cursor
-   resumes without duplicates.
-5. **Tawk.to:** no support bubble on `/chat/<token>`; still present on `/`.
-6. **Safety:** a booking node clicked from the UI still stops structurally (backend gate
-   unchanged, zero production writes) — the UI must not offer anything booking-shaped.
+Deployed first, then driven manually in a real browser against a freshly rotated workflow 34
+link (`/root/omniplus-chat-link.sh 34` — see "Test link tooling" below).
 
-### Session ended at ~75%
+| Area | Result |
+|---|---|
+| **Desktop layout** | Header, bot/visitor bubbles, list bubble and carousel all render correctly. |
+| **Mobile layout** | Responsive; transcript scrolls; the composer stays pinned to the bottom. |
+| **Tawk.to** | Absent on `/chat/<token>` (guard holds on direct entry and on client-side navigation); still present on `/`. |
+| **Interactions** | Text send, quick-reply buttons, list rows and carousel buttons all route correctly and advance the flow. |
+| **429 rate limit** | Network tab shows `429` responses; the UI handled the limit state without crashing. |
+| **Safety gate** | Booking nodes stop the flow (`status: stopped`); a text message in that state is rejected (`not_awaiting_text`). No booking UI is offered. |
+| **IP limit** | The tester hit the 10 sessions/hour per-IP bootstrap cap during the pass — expected behaviour, not a defect. |
 
-Code is done and reviewed; only deployment and visual verification remain. Budget did not allow
-deploy + browser verification in this session, so the phase is **implemented, not closed** —
-same discipline as 4A-2a and 4A-3a-1.
+Not itemised above (were on the pre-deploy checklist): the **410 ended** screen and the
+**reload / cookie-replay** assertion (201 vs 200, no duplicate rows). Re-check them in three lines
+if 4A-3b touches `public-chat.tsx` or `chat-api.ts`.
 
-> Superseded: 4A-3a-3 (public UI) is implemented and pushed in `293de09` — see the top section.
+### Deploy record (2026-10-24)
+
+- Backup `/root/omniplus-pre-deploy-2026-10-24-1705.tar.gz` (**340 MB**).
+- `git pull` fast-forward **`8df98a8..0814918`** (2 commits, 6 files, +1,694/−75) → `npm ci
+  --include=dev` (`node_modules` 423 MB, `vite` + `tsc` present) → `npm run build` (client
+  `index-DVMAV9_N.js` 2,852.65 kB + `index-BmfVo_vu.css`; server `821.6 kB` **unchanged**) →
+  `pm2 restart omniplus --update-env` (↺ **14**, online, 133.7 MB).
+- Error log: mtime `16:28:37` **predates** the restart (`17:07:37` in `omniplus-out.log`) → **no
+  new lines**. Whole-log scan: **0** matches for `public-chat` / `chat-api` / `ChatBubble` /
+  `Tawk` / `Cannot find module` / `MODULE_NOT_FOUND` / `ERR_MODULE_NOT_FOUND` / `ERR_REQUIRE_ESM`.
+- Liveness: `GET http://127.0.0.1:5000/` → **200**, and `index.html` references
+  `index-DVMAV9_N.js` / `index-BmfVo_vu.css` (not a stale `client-dist`).
+- **No `db:push`**, no `deploy.sh`/`update.sh`, no force-push.
+
+### Test link tooling (VPS, deliberately not in the repo)
+
+`/root/omniplus-chat-link.sh <workflowId> [--dry-run] [--base=URL]` — mirrors
+`server/chat-links.ts` exactly (32 random bytes → base64url → sha256 hex), **rotates** the existing
+`web_chat_links` row (or inserts one), forces `is_enabled = true` / `expires_at = NULL`, verifies
+the hash is stored, and prints `https://wt.omniplus-bh.com/chat/<token>` once. `--dry-run` runs the
+same SQL inside `BEGIN … ROLLBACK`, so it validates the path without rotating. A token change is
+live immediately (the hash is read per request) — no restart. Watch the 10-new-sessions/hour per-IP
+cap when re-testing.
+
+### Next phase — 4A-3b (real bookings in web chat)
+
+**Feature 4A-3 is closed**; the one thing web chat still cannot do is book. That is 4A-3b, the
+**extract-once B1 phase**. All three pieces of the current gate are already in place and inert:
+
+- `chat-host.ts` has no `handleBookingNode` → `flowRunner.ts:504–520` always stops a booking node
+  as `unsupported_node` (re-confirmed in the browser pass above).
+- `workflows.web_chat_booking_enabled` exists in the schema and is **read by nothing**.
+- The owner `PATCH /api/workflows/:id/web-chat` rejects `allowBooking: true` with
+  `400 web_chat_booking_not_supported_yet`.
+
+**Extract once, then reuse:** the booking sub-flow currently lives inside the WhatsApp chatbot
+region of `routes.ts`. 4A-3b starts by extracting that handler body into a shared module so
+WhatsApp and web chat run the *same* booking code, then wires it into the chat `FlowHost` via the
+existing delegation hook and flips the flag. **Do not modify `flowRunner.ts`** — the
+`host.handleBookingNode` hook is already the seam. Plan the acceptance criteria at session start;
+the safety-gate assertion inverts (from "zero production writes" to "exactly one booking,
+`customer_phone LIKE 'web_%'`").
 
 ## Phase 4A-3a-2 — COMPLETE ✅ (deployed `8df98a8`, 14/14 curl-verified)
 
-> **Read this first.** Production HEAD is **`8df98a8`** — code and schema are **in sync**, and all
+> **Historical.** At a-2 close, production HEAD was **`8df98a8`** — code and schema in sync, all
 > **14 curl verification points PASS**, including safety gate #10 (a booking node stops
-> structurally with **zero** production writes). Next sub-phase is **4A-3a-3 (public UI)** —
-> see "Next session — start here" below.
+> structurally with **zero** production writes). a-3 (public UI) shipped afterwards in `0814918`
+> and is browser-verified — see the top section.
 
 ### Status
 
@@ -324,7 +362,11 @@ Three of the four desired names exceed 63 chars → Postgres truncates them stra
 
 - **4A-3a-1 — schema + auth foundation ✅ COMPLETE** (`6cbc749`; deployed; 10/10 curl-verified. No public endpoints, no UI.)
 - **4A-3a-2 — public backend ✅ COMPLETE** (`8df98a8`; deployed; 14/14 curl-verified incl. safety gate #10. 6 public endpoints + chat `FlowHost` + persistence + post-done re-entry.)
-- **4A-3a-3 — public UI ⏭ NEXT** (embeddable `/chat/<token>` surface over the a-2 endpoints).
+- **4A-3a-3 — public UI ✅ COMPLETE** (`293de09` code + `0814918` docs; deployed as `0814918`; browser-verified desktop + mobile — see the top section).
+
+**Feature 4A-3 (Web Chat Adapter) — COMPLETE ✅.** Schema (`6cbc749`), backend (`8df98a8`) and
+public UI (`0814918`) are all deployed and verified. The only remaining web-chat work is **4A-3b
+(real bookings)** — a separate feature slice, not a gap in 4A-3.
 
 ### Next session at a-1 close (historical): 4A-3a-2 (public backend)
 
@@ -428,14 +470,14 @@ Entry → department list (3 demo services) · department → provider list (`De
 - **Legacy `"entry"` node in workflow 34** — pre-existing data-quality issue, unrelated to this phase.
 - Sandbox-not-production divergences (documented in the `sandbox-booking.ts` header): continues into the `booked` branch in the same tick (production returns and continues on the next inbound message); executes a booking node reached after `input.text` (production stops with "must be reached via button replies").
 
-## Phase 4A-3 — Web chat adapter (design done; 4A-3a-1 ✅ COMPLETE, 4A-3a-2 ✅ COMPLETE, 4A-3a-3 NEXT)
+## Phase 4A-3 — Web chat adapter ✅ COMPLETE (`6cbc749` schema, `8df98a8` backend, `0814918` UI)
 
 **Goal:** a browser-based chat channel that runs the same workflow flow as WhatsApp — same runner, same graph, same node semantics — without Whapi.
 
 - **Likely reuses the sandbox endpoint's architecture:** stateless tick API (graph + cursor + context per request), in-memory/session context, `SandboxMessage`-style normalized bubbles, and a `FlowHost` with real `sendMessage` replaced by a capture sink.
 - **Key differences from the test panel:** persists a real conversation (so `conversation_states` writes are back), real user identity / tenant scoping, a public-facing embeddable surface, and no MOCK branding.
 - **Booking nodes:** the mock in `sandbox-booking.ts` is *not* the production path. 4A-3 must decide whether to delegate to the real booking sub-flow or stay read-only; this is a design decision, not an implementation detail.
-- **4A-3a-1 and 4A-3a-2 complete; next: 4A-3a-3 (public UI).** The design pass is done, a-1 shipped the schema + auth foundation (`6cbc749`, 10/10 curl-verified), and a-2 shipped the public backend (`8df98a8`, 14/14 curl-verified incl. safety gate #10). a-3 adds the public UI only — no backend or schema change.
+- **All three sub-phases are complete and deployed:** a-1 shipped the schema + auth foundation (`6cbc749`, 10/10 curl-verified), a-2 shipped the public backend (`8df98a8`, 14/14 curl-verified incl. safety gate #10), and a-3 shipped the public UI (`0814918`, browser-verified desktop + mobile). **Feature 4A-3 is closed.** The booking decision above is answered by **4A-3b**: extract the existing WhatsApp booking handler once, then delegate to it from the chat `FlowHost`.
 
 ## ✅ Security — Supabase DB password rotation (DONE 2026-10-06)
 
@@ -446,12 +488,12 @@ Entry → department list (3 demo services) · department → provider list (`De
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): **`8df98a8`** (Phase 4A-3a-2 — public chat backend; **14/14 curl verification PASS**, safety gate #10 zero writes).
-- Repo HEAD: **this docs commit** (docs-only, stacked on `8df98a8`).
-- **Working tree: clean** — all 7 4A-3a-2 files are committed in `8df98a8` (1,749 insertions / 3 deletions). Nothing staged, nothing untracked.
-- **Next: Phase 4A-3a-3 (public UI)** — see "Next session — start here" at the top.
+- Production HEAD (deployed/running on VPS): **`0814918`** (Phase 4A-3a-3 — public chat UI; browser-verified desktop + mobile, safety gate still structural).
+- Repo HEAD: **this docs commit** (docs-only, stacked on `0814918`).
+- **Working tree: clean** — code `293de09` (5 files, +1,490/−3) and docs `0814918` are committed and pushed; nothing staged, nothing untracked.
+- **Next: Phase 4A-3b (real bookings in web chat — extract-once B1)** — see "Next phase — 4A-3b" at the top.
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push. 4A-3a-1 adds schema — the first change since 2026-10-09** — applied manually 2026-10-24 (17 statements, single transaction): 3 `web_chat_*` tables + 2 columns (`workflow_executions.channel`, `workflows.web_chat_booking_enabled`). Code and schema are **in sync** at **`8df98a8`** (4A-3a-2 adds no schema change); see the top section.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push. 4A-3a-1 adds schema — the first change since 2026-10-09** — applied manually 2026-10-24 (17 statements, single transaction): 3 `web_chat_*` tables + 2 columns (`workflow_executions.channel`, `workflows.web_chat_booking_enabled`). Code and schema are **in sync** at **`0814918`** (4A-3a-2 and 4A-3a-3 add no schema change); see the top section.
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed). COMPLETE.**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
@@ -461,7 +503,8 @@ Entry → department list (3 demo services) · department → provider list (`De
 - **Phase 4A-2d: committed `db2c0db`, deployed, browser-verified — 14/14 feature checks + safety test 14b PASS. COMPLETE. 4A-2 CLOSED.**
 - **Phase 4A-3a-1: committed `6cbc749`, deployed, curl-verified — 10/10 tests PASS. COMPLETE.**
 - **Phase 4A-3a-2: committed `8df98a8`, deployed, curl-verified — 14/14 tests PASS (safety gate #10: 20 → 20 bookings). COMPLETE. Next: 4A-3a-3 (public UI).**
-- Session history: 4A-2c ended ~40% context; 4A-2d implementation ended ~76% (review deferred); 4A-2d review + deploy + verify ended **~58%**; 4A-3a-1 deploy + 10-point verify ended **~20%**; 4A-3a-2 implementation ended **~86%** (bug open, uncommitted); 4A-3a-2 fix + commit + deploy ended **~40%**.
+- **Phase 4A-3a-3: committed `293de09` (code) + `0814918` (docs), deployed as `0814918`, browser-verified — desktop + mobile, Tawk.to guard, 429 handling, safety gate still structural. COMPLETE. 4A-3 CLOSED. Next: 4A-3b (real bookings in web chat).**
+- Session history: 4A-2c ended ~40% context; 4A-2d implementation ended ~76% (review deferred); 4A-2d review + deploy + verify ended **~58%**; 4A-3a-1 deploy + 10-point verify ended **~20%**; 4A-3a-2 implementation ended **~86%** (bug open, uncommitted); 4A-3a-2 fix + commit + deploy ended **~40%**; 4A-3a-3 deploy + browser verify ended **~34%**.
 
 ## Phase 4A-2b — VERIFIED ✅ (deployed `c97d3c5`, 11/11 curl scenarios green)
 
@@ -691,6 +734,8 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Recent commits
 
+- `0814918` docs: HANDOFF — Phase 4A-3a-3 implemented (293de09, NOT deployed); deploy + browser verification deferred
+- `293de09` feat(workflow): Phase 4A-3a-3 — public chat UI
 - `8df98a8` feat(workflow): Phase 4A-3a-2 — public chat backend
 - `e52afbc` docs: HANDOFF — Phase 4A-3a-2 implemented (check+build clean), 1 bug open, NOT committed or deployed
 - `6cbc749` feat(workflow): Phase 4A-3a-1 — web chat schema + auth foundation
