@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 export function ChatWidget() {
   const [location] = useLocation();
   const isHomepage = location === "/" || location === "";
+  // Phase 4A-3a-3: never inject the support widget over the public visitor chat page.
+  const isPublicChat = location.startsWith("/chat/");
 
   // Fetch chat widget location setting
   const { data: settings, isLoading } = useQuery<{ chatWidgetLocation: string }>({
@@ -48,8 +50,9 @@ export function ChatWidget() {
     };
 
     // Determine if widget should be shown
-    const shouldShowWidget = chatWidgetLocation === "all-pages" || 
-                            (chatWidgetLocation === "homepage-only" && isHomepage);
+    const shouldShowWidget = !isPublicChat &&
+                            (chatWidgetLocation === "all-pages" || 
+                            (chatWidgetLocation === "homepage-only" && isHomepage));
 
     if (!shouldShowWidget) {
       cleanupTawkWidget();
@@ -81,7 +84,7 @@ export function ChatWidget() {
     document.body.appendChild(script);
 
     // Cleanup only runs on component unmount, not on every effect re-run
-  }, [chatWidgetLocation, isHomepage, isLoading]);
+  }, [chatWidgetLocation, isHomepage, isLoading, isPublicChat]);
 
   return null; // This component doesn't render anything
 }

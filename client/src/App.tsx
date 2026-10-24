@@ -18,6 +18,7 @@ import TermsConditions from "@/pages/terms-conditions";
 import ButtonTerms from "@/pages/button-terms";
 import About from "@/pages/about";
 import PublicSharePage from "@/pages/public-share";
+import PublicChatPage from "@/pages/public-chat";
 import Dashboard from "@/pages/dashboard";
 import Channels from "@/pages/channels";
 import Send from "@/pages/send";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/button-terms" component={ButtonTerms} />
       <Route path="/about" component={About} />
       <Route path="/share/:token" component={PublicSharePage} />
+      <Route path="/chat/:token" component={PublicChatPage} />
 
       {/* Protected routes */}
       <Route path="/dashboard">
