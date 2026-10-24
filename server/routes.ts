@@ -6,6 +6,7 @@ import { workflows, conversationStates, workflowExecutions, firstMessageFlags, u
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, type AuthRequest, type ShareRequest } from "./auth";
 import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare, projectBooking, filterBookingsByConfig, buildCsvHeader, buildCsvRow, getShareBookingsForLink, enrichBookingsForUser } from "./share-links";
+import { createWebChatLink, rotateWebChatLink, serializeWebChatLink } from "./chat-links";
 import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess, checkWriteThrottled, recordWrite } from "./share-rate-limit";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { compileFormula, detectCalcCycle } from "@shared/calc-formula";
@@ -6260,6 +6261,217 @@ export function registerRoutes(app: Express) {
   });
 
   // ============================================================================
+  // WEB CHAT LINKS (Phase 4A-3a-1 — owner management only)
+  //
+  // One link per workflow. The plaintext token is returned by POST (create) and
+  // POST .../rotate ONLY; GET/PATCH/DELETE return metadata only. There is no
+  // public endpoint and no UI in this sub-phase — these routes are inert until
+  // 4A-3a-2 (public backend) and 4A-3a-3 (public UI) land.
+  //
+  // Ownership failures are uniformly 404 (never 403) so a link's existence
+  // cannot be probed across tenants — same convention as the share-link routes.
+  // ============================================================================
+
+  const webChatCreateSchema = z.object({
+    label: z.string().max(255).optional().nullable(),
+    expiresAt: z.union([z.null(), z.coerce.date()]).optional(),
+  });
+
+  const webChatUpdateSchema = z.object({
+    isEnabled: z.boolean().optional(),
+    expiresAt: z.union([z.null(), z.coerce.date()]).optional(),
+  });
+
+  // Metadata for the workflow's link (null when none). Never includes the token
+  // or the token hash: the plaintext is unknowable by design, so the owner must
+  // rotate to obtain the URL again.
+  app.get("/api/workflows/:id/web-chat", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const link = await storage.getWebChatLinkForWorkflow(workflowId);
+      if (!link) {
+        return res.json({ link: null });
+      }
+
+      const stats = await storage.getWebChatLinkStats(link.id);
+      res.json({ link: { ...serializeWebChatLink(link), ...stats } });
+    } catch (error: any) {
+      console.error("Get web chat link error:", error);
+      res.status(500).json({ error: "Failed to get web chat link" });
+    }
+  });
+
+  // Creates the link disabled (isEnabled=false) and returns the plaintext token
+  // exactly once. The owner must PATCH isEnabled=true to go live.
+  app.post("/api/workflows/:id/web-chat", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const existing = await storage.getWebChatLinkForWorkflow(workflowId);
+      if (existing) {
+        return res.status(409).json({
+          error: "already_exists",
+          message: "A web chat link already exists for this workflow",
+        });
+      }
+
+      const parsed = webChatCreateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      const { link, plaintext } = await createWebChatLink({
+        userId: effectiveUserId,
+        workflowId,
+        label: parsed.data.label ?? null,
+        expiresAt: parsed.data.expiresAt ?? null,
+      });
+
+      res.status(201).json({
+        link: serializeWebChatLink(link),
+        url: `${req.protocol}://${req.get("host")}/chat/${plaintext}`,
+        token: plaintext,
+      });
+    } catch (error: any) {
+      // Race backstop: the unique index on workflow_id is authoritative.
+      if (error?.code === "23505" || String(error?.message).includes("unique")) {
+        return res.status(409).json({
+          error: "already_exists",
+          message: "A web chat link already exists for this workflow",
+        });
+      }
+      console.error("Create web chat link error:", error);
+      res.status(500).json({ error: "Failed to create web chat link" });
+    }
+  });
+
+  // Enable/disable, change expiry. `allowBooking` is rejected before validation
+  // so a 400 for an unsupported field can never be masked by another error:
+  // workflows.web_chat_booking_enabled stays inert in 4A-3a-1.
+  app.patch("/api/workflows/:id/web-chat", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      if (req.body?.allowBooking === true) {
+        return res.status(400).json({
+          error: "web_chat_booking_not_supported_yet",
+          message: "Booking in web chat is not available yet. This will be enabled in a future release.",
+        });
+      }
+
+      const parsed = webChatUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      const link = await storage.getWebChatLinkForWorkflow(workflowId);
+      if (!link) {
+        return res.status(404).json({ error: "Web chat link not found" });
+      }
+
+      const updates: Partial<schema.WebChatLink> = {};
+      if (parsed.data.isEnabled !== undefined) updates.isEnabled = parsed.data.isEnabled;
+      if (parsed.data.expiresAt !== undefined) updates.expiresAt = parsed.data.expiresAt;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+
+      const updated = await storage.updateWebChatLink(link.id, updates);
+      res.json({ link: serializeWebChatLink(updated!) });
+    } catch (error: any) {
+      console.error("Update web chat link error:", error);
+      res.status(500).json({ error: "Failed to update web chat link" });
+    }
+  });
+
+  // Replaces the token; the old URL stops working immediately. Returns the new
+  // plaintext once.
+  app.post("/api/workflows/:id/web-chat/rotate", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const result = await rotateWebChatLink(workflowId, effectiveUserId);
+      if (!result) {
+        return res.status(404).json({ error: "Web chat link not found" });
+      }
+
+      res.json({
+        link: serializeWebChatLink(result.link),
+        url: `${req.protocol}://${req.get("host")}/chat/${result.plaintext}`,
+        token: result.plaintext,
+      });
+    } catch (error: any) {
+      console.error("Rotate web chat link error:", error);
+      res.status(500).json({ error: "Failed to rotate web chat link" });
+    }
+  });
+
+  // Hard-delete the link. Sessions and messages cascade at the DB level.
+  app.delete("/api/workflows/:id/web-chat", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const link = await storage.getWebChatLinkForWorkflow(workflowId);
+      if (!link) {
+        return res.status(404).json({ error: "Web chat link not found" });
+      }
+
+      await storage.deleteWebChatLink(link.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete web chat link error:", error);
+      res.status(500).json({ error: "Failed to delete web chat link" });
+    }
+  });
+
+  // ============================================================================
   // PUBLIC SHARE LINKS (Feature 3G-2 — auth + session only)
   // ============================================================================
 
@@ -7100,6 +7312,7 @@ export function registerRoutes(app: Express) {
           workflowName: workflows.name,
           phone: workflowExecutions.phone,
           messageType: workflowExecutions.messageType,
+          channel: workflowExecutions.channel,
           triggerData: workflowExecutions.triggerData,
           responsesSent: workflowExecutions.responsesSent,
           status: workflowExecutions.status,

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, or, asc, desc, sql, like, inArray } from "drizzle-orm";
+import { eq, and, or, asc, desc, sql, like, inArray, gt } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type {
   User,
@@ -438,6 +438,48 @@ export interface IStorage {
   toggleShareLink(id: number): Promise<schema.BookingShareLink | undefined>;
   deleteShareLink(id: number): Promise<void>;
   countShareLinks(userId: number): Promise<number>;
+
+  // Web chat links (Phase 4A-3a-1) — one link per workflow, token stored hashed.
+  getWebChatLinkForWorkflow(workflowId: number): Promise<schema.WebChatLink | null>;
+  getWebChatLinkByTokenHash(tokenHash: string): Promise<schema.WebChatLink | null>;
+  getWebChatLink(id: number): Promise<schema.WebChatLink | null>;
+  createWebChatLink(data: {
+    userId: number;
+    workflowId: number;
+    tokenHash: string;
+    label?: string | null;
+    expiresAt?: Date | null;
+  }): Promise<schema.WebChatLink>;
+  updateWebChatLink(id: number, data: Partial<schema.WebChatLink>): Promise<schema.WebChatLink | null>;
+  deleteWebChatLink(id: number): Promise<void>;
+  getWebChatLinkStats(linkId: number): Promise<{ sessionCount: number; lastMessageAt: Date | null }>;
+
+  // Web chat sessions — one per visitor; sessionKey is the conversation_states.phone value.
+  getWebChatSession(id: number): Promise<schema.WebChatSession | null>;
+  getWebChatSessionByKey(sessionKey: string): Promise<schema.WebChatSession | null>;
+  createWebChatSession(data: {
+    workflowId: number;
+    linkId: number;
+    sessionKey: string;
+    ipHash?: string | null;
+    userAgentHash?: string | null;
+    status?: string;
+  }): Promise<schema.WebChatSession>;
+  updateWebChatSession(id: number, data: Partial<schema.WebChatSession>): Promise<schema.WebChatSession | null>;
+  endWebChatSession(id: number): Promise<schema.WebChatSession | null>;
+
+  // Web chat messages — transcript + poll cursor (`id` is monotonic).
+  createWebChatMessage(data: {
+    sessionId: number;
+    workflowId: number;
+    role: string;
+    kind: string;
+    nodeId?: string | null;
+    payload?: Record<string, unknown>;
+    clientMsgId?: string | null;
+  }): Promise<schema.WebChatMessage>;
+  getWebChatMessagesSince(sessionId: number, sinceId: number, limit: number): Promise<schema.WebChatMessage[]>;
+  getWebChatMessagesForSession(sessionId: number, limit: number): Promise<schema.WebChatMessage[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2608,6 +2650,180 @@ export class DatabaseStorage implements IStorage {
       .from(schema.bookingShareLinks)
       .where(eq(schema.bookingShareLinks.userId, userId));
     return result?.count || 0;
+  }
+
+  // Web chat links (Phase 4A-3a-1)
+
+  async getWebChatLinkForWorkflow(workflowId: number): Promise<schema.WebChatLink | null> {
+    const [link] = await db.select()
+      .from(schema.webChatLinks)
+      .where(eq(schema.webChatLinks.workflowId, workflowId));
+    return link || null;
+  }
+
+  async getWebChatLinkByTokenHash(tokenHash: string): Promise<schema.WebChatLink | null> {
+    const [link] = await db.select()
+      .from(schema.webChatLinks)
+      .where(eq(schema.webChatLinks.tokenHash, tokenHash));
+    return link || null;
+  }
+
+  async getWebChatLink(id: number): Promise<schema.WebChatLink | null> {
+    const [link] = await db.select()
+      .from(schema.webChatLinks)
+      .where(eq(schema.webChatLinks.id, id));
+    return link || null;
+  }
+
+  async createWebChatLink(data: {
+    userId: number;
+    workflowId: number;
+    tokenHash: string;
+    label?: string | null;
+    expiresAt?: Date | null;
+  }): Promise<schema.WebChatLink> {
+    const [link] = await db.insert(schema.webChatLinks).values({
+      userId: data.userId,
+      workflowId: data.workflowId,
+      tokenHash: data.tokenHash,
+      label: data.label ?? null,
+      isEnabled: false, // owner must explicitly enable the link
+      expiresAt: data.expiresAt ?? null,
+    }).returning();
+    return link;
+  }
+
+  async updateWebChatLink(id: number, data: Partial<schema.WebChatLink>): Promise<schema.WebChatLink | null> {
+    // Defense-in-depth: identity/ownership/creation fields are not updatable.
+    // tokenHash is intentionally kept — rotate legitimately replaces it.
+    const { id: _id, userId: _userId, workflowId: _workflowId, createdAt: _createdAt, ...safe } = data;
+    const [link] = await db.update(schema.webChatLinks)
+      .set({ ...safe, updatedAt: new Date() })
+      .where(eq(schema.webChatLinks.id, id))
+      .returning();
+    return link || null;
+  }
+
+  async deleteWebChatLink(id: number): Promise<void> {
+    await db.delete(schema.webChatLinks).where(eq(schema.webChatLinks.id, id));
+  }
+
+  // Session count + last message time for the owner-facing metadata. Link-scoped
+  // (all sessions belonging to the link), which is equivalent to workflow-scoped
+  // while the one-link-per-workflow rule holds.
+  async getWebChatLinkStats(linkId: number): Promise<{ sessionCount: number; lastMessageAt: Date | null }> {
+    const [sessionAgg] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(schema.webChatSessions)
+      .where(eq(schema.webChatSessions.linkId, linkId));
+
+    const [messageAgg] = await db
+      .select({ lastMessageAt: sql<string | Date | null>`max(${schema.webChatMessages.createdAt})` })
+      .from(schema.webChatMessages)
+      .innerJoin(schema.webChatSessions, eq(schema.webChatMessages.sessionId, schema.webChatSessions.id))
+      .where(eq(schema.webChatSessions.linkId, linkId));
+
+    const raw = messageAgg?.lastMessageAt ?? null;
+    return {
+      sessionCount: sessionAgg?.count || 0,
+      lastMessageAt: raw ? (raw instanceof Date ? raw : new Date(raw)) : null,
+    };
+  }
+
+  // Web chat sessions
+
+  async getWebChatSession(id: number): Promise<schema.WebChatSession | null> {
+    const [session] = await db.select()
+      .from(schema.webChatSessions)
+      .where(eq(schema.webChatSessions.id, id));
+    return session || null;
+  }
+
+  async getWebChatSessionByKey(sessionKey: string): Promise<schema.WebChatSession | null> {
+    const [session] = await db.select()
+      .from(schema.webChatSessions)
+      .where(eq(schema.webChatSessions.sessionKey, sessionKey));
+    return session || null;
+  }
+
+  async createWebChatSession(data: {
+    workflowId: number;
+    linkId: number;
+    sessionKey: string;
+    ipHash?: string | null;
+    userAgentHash?: string | null;
+    status?: string;
+  }): Promise<schema.WebChatSession> {
+    const [session] = await db.insert(schema.webChatSessions).values({
+      workflowId: data.workflowId,
+      linkId: data.linkId,
+      sessionKey: data.sessionKey,
+      ipHash: data.ipHash ?? null,
+      userAgentHash: data.userAgentHash ?? null,
+      status: data.status ?? "active",
+      lastSeenAt: new Date(),
+    }).returning();
+    return session;
+  }
+
+  async updateWebChatSession(id: number, data: Partial<schema.WebChatSession>): Promise<schema.WebChatSession | null> {
+    // Identity/ownership/creation fields are not updatable here.
+    const { id: _id, workflowId: _workflowId, linkId: _linkId, sessionKey: _sessionKey, startedAt: _startedAt, ...safe } = data;
+    const [session] = await db.update(schema.webChatSessions)
+      .set(safe)
+      .where(eq(schema.webChatSessions.id, id))
+      .returning();
+    return session || null;
+  }
+
+  async endWebChatSession(id: number): Promise<schema.WebChatSession | null> {
+    const [session] = await db.update(schema.webChatSessions)
+      .set({ status: "ended", endedAt: new Date() })
+      .where(eq(schema.webChatSessions.id, id))
+      .returning();
+    return session || null;
+  }
+
+  // Web chat messages
+
+  async createWebChatMessage(data: {
+    sessionId: number;
+    workflowId: number;
+    role: string;
+    kind: string;
+    nodeId?: string | null;
+    payload?: Record<string, unknown>;
+    clientMsgId?: string | null;
+  }): Promise<schema.WebChatMessage> {
+    const [message] = await db.insert(schema.webChatMessages).values({
+      sessionId: data.sessionId,
+      workflowId: data.workflowId,
+      role: data.role,
+      kind: data.kind,
+      nodeId: data.nodeId ?? null,
+      payload: data.payload ?? {},
+      clientMsgId: data.clientMsgId ?? null,
+    }).returning();
+    return message;
+  }
+
+  async getWebChatMessagesSince(sessionId: number, sinceId: number, limit: number): Promise<schema.WebChatMessage[]> {
+    return await db.select()
+      .from(schema.webChatMessages)
+      .where(and(
+        eq(schema.webChatMessages.sessionId, sessionId),
+        gt(schema.webChatMessages.id, sinceId),
+      ))
+      .orderBy(asc(schema.webChatMessages.id))
+      .limit(Math.max(1, Math.min(limit || 50, 200)));
+  }
+
+  async getWebChatMessagesForSession(sessionId: number, limit: number): Promise<schema.WebChatMessage[]> {
+    const rows = await db.select()
+      .from(schema.webChatMessages)
+      .where(eq(schema.webChatMessages.sessionId, sessionId))
+      .orderBy(desc(schema.webChatMessages.id))
+      .limit(Math.max(1, Math.min(limit || 50, 200)));
+    return rows.reverse(); // newest-N selected, but returned oldest-first
   }
 }
 

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, serial, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb, pgEnum, boolean, uniqueIndex, index, serial, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -491,6 +491,10 @@ export const workflows = pgTable("workflows", {
   isActive: boolean("is_active").notNull().default(true),
   entryNodeId: text("entry_node_id"), // The "welcome" message node ID
   labelManagementEnabled: boolean("label_management_enabled").notNull().default(false), // Per-workflow label assignment toggle
+  // Phase 4A-3a-1 — INERT. Booking nodes in web chat are not supported yet: the
+  // owner PATCH endpoint rejects allowBooking=true with 400, and no code path
+  // reads this column today. Reserved for 4A-3b.
+  webChatBookingEnabled: boolean("web_chat_booking_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -560,7 +564,10 @@ export const conversationStatesRelations = relations(conversationStates, ({ one 
 export const workflowExecutions = pgTable("workflow_executions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
-  phone: text("phone").notNull(), // Sender's phone number
+  phone: text("phone").notNull(), // Sender's phone number (web chat uses "web_<uuid>")
+  // Phase 4A-3a-1 — origin channel. Existing rows backfill to 'whatsapp' via the
+  // column default; web chat rows will set 'web_chat' once 4A-3a-2 lands.
+  channel: text("channel").notNull().default("whatsapp"),
   messageType: incomingMessageTypeEnum("message_type").notNull(),
   triggerData: jsonb("trigger_data").notNull().default({}), // Incoming webhook payload
   responsesSent: jsonb("responses_sent").notNull().default([]), // What we sent back
@@ -1207,6 +1214,106 @@ export const bookingShareLinksRelations = relations(bookingShareLinks, ({ one })
   }),
 }));
 
+// ---------------------------------------------------------------------------
+// Phase 4A-3a-1 — Web Chat adapter (schema + auth foundation)
+//
+// A web chat link is an owner-created capability token per workflow (one per
+// workflow). The plaintext token is NEVER persisted: only its SHA-256 hex digest
+// lives in token_hash, and it is shown to the owner exactly once (create/rotate).
+//
+// A visitor session gets a sessionKey of the form "web_<uuid>", which is the
+// value written to conversation_states.phone — that is the only adaptation on the
+// existing conversation-state machinery (no new column).
+//
+// web_chat_messages is the transcript. `payload` is the PUBLIC projection (safe
+// to serialize to the visitor); `node_id` is server-only and must never be sent
+// to a public endpoint.
+// ---------------------------------------------------------------------------
+
+export const webChatLinks = pgTable("web_chat_links", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(), // SHA-256 hex (64 chars) — never the plaintext
+  label: varchar("label", { length: 255 }),
+  isEnabled: boolean("is_enabled").notNull().default(false), // owner must explicitly enable
+  expiresAt: timestamp("expires_at"),
+  lastUsedAt: timestamp("last_used_at"), // touched by 4A-3a-2 (throttled)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tokenHashIdx: uniqueIndex("web_chat_links_token_hash_idx").on(table.tokenHash),
+  workflowIdx: uniqueIndex("web_chat_links_workflow_id_idx").on(table.workflowId),
+}));
+
+export const webChatLinksRelations = relations(webChatLinks, ({ one, many }) => ({
+  user: one(users, {
+    fields: [webChatLinks.userId],
+    references: [users.id],
+  }),
+  workflow: one(workflows, {
+    fields: [webChatLinks.workflowId],
+    references: [workflows.id],
+  }),
+  sessions: many(webChatSessions),
+}));
+
+export const webChatSessions = pgTable("web_chat_sessions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  linkId: integer("link_id").notNull().references(() => webChatLinks.id, { onDelete: "cascade" }),
+  sessionKey: text("session_key").notNull(), // "web_<uuid>" — the conversation_states.phone value
+  ipHash: varchar("ip_hash", { length: 64 }),
+  userAgentHash: varchar("user_agent_hash", { length: 64 }),
+  status: text("status").notNull().default("active"), // 'active' | 'ended'
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+}, (table) => ({
+  sessionKeyIdx: uniqueIndex("web_chat_sessions_session_key_idx").on(table.sessionKey),
+  workflowLastSeenIdx: index("web_chat_sessions_workflow_last_seen_idx").on(table.workflowId, table.lastSeenAt),
+}));
+
+export const webChatSessionsRelations = relations(webChatSessions, ({ one, many }) => ({
+  workflow: one(workflows, {
+    fields: [webChatSessions.workflowId],
+    references: [workflows.id],
+  }),
+  link: one(webChatLinks, {
+    fields: [webChatSessions.linkId],
+    references: [webChatLinks.id],
+  }),
+  messages: many(webChatMessages),
+}));
+
+export const webChatMessages = pgTable("web_chat_messages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(), // monotonic — also the poll cursor
+  sessionId: integer("session_id").notNull().references(() => webChatSessions.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // 'visitor' | 'bot' | 'system'
+  kind: text("kind").notNull(), // 'text' | 'buttons' | 'list' | 'call_to_action_buttons' | 'carousel' | 'media' | 'location'
+  nodeId: text("node_id"), // SERVER-ONLY — never serialize to a public endpoint
+  payload: jsonb("payload").notNull().default({}), // public projection (safe to send to the visitor)
+  clientMsgId: text("client_msg_id"), // idempotency key on visitor rows only
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // NULLs are DISTINCT in Postgres, so bot/system rows (client_msg_id IS NULL)
+  // coexist freely while visitor retries with the same key are rejected.
+  sessionClientMsgIdx: uniqueIndex("web_chat_messages_session_client_msg_idx").on(table.sessionId, table.clientMsgId),
+  sessionIdIdx: index("web_chat_messages_session_id_idx").on(table.sessionId, table.id),
+}));
+
+export const webChatMessagesRelations = relations(webChatMessages, ({ one }) => ({
+  session: one(webChatSessions, {
+    fields: [webChatMessages.sessionId],
+    references: [webChatSessions.id],
+  }),
+  workflow: one(workflows, {
+    fields: [webChatMessages.workflowId],
+    references: [workflows.id],
+  }),
+}));
+
 // API payload schemas. The plaintext password goes in; tokenHash/slot/userId are
 // server-assigned. `expiresAt` accepts null (clear) or a date string/Date.
 const nullableDateSchema = z.union([z.null(), z.coerce.date()]);
@@ -1567,3 +1674,9 @@ export type BookingCustomFieldValue = typeof bookingCustomFieldValues.$inferSele
 export type InsertBookingCustomFieldValue = z.infer<typeof insertBookingCustomFieldValueSchema>;
 export type BookingShareLink = typeof bookingShareLinks.$inferSelect;
 export type InsertBookingShareLink = typeof bookingShareLinks.$inferInsert;
+export type WebChatLink = typeof webChatLinks.$inferSelect;
+export type InsertWebChatLink = typeof webChatLinks.$inferInsert;
+export type WebChatSession = typeof webChatSessions.$inferSelect;
+export type InsertWebChatSession = typeof webChatSessions.$inferInsert;
+export type WebChatMessage = typeof webChatMessages.$inferSelect;
+export type InsertWebChatMessage = typeof webChatMessages.$inferInsert;

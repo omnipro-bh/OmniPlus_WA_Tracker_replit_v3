@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
-import type { BookingShareLink } from "@shared/schema";
+import type { BookingShareLink, WebChatLink, WebChatSession, Workflow } from "@shared/schema";
 import { storage } from "./storage";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "change_me_in_production";
@@ -12,6 +12,14 @@ const JWT_SECRET = process.env.SESSION_SECRET || "change_me_in_production";
 const SHARE_SECRET = crypto
   .createHmac("sha256", JWT_SECRET)
   .update("omniplus:share-session")
+  .digest("hex");
+
+// Isolated secret for web chat session JWTs (Phase 4A-3a-1). Same derivation
+// scheme as SHARE_SECRET, with a different label, so a compromise of one secret
+// cannot forge the other and no new env var is required.
+const CHAT_SECRET = crypto
+  .createHmac("sha256", JWT_SECRET)
+  .update("omniplus:chat-session")
   .digest("hex");
 
 export interface AuthRequest extends Request {
@@ -25,6 +33,16 @@ export interface AuthRequest extends Request {
 // session has no userId/impersonation, only the resolved link.
 export interface ShareRequest extends Request {
   shareLink?: BookingShareLink;
+}
+
+// Web chat visitor session (Phase 4A-3a-1). Two distinct identities exist:
+// a visitor session (this type) and a link owner (AuthRequest). They never mix.
+export interface ChatRequest extends Request {
+  chatSession?: {
+    session: WebChatSession;
+    link: WebChatLink;
+    workflow: Workflow;
+  };
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -169,5 +187,122 @@ export async function requireShareSession(req: ShareRequest, res: Response, next
   }
 
   req.shareLink = link;
+  next();
+}
+
+// ---- Phase 4A-3a-1: web chat sessions ----
+// Wired in 4A-3a-2 (public backend). Do not delete as dead code: the owner
+// endpoints in 4A-3a-1 create links, but nothing authenticates a visitor yet.
+
+export const CHAT_SESSION_COOKIE = "chat_session";
+
+// Must match the JWT expiry in signChatSession (30d) — a cookie that outlives
+// its token would produce a confusing 401 instead of a clean re-auth.
+const CHAT_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface ChatSessionPayload {
+  sessionId: number;
+  linkId: number;
+  workflowId: number;
+  v: 1;
+}
+
+// Cookie options shared by the (future) auth endpoint and the clear helper so
+// the flags can never drift apart.
+// TODO(4A-3a-2): revisit `sameSite: "strict"` if the embeddable widget is served
+// from a third-party origin — a strict cookie is not sent on cross-site requests.
+export function chatSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    path: "/",
+    maxAge: CHAT_SESSION_MAX_AGE_MS,
+  };
+}
+
+export function clearChatSessionCookie(res: Response) {
+  res.clearCookie(CHAT_SESSION_COOKIE, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "strict" as const,
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+export function signChatSession(input: {
+  sessionId: number;
+  linkId: number;
+  workflowId: number;
+}): string {
+  return jwt.sign({ ...input, v: 1 }, CHAT_SECRET, { expiresIn: "30d" });
+}
+
+export function verifyChatSession(token: string): ChatSessionPayload | null {
+  try {
+    const payload = jwt.verify(token, CHAT_SECRET) as Partial<ChatSessionPayload>;
+    if (payload?.v !== 1) return null;
+    if (
+      !Number.isInteger(payload.sessionId) ||
+      !Number.isInteger(payload.linkId) ||
+      !Number.isInteger(payload.workflowId)
+    ) {
+      return null;
+    }
+    return payload as ChatSessionPayload;
+  } catch {
+    return null;
+  }
+}
+
+// Validates the chat_session JWT and re-loads/re-checks session, link and
+// workflow on every request, so disable/expire/delete/deactivate take effect
+// immediately. Status codes: 401 auth/state, 404 link gone/disabled/expired,
+// 503 workflow deactivated (distinct from 404 because the link is still valid).
+export async function requireChatSession(req: ChatRequest, res: Response, next: NextFunction) {
+  const token = req.cookies?.[CHAT_SESSION_COOKIE];
+  if (!token) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  const payload = verifyChatSession(token);
+  if (!payload) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  const session = await storage.getWebChatSession(payload.sessionId);
+  if (!session) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  // R2: BOTH checks. A session can be closed by setting either status or
+  // endedAt; missing one would let a half-closed session keep talking.
+  // `!= null` also catches an undefined column from a partial select.
+  if (session.status !== "active" || session.endedAt != null) {
+    clearChatSessionCookie(res);
+    return res.status(401).json({ error: "Session ended" });
+  }
+
+  const link = await storage.getWebChatLink(payload.linkId);
+  if (!link || !link.isEnabled) {
+    return res.status(404).json({ error: "Chat unavailable" });
+  }
+  if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) {
+    return res.status(404).json({ error: "Chat unavailable" });
+  }
+
+  const workflow = await storage.getWorkflow(payload.workflowId);
+  if (!workflow || !workflow.isActive) {
+    return res.status(503).json({ error: "Chat unavailable" });
+  }
+
+  // Defensive: the token, the session row and the link must all describe the
+  // same workflow. Only reachable if a link is ever re-pointed at runtime.
+  if (session.workflowId !== workflow.id || link.workflowId !== workflow.id) {
+    clearChatSessionCookie(res);
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  req.chatSession = { session, link, workflow };
   next();
 }
