@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { storage } from "./storage";
 import { logoutChannel, extendWhapiChannel, sendTextMessage, getChannelHealth } from "./whapi";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
+import { purgeWebChat } from "./workflows/chat-tick";
 import fs from "fs";
 import path from "path";
 import dayjs from "dayjs";
@@ -21,6 +22,7 @@ export class BackgroundWorker {
   private mediaCleanupJob: ReturnType<typeof cron.schedule> | null = null;
   private autoExtendJob: ReturnType<typeof cron.schedule> | null = null;
   private appointmentReminderJob: ReturnType<typeof cron.schedule> | null = null;
+  private webChatPurgeJob: ReturnType<typeof cron.schedule> | null = null;
 
   start() {
     // Channel expiration check - runs every hour to catch expirations quickly
@@ -41,6 +43,12 @@ export class BackgroundWorker {
     // Appointment reminders - runs every 15 minutes to check for upcoming appointments
     this.appointmentReminderJob = cron.schedule("*/15 * * * *", async () => {
       await this.sendAppointmentReminders();
+    });
+
+    // Web chat retention - runs daily at 03:15, 15 min after the media cleanup,
+    // so the two bulk jobs never contend for I/O.
+    this.webChatPurgeJob = cron.schedule("15 3 * * *", async () => {
+      await this.purgeWebChatData();
     });
 
     // Message queue processor - disabled for now
@@ -64,6 +72,9 @@ export class BackgroundWorker {
     }
     if (this.appointmentReminderJob) {
       this.appointmentReminderJob.stop();
+    }
+    if (this.webChatPurgeJob) {
+      this.webChatPurgeJob.stop();
     }
   }
 
@@ -573,6 +584,18 @@ export class BackgroundWorker {
       }
     } catch (error) {
       console.error("[Reminder] Error in appointment reminder job:", error);
+    }
+  }
+
+  // Phase 4A-3a-2 — web chat retention (30 days).
+  // Deletes ended/idle sessions, their messages (FK cascade) and the matching
+  // conversation_states rows. `WEB_CHAT_PURGE_DRY_RUN=1` logs the counts without
+  // deleting anything, which is how the retention test runs in production.
+  private async purgeWebChatData() {
+    try {
+      await purgeWebChat();
+    } catch (error) {
+      console.error("[WebChatPurge] Error in web chat purge job:", error);
     }
   }
 }

@@ -480,6 +480,13 @@ export interface IStorage {
   }): Promise<schema.WebChatMessage>;
   getWebChatMessagesSince(sessionId: number, sinceId: number, limit: number): Promise<schema.WebChatMessage[]>;
   getWebChatMessagesForSession(sessionId: number, limit: number): Promise<schema.WebChatMessage[]>;
+  // Phase 4A-3a-2: idempotency replay lookup. Backed by the unique index
+  // (session_id, client_msg_id); bot/system rows have client_msg_id NULL so they
+  // never match.
+  getWebChatMessageByClientMsgId(
+    sessionId: number,
+    clientMsgId: string
+  ): Promise<schema.WebChatMessage | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2824,6 +2831,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(schema.webChatMessages.id))
       .limit(Math.max(1, Math.min(limit || 50, 200)));
     return rows.reverse(); // newest-N selected, but returned oldest-first
+  }
+
+  // Phase 4A-3a-2 — idempotency replay. visitor rows carry the client key; the
+  // unique index on (session_id, client_msg_id) is the authoritative guard.
+  async getWebChatMessageByClientMsgId(
+    sessionId: number,
+    clientMsgId: string
+  ): Promise<schema.WebChatMessage | null> {
+    const [message] = await db.select()
+      .from(schema.webChatMessages)
+      .where(and(
+        eq(schema.webChatMessages.sessionId, sessionId),
+        eq(schema.webChatMessages.clientMsgId, clientMsgId),
+      ));
+    return message || null;
   }
 }
 

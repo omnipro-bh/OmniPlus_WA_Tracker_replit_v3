@@ -33,8 +33,14 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use((req, res, next) => {
   const start = Date.now();
-  // Redact share-link tokens from the logged path (tokens are secrets).
-  const path = req.path.replace(/\/share\/[A-Za-z0-9_-]+/, "/share/[redacted]");
+  // Redact capability tokens from the logged path (tokens are secrets).
+  // Phase 4A-3a-2: chat tokens are capability secrets too — `/api/public/chat/
+  // <token>/session` would otherwise write the plaintext token to the PM2 log on
+  // every bootstrap. `{20,}` keeps the literal `/chat/session`, `/chat/messages`
+  // etc. readable; a real token is 43 chars (32 bytes base64url).
+  const path = req.path
+    .replace(/\/share\/[A-Za-z0-9_-]+/, "/share/[redacted]")
+    .replace(/\/chat\/[A-Za-z0-9_-]{20,}/, "/chat/[redacted]");
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;

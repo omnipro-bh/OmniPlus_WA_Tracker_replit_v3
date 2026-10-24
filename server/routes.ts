@@ -4,7 +4,7 @@ import { db } from "./db";
 import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
-import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, type AuthRequest, type ShareRequest } from "./auth";
+import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, signChatSession, verifyChatSession, requireChatSession, clearChatSessionCookie, chatSessionCookieOptions, CHAT_SESSION_COOKIE, type AuthRequest, type ShareRequest, type ChatRequest } from "./auth";
 import { generateToken as generateShareToken, hashToken as hashShareToken, assignSlot, serializeShareLink, timingEqualizeCompare, projectBooking, filterBookingsByConfig, buildCsvHeader, buildCsvRow, getShareBookingsForLink, enrichBookingsForUser } from "./share-links";
 import { createWebChatLink, rotateWebChatLink, serializeWebChatLink } from "./chat-links";
 import { getClientIp, checkIpThrottled, recordIpAttempt, checkTokenLocked, recordTokenFailure, recordTokenSuccess, checkWriteThrottled, recordWrite } from "./share-rate-limit";
@@ -45,6 +45,8 @@ import { VARIABLE_NAME_RE, validateWorkflowNodeConfigs } from "@shared/workflow-
 import { buildSandboxHost, resolveSandboxStartNode, captureSandboxText, assembleSandboxResponse, sandboxTickSchema } from "./workflows/sandbox";
 import { checkSandboxThrottled, recordSandboxTick } from "./workflows/sandbox-rate-limit";
 import { dispatchSandboxBookingTick } from "./workflows/sandbox-booking";
+import { checkIpSessionThrottled, recordIpSession, checkMessageThrottled, recordMessage, checkPollThrottled, recordPoll, checkRestartThrottled, recordRestart } from "./chat-rate-limit";
+import { bootstrapSession, handleChatMessage, getChatMessages, getRecentMessages, restartChatSession, endChatSession } from "./workflows/chat-tick";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -6825,6 +6827,282 @@ export function registerRoutes(app: Express) {
       console.error("Public share confirm error:", error);
       res.status(500).json({ error: "Failed to confirm booking" });
     }
+  });
+
+  // ============================================================================
+  // PUBLIC WEB CHAT (Phase 4A-3a-2 — visitor-facing backend)
+  //
+  // Capability model: the URL token authorises *creating* a session; the
+  // `chat_session` cookie (30d JWT, HttpOnly) authenticates everything after.
+  // A leaked URL therefore yields a fresh empty session, never someone else's
+  // transcript. `requireChatSession` re-validates session + link + workflow on
+  // every request, so disable/expire/end/deactivate take effect immediately.
+  //
+  // Every response body here is a fixed public projection: no nodeId, no cursor,
+  // no context, no stopReason, no error strings from the flow runner.
+  // ============================================================================
+
+  /**
+   * AC #12: an ENDED session answers 410 Gone, not 401. `requireChatSession` (a
+   * frozen 4A-3a-1 file) reports 401 for ended sessions, so this runs in front of
+   * it and handles only the ended case; everything else falls through to the
+   * middleware unchanged. Costs one indexed primary-key read per request.
+   */
+  const chatGoneIfEnded = async (req: Request, res: Response, next: any) => {
+    const token = req.cookies?.[CHAT_SESSION_COOKIE];
+    const payload = token ? verifyChatSession(token) : null;
+    if (!payload) return next(); // no/invalid cookie → requireChatSession decides (401)
+
+    try {
+      const session = await storage.getWebChatSession(payload.sessionId);
+      if (session && (session.status !== "active" || session.endedAt != null)) {
+        clearChatSessionCookie(res);
+        return res.status(410).json({ error: "Session ended" });
+      }
+    } catch {
+      // Fall through: a lookup failure must not become a 410 for a live session.
+    }
+    next();
+  };
+
+  const chatMessageSchema = z.object({
+    type: z.enum(["text", "button"]),
+    text: z.string().min(1).max(2000).optional(),
+    buttonId: z.string().min(1).max(256).optional(),
+    clientMsgId: z.string().min(8).max(64),
+  }).refine(
+    (value) => (value.type === "text" ? !!value.text : !!value.buttonId),
+    { message: "text is required for text input and buttonId for button input" }
+  );
+
+  // ── 1. Bootstrap (create) or replay a visitor session ─────────────────────
+  // 201 = new session created; 200 = existing cookie reused (transcript replayed).
+  app.post("/api/public/chat/:token/session", async (req: Request, res: Response) => {
+    try {
+      const ip = getClientIp(req);
+
+      const ipThrottle = checkIpSessionThrottled(ip);
+      if (ipThrottle.throttled) {
+        return res
+          .status(429)
+          .set("Retry-After", String(ipThrottle.retryAfter ?? 60))
+          .json({ error: "Too many sessions", bucket: ipThrottle.bucket });
+      }
+
+      const cookieToken = req.cookies?.[CHAT_SESSION_COOKIE];
+      const existingPayload = cookieToken ? verifyChatSession(cookieToken) : null;
+
+      const result = await bootstrapSession(
+        req.params.token,
+        ip,
+        String(req.get("user-agent") || ""),
+        existingPayload
+      );
+
+      if (!result.ok) {
+        // 404 = missing/disabled/expired link (single failure branch);
+        // 503 = the link is fine but the owner deactivated the workflow.
+        if (result.reason === "workflow_inactive") {
+          return res.status(503).json({ error: "Chat unavailable" });
+        }
+        return res.status(404).json({ error: "Chat unavailable" });
+      }
+
+      // Only a genuine new session consumes the per-IP budget.
+      if (result.created) recordIpSession(ip);
+
+      res.cookie(
+        CHAT_SESSION_COOKIE,
+        signChatSession({
+          sessionId: result.session.id,
+          linkId: result.link.id,
+          workflowId: result.workflow.id,
+        }),
+        chatSessionCookieOptions()
+      );
+
+      return res.status(result.created ? 201 : 200).json({
+        sessionId: result.session.id,
+        startedAt: new Date(result.session.startedAt).toISOString(),
+        expiresAt: result.link.expiresAt ? new Date(result.link.expiresAt).toISOString() : null,
+        messages: result.initialMessages,
+        status: result.state.status,
+        awaiting: result.state.awaiting,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Web chat bootstrap error:", error);
+      return res.status(500).json({ error: "Chat unavailable" });
+    }
+  });
+
+  // ── 2. Reload: session metadata + last 200 messages ───────────────────────
+  app.get("/api/public/chat/session", requireChatSession, async (req: ChatRequest, res: Response) => {
+    try {
+      const { session, workflow } = req.chatSession!;
+      const { messages, state } = await getRecentMessages(session, workflow, 200);
+
+      return res.json({
+        sessionId: session.id,
+        startedAt: new Date(session.startedAt).toISOString(),
+        expiresAt: req.chatSession!.link.expiresAt
+          ? new Date(req.chatSession!.link.expiresAt).toISOString()
+          : null,
+        messages,
+        status: state.status,
+        awaiting: state.awaiting,
+        canRestart: session.status === "active" && session.endedAt == null,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Web chat session read error:", error);
+      return res.status(500).json({ error: "Chat unavailable" });
+    }
+  });
+
+  // ── 3. Send a visitor message ─────────────────────────────────────────────
+  app.post("/api/public/chat/session/message", requireChatSession, chatGoneIfEnded, async (req: ChatRequest, res: Response) => {
+    try {
+      const { session, link, workflow } = req.chatSession!;
+
+      const throttle = checkMessageThrottled(session.id, workflow.id);
+      if (throttle.throttled) {
+        return res
+          .status(429)
+          .set("Retry-After", String(throttle.retryAfter ?? 60))
+          .json({ error: "Too many messages", bucket: throttle.bucket });
+      }
+
+      if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > 16 * 1024) {
+        return res.status(413).json({ error: "Payload too large" });
+      }
+
+      const parsed = chatMessageSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      recordMessage(session.id, workflow.id);
+
+      const result = await handleChatMessage(session, link, workflow, parsed.data);
+
+      if (!result.ok) {
+        if (result.reason === "busy") {
+          return res.status(409).set("Retry-After", "1").json({ error: "busy" });
+        }
+        if (result.reason === "not_awaiting_text") {
+          return res.status(409).json({ error: "not_awaiting_text" });
+        }
+        if (result.reason === "button_not_routed") {
+          return res.status(400).json({ error: "button_not_routed" });
+        }
+        return res.status(409).json({ error: "not_ready" });
+      }
+
+      return res.json({
+        messages: result.messages,
+        status: result.state.status,
+        awaiting: result.state.awaiting,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Web chat message error:", error);
+      return res.status(500).json({ error: "Chat unavailable" });
+    }
+  });
+
+  // ── 4. Poll for messages after a monotonic id ─────────────────────────────
+  app.get("/api/public/chat/session/messages", requireChatSession, chatGoneIfEnded, async (req: ChatRequest, res: Response) => {
+    try {
+      const { session, workflow } = req.chatSession!;
+
+      const throttle = checkPollThrottled(session.id);
+      if (throttle.throttled) {
+        return res
+          .status(429)
+          .set("Retry-After", String(throttle.retryAfter ?? 60))
+          .json({ error: "Too many polls", bucket: throttle.bucket });
+      }
+
+      const sinceId = Math.max(0, parseInt(String(req.query.sinceId ?? "0"), 10) || 0);
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+
+      recordPoll(session.id);
+
+      const { messages, nextSinceId, state } = await getChatMessages(
+        session,
+        workflow,
+        sinceId,
+        limit
+      );
+
+      return res.json({
+        messages,
+        nextSinceId,
+        status: state.status,
+        awaiting: state.awaiting,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Web chat poll error:", error);
+      return res.status(500).json({ error: "Chat unavailable" });
+    }
+  });
+
+  // ── 5. Restart: preserve transcript, reset context/cursor, re-run entry ───
+  app.post("/api/public/chat/session/restart", requireChatSession, chatGoneIfEnded, async (req: ChatRequest, res: Response) => {
+    try {
+      const { session, link, workflow } = req.chatSession!;
+
+      const throttle = checkRestartThrottled(session.id);
+      if (throttle.throttled) {
+        return res
+          .status(429)
+          .set("Retry-After", String(throttle.retryAfter ?? 60))
+          .json({ error: "Too many restarts", bucket: throttle.bucket });
+      }
+
+      recordRestart(session.id);
+
+      const result = await restartChatSession(session, link, workflow);
+      if (!result.ok) {
+        return res.status(409).set("Retry-After", "1").json({ error: "busy" });
+      }
+
+      return res.json({
+        messages: result.messages,
+        status: result.state.status,
+        awaiting: result.state.awaiting,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Web chat restart error:", error);
+      return res.status(500).json({ error: "Chat unavailable" });
+    }
+  });
+
+  // ── 6. End: NO requireChatSession — a double-end or end-after-expiry must
+  //       still clear the cookie. Verifies the JWT only; always 200 (AC #12).
+  app.post("/api/public/chat/session/end", async (req: Request, res: Response) => {
+    try {
+      const token = req.cookies?.[CHAT_SESSION_COOKIE];
+      const payload = token ? verifyChatSession(token) : null;
+
+      if (payload) {
+        try {
+          const session = await storage.getWebChatSession(payload.sessionId);
+          if (session) await endChatSession(session);
+        } catch (endError: any) {
+          // Best-effort: the cookie must be cleared even if the row is gone.
+          console.error("Web chat end error:", endError?.message || endError);
+        }
+      }
+    } catch (error: any) {
+      console.error("Web chat end error:", error);
+    }
+
+    clearChatSessionCookie(res);
+    return res.json({ ok: true });
   });
 
   // ============================================================================
