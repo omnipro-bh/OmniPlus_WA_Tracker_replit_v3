@@ -1103,7 +1103,7 @@ export default function WorkflowBuilder({
         {showTestPanel && !isFullscreen && !isBelowLg && (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={22} minSize={18} maxSize={34}>
+            <ResizablePanel defaultSize={28} minSize={20} maxSize={38}>
               <WorkflowTestPanel
                 workflowId={initialWorkflowId!}
                 definitionJson={draftDefinition}

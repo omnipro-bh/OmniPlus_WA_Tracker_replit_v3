@@ -141,6 +141,55 @@ const OUTCOME_STYLE: Record<TraceOutcome, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Image helpers
+// ---------------------------------------------------------------------------
+
+/** Image-like media type hints (case-insensitive substring match). */
+const IMAGE_MEDIA_HINTS = ["image", "photo", "picture", "png", "jpg", "jpeg", "gif", "webp"];
+
+function isImageMedia(mediaType?: string): boolean {
+  if (!mediaType) return false;
+  const t = mediaType.toLowerCase();
+  return IMAGE_MEDIA_HINTS.some((h) => t.includes(h));
+}
+
+/** Carousel card image with a paperclip fallback on load failure. */
+function CardImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="h-20 w-full rounded bg-muted flex items-center justify-center overflow-hidden">
+        <Paperclip className="h-5 w-5 text-muted-foreground" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="h-20 w-full object-cover rounded"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** Media-bubble image with a URL-text fallback on load failure. */
+function MediaImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <p className="text-xs text-muted-foreground truncate max-w-full">{src}</p>;
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="max-h-40 w-full object-contain rounded"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Message bubble
 // ---------------------------------------------------------------------------
 
@@ -246,10 +295,12 @@ function MessageBubble({
             {(message.cards || []).map((card, i) => (
               <div key={i} className="min-w-[180px] max-w-[200px] border rounded-md p-2 flex-shrink-0 space-y-1.5">
                 {card.media ? (
-                  <div className="h-20 rounded bg-muted flex items-center justify-center overflow-hidden">
+                  <CardImage src={card.media} />
+                ) : (
+                  <div className="h-20 w-full rounded bg-muted flex items-center justify-center overflow-hidden">
                     <Paperclip className="h-5 w-5 text-muted-foreground" />
                   </div>
-                ) : null}
+                )}
                 {card.text ? <p className="text-xs whitespace-pre-wrap">{card.text}</p> : null}
                 <div className="flex flex-wrap gap-1">
                   {card.buttons.map(chip)}
@@ -263,12 +314,14 @@ function MessageBubble({
 
     case "media":
       body = (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-sm">
             <Paperclip className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">{message.mediaType || "Media"}</span>
           </div>
-          {message.url ? (
+          {isImageMedia(message.mediaType) && message.url ? (
+            <MediaImage src={message.url} />
+          ) : message.url ? (
             <p className="text-xs text-muted-foreground truncate max-w-full">{message.url}</p>
           ) : null}
           {message.caption ? (
@@ -347,6 +400,8 @@ export default function WorkflowTestPanel({
   const [textInput, setTextInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tickStartedAt, setTickStartedAt] = useState<number | null>(null);
+  const [slowHint, setSlowHint] = useState(false);
 
   // Session values read by runTick (refs avoid stale-closure on restart).
   const sessionRef = useRef<{
@@ -367,6 +422,8 @@ export default function WorkflowTestPanel({
     setIsLoading(true);
     setError(null);
     setStatus("running");
+    setTickStartedAt(Date.now());
+    setSlowHint(false);
     try {
       const res = await tick({
         workflowId,
@@ -412,6 +469,7 @@ export default function WorkflowTestPanel({
     } finally {
       busyRef.current = false;
       setIsLoading(false);
+      setTickStartedAt(null);
     }
   };
 
@@ -448,6 +506,16 @@ export default function WorkflowTestPanel({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [transcript]);
+
+  // Show a "taking longer than expected" hint after 10s of loading.
+  useEffect(() => {
+    if (tickStartedAt === null) {
+      setSlowHint(false);
+      return;
+    }
+    const id = setTimeout(() => setSlowHint(true), 10_000);
+    return () => clearTimeout(id);
+  }, [tickStartedAt]);
 
   // start-node label for the badge (display only)
   const startNodeId = resolveStartNodeId(definitionJson, entryNodeId);
@@ -579,6 +647,9 @@ export default function WorkflowTestPanel({
               )}
               {isLoading ? (
                 <p className="text-xs text-muted-foreground">…</p>
+              ) : null}
+              {isLoading && slowHint ? (
+                <p className="text-[10px] text-muted-foreground">Taking longer than expected…</p>
               ) : null}
               <div ref={bottomRef} />
             </div>

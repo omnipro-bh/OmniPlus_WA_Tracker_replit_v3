@@ -139,18 +139,30 @@ export async function tick(params: SandboxTickParams): Promise<SandboxTickRespon
   const { workflowId, definitionJson, entryNodeId, cursor, context, input, httpMode, maxSteps } =
     params;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
   let res: Response;
   try {
     res = await fetch(`/api/workflows/${workflowId}/sandbox-tick`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
+      signal: controller.signal,
       body: JSON.stringify({ definitionJson, entryNodeId, cursor, context, input, httpMode, maxSteps }),
     });
-  } catch {
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as any)?.name === "AbortError") {
+      // Aborted by our own 30s timeout — surface as a retryable timeout.
+      throw new SandboxApiError(0, "Request timed out after 30s — the server may be slow");
+    }
     // Network failure (offline / dropped connection).
     throw new SandboxApiError(0, "Network error — check your connection and retry.");
   }
+
+  // Response headers received — clear the timer so no dangling timeout remains.
+  clearTimeout(timeoutId);
 
   if (res.ok) return res.json(); // 200 — all flow outcomes incl. 'stopped'
 
