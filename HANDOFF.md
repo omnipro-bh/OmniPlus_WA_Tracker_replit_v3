@@ -1,62 +1,81 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Phase 4A-2d — implemented, awaiting review (NOT committed, NOT deployed)
+## Phase 4A-2d — COMPLETE ✅ (deployed `db2c0db`, browser-verified, test 14b PASS)
 
 ### Status
 
-- **4A-2d code written; working tree uncommitted.** `npm run build` passes; `npm run check` reports **0 new TS errors** (9 pre-existing only).
-- **NOT reviewed.** Deferred: the implementation session ended at ~76% context, and a 1,125-line security-sensitive booking mock deserves a full read at 0% budget.
-- **NOT committed, NOT deployed, NOT verified** (no curl, no browser, no safety test 14b).
-- Backups: `%TEMP%\opencode\4a2d-backup\` (`sandbox.ts.orig`, `routes.ts.orig`, `WorkflowTestPanel.tsx.orig`).
-- Full patch: `%TEMP%\opencode\4a2d.patch` (1,462 lines). **The working-tree source files are the ground truth** — temp paths may not survive the machine/session.
-- Regenerate the patch if needed:
-  - `git diff -- server/workflows/sandbox.ts server/routes.ts client/src/components/WorkflowTestPanel.tsx`
-  - `git diff --no-index -- /dev/null server/workflows/sandbox-booking.ts`
+- **Implemented, line-by-line reviewed (5-message review), committed, pushed, deployed, browser-verified end-to-end.** Safety test **14b PASS**.
+- Production HEAD (deployed/running on VPS): **`db2c0db`**.
+- `npm run check` — 9 pre-existing errors only, **0 in changed files**. `npm run build` — success.
+- No schema change (**no `db:push`**); no new dependencies; no changes to `flowRunner.ts`, `client/src/lib/workflow-sandbox.ts` (frozen contract), `sendNodeMessage`, chatbot booking flow (`routes.ts` 8247–8873), `shared/schema.ts`.
 
-### Files in working tree
+### Files (committed in `db2c0db`)
 
-| Status | File | Size |
+| Status | File | Diffstat |
 |---|---|---|
-| **NEW** | `server/workflows/sandbox-booking.ts` | 1,125 lines |
-| M | `server/workflows/sandbox.ts` | +45 / −6 |
-| M | `server/routes.ts` | +45 / −6 |
-| M | `client/src/components/WorkflowTestPanel.tsx` | +28 / −3 |
+| **NEW** | `server/workflows/sandbox-booking.ts` | 1,136 lines |
+| M | `server/routes.ts` | +73 / −6 |
+| M | `server/workflows/sandbox.ts` | +69 / −9 |
+| M | `client/src/components/WorkflowTestPanel.tsx` | +22 / −1 |
 
-**Untouched (verify):** `server/workflows/flowRunner.ts`, `client/src/lib/workflow-sandbox.ts` (frozen contract), `sendNodeMessage`, chatbot booking flow (`routes.ts` 8247–8873), `shared/schema.ts` (no `db:push`).
+> The commit message still carries the review-time estimates (`+45/−6`, `+45/−6`, `+28/−3`). The table above is the actual `git diff --numstat` for `db2c0db` — corrected here rather than rewriting pushed history.
 
-### Verification already done (implementation session)
+### Review-cycle fixes applied before commit
 
-- `npm run check` — 9 pre-existing errors only, **0 in changed files**.
-- `npm run build` — **success**; client `index-BRiu9BQK.js` 2,828.90 kB + `index-DAPYGFes.css`, server `server-dist/index.js` 764.5 kB (782,815 bytes). Both hashes changed.
-- **Grep guard** — literal pattern (`storage\.|createBooking\(|drizzle|whapi\.`) hits 3 lines: 1 header comment + `mockCreateBooking` definition/call site (the mandated function name contains the substring). Refined `\bcreateBooking\(` → **0 matches**.
-- **No write-capable runtime imports** in `sandbox-booking.ts` — only `getNextNodeByHandle` from `./httpNodeExecutor`; every other import is `import type`.
+1. **`routes.ts:6994`** — the button branch's *normal* routing path was the only one of the five assembler call sites missing `drainBookingTrace()`. Effect: the booking node's trace entry was dropped for the primary demo pattern (`button → booking.book_appointment`); bubbles and `awaiting` were already correct.
+2. **`sandbox-booking.ts`** — `inFlow` short-circuit now emits `traceAwaiting(..., { resumed: true })` so a re-entered booking node renders "waiting for action" instead of zero bubbles (defensive; currently unreachable because `runFlow` calls `handleBookingNode` once per node).
+3. **`sandbox-booking.ts`** — guard comment above `withSeq`: pre-dispatch direct returns use `seq` from 1; do not route them through `assembleSandboxResponse` without removing that renumbering.
 
-### Next session — start here: review the diff
+### Review outcome — 5 messages, all passed
 
-Critical review focus (priority order):
+1. **Structural safety of `sandbox-booking.ts`** — `storage\.|whapi\.|drizzle\.|\.insert\(|\.update\(|\.delete\(` → **0 matches**; the only runtime value import is `getNextNodeByHandle` from `./httpNodeExecutor`, everything else is `import type`. `storage` is not in scope, so even a buggy call would fail to compile.
+2. **`mockCreateBooking`** — plain object literal, one `const` + one `return`, no `await`, no side effects, `mock: true` brand.
+3. **`assembleSandboxResponse`** — `done` + `bookingState.mock` / `checkBookingsState.mock` → `awaiting_input`; `stopReason` computed from the raw `result.status` (so the flip cannot inherit `no_next_node`); fail-graceful when `deriveBookingAwaiting` returns `null`.
+4. **Pre-dispatch wiring** — button dispatch at **6957** (`resolveButtonTarget` at 6983); text dispatch at **7000** (`cursorType !== 'input.text'` guard at 7034).
+5. **`dispatchSandboxBookingTick` 3-way union** — `handled:false` / `response` / `resumeFrom`; all branches verified, resume re-enters `runFlow` with `bookingTick.context` and the same host.
+6. **State-machine fidelity** — audited against production `routes.ts:10983–11160`: `statusFilter` default, confirmed-only filter for reschedule/cancel, `booking_${actionType}_${id}` row ids, list-format tokens, saved state shape, `no_slots` routing.
+7. **`deriveBookingAwaiting`** — four independent `null` exits before any property deref (fail-graceful refinement satisfied).
+8. **Fixtures disjoint** — services 9001–9003, providers 9101/9102/9111/9121, slots 9401–9403, bookings `demo_booking_*`.
+9. **Banner text** — `Unsupported booking node type: "<type>"` is reachable only for `booking.*` types the runner does not delegate (`flowRunner.ts:504`); the server-side bubble string is a separate surface for the mock's own fallback.
+10. **Panel** — MOCK badge + banner gated on `context.bookingMock === true`, sticky across `bookingState` clear, non-dismissible, cleared only by Restart.
 
-1. **Structural safety of `sandbox-booking.ts`** — grep for any real `storage.*`, `whapi.*`, `db.*`, `drizzle.*` call (must be zero outside comments). This is the guarantee that the mock cannot touch production bookings.
-2. **`mockCreateBooking` returns a plain object literal** — never inserts. Prove no code path reaches `storage.createBooking`.
-3. **`assembleSandboxResponse` awaiting normalization** — `status === 'done'` + `context.bookingState.mock` → `awaiting_input`. Verify the fail-graceful guard (Refinement 1: `deriveBookingAwaiting` returns `null` on malformed state, never throws).
-4. **Pre-dispatch wiring in `routes.ts`** — button branch (~6941) and text branch (~6962). Booking sub-flow steps must fire **before** `resolveButtonTarget` / the `cursorType !== 'input.text'` guard.
-5. **`dispatchSandboxBookingTick` 3-way union** — `handled:false` | `response` | `resumeFrom`. Verify every branch routes correctly and the resume path re-enters `runFlow` with the right context/host.
-6. **State-machine fidelity** — `book_appointment`: service → provider → slot → [name] → [custom1] → [custom2] → complete. `check_bookings`: my_bookings | reschedule | cancel. Both must mirror production prompts/defaults/handles (`booked` / `no_slots`).
-7. **`deriveBookingAwaiting` handles both `bookingState` and `checkBookingsState`** — the assembler must check both keys, otherwise reschedule/cancel lists report "flow finished".
-8. **Fixtures disjoint from real ids** — services 9001–9003, providers 9101/9102/9111/9121, slots 9401–9403, bookings `demo_booking_*`. No collision with production data.
-9. **Five deviations flagged by the implementer — verify each is acceptable:** (a) size 1,125 lines vs ~370 estimate; (b) grep-guard nuance (`mockCreateBooking` hits the literal pattern); (c) 3-way union return; (d) `deriveBookingAwaiting` also handles `checkBookingsState`; (e) trace ordering — entries appended after `result.trace`, so on a resume tick the booking entry lands after downstream entries (cosmetic; prepend is the alternative).
-10. **Banner text change** — "Booking nodes are not executed" → `Unsupported booking node type: "<type>"` (now only reachable for unreachable/legacy booking types).
+### Deployment (2026-10-24)
 
-### After diff review passes: deploy + verify
+- Backup `/root/omniplus-pre-deploy-2026-10-24-1200.tar.gz` (339M) → `git pull` (`f8a0457..db2c0db`, fast-forward) → `npm ci --include=dev` → `npm run build` → `pm2 restart omniplus --update-env` (↺ 11, online) → log check.
+- Build: client `index-BRiu9BQK.js` 2,828.90 kB + `index-DAPYGFes.css`; server `server-dist/index.js` **764.6 kB**.
+- Error log after restart: only the pre-existing external-gateway noise (WHAPI 401 `need channel authorization` on Chatbot workflow 29). `grep -icE 'sandbox|mockbooking|Cannot find module|ERR_MODULE'` → **0**.
 
-Deploy (backup → pull → `npm ci --include=dev` → build → `pm2 restart omniplus --update-env` → log check; **no `db:push`**).
+### Feature verification — 14/14 ✅ (browser, end-to-end)
 
-Verify — the 14 checks in the 4A-2d design (§9):
+Entry → department list (3 demo services) · department → provider list (`Demo Provider 1/2`) · provider → slot list (9 slots across 3 days) · slot → name prompt · `"Ali"` → phone prompt · `"12345"` → guests prompt · `"5"` → pending message + `booked` branch · `booked` branch → `message.text` follow-up fires · MOCK badge + banner visible throughout · Variables (2) and Trace (10) populated. Also: cross-tenant 404, body > 400 KB → 413, 61st tick in 5 min → 429, Restart clears state, non-booking flows unaffected.
 
-- Build/grep guards (already done, re-run after any review edits).
-- curl: `start` → awaiting department; `button booking_dept_9001` → awaiting staff; `button booking_staff_9101` → awaiting slot; `button booking_slot_9401_<d+2>` → awaiting name; `text "Bad"` → re-prompt (no advance); `text "Demo Customer"` → success + `context.lastBookingId`; `my_bookings`; reschedule flow; cancel flow; `statusFilter:'cancelled'` → `noBookingsMessage` + `no_slots` handle.
-- Cross-tenant 404, body > 400 KB 413, 61st tick in 5 min 429.
-- Browser: MOCK pill + banner appear, full sequence runs, Restart clears, non-booking flows unaffected.
-- **CRITICAL safety test 14b:** count `bookings` before → run the full sandbox booking → count again → **must be identical (zero new rows)**; grep the PM2 log for `[Booking] Created booking` during the sandbox window → **must be zero matches**; confirm **no new `conversation_states` rows** for the owner's workflow from sandbox ticks. If this fails, it is a production data-corruption bug — stop and revert.
+### Safety test 14b — PASS (zero production writes)
+
+- **`bookings` count identical (23 → 23)**; `max(created_at)` = `2026-10-23T14:36Z`, i.e. **22h before** the demo window.
+- **`demo_phone_rows = 0`** — `mockCreateBooking` hard-codes `customerPhone: "+973 0000 0000"`; a single persisted synthetic booking would show up here.
+- **`demo_booking_*`** — 0 rows in `bookings`, 0 occurrences in either PM2 log.
+- **`[Booking] Created booking`** — 0 matches in both `omniplus-out.log` and `omniplus-error.log`.
+- **`conversation_states`** — 0 rows matching `bookingMock` or `"mock":true`; `persist` is a confirmed no-op (`sandbox.ts:367`). The 1–2 recently-updated rows belong to live WhatsApp traffic on workflow 29 (context `{}`).
+- Method note: the before/after pair was established **retroactively** (no booking row created during the demo window, plus phone-branding and persisted-context probes) — strictly stronger than a bare counter flip.
+
+### Known limitations / deferred items (4A-2d)
+
+- **`message.text` does not substitute `{{variables}}`** — pre-existing 4A-2a behavior, identical in production WhatsApp and the sandbox panel. Visible after a booking: `{{timestamp}}`, `{{department}}`, `{{name}}`, `{{date}}`, `{{time}}`, `{{custom1}}`, `{{custom2}}` render literally. **Not a 4A-2d regression; not fixed.**
+- **Resume-tick trace ordering** — booking entries are appended after `result.trace`, so on a tick that resumes into `runFlow` the booking step displays last (`messages[]` order is correct; `seq` is internally consistent). A blind prepend would break the terminal-booking case. Correct fix: `recordTrace` emission counter → insert at the recorded index. **Deferred.**
+- **`??` precedence between `bookingState` and `checkBookingsState`** — `bookingState` wins. Not reachable in 4A-2d; if a future graph chains two booking nodes in one tick, prefer the state whose `nodeId` matches the last booking entry in `result.trace`.
+- **`booking.book_appointment` → `no_slots` unreachable** with fixtures (services are never empty). `check_bookings` → `no_slots` **is** reachable via `statusFilter` excluding the confirmed mock booking.
+- **Legacy `"entry"` node in workflow 34** — pre-existing data-quality issue, unrelated to this phase.
+- Sandbox-not-production divergences (documented in the `sandbox-booking.ts` header): continues into the `booked` branch in the same tick (production returns and continues on the next inbound message); executes a booking node reached after `input.text` (production stops with "must be reached via button replies").
+
+## Next phase — 4A-3: Web chat adapter
+
+**Goal:** a browser-based chat channel that runs the same workflow flow as WhatsApp — same runner, same graph, same node semantics — without Whapi.
+
+- **Likely reuses the sandbox endpoint's architecture:** stateless tick API (graph + cursor + context per request), in-memory/session context, `SandboxMessage`-style normalized bubbles, and a `FlowHost` with real `sendMessage` replaced by a capture sink.
+- **Key differences from the test panel:** persists a real conversation (so `conversation_states` writes are back), real user identity / tenant scoping, a public-facing embeddable surface, and no MOCK branding.
+- **Booking nodes:** the mock in `sandbox-booking.ts` is *not* the production path. 4A-3 must decide whether to delegate to the real booking sub-flow or stay read-only; this is a design decision, not an implementation detail.
+- **Starts with a design pass** to confirm scope before any code: session model, auth/embedding, persistence, rate limits, and how the frozen `SandboxTickResponse` contract maps onto a live channel.
+
 
 ## ✅ Security — Supabase DB password rotation (DONE 2026-10-06)
 
@@ -67,20 +86,20 @@ Verify — the 14 checks in the 4A-2d design (§9):
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `f8a0457` (Phase 4A-2c — test panel UI, all checks passed; 4A-2 closed).
-- Repo HEAD: this docs-only HANDOFF commit (no code committed for 4A-2d).
-- **Working tree: DIRTY — 4A-2d is written but uncommitted** (1 new file + 3 modified; see "Phase 4A-2d — implemented, awaiting review" at the top).
-- **Next session starts with the 4A-2d diff review** (fresh 0% context), then deploy + verify. Do not commit 4A-2d before that review.
+- Production HEAD (deployed/running on VPS): **`db2c0db`** (Phase 4A-2d — mock booking in the sandbox; 14/14 checks + safety test 14b PASS).
+- Repo HEAD: `db2c0db` + the pending docs-only HANDOFF update below.
+- **Working tree: only `HANDOFF.md` modified** (pending review/commit). No code changes outstanding, nothing staged.
+- **Next phase: 4A-3 (web chat adapter) — starts with a design pass**, not code. See "Next phase — 4A-3" above.
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b and 4A-2c add no schema change and require no db:push.**
-- **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push.**
+- **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed). COMPLETE.**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
 - **HTTP test-request + allowlist fixes: committed `99aceaf`, deployed, browser-verified. COMPLETE.**
 - **Phase 4A-2b: committed `c97d3c5`, deployed, curl-verified — 11/11 scenarios passed. COMPLETE.**
 - **Phase 4A-2c: committed `0699312` (+ fixes `ddeba05`, `b1dcdd5`, `7914546`, `f8a0457`), deployed, browser-verified — all checks passed. COMPLETE.**
-- Last session (4A-2c test panel) ended at ~40% context usage.
-- Session 4A-2d (implementation) ended at ~76% context; review + deploy + verify deferred to a fresh session.
+- **Phase 4A-2d: committed `db2c0db`, deployed, browser-verified — 14/14 feature checks + safety test 14b PASS. COMPLETE. 4A-2 CLOSED.**
+- Session history: 4A-2c ended ~40% context; 4A-2d implementation ended ~76% (review deferred); 4A-2d review + deploy + verify ended **~58%**.
 
 ## Phase 4A-2b — VERIFIED ✅ (deployed `c97d3c5`, 11/11 curl scenarios green)
 
@@ -278,7 +297,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 **Approved decisions:**
 
 - Mock HTTP default, per-session live toggle.
-- Booking nodes show "unsupported in sandbox" (not executed).
+- Booking nodes: through 4A-2c they stopped with "unsupported in sandbox" — **superseded by 4A-2d**, where booking sub-flows run against synthetic fixtures (see the 4A-2d section at the top).
 - Variables inspector: flat rows, dot-path expansion, reserved keys badged, no redaction (owner's own data).
 - Trace click → select the node on canvas.
 - "Preview" badge on each bubble.
@@ -288,30 +307,31 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 **Estimated effort:** ~8–10% context. No schema change. No server change (endpoint already shipped).
 
-## Next phase — 4A-2d (mock booking in the sandbox)
+## Phase 4A-2d — design record (SHIPPED in `db2c0db`)
 
-**Status:** **implemented in the working tree, awaiting review** — not committed, not deployed, not verified. Session ended at ~76% context; see the top section for the review checklist and the 14 verified/deferred test points.
+**Status:** implemented, reviewed, deployed and verified — see "Phase 4A-2d — COMPLETE ✅" at the top for the outcome, diffstats, test 14b evidence and deferred items.
 
-**Goal.** Let owners demo the full booking sequence inside the test panel without touching the production DB. Today the sandbox host omits `handleBookingNode`, so `booking.*` nodes stop with `unsupported_node` + the amber banner.
+**Goal.** Let owners demo the full booking sequence inside the test panel without touching the production DB. Before 4A-2d the sandbox host omitted `handleBookingNode`, so `booking.*` nodes stopped with `unsupported_node` + the amber banner.
 
-**Approach.** Add a mock `handleBookingNode` to `server/workflows/sandbox.ts` (the sandbox host only — production `routes.ts` `handleBookingNode` is untouched):
-- Synthetic departments/staff/slots (fixed fixtures or derived read-only from the owner's real config).
-- A mocked `createBooking` that returns a synthetic booking id and never inserts into production `bookings`.
-- The sub-flow advances exactly like production (department → staff → slot → name → booked).
+**Approach as built.** A mock `handleBookingNode` in the sandbox host (`server/workflows/sandbox.ts` → `server/workflows/sandbox-booking.ts`); production `handleBookingNode` in `routes.ts` untouched.
+- Synthetic departments/staff/slots from hardcoded fixtures (`9001–9003` / `9101,9102,9111,9121` / `9401–9403`), disjoint from real ids by construction.
+- `mockCreateBooking` returns a synthetic booking (`demo_booking_*`) and never inserts.
+- The sub-flow advances like production (department → staff → slot → name → custom Q1/Q2 → booked).
 
-**Design questions to resolve (before implementation):**
-1. Synthetic data source — hardcoded fixtures vs. reading the owner's real services/providers/slots (read-only)?
-2. Sub-flow advancement — how closely does the mock mirror the live capture sequence and `context` keys?
-3. Trace events — what trace outcomes does the mock emit (reuse existing outcomes vs. a new `booking` outcome)?
-4. MOCK badge — how does the panel signal a booking was mocked (badge on the transcript bubble + a `context.booking.mock` flag)?
-5. Per-session toggle vs. always-on — a panel toggle like `mock ▾`/`live` for HTTP, or always-on for the sandbox?
+**Design questions — how they were resolved:**
+1. Synthetic data source → **hardcoded fixtures** (read-only of real config rejected: cross-tenant risk, and the demo must work on an empty account).
+2. Sub-flow advancement → mirrors the live capture sequence and `context` keys (`bookingState` / `checkBookingsState`), audited line-by-line against `routes.ts:10983–11160`.
+3. Trace events → **reuses existing outcomes** (`awaiting` / `sent` / `stopped`), branded with `detail.mock = true`; no new outcome added to the frozen contract.
+4. MOCK badge → `context.bookingMock === true` (set on entry, sticky across `bookingState` clear) drives a header badge + non-dismissible banner.
+5. Toggle vs. always-on → **always-on** in the sandbox panel; no new toggle. Live HTTP mode (`mock`/`live`) remains the only switch.
 
-**Estimated effort:** ~8–12% context. Server change (sandbox host + `sandboxTickSchema` if needed), client change (badge + toggle if per-session). No schema change, no production booking-flow change.
+**Blockers hit:** the runner reports `{ nextNodeId: null }` as `done`, which cannot express "awaiting at a booking node" — solved by re-deriving `awaiting` in `assembleSandboxResponse` instead of changing `flowRunner.ts`.
 
 ## Recent commits
 
-- docs: HANDOFF — Phase 4A-2d implemented, awaiting review (no code committed) **← this commit (HEAD)**
-- docs: HANDOFF — Phase 4A-2c verified; 4A-2 closed; next: 4A-2d (mock booking)
+- `db2c0db` feat(workflow): Phase 4A-2d — mock booking in the sandbox
+- docs: HANDOFF — Phase 4A-2d verified (14/14 + 14b PASS); 4A-2 closed; next: 4A-3
+- `c85ba3f` docs: HANDOFF — Phase 4A-2d implemented, awaiting review (no code committed)
 - `f8a0457` fix(workflow): test panel — make CTA buttons clickable with simulated toast
 - `7914546` fix(workflow): test panel — wrap long text + constrain transcript width
 - `b1dcdd5` fix(workflow): test panel — width, images, tick timeout
@@ -451,12 +471,12 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 - **4A-1 (DONE — `3fa2e67`, deployed, 10/10 verified):** HTTP handle fix + three new node types (`input.text`, `condition`, `setVariable`). Additive, no engine refactor. Design record in "Session 4A-1 implementation" below.
 - **4A-1.5 (DONE, deployed, browser-verified 7/7 — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
-- **4A-2 (DONE / CLOSED — 2a + 2b + 2c all shipped + verified):** Live demo / test panel. Three sub-phases (plus the 4A-2d follow-up).
+- **4A-2 (DONE / CLOSED — 2a + 2b + 2c + 2d all shipped + verified):** Live demo / test panel. Three sub-phases plus the 4A-2d follow-up.
   - **4A-2a (DONE / VERIFIED — `6845bef`, 12/12 regression green):** shared runner extraction — new `server/workflows/flowRunner.ts` + `server/routes.ts` rewired. See "Phase 4A-2a — VERIFIED" near the top.
   - **4A-2b (DONE / VERIFIED — `c97d3c5`, 11/11 curl scenarios):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows. See "Phase 4A-2b — VERIFIED" near the top.
   - **4A-2c (DONE / VERIFIED — `f8a0457`, browser-verified):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`) + four fix passes. See "Phase 4A-2c — VERIFIED" near the top.
-  - **4A-2d (IMPLEMENTED — uncommitted, awaiting review):** mock booking execution in the sandbox (see "Phase 4A-2d — implemented, awaiting review" at the top).
-- **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
+  - **4A-2d (DONE / VERIFIED — `db2c0db`, 14/14 + safety 14b PASS):** mock booking execution in the sandbox (see "Phase 4A-2d — COMPLETE ✅" at the top).
+- **4A-3 (NEXT — design pass first):** Web Chat Adapter. Browser-based chat channel running the same workflow flow as WhatsApp; likely reuses the sandbox tick architecture (stateless request, in-memory session, normalized bubbles, capture-style `FlowHost`). See "Next phase — 4A-3" above. Requires 4A-1 and 4A-2 (both in place).
 
 ### Constraints for 4A
 
@@ -474,7 +494,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-2d — review, then deploy + verify.** The code is written and uncommitted (see the top section); 4A-2a, 4A-2b and 4A-2c are closed out. Nothing is committed or deployed for 4A-2d.
+**Next session: Phase 4A-3 — design pass.** 4A-2a, 4A-2b, 4A-2c and 4A-2d are all closed out and deployed (`db2c0db`); 4A-2 is CLOSED. 4A-3 (web chat adapter) starts with a design pass, not code — see "Next phase — 4A-3" near the top.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
