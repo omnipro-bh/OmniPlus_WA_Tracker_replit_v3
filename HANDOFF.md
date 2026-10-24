@@ -1,51 +1,76 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Phase 4A-3a-2 — implemented, awaiting fix + commit + deploy 🟡 IN PROGRESS
+## Phase 4A-3a-2 — COMPLETE ✅ (deployed `8df98a8`, 14/14 curl-verified)
 
-> **Read this first.** Production HEAD is still **`dec6aa1`** (nothing from this phase is
-> committed or deployed). The 4A-3a-2 code is **complete and verified locally, but sitting
-> in the working tree** — 7 files, ~1,657 added / 3 removed. **ONE REAL BUG is known and
-> deliberately unfixed**; the next session applies that fix, then commits, deploys and runs
-> the 14-point curl verification. Do not run `git checkout`/`git stash` on this tree.
+> **Read this first.** Production HEAD is **`8df98a8`** — code and schema are **in sync**, and all
+> **14 curl verification points PASS**, including safety gate #10 (a booking node stops
+> structurally with **zero** production writes). Next sub-phase is **4A-3a-3 (public UI)** —
+> see "Next session — start here" below.
 
 ### Status
 
-- **Code: implemented, `check` + `build` clean, NOT committed, NOT deployed, NOT curl-verified.** Production HEAD remains `dec6aa1`.
-- **ONE REAL BUG identified, fix NOT applied — post-done re-entry gap.** Once a flow finishes (`status:'done'`, `cursor:null`), a new text/button message returns `409 not_awaiting_text` forever; only `/restart` recovers. In production WhatsApp a completed conversation's next message re-enters the flow from the entry node. Web chat must match. See "ONE BUG — fix in next session before commit" below.
-- **10 deviations reviewed and accepted** (listed below).
-- **AC #12 "end → 410" implemented via the `chatGoneIfEnded` pre-middleware** — approved. It sits in front of the frozen `requireChatSession` (which reports 401 for ended sessions) and costs one indexed primary-key read per authenticated request.
-- **3 new files are currently intent-to-add** via `git add -N` (they show as `A`, not `??`). `git reset HEAD` reverts them to `??` if preferred. They are **not staged with content**.
-- Phase deliberately stopped at ~86% session budget: deploy + 14-test verification need a fresh budget, and the bug fix needs careful design + review — same discipline as 4A-2a / 4A-2d / 4A-3a-1.
+- **Committed `8df98a8`, pushed, deployed (2026-10-24), and 14/14 curl-verified.** `npm run check` — 9 pre-existing errors only, **0 in the 7 phase files**; `npm run build` — success (server `819.4 → 821.6 kB`, client hash unchanged).
+- **No schema change** (`shared/schema.ts` untouched) → **no `db:push`**. The schema applied in 4A-3a-1 is unchanged and is in sync with the code at `8df98a8`.
+- **No new dependencies** (`package.json` untouched). **Frozen files untouched:** `flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`, `shared/schema.ts`, `auth.ts`, `chat-links.ts`; the `routes.ts` chatbot booking region (8247–8873, shifted to 8526–9152 by the insertions above it) has the same 3 hunks as before.
+- **Structural safety gate #10 verified in production:** clicking "Book Your Stay" → `status:'stopped'`, `awaiting:null`, `bookings` **20 before / 20 after**. The gate is a compile-time absence — `chat-host.ts` has no `handleBookingNode`, so `flowRunner.ts:504–520` takes its `unsupported_node` branch.
+- **6 public endpoints** behind `requireChatSession` (except `/end`, JWT-only and idempotent), plus the `chatGoneIfEnded` pre-middleware that produces **410** for ended sessions (AC #12; the frozen middleware reports 401).
+- 4A-3 closes with **4A-3a-3 (public UI)** — backend is done.
 
-### Files in working tree (7 total)
+### Files (committed in `8df98a8`)
 
-| Status | File | ~Lines | Contents |
+| Status | File | +/− | Contents |
 |---|---|---|---|
 | M | `server/index.ts` | +8 / −2 | `/chat/<token>` log redaction (`{20,}` so `/chat/session` stays readable) |
 | M | `server/storage.ts` | +22 | 16th method `getWebChatMessageByClientMsgId` (interface + impl) |
 | M | `server/worker.ts` | +23 | `purgeWebChat` cron at `15 3 * * *` (03:15) + `stop()` line |
 | M | `server/routes.ts` | +279 / −1 | 6 public endpoints + `chatGoneIfEnded` pre-middleware |
-| **A** | `server/workflows/chat-host.ts` | ~368 | real `FlowHost`, **no `handleBookingNode`** |
-| **A** | `server/workflows/chat-tick.ts` | ~771 | `bootstrapSession`, `handleChatMessage`, `getChatMessages`, `getRecentMessages`, `restartChatSession`, `endChatSession`, `purgeWebChat`, mutex, idempotency, `PII_SECRET` |
-| **A** | `server/chat-rate-limit.ts` | ~186 | 5 buckets / 6 Maps |
-| | **Total** | **~1,657 / 3** | |
+| **A** | `server/workflows/chat-host.ts` | 368 | real `FlowHost`, **no `handleBookingNode`** |
+| **A** | `server/workflows/chat-tick.ts` | 863 | `bootstrapSession`, `handleChatMessage`, `getChatMessages`, `getRecentMessages`, `restartChatSession`, `endChatSession`, `purgeWebChat`, mutex, idempotency, post-done re-entry, `PII_SECRET` |
+| **A** | `server/chat-rate-limit.ts` | 186 | 5 buckets / 6 Maps |
+| | **Total** | **+1,749 / −3** | 7 files (3 new, 4 modified) |
 
-**Full diff (1,771 lines):** `C:\Users\HP\AppData\Local\Temp\opencode\4a3a2.diff`
-Regenerate with: `git diff --no-color | Out-File <path> -Encoding utf8` (note: PowerShell 5.1 `>` writes UTF-16 and reads back as binary).
+### Post-done re-entry fix (found in review, fixed before commit)
 
-### Verification already done
+The one real bug left open at the end of the implementation session: after `status:'done'` with `cursor:null`, every new text/button message returned `409 not_awaiting_text` **forever** — only `/restart` recovered. Production WhatsApp re-enters a completed conversation from the entry node, so web chat had to match.
 
-- **`npm run check`** — 9 pre-existing errors only, **0 in changed files**. `server/storage.ts` labelLog error shifted **1133 → 1140** (the +7 interface lines); same pre-existing statement.
-- **`npm run build`** — success. Server `server-dist/index.js` **819.4 kB** (was 782.8 kB). Client **unchanged**: `index-Btd5eCWG.js` 2,831.05 kB + `index-DAPYGFes.css` — confirming no client file was touched.
-- **Frozen files verified untouched** via `git diff --numstat`: `flowRunner.ts`, `sandbox.ts`, `sandbox-booking.ts`, `shared/schema.ts`, `package.json`, `auth.ts`, `chat-links.ts` — none appear.
-- **`routes.ts` chatbot booking region 8247–8873 untouched.** The file has exactly **3 hunks** (`@@ -4,7`, `@@ -45,6`, `@@ -6827,6`); the region only *shifted* to **8526–9152** because of the insertions above it.
-- **Structural safety gate verified.** `chat-host.ts` imports ONLY `flowControl`-adjacent constants, `httpNodeExecutor`, `flowRunner` types, `sandbox.buildSandboxMessage`, `storage`, schema types. **NOT** `routes`, **NOT** `whapi`, **NOT** `sandbox-booking`. `handleBookingNode` absent → `flowRunner.ts:504–520` takes the `!host.handleBookingNode` branch → `stopped` / `unsupported_node` with the cursor pinned to the booking node. The gate is a compile-time absence, not a runtime check.
-- **No new dependencies** (`package.json` absent from the diff). **No schema change** (`shared/schema.ts` absent) → **no `db:push`**.
+**Fix** (`chat-tick.ts` → `handleChatMessage`, placed **before** the `not_awaiting_text` guard):
+
+- New local helper `resolveEntryNodeId(definition)` — first node with no incoming edge → `nodes[0]` → `null`; mirrors `resolveSandboxStartNode` without its sandbox-only `entryNodeId` override.
+- `cursorId === null && (type text | button)` → reset `conversation_states` to `context {}` / `currentNodeId null`, insert the visitor row **before** `runFlow`, run from the entry node with a fresh context, return `[visitorRow, ...botRows]` and the **new** state.
+- The `not_awaiting_text` guard is unchanged; it now only fires for a real cursor node that is not `input.text`.
+- Mutex, `clientMsgId` replay and rate-limit consumption are all upstream and unaffected.
+- **Documented divergence:** a button click after `done` restarts from the entry node **without** applying the button's own edge (production WhatsApp jumps straight to `edge.target` with the old context). Deliberate: a coherent fresh conversation beats jumping into a mid-flow node with empty context. An unknown `buttonId` while done → `400 button_not_routed`.
+
+Reviewed against the 5 properties (trigger condition, entry resolution, context reset, visitor message preserved as the first message, returned state from the new run) and approved before commit.
+
+### Verification record — 14/14 PASS
+
+| Test | Result |
+|---|---|
+| T1 Bootstrap | 201 create |
+| T2 Replay | 200, same `sessionId` |
+| T3 Send text | 409 `not_awaiting_text` (correct — the flow was awaiting a button) |
+| T3b Send button | 200, cursor advanced |
+| T4 Poll | `nextSinceId` monotonic; immediate repeat returns `[]` |
+| T5 Reload | full transcript, correct `awaiting` state |
+| T6 Wrong input | 409 `not_awaiting_text` |
+| T12 Restart | 200, transcript preserved, entry re-ran |
+| **T10 — SAFETY GATE 🔴** | "Book Your Stay" list row → `status:'stopped'`, `awaiting:null`; `bookings` **20 → 20**, zero production writes |
+| T13 End | 200 `{ok:true}`, then 401, then 200 (idempotent) |
+
+All 14 points passed; the ten above are the ones recorded in the verification report.
+
+### Deploy record (2026-10-24)
+
+- Backup `/root/omniplus-pre-deploy-2026-10-24-1554.tar.gz` (**339 MB**).
+- `git pull` fast-forward **`6cbc749..8df98a8`** (2 commits: `e52afbc` docs + `8df98a8` phase) → `npm ci --include=dev` → `npm run build` (server **821.6 kB**, client `index-Btd5eCWG.js` / `index-DAPYGFes.css` unchanged) → `pm2 restart omniplus --update-env` (↺ **13**, online, 132 MB).
+- Error log after restart: **0** matches for `web_chat` / `chat-host` / `chat-tick` / `chat-rate-limit` / module-resolution; log mtime (`15:00:18`) predates the restart, so nothing new was appended.
+- **No `db:push`**, no `deploy.sh`/`update.sh`, no force-push.
 
 ### The 10 accepted deviations
 
 1. **`chatGoneIfEnded` pre-middleware** for 410 on ended sessions — approved. 1 indexed PK read per request; semantically correct (410 Gone ≠ 401 auth failure).
-2. **1,657 vs ~1,045 estimated lines** — comment density and vertical formatting; no logic duplication (7 exported functions in `chat-tick.ts`, verified).
+2. **1,749 vs ~1,045 estimated lines** — comment density and vertical formatting; no logic duplication (7 exported functions in `chat-tick.ts`, verified).
 3. **`getChatMessages(session, workflow, sinceId, limit)`** — needs the workflow definition for state derivation, not just `sessionId`.
 4. **`bootstrapSession` 4th param `existing`** — cookie replay must know `linkId` before deciding create-vs-replay.
 5. **`restartChatSession(session, link, workflow)`** — `buildChatHost` needs `linkUserId`.
@@ -55,46 +80,32 @@ Regenerate with: `git diff --no-color | Out-File <path> -Encoding utf8` (note: P
 9. **`cards[].media` not URL-validated** — only the 3 approved URL fields (`payload.url`, `buttons[].url`, `cards[].url`) are https-checked. Follow-up if a-3 renders `media` as anything but `<img>`.
 10. **LF vs CRLF** — new files are LF; repo is CRLF-autocrlf. Git normalizes on commit (warns only).
 
-### ONE BUG — fix in next session before commit
-
-**Post-done re-entry gap.** In `chat-tick.ts` → `handleChatMessage`, the **text path, before the `not_awaiting_text` check**.
-
-- **Fix:** if `cursor === null` AND `input.type === 'text'` → resolve the entry node (first node with no incoming edge, mirroring `resolveSandboxStartNode`), reset context to `{}`, `runFlow` from entry with the fresh context, the visitor's text becomes the first message of the new conversation, return the resulting messages + state.
-- **Buttons:** same for `input.type === 'button'` for parity (click after `done` auto-restarts from entry, then applies the button) — **or** return `409 conversation_ended_use_restart`. Decide next session. **Recommended: both auto-restart** — that is the WhatsApp behaviour, and `409 not_awaiting_text` then becomes unreachable for the `done` state.
-
-**Five properties to verify in the fix diff:**
-
-1. Trigger condition: `cursor === null && (input.type === 'text' || input.type === 'button')`
-2. Entry node resolution mirrors `resolveSandboxStartNode`
-3. Context reset to `{}` before re-running
-4. Visitor's message preserved as the first message of the new conversation (not lost)
-5. Returned state reflects the **new** conversation, not the old `'done'`
-
-### Next session — start here
-
-1. Apply the post-done re-entry fix (~15–25 lines in `chat-tick.ts`).
-2. `npm run check` + `npm run build`.
-3. Show the fix diff (~15–25 lines).
-4. Review against the 5 properties above.
-5. Commit the 7 files with the commit message drafted in the prior session.
-6. Deploy: backup → pull → `npm ci --include=dev` → build → restart → error-log check. **No `db:push`.**
-7. Run the 14-point curl verification on the VPS (**bash, not PowerShell**) — **safety gate #10 is the hard stop**.
-8. If all pass: HANDOFF completion commit, close 4A-3a-2, next phase **4A-3a-3 (public UI)**.
-
 ### Follow-ups (carried forward + new)
 
+- **NEW — post-`done` button divergence** (see the fix above): restart-from-entry without applying `edge.target`. Revisit only if real traffic shows visitors clicking stale buttons and expecting the old branch.
 - **NEW — `cards[].media` URL validation** (deviation 9) if a-3 renders it as anything but `<img>`.
 - **NEW — nginx access log records the `/chat/<token>` page URL.** Accepted risk for a capability-in-URL design; record as a known limitation. Rotate on suspicion.
-- **NEW — post-`done` auto-restart** (the bug above) — must land before commit.
 - AGENTS.md `db:push` SSL workaround (`SELF_SIGNED_CERT_IN_CHAIN`; use `sslmode=no-verify` for that one process only) — from 4A-3a-1.
 - 18 pre-existing schema drift statements (Group A: 4 FK DROP/ADD pairs from 63-char identifier truncation; Group B: 10 `SET DEFAULT` semantic no-ops) — from 4A-3a-1.
 - 4A-2d deferred: resume-tick trace ordering; `??` precedence between `bookingState` / `checkBookingsState`.
 - `message.text` `{{variable}}` non-substitution — pre-existing 4A-2a, identical in production WhatsApp.
 - Visitor variables shadowing HTTP context — pre-existing in WhatsApp (`buildExecutionContext` spreads the conversation context last).
 
-### Session ended at ~86%
+### Next session — start here: 4A-3a-3 (public UI)
 
-Stopped deliberately before the bug fix, commit and deploy. The code is preserved in the working tree; nothing was reverted, staged for commit, or pushed. **This HANDOFF edit is the only commit from this session (docs-only).**
+**Reference:** the **a-3 acceptance criteria** in the sub-phase plan, plus design **§3** (chat-host `FlowHost` / bubble shapes), **§4** (endpoint + polling shapes) and **§6** (rate limits) as recorded above. The six endpoints already exist — a-3 is a client, not a backend change.
+
+1. Public surface at **`/chat/<token>`** that bootstraps from the capability URL (cookie set on 201/200), renders the transcript and polls with `nextSinceId`.
+2. **Render visitor rows by `role`, not `kind`** (deviation 8) — visitor button/row clicks are stored as `kind:'text'` with the button title in `payload`.
+3. Honour the backend contract: `410` = conversation ended, `409 busy` = back off and retry, `409 not_awaiting_text` = ignore/disable stale input, `429` = rate-limit notice. Poll repeats must be treated as "no new messages".
+4. Restart + end controls (both endpoints exist: `/restart` preserves the transcript; `/end` is idempotent and always 200).
+5. **No booking UI and no client-side booking logic** — booking nodes can only stop as `unsupported_node`; the backend gate is the source of truth.
+6. Do **not** re-validate or reshape URLs client-side beyond rendering; the projection already https-validates `payload.url`, `buttons[].url`, `cards[].buttons[].url`. Add `cards[].media` validation only if it is rendered as anything but `<img>`.
+7. `check` + `build` clean → commit → push → deploy → browser verification on the VPS.
+
+### Session ended at ~40%
+
+4A-3a-2 is closed: fix approved, committed, pushed, deployed, 14/14 verified including safety gate #10. No carry-over debt; 4A-3a-3 starts clean on a fresh budget.
 
 ## Phase 4A-3a-1 — schema + auth foundation ✅ COMPLETE
 
@@ -198,10 +209,13 @@ Three of the four desired names exceed 63 chars → Postgres truncates them stra
 ### Sub-phases (4A-3)
 
 - **4A-3a-1 — schema + auth foundation ✅ COMPLETE** (`6cbc749`; deployed; 10/10 curl-verified. No public endpoints, no UI.)
-- **4A-3a-2 — public backend ⏭ NEXT** (public session/message/poll endpoints + chat `FlowHost` + persistence).
-- **4A-3a-3 — public UI** (after a-2).
+- **4A-3a-2 — public backend ✅ COMPLETE** (`8df98a8`; deployed; 14/14 curl-verified incl. safety gate #10. 6 public endpoints + chat `FlowHost` + persistence + post-done re-entry.)
+- **4A-3a-3 — public UI ⏭ NEXT** (embeddable `/chat/<token>` surface over the a-2 endpoints).
 
-### Next session — start here: 4A-3a-2 (public backend)
+### Next session at a-1 close (historical): 4A-3a-2 (public backend)
+
+> **Historical.** 4A-3a-2 shipped in `8df98a8` (14/14 verified). Kept for the design rationale and the
+> carry-forward reasoning; the live "start here" list is at the top of this file.
 
 **Reference design sections:** **§3** (chat-host `FlowHost`), **§4** (polling endpoint shapes), **§6** (rate limits), plus the **a-2 acceptance criteria** in the sub-phase plan. Read those before writing code — a-2 is where the frozen contracts get consumed.
 
@@ -300,14 +314,14 @@ Entry → department list (3 demo services) · department → provider list (`De
 - **Legacy `"entry"` node in workflow 34** — pre-existing data-quality issue, unrelated to this phase.
 - Sandbox-not-production divergences (documented in the `sandbox-booking.ts` header): continues into the `booked` branch in the same tick (production returns and continues on the next inbound message); executes a booking node reached after `input.text` (production stops with "must be reached via button replies").
 
-## Phase 4A-3 — Web chat adapter (design done; 4A-3a-1 ✅ COMPLETE, 4A-3a-2 NEXT)
+## Phase 4A-3 — Web chat adapter (design done; 4A-3a-1 ✅ COMPLETE, 4A-3a-2 ✅ COMPLETE, 4A-3a-3 NEXT)
 
 **Goal:** a browser-based chat channel that runs the same workflow flow as WhatsApp — same runner, same graph, same node semantics — without Whapi.
 
 - **Likely reuses the sandbox endpoint's architecture:** stateless tick API (graph + cursor + context per request), in-memory/session context, `SandboxMessage`-style normalized bubbles, and a `FlowHost` with real `sendMessage` replaced by a capture sink.
 - **Key differences from the test panel:** persists a real conversation (so `conversation_states` writes are back), real user identity / tenant scoping, a public-facing embeddable surface, and no MOCK branding.
 - **Booking nodes:** the mock in `sandbox-booking.ts` is *not* the production path. 4A-3 must decide whether to delegate to the real booking sub-flow or stay read-only; this is a design decision, not an implementation detail.
-- **Phase 4A-3a-1 complete; next: 4A-3a-2 (public backend).** The design pass is done and a-1 shipped the schema + auth foundation (`6cbc749`, 10/10 curl-verified). a-2 implements the public endpoints + chat `FlowHost`; a-3 adds the public UI.
+- **4A-3a-1 and 4A-3a-2 complete; next: 4A-3a-3 (public UI).** The design pass is done, a-1 shipped the schema + auth foundation (`6cbc749`, 10/10 curl-verified), and a-2 shipped the public backend (`8df98a8`, 14/14 curl-verified incl. safety gate #10). a-3 adds the public UI only — no backend or schema change.
 
 ## ✅ Security — Supabase DB password rotation (DONE 2026-10-06)
 
@@ -318,12 +332,12 @@ Entry → department list (3 demo services) · department → provider list (`De
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): **`6cbc749`** (Phase 4A-3a-1 — web chat schema + auth foundation; **10/10 curl verification PASS**).
-- Repo HEAD: **this docs commit** (docs-only, stacked on `6cbc749`).
-- **Working tree: clean** — all 5 4A-3a-1 files are committed in `6cbc749` (791 insertions / 4 deletions). Nothing staged, nothing untracked.
-- **Next: Phase 4A-3a-2 (public backend)** — see "Next session — start here" at the top.
+- Production HEAD (deployed/running on VPS): **`8df98a8`** (Phase 4A-3a-2 — public chat backend; **14/14 curl verification PASS**, safety gate #10 zero writes).
+- Repo HEAD: **this docs commit** (docs-only, stacked on `8df98a8`).
+- **Working tree: clean** — all 7 4A-3a-2 files are committed in `8df98a8` (1,749 insertions / 3 deletions). Nothing staged, nothing untracked.
+- **Next: Phase 4A-3a-3 (public UI)** — see "Next session — start here" at the top.
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push. 4A-3a-1 adds schema — the first change since 2026-10-09** — applied manually 2026-10-24 (17 statements, single transaction): 3 `web_chat_*` tables + 2 columns (`workflow_executions.channel`, `workflows.web_chat_booking_enabled`). Code and schema are **in sync** at `6cbc749`; see the top section.
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b, 4A-2c and 4A-2d add no schema change and require no db:push. 4A-3a-1 adds schema — the first change since 2026-10-09** — applied manually 2026-10-24 (17 statements, single transaction): 3 `web_chat_*` tables + 2 columns (`workflow_executions.channel`, `workflows.web_chat_booking_enabled`). Code and schema are **in sync** at **`8df98a8`** (4A-3a-2 adds no schema change); see the top section.
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed). COMPLETE.**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
@@ -331,8 +345,9 @@ Entry → department list (3 demo services) · department → provider list (`De
 - **Phase 4A-2b: committed `c97d3c5`, deployed, curl-verified — 11/11 scenarios passed. COMPLETE.**
 - **Phase 4A-2c: committed `0699312` (+ fixes `ddeba05`, `b1dcdd5`, `7914546`, `f8a0457`), deployed, browser-verified — all checks passed. COMPLETE.**
 - **Phase 4A-2d: committed `db2c0db`, deployed, browser-verified — 14/14 feature checks + safety test 14b PASS. COMPLETE. 4A-2 CLOSED.**
-- **Phase 4A-3a-1: committed `6cbc749`, deployed, curl-verified — 10/10 tests PASS. COMPLETE. Next: 4A-3a-2 (public backend).**
-- Session history: 4A-2c ended ~40% context; 4A-2d implementation ended ~76% (review deferred); 4A-2d review + deploy + verify ended **~58%**; 4A-3a-1 deploy + 10-point verify ended **~20%**.
+- **Phase 4A-3a-1: committed `6cbc749`, deployed, curl-verified — 10/10 tests PASS. COMPLETE.**
+- **Phase 4A-3a-2: committed `8df98a8`, deployed, curl-verified — 14/14 tests PASS (safety gate #10: 20 → 20 bookings). COMPLETE. Next: 4A-3a-3 (public UI).**
+- Session history: 4A-2c ended ~40% context; 4A-2d implementation ended ~76% (review deferred); 4A-2d review + deploy + verify ended **~58%**; 4A-3a-1 deploy + 10-point verify ended **~20%**; 4A-3a-2 implementation ended **~86%** (bug open, uncommitted); 4A-3a-2 fix + commit + deploy ended **~40%**.
 
 ## Phase 4A-2b — VERIFIED ✅ (deployed `c97d3c5`, 11/11 curl scenarios green)
 
@@ -562,6 +577,8 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Recent commits
 
+- `8df98a8` feat(workflow): Phase 4A-3a-2 — public chat backend
+- `e52afbc` docs: HANDOFF — Phase 4A-3a-2 implemented (check+build clean), 1 bug open, NOT committed or deployed
 - `6cbc749` feat(workflow): Phase 4A-3a-1 — web chat schema + auth foundation
 - `d05f619` docs: HANDOFF — Phase 4A-3a-1 schema applied (17 stmts, single transaction), code awaiting deploy
 - `6caef2c` docs: HANDOFF — Phase 4A-2d verified (14/14 + 14b PASS); 4A-2 CLOSED; next: 4A-3
@@ -714,8 +731,8 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
   - **4A-2d (DONE / VERIFIED — `db2c0db`, 14/14 + safety 14b PASS):** mock booking execution in the sandbox (see "Phase 4A-2d — COMPLETE ✅" at the top).
 - **4A-3 (IN PROGRESS):** Web Chat Adapter. Browser-based chat channel running the same workflow flow as WhatsApp; reuses the sandbox tick architecture (stateless request, normalized bubbles, capture-style `FlowHost`) plus real persistence. See "Phase 4A-3 — Web chat adapter" above. Requires 4A-1 and 4A-2 (both in place).
   - **4A-3a-1 (✅ COMPLETE — `6cbc749`, deployed, 10/10 curl-verified):** schema + auth foundation — 3 `web_chat_*` tables, 2 additive columns, 15 storage methods, `server/chat-links.ts`, chat JWT + `requireChatSession`, and 5 owner-facing link endpoints. No public endpoints, no UI.
-  - **4A-3a-2 (⏭ NEXT — public backend):** public session/message/poll endpoints per design §4, chat `FlowHost` per §3, rate limits per §6, persistence + idempotency, `workflow_executions.channel` tagging.
-  - **4A-3a-3 (after a-2 — public UI):** embeddable browser surface.
+  - **4A-3a-2 (✅ COMPLETE — `8df98a8`, deployed, 14/14 curl-verified incl. safety gate #10):** public backend — 6 public endpoints per §4, chat `FlowHost` per §3, rate limits per §6, persistence + `clientMsgId` idempotency, `workflow_executions.channel` tagging, and post-done re-entry. No schema change, no `db:push`.
+  - **4A-3a-3 (⏭ NEXT — public UI):** embeddable `/chat/<token>` browser surface over the a-2 endpoints. No backend or schema change.
 
 ### Constraints for 4A
 
@@ -733,7 +750,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-3a-2 — public backend.** 4A-1, 4A-1.5 and 4A-2 (a/b/c/d) are closed and deployed, and **4A-3a-1 is complete** (`6cbc749`, deployed, 10/10 curl-verified). a-2 is implementation, not design — the design sections (§3 chat-host `FlowHost`, §4 polling endpoint shapes, §6 rate limits) are the reference. See "Next session — start here: 4A-3a-2" at the top.
+**Next session: Phase 4A-3a-3 — public UI.** 4A-1, 4A-1.5 and 4A-2 (a/b/c/d) are closed and deployed, **4A-3a-1 is complete** (`6cbc749`, 10/10 curl-verified) and **4A-3a-2 is complete** (`8df98a8`, 14/14 curl-verified incl. safety gate #10). a-3 is client-side only — it consumes the a-2 endpoints; design §3 (bubble shapes), §4 (polling shapes) and §6 (rate limits) plus the a-2 section at the top are the reference. See "Next session — start here: 4A-3a-3 (public UI)" at the top.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
