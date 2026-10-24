@@ -9,17 +9,18 @@
 
 ## Current state
 
-- Production HEAD (deployed/running on VPS): `c97d3c5` (Phase 4A-2b — sandbox tick endpoint, 11/11 curl scenarios verified).
+- Production HEAD (deployed/running on VPS): `f8a0457` (Phase 4A-2c — test panel UI, all checks passed; 4A-2 closed).
 - Repo HEAD: this docs-only HANDOFF commit.
 - Working tree: clean (no uncommitted code).
 - Deploy target: `wt.omniplus-bh.com`
-- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a and 4A-2b add no schema change and require no db:push.**
+- Schema: `bookings` has `end_day_start_time` + `end_day_end_time` (nullable `varchar(5)`); `users` has `custom_fields_limit` (nullable integer); `booking_share_links` (14 cols, unique `(user_id, slot)` index); `booking_custom_fields` has `calc_formula` (nullable `text`) — db:push applied 2026-10-09. **4A-1, 4A-1.5, 4A-2a, 4A-2b and 4A-2c add no schema change and require no db:push.**
 - **Phase 4A-1: committed `3fa2e67`, deployed, verified in-session (10/10 tests passed).**
 - **Phase 4A-1.5: committed `a77db76`, deployed, browser-verified — 7/7 checks passed. COMPLETE.**
 - **Phase 4A-2a: committed `6845bef`, deployed, browser-verified — 12/12 regression points passed. COMPLETE.**
 - **HTTP test-request + allowlist fixes: committed `99aceaf`, deployed, browser-verified. COMPLETE.**
 - **Phase 4A-2b: committed `c97d3c5`, deployed, curl-verified — 11/11 scenarios passed. COMPLETE.**
-- Last session (4A-2b sandbox endpoint) ended at ~22% context usage.
+- **Phase 4A-2c: committed `0699312` (+ fixes `ddeba05`, `b1dcdd5`, `7914546`, `f8a0457`), deployed, browser-verified — all checks passed. COMPLETE.**
+- Last session (4A-2c test panel) ended at ~40% context usage.
 
 ## Phase 4A-2b — VERIFIED ✅ (deployed `c97d3c5`, 11/11 curl scenarios green)
 
@@ -54,6 +55,35 @@
 9. Text when not awaiting → 409.
 10. Self-loop → `stopped` / `step_limit` (25 steps, 25 messages).
 11. Deleted cursor node → `stopped` / `node_not_found`.
+
+## Phase 4A-2c — VERIFIED ✅ (deployed `f8a0457`, browser-verified, all checks passed)
+
+**Status:** implemented, committed, deployed and browser-verified — **all checks passed** (plus four fix passes). Client-side only; the sandbox-tick endpoint it drives was shipped and curl-verified in 4A-2b. 4A-2c is **COMPLETE**, and the whole 4A-2 (live demo / test panel) phase is **closed**.
+
+**Files (committed across the 4A-2c series):**
+
+| Status | File | Size |
+|---|---|---|
+| A | `client/src/lib/workflow-sandbox.ts` | new (~180 lines: `tick()` + types mirroring `server/workflows/sandbox.ts`) |
+| A | `client/src/components/WorkflowTestPanel.tsx` | new (~700 lines: transcript, variables + trace inspectors, 7-type bubble renderer) |
+| M | `client/src/components/WorkflowBuilder.tsx` | toolbar toggle, conditional 4th `ResizablePanel`, below-`lg` `Sheet` fallback |
+
+**What shipped (in `0699312`):**
+
+- **`workflow-sandbox.ts`** — types duplicated from `server/workflows/sandbox.ts` + `flowRunner.ts` enums (sync comment; no client→server import), `SandboxApiError { status, retryAfter }`, `tick()` transport with a full error contract (network → status 0, 4xx/429 → parsed message + `retryAfter`, 200 → JSON).
+- **`WorkflowTestPanel.tsx`** — header (Test flow + `mock ▾`/`live` Select + Restart + close X), status badge (`Running draft · start: <label>`), transcript (bot bubbles + `you:` echo, "Preview" badge, auto-scroll), Variables collapsible (flatten ≤3 levels, reserved keys badged `internal`, >500-char "show more"), Trace collapsible (accumulated with "next tick" separators; rows clickable → `onSelectNode`), error/stopped banners, empty state, footnote.
+- **`WorkflowBuilder.tsx`** — toolbar Test Panel toggle (`data-testid="button-toggle-test-panel"`), conditional 4th `ResizablePanel`, below-`lg`/fullscreen `Sheet` fallback (mirrors `showConfigSheet`), `selectNode` (selects + zooms, opens config for deleted nodes), `draftDefinition` memo (in-memory draft, hot-swaps on edit), `useIsBelowLg`, `showTestPanel` persisted to `localStorage`, sizes key `-v2`, dead `savedPanelSizes` removed.
+
+**Four fix passes (browser-verified):**
+
+| Commit | Fix |
+|---|---|
+| `ddeba05` | Banner distinguishes unsupported node types (booking.* → booking note; else `Unsupported node type: "<type>"`) |
+| `b1dcdd5` | Panel width (defaultSize 22→28 / min 18→20 / max 34→38), carousel + media `<img>` rendering with fallback, `AbortController` 30s tick timeout + "Taking longer than expected…" hint after 10s |
+| `7914546` | `break-words` on all prose + `break-all` on media URLs, `min-w-0` bubble + `overflow-x-hidden` transcript (long URLs wrap, no panel-edge clipping) |
+| `f8a0457` | CTA buttons (`call`/`url`/`copy`) clickable whenever not loading, show simulated-action toast (`📞 would call X` / `🔗 would open Y` / `📋 would copy Z`); `quick_reply` routing unchanged |
+
+**Verification (2026-10-24):** all checks passed — text wrapping, carousel scroll, panel width (~280px), real carousel images, CTA toasts with no side effects (no dialer/tab/clipboard), CTA click does NOT advance (matches production), `quick_reply` routing unchanged. `npm run check` reports only the 9 known pre-existing errors (0 in changed files); `npm run build` succeeds. No schema change (no `db:push`), no new deps, **no server changes** — booking nodes still stop with `unsupported_node` + amber banner (mock booking deferred to 4A-2d).
 
 ## Phase 4A-2a — VERIFIED ✅ (deployed `6845bef` + `99aceaf`, 12/12 regression green)
 
@@ -137,7 +167,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Next phase — 4A-2 (live demo / test panel)
 
-**Status:** design **approved** — all 10 open questions answered and both refinements accepted (sandbox payload carries type-discriminating fields; every preview bubble carries a "Preview" indicator). **4A-2a (runner extraction) and 4A-2b (sandbox endpoint) are both DONE + verified** — see their VERIFIED sections above. 4A-2c (preview UI) is the next and final sub-phase.
+**Status:** design **approved** — all 10 open questions answered and both refinements accepted (sandbox payload carries type-discriminating fields; every preview bubble carries a "Preview" indicator). **All three sub-phases — 4A-2a (runner extraction), 4A-2b (sandbox endpoint) and 4A-2c (preview UI) — are DONE + verified** — see their VERIFIED sections above. 4A-2 is **closed**; 4A-2d (mock booking) is the follow-up.
 
 **Goal.** A live demo / test panel inside the workflow builder: a Typebot-style preview pane on the right that runs the flow against synthetic input and shows the resulting conversation, the variable values, and an execution trace.
 
@@ -175,7 +205,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Next phase — 4A-2c (live demo / test panel UI)
 
-**Status:** design **approved** (4A-2 design §3.4 — panel geometry, conditional 4th `ResizablePanel`). Client-side only; the endpoint it talks to (`POST /api/workflows/:id/sandbox-tick`) is deployed and verified at `c97d3c5`.
+**Status:** DONE + verified — see "Phase 4A-2c — VERIFIED" near the top. This section is retained as the design record. Client-side only; the endpoint it talks to (`POST /api/workflows/:id/sandbox-tick`) is deployed and verified at `c97d3c5`.
 
 **Files (estimated):**
 
@@ -198,9 +228,34 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 **Estimated effort:** ~8–10% context. No schema change. No server change (endpoint already shipped).
 
+## Next phase — 4A-2d (mock booking in the sandbox)
+
+**Status:** not started. 4A-2a, 4A-2b and 4A-2c are closed out; 4A-2d is the next sub-phase.
+
+**Goal.** Let owners demo the full booking sequence inside the test panel without touching the production DB. Today the sandbox host omits `handleBookingNode`, so `booking.*` nodes stop with `unsupported_node` + the amber banner.
+
+**Approach.** Add a mock `handleBookingNode` to `server/workflows/sandbox.ts` (the sandbox host only — production `routes.ts` `handleBookingNode` is untouched):
+- Synthetic departments/staff/slots (fixed fixtures or derived read-only from the owner's real config).
+- A mocked `createBooking` that returns a synthetic booking id and never inserts into production `bookings`.
+- The sub-flow advances exactly like production (department → staff → slot → name → booked).
+
+**Design questions to resolve (before implementation):**
+1. Synthetic data source — hardcoded fixtures vs. reading the owner's real services/providers/slots (read-only)?
+2. Sub-flow advancement — how closely does the mock mirror the live capture sequence and `context` keys?
+3. Trace events — what trace outcomes does the mock emit (reuse existing outcomes vs. a new `booking` outcome)?
+4. MOCK badge — how does the panel signal a booking was mocked (badge on the transcript bubble + a `context.booking.mock` flag)?
+5. Per-session toggle vs. always-on — a panel toggle like `mock ▾`/`live` for HTTP, or always-on for the sandbox?
+
+**Estimated effort:** ~8–12% context. Server change (sandbox host + `sandboxTickSchema` if needed), client change (badge + toggle if per-session). No schema change, no production booking-flow change.
+
 ## Recent commits
 
-- docs: HANDOFF — Phase 4A-2b verified (11/11); next: 4A-2c **← this commit (HEAD)**
+- docs: HANDOFF — Phase 4A-2c verified; 4A-2 closed; next: 4A-2d (mock booking) **← this commit (HEAD)**
+- `f8a0457` fix(workflow): test panel — make CTA buttons clickable with simulated toast
+- `7914546` fix(workflow): test panel — wrap long text + constrain transcript width
+- `b1dcdd5` fix(workflow): test panel — width, images, tick timeout
+- `ddeba05` fix(workflow): test panel banner distinguishes unsupported node types
+- `0699312` feat(workflow): Phase 4A-2c — live demo / test panel UI
 - `c97d3c5` feat(workflow): Phase 4A-2b — sandbox tick endpoint
 - `d799578` docs: HANDOFF — 4A-2a verified (12/12) + HTTP fixes; next: 4A-2b
 - `99aceaf` fix(workflow): parse Test Request response + normalize allowlist domain input
@@ -245,6 +300,7 @@ These temp paths may not survive a machine/session — **the working-tree files 
 
 ## Completed phases
 
+- **Phase 4A-2c — live demo / test panel UI** (`0699312` + fixes `ddeba05`/`b1dcdd5`/`7914546`/`f8a0457`, deployed 2026-10-24, **browser-verified — all checks passed**): the client-side preview panel that drives `POST /api/workflows/:id/sandbox-tick` (shipped in 4A-2b) against the in-memory draft graph. New `client/src/lib/workflow-sandbox.ts` (`tick()` + types mirroring `server/workflows/sandbox.ts`, `SandboxApiError`, 30s `AbortController` timeout) and `client/src/components/WorkflowTestPanel.tsx` (chat transcript with 7-type bubble renderer + "Preview" badge, variables inspector with ≤3-level flatten + reserved-key badges, trace inspector with tick separators + click-to-select, mock/live HTTP toggle, empty/error/stopped states). `WorkflowBuilder.tsx` gains a toolbar Test Panel toggle + conditional 4th `ResizablePanel` + below-`lg` `Sheet` fallback + `selectNode`. Four fix passes: banner distinguishes unsupported node types (`ddeba05`); panel width + `<img>` rendering + tick timeout (`b1dcdd5`); text wrapping + transcript width (`7914546`); CTA buttons clickable with simulated-action toast (`f8a0457`). No server change, no schema change (no db:push), no new deps; booking nodes still stop with `unsupported_node` (mock booking deferred to 4A-2d).
 - **Phase 4A-2b — sandbox tick endpoint** (`c97d3c5`, deployed 2026-10-23, **curl-verified — 11/11 scenarios passed**): `POST /api/workflows/:id/sandbox-tick` — stateless sandbox execution for the 4A-2c live demo panel. New `server/workflows/sandbox.ts` (505 lines: `SandboxTickRequest`/`SandboxTickResponse` types + `sandboxTickSchema` zod strict `maxSteps` 1-50, `buildSandboxMessage` normalized bubbles for all 8 node types, `buildSandboxHost` with mock/live `runHttp` + no-op `persist` + capture-start `afterNodeSent` + no `handleBookingNode`/`recordTrace`, live HTTP `data` truncated at 64 KB with a `{truncated,originalBytes,preview}` marker, `resolveSandboxStartNode`, `captureSandboxText` mirror, `assembleSandboxResponse`) and new `server/workflows/sandbox-rate-limit.ts` (60 ticks / 5 min per user). `server/routes.ts` +143: the route behind `requireAuth` + ownership (404) + rate-limit + body-size (413 over 400 KB) + zod (400) + dispatch `start`/`button`/`text`; `button` uses `resolveButtonTarget`, `text` mirrors the live capture (409 non-`input.text` cursor). No schema change (no db:push), no new deps, no client change, booking flow untouched; reuses 4A-2a's `runFlow`/`resolveButtonTarget`/`FlowHost`/`FLOW_STEP_LIMITS`, `executeHttpNode` unchanged.
 - **HTTP test-request + allowlist fixes** (`99aceaf`, deployed 2026-10-23, browser-verified): two pre-existing client bugs surfaced during 4A-2a verification. (1) Test Request treated the raw `Response` as parsed JSON, so every successful request rendered "✗ Failed"; fixed with `await res.json()` in `client/src/components/WorkflowNodeConfig.tsx` (introduced in `cbdbf2e`, unrelated to 4A-2a). (2) Allowlist input rejected full URLs (`https://…`); now normalized (strip protocol + trailing slash, lowercase) client-side in `client/src/pages/admin.tsx` and server-side in `server/routes.ts` `PUT /api/admin/settings/http-allowlist`; placeholder/help text clarified to "domain only". No schema change, no new deps.
 - **Phase 4A-2a — shared flow runner extraction** (`6845bef`, deployed 2026-10-23, **browser-verified — 12/12 regression points passed**): extracted the duplicated execution loops (the webhook `button_reply` loop and `resumeFlowAfterTextInput`) into `server/workflows/flowRunner.ts` (`runFlow`, `resolveButtonTarget`, `INTERACTIVE_NODE_TYPES`, `FLOW_STEP_LIMITS { live:100, textResume:25, sandbox:25 }`). `resolveButtonTarget` is a pure port of the 4-tier button→edge fallback; `runFlow` executes non-booking nodes via an injected `FlowHost`; the ~310-line booking branch moved verbatim into a closure-local `handleBookingNode` (only 12 control-flow lines changed — `break`→`return null`, `continue`→`return {nextNodeId, context}`); `resumeFlowAfterTextInput` is now a ~30-line wrapper; `[Button Reply Debug]` logs removed; live step cap 100 (was unbounded). Six approved divergences (see the 4A-2a section). `npm run build`/`check` clean (9 pre-existing errors only); no schema change; no new deps; chatbot booking flow untouched. Two non-regression findings during verification: the booking was persisting correctly all along (UI visibility was a persisted sort/filter), and the Test Request "failure" was the client parse bug fixed in `99aceaf`.
@@ -292,10 +348,13 @@ These temp paths may not survive a machine/session — **the working-tree files 
 ## Remaining polish (none critical)
 
 - Custom Summary column shows "—" chips for fields without values (visual noise).
+- **Five Heavens Garden (workflow 34) data-quality issue:** the workflow contains three `booking.*` nodes (`booking_garden_en`, `booking_appointment_en`, `booking_viewing_en`) plus a legacy `entry` node — none executable by the sandbox (or the live runner). Rebuild with palette nodes for sandbox testing.
 
 ## Optional polish (later)
 
 - Set up `pm2-logrotate` (or scheduled truncation) to prevent the ~4.7 GB log growth from recurring.
+- Public demo URL for leads (future phase — separate URL, password gate, expiry, WhatsApp-style showcase).
+- nginx log redaction for share tokens (from Feature 3).
 
 ## Feature 3 — shareable booking links (COMPLETE ✅)
 
@@ -331,10 +390,11 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 
 - **4A-1 (DONE — `3fa2e67`, deployed, 10/10 verified):** HTTP handle fix + three new node types (`input.text`, `condition`, `setVariable`). Additive, no engine refactor. Design record in "Session 4A-1 implementation" below.
 - **4A-1.5 (DONE, deployed, browser-verified 7/7 — `a77db76`):** palette consolidation (single scrollable list replacing 7 tabs) + full-width builder canvas. Pure UX; no runtime behaviour change. See "Session 4A-1.5" below.
-- **4A-2 (design approved; 2a + 2b DONE/VERIFIED, 2c next):** Live demo / test panel. Split into three sub-phases.
+- **4A-2 (DONE / CLOSED — 2a + 2b + 2c all shipped + verified):** Live demo / test panel. Three sub-phases (plus the 4A-2d follow-up).
   - **4A-2a (DONE / VERIFIED — `6845bef`, 12/12 regression green):** shared runner extraction — new `server/workflows/flowRunner.ts` + `server/routes.ts` rewired. See "Phase 4A-2a — VERIFIED" near the top.
   - **4A-2b (DONE / VERIFIED — `c97d3c5`, 11/11 curl scenarios):** `POST /api/workflows/:id/sandbox-tick` — stateless tick, in-memory draft graph, mock HTTP by default, no `workflow_executions` rows. See "Phase 4A-2b — VERIFIED" near the top.
-  - **4A-2c (NEXT):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`). See "Next phase — 4A-2c" above.
+  - **4A-2c (DONE / VERIFIED — `f8a0457`, browser-verified):** preview panel in the builder (conditional 4th `ResizablePanel`, `-v2` sizes key, `Sheet` fallback below `lg`) + four fix passes. See "Phase 4A-2c — VERIFIED" near the top.
+  - **4A-2d (NEXT):** mock booking execution in the sandbox (see "Next phase — 4A-2d" above).
 - **4A-3 (deferred):** Web Channel Adapter. Built by synthesizing Whapi-shaped payloads from web messages — no engine refactor. Requires 4A-1 and 4A-2 to be in place.
 
 ### Constraints for 4A
@@ -353,7 +413,7 @@ Working name for the phase that adds workflow primitives (Webhook/HTTP, Conditio
 - `sent_messages` ownership check keys on Whapi's `message_id` — no equivalent for non-Whapi channels yet.
 - `first_message_flags` keyed by phone only, not scoped to workflow/user.
 
-**Next session: Phase 4A-2c — live demo / test panel UI.** Client-side only: new `client/src/components/WorkflowTestPanel.tsx` (~430 lines), new `client/src/lib/workflow-sandbox.ts` (~90 lines, `tick()` call + types), and ~60 lines in `WorkflowBuilder.tsx` (toolbar toggle, conditional 4th `ResizablePanel`, below-`lg` `Sheet` fallback). Wire to `POST /api/workflows/:id/sandbox-tick` (verified at `c97d3c5`). Design + approved decisions in "Next phase — 4A-2c" above. 4A-2a and 4A-2b are closed out.
+**Next session: Phase 4A-2d — mock booking execution in the sandbox.** See "Next phase — 4A-2d" above. 4A-2a, 4A-2b and 4A-2c are closed out.
 
 ### Session 4A pre-design (2026-10-23) — no code
 
