@@ -205,17 +205,32 @@ function MessageBubble({
   onButton: (buttonId: string) => void;
 }) {
   const canClick = awaiting?.kind === "button" && !isLoading;
+  const { toast } = useToast();
 
   const chip = (b: { id: string; title: string; type: string; url?: string; phone_number?: string; copy_code?: string }) => {
-    const clickable = b.type === "quick_reply";
+    const isQuickReply = b.type === "quick_reply";
+    const handleClick = () => {
+      if (isQuickReply) {
+        onButton(b.id);
+        return;
+      }
+      if (b.type === "call") {
+        toast({ title: `📞 In WhatsApp, this would call ${b.phone_number || ""}` });
+      } else if (b.type === "url") {
+        toast({ title: `🔗 In WhatsApp, this would open ${b.url || ""}` });
+      } else if (b.type === "copy") {
+        toast({ title: `📋 In WhatsApp, this would copy "${b.copy_code || ""}"` });
+      }
+    };
     return (
       <Button
         key={b.id}
         size="sm"
-        variant={clickable ? "default" : "outline"}
+        variant={isQuickReply ? "default" : "outline"}
         className="h-7 text-xs"
-        disabled={!clickable || !canClick}
-        onClick={() => clickable && onButton(b.id)}
+        disabled={isQuickReply ? !canClick : isLoading}
+        onClick={handleClick}
+        title={isQuickReply ? undefined : "Sandbox preview — no real action is taken"}
       >
         {b.type === "call" || b.type === "phone_number" ? <Phone className="h-3 w-3 mr-1" /> : null}
         {b.type === "url" ? <LinkIcon className="h-3 w-3 mr-1" /> : null}
