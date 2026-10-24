@@ -177,7 +177,7 @@ function CardImage({ src }: { src: string }) {
 function MediaImage({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
-    return <p className="text-xs text-muted-foreground truncate max-w-full">{src}</p>;
+    return <p className="text-xs text-muted-foreground break-all">{src}</p>;
   }
   return (
     <img
@@ -226,23 +226,23 @@ function MessageBubble({
   };
 
   const header = message.headerText ? (
-    <p className="text-xs font-medium mb-1">{message.headerText}</p>
+    <p className="text-xs font-medium mb-1 break-words">{message.headerText}</p>
   ) : null;
   const footer = message.footerText ? (
-    <p className="text-[10px] text-muted-foreground mt-1">{message.footerText}</p>
+    <p className="text-[10px] text-muted-foreground mt-1 break-words">{message.footerText}</p>
   ) : null;
 
   let body: React.ReactNode = null;
 
   switch (message.type) {
     case "text":
-      body = <p className="whitespace-pre-wrap text-sm">{message.text}</p>;
+      body = <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>;
       break;
 
     case "buttons":
       body = (
         <div className="space-y-2">
-          <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+          <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
           {(message.buttons || []).map(chip)}
         </div>
       );
@@ -251,10 +251,10 @@ function MessageBubble({
     case "list":
       body = (
         <div className="space-y-2">
-          <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+          <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
           {(message.sections || []).map((s, i) => (
             <div key={i} className="border rounded-md overflow-hidden">
-              <div className="px-2 py-1 bg-muted text-xs font-medium">{s.title}</div>
+              <div className="px-2 py-1 bg-muted text-xs font-medium break-words">{s.title}</div>
               {s.rows.map((r) => (
                 <button
                   key={r.id}
@@ -263,16 +263,16 @@ function MessageBubble({
                   disabled={!canClick}
                   onClick={() => onButton(r.id)}
                 >
-                  <div className="font-medium">{r.title}</div>
+                  <div className="font-medium break-words">{r.title}</div>
                   {r.description ? (
-                    <div className="text-xs text-muted-foreground">{r.description}</div>
+                    <div className="text-xs text-muted-foreground break-words">{r.description}</div>
                   ) : null}
                 </button>
               ))}
             </div>
           ))}
           {message.buttonLabel ? (
-            <p className="text-[10px] text-muted-foreground">{message.buttonLabel}</p>
+            <p className="text-[10px] text-muted-foreground break-words">{message.buttonLabel}</p>
           ) : null}
         </div>
       );
@@ -281,7 +281,7 @@ function MessageBubble({
     case "call_to_action_buttons":
       body = (
         <div className="space-y-2">
-          <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+          <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
           {(message.buttons || []).map(chip)}
         </div>
       );
@@ -290,7 +290,7 @@ function MessageBubble({
     case "carousel":
       body = (
         <div className="space-y-2">
-          <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+          <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {(message.cards || []).map((card, i) => (
               <div key={i} className="min-w-[180px] max-w-[200px] border rounded-md p-2 flex-shrink-0 space-y-1.5">
@@ -301,7 +301,7 @@ function MessageBubble({
                     <Paperclip className="h-5 w-5 text-muted-foreground" />
                   </div>
                 )}
-                {card.text ? <p className="text-xs whitespace-pre-wrap">{card.text}</p> : null}
+                {card.text ? <p className="text-xs whitespace-pre-wrap break-words">{card.text}</p> : null}
                 <div className="flex flex-wrap gap-1">
                   {card.buttons.map(chip)}
                 </div>
@@ -322,10 +322,10 @@ function MessageBubble({
           {isImageMedia(message.mediaType) && message.url ? (
             <MediaImage src={message.url} />
           ) : message.url ? (
-            <p className="text-xs text-muted-foreground truncate max-w-full">{message.url}</p>
+            <p className="text-xs text-muted-foreground break-all">{message.url}</p>
           ) : null}
           {message.caption ? (
-            <p className="text-xs text-muted-foreground">{message.caption}</p>
+            <p className="text-xs text-muted-foreground break-words">{message.caption}</p>
           ) : null}
         </div>
       );
@@ -340,8 +340,8 @@ function MessageBubble({
               {message.lat}, {message.lng}
             </span>
           </div>
-          {message.name ? <p className="font-medium">{message.name}</p> : null}
-          {message.address ? <p className="text-xs text-muted-foreground">{message.address}</p> : null}
+          {message.name ? <p className="font-medium break-words">{message.name}</p> : null}
+          {message.address ? <p className="text-xs text-muted-foreground break-words">{message.address}</p> : null}
           {typeof message.lat === "number" && typeof message.lng === "number" ? (
             <a
               className="text-xs text-primary underline"
@@ -357,11 +357,11 @@ function MessageBubble({
       break;
 
     default:
-      body = <p className="whitespace-pre-wrap text-sm">{message.text ?? ""}</p>;
+      body = <p className="whitespace-pre-wrap break-words text-sm">{message.text ?? ""}</p>;
   }
 
   return (
-    <div className="rounded-lg border bg-muted/40 p-2.5 space-y-1.5">
+    <div className="rounded-lg border bg-muted/40 p-2.5 space-y-1.5 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] text-muted-foreground truncate">{message.nodeType}</span>
         <Badge variant="secondary" className="shrink-0 text-[10px] h-4 px-1.5">
@@ -626,7 +626,7 @@ export default function WorkflowTestPanel({
             </Button>
           </div>
         ) : (
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full overflow-x-hidden">
             <div className="space-y-2 pr-2 pb-2">
               {transcript.map((item) =>
                 item.kind === "bot" ? (
@@ -639,7 +639,7 @@ export default function WorkflowTestPanel({
                   />
                 ) : (
                   <div key={item.id} className="flex justify-end">
-                    <div className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm max-w-[85%] whitespace-pre-wrap">
+                    <div className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm max-w-[85%] whitespace-pre-wrap break-words">
                       {item.text}
                     </div>
                   </div>
