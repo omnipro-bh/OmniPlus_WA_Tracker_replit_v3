@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { CustomFieldsSettings } from "@/components/custom-fields-settings";
 import { ShareLinksSettings } from "@/components/share-links-settings";
+import { WebChatLinksSettings } from "@/components/web-chat-links-settings";
 import { ManualBookingDialog } from "@/components/manual-booking-dialog";
 import { BookingDetailDrawer } from "@/components/booking-detail-drawer";
 import { resolveCalcValues } from "@/lib/calc";
@@ -2268,6 +2269,7 @@ export default function BookingScheduler() {
           </Card>
           <CustomFieldsSettings />
           <ShareLinksSettings />
+          <WebChatLinksSettings />
         </div>
       )}
 
