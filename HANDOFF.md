@@ -1,5 +1,53 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase 4A-3c — stopped-state fix (deployed `0afad22`)
+
+> **Read this first.** Follow-up #4 is closed: the web-chat `stopped` state is now sticky.
+> Production HEAD is **`0afad22`**, deployed and verified. No schema change, no new deps.
+
+### Status
+
+- **Production HEAD: `0afad22`** (`fix(webchat): make stopped state sticky across polls`), deployed via
+  the manual workflow (backup → pull → `npm ci --include=dev` → build → `pm2 restart`) and verified live.
+  Server bundle `820.9kB`; PM2 `omniplus` online; **no new error-log entries** (only the known
+  AutoExtend 9/10 and `EISDIR uploads/use-cases` noise).
+- **The non-sticky `stopped` bug (follow-up #4) is FIXED.** `flowRunner.ts` is untouched (WhatsApp
+  unaffected). Web chat now persists a namespaced `__flowStop = { nodeId, reason }` marker into
+  `conversation_states.context` from every run site via a new `finishTick` helper, and derives state as
+  `pendingBookingState ?? stoppedMarkerState ?? stateFromCursor` (order is load-bearing). The marker is
+  stripped before seeding the next run, **survives polls/GET**, and is **cleared on restart**.
+  `chat-tick.ts` only — 6 run sites (bootstrap-create, post-done re-entry, text, button,
+  `answerBookingStep`, `restartChatSession`).
+- **Regression test: `scripts/regression-stopped-sticky.mjs` passes, EXIT=0.** HTTP-level
+  (bootstrap → `stopped` → GET still stopped → poll still stopped → restart clears → end). Run with
+  `BASE_URL` + `CHAT_TOKEN` (+ optional `BOOKING_BUTTON_ID`, default `row_book_en`) while the workflow
+  flag is **off**; it exits `2` rather than silently passing when the flag is on. Verified values:
+  `GET /session` and the poll both answered `status=stopped awaiting=null` (pre-fix: `awaiting_input`).
+- **Workflow 34 `web_chat_booking_enabled` restored to `true`** (after the flag-off test window).
+  Flag-on sanity: fresh bootstrap → `201 awaiting_input {kind:"button"}`.
+- **DB baseline unchanged: 24 bookings, 0 `web_%` rows, `max(id) = 34`, 0 rows with `workflow_id` set.**
+  The stopped path created no booking row.
+
+### Outstanding follow-ups (carried forward)
+
+- 🔴 **`WHAPI_PARTNER_TOKEN` rotation** — high priority, still needs the Whapi dashboard.
+  Never source `.env` and never `export $(… .env …)`; use the `grep -m1 | cut` pattern.
+- **Follow-up #3 — `check_bookings` unexercised** on WhatsApp. It exists only in the **inactive**
+  workflows `25 Booking Test` / `26 Test Saloon`; workflow 34 has none.
+- **Deferred — "temporarily unavailable" fallback bubble.** A flag-off booking click now parks the
+  visitor in a sticky `stopped` state with no explanation (recoverable via **Restart**). Needs
+  `sessionId` threaded into `finishTick`, a persisted bot row, and message ordering.
+- **Pre-existing — `message.text` placeholders render verbatim** (`{{variables}}` are not substituted
+  in `message.text` bodies) — inherited from 4A-2a, not a regression.
+- **New — test sessions `16`, `17`** (this session's regression + flag-on sanity) are **ended** and
+  purgeable, same class as session `15` from the previous session. No `__flowStop` rows left behind.
+
+### Next session — start here
+
+1. Read this section.
+2. Start **Phase 4A-4** design investigation (scope TBD by the user).
+3. Do **NOT** reopen 4A-3.
+
 ## Session log — 4A-3 follow-ups cleared (2026-10-25) · production HEAD unchanged (`b69eafb`)
 
 > **No code changed and nothing was deployed in this session.** Every item below is a production
