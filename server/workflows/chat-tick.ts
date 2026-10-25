@@ -49,7 +49,12 @@ import type {
 import { storage } from "../storage";
 import { resolveWebChatLinkByToken } from "../chat-links";
 import { captureSandboxText, resolveSandboxStartNode } from "./sandbox";
-import { INTERACTIVE_NODE_TYPES, resolveButtonTarget, runFlow } from "./flowRunner";
+import {
+  INTERACTIVE_NODE_TYPES,
+  resolveButtonTarget,
+  runFlow,
+  type RunResult,
+} from "./flowRunner";
 import { buildChatHost, toPublicMessage, type PublicMessage } from "./chat-host";
 import { bookingAwaitingFromContext } from "./booking-engine";
 import {
@@ -287,6 +292,42 @@ function pendingBookingState(context: any, bookingEnabled: boolean): ChatState |
   return { status: "awaiting_input", awaiting: { kind: awaiting.kind } };
 }
 
+/**
+ * Follow-up #4 (2026-10-25) — the `stopped` state must be sticky.
+ *
+ * `flowRunner.ts:504-520` sets `status = 'stopped'` and `cursor = nodeId` in
+ * memory but deliberately does NOT call `host.persist` on that branch (the
+ * runner is shared with WhatsApp, where the node is simply unsupported). So the
+ * stop only ever existed in the POST response; the next poll re-derived
+ * `awaiting_input` from the still-persisted pre-stop cursor, and the visitor's
+ * click was silently swallowed in an endless loop.
+ *
+ * Web chat therefore records an explicit, namespaced marker in the persisted
+ * `conversation_states.context` (see `finishTick`). `__flowStop` cannot collide
+ * with a workflow variable or a booking key.
+ */
+const STOP_KEY = "__flowStop";
+
+interface FlowStopMarker {
+  /** The node the runner stopped on (`RunResult.cursor`). */
+  nodeId: string | null;
+  /** `RunResult.stopReason`, e.g. `unsupported_node`. */
+  reason: string | null;
+}
+
+function stoppedMarkerState(context: any): ChatState | null {
+  if (!context?.[STOP_KEY]) return null;
+  return { status: "stopped", awaiting: null };
+}
+
+/** Drop a stale stop marker before seeding a run (it must not be re-persisted). */
+function stripStopMarker(context: any): any {
+  const source = (context ?? {}) as any;
+  if (!(STOP_KEY in source)) return source;
+  const { [STOP_KEY]: _stopped, ...seed } = source;
+  return seed;
+}
+
 /** Cursor-derived state, with the pending booking step taking precedence. */
 function stateFromContext(args: {
   definition: { nodes: any[] };
@@ -294,8 +335,16 @@ function stateFromContext(args: {
   context: any;
   bookingEnabled: boolean;
 }): ChatState {
+  // Order is load-bearing:
+  //   1. pendingBookingState — the booking engine legitimately persists
+  //      `cursor = booking node` while it waits (`booking-engine.ts:315-317`),
+  //      so a live booking step must win over the stop marker.
+  //   2. stoppedMarkerState — an explicit stop survives until the next seeded
+  //      run clears it.
+  //   3. stateFromCursor — the plain cursor/type derivation.
   return (
     pendingBookingState(args.context, args.bookingEnabled) ??
+    stoppedMarkerState(args.context) ??
     stateFromCursor(args.definition, args.cursorId)
   );
 }
@@ -338,6 +387,42 @@ function chatStateFrom(args: {
     pendingBookingState(args.context, args.bookingEnabled) ??
     stateFromRunResult(args.definition, args.result)
   );
+}
+
+/**
+ * Persist the run outcome, then derive the state the visitor's client sees.
+ *
+ * Every web-chat `runFlow` site funnels through here so the non-sticky `stopped`
+ * bug cannot come back through a new call site: when the runner stops, the
+ * stop marker described above is written to `conversation_states` (context +
+ * cursor) before the response is returned. All other statuses keep the previous
+ * behaviour — the runner's own `host.persist` calls already wrote them.
+ */
+async function finishTick(
+  conv: { id: number },
+  result: RunResult,
+  definition: { nodes: any[]; edges: any[] },
+  bookingEnabled: boolean,
+  booking?: { lastContext?: any } | null
+): Promise<ChatState> {
+  const finalContext = booking?.lastContext ?? result.context;
+
+  if (result.status === "stopped") {
+    const marker: FlowStopMarker = {
+      nodeId: result.cursor,
+      reason: result.stopReason ?? null,
+    };
+    await db
+      .update(conversationStates)
+      .set({
+        context: { ...((finalContext ?? {}) as any), [STOP_KEY]: marker },
+        currentNodeId: result.cursor,
+        updatedAt: new Date(),
+      })
+      .where(eq(conversationStates.id, conv.id));
+  }
+
+  return chatStateFrom({ definition, result, context: finalContext, bookingEnabled });
 }
 
 /**
@@ -521,12 +606,7 @@ export async function bootstrapSession(
     link,
     workflow,
     initialMessages: messages,
-    state: chatStateFrom({
-      definition,
-      result,
-      context: booking?.lastContext ?? result.context,
-      bookingEnabled,
-    }),
+    state: await finishTick(conv, result, definition, bookingEnabled, booking),
   };
 }
 
@@ -583,7 +663,7 @@ async function answerBookingStep(args: {
     input.type === "text"
       ? { type: "text", text: input.text ?? "" }
       : { type: "button", buttonId: input.buttonId! },
-    (conv.context || {}) as any
+    stripStopMarker(conv.context)
   );
 
   const messageType = input.type === "text" ? "text" : "button_reply";
@@ -607,12 +687,7 @@ async function answerBookingStep(args: {
     return {
       ok: true,
       messages: [toPublicMessage(visitorRow), ...messages],
-      state: chatStateFrom({
-        definition,
-        result,
-        context: booking?.lastContext ?? result.context,
-        bookingEnabled: true,
-      }),
+      state: await finishTick(conv, result, definition, true, booking),
     };
   }
 
@@ -757,12 +832,7 @@ export async function handleChatMessage(
       return {
         ok: true,
         messages: [toPublicMessage(visitorRow), ...messages],
-        state: chatStateFrom({
-          definition,
-          result,
-          context: booking?.lastContext ?? result.context,
-          bookingEnabled,
-        }),
+        state: await finishTick(conv, result, definition, bookingEnabled, booking),
       };
     }
 
@@ -784,7 +854,8 @@ export async function handleChatMessage(
         clientMsgId: input.clientMsgId,
       });
 
-      const capture = captureSandboxText(cursorNode, text, (conv.context || {}) as any, definition.edges);
+      // A stale stop marker must never travel into the next run's context.
+      const capture = captureSandboxText(cursorNode, text, stripStopMarker(conv.context), definition.edges);
 
       // Invalid text: persist the re-prompt, leave the cursor where it is.
       if (capture.kind === "invalid") {
@@ -863,12 +934,7 @@ export async function handleChatMessage(
       return {
         ok: true,
         messages: [toPublicMessage(visitorRow), ...messages],
-        state: chatStateFrom({
-          definition,
-          result,
-          context: booking?.lastContext ?? result.context,
-          bookingEnabled,
-        }),
+        state: await finishTick(conv, result, definition, bookingEnabled, booking),
       };
     }
 
@@ -903,7 +969,7 @@ export async function handleChatMessage(
     const result = await runFlow({
       definition,
       startNodeId: edge.target,
-      context: (conv.context || {}) as any,
+      context: stripStopMarker(conv.context),
       host,
     });
 
@@ -917,12 +983,7 @@ export async function handleChatMessage(
     return {
       ok: true,
       messages: [toPublicMessage(visitorRow), ...messages],
-      state: chatStateFrom({
-        definition,
-        result,
-        context: booking?.lastContext ?? result.context,
-        bookingEnabled,
-      }),
+      state: await finishTick(conv, result, definition, bookingEnabled, booking),
     };
   } finally {
     release(session.sessionKey);
@@ -1017,12 +1078,7 @@ export async function restartChatSession(
     return {
       ok: true,
       messages,
-      state: chatStateFrom({
-        definition,
-        result,
-        context: booking?.lastContext ?? result.context,
-        bookingEnabled,
-      }),
+      state: await finishTick(conv, result, definition, bookingEnabled, booking),
     };
   } finally {
     release(session.sessionKey);
