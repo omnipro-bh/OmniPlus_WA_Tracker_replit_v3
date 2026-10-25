@@ -1,5 +1,97 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Session log — 4A-3 follow-ups cleared (2026-10-25) · production HEAD unchanged (`b69eafb`)
+
+> **No code changed and nothing was deployed in this session.** Every item below is a production
+> DB change, a verification result, or a documented TODO. `b69eafb` is still production HEAD and the
+> working tree is clean.
+
+### ✅ Follow-up #2 (flag-off web chat regression) — PASSED at the HTTP layer
+
+Workflow 34 (`web_chat_booking_enabled`) was flipped **off**, tested, then restored **on**.
+
+- `POST /api/public/chat/session/message` `{type:"button", buttonId:"row_book_en"}` returned
+  **`{"status":"stopped","awaiting":null}`** with **no** bot bubble and **no** booking row created
+  (`bookings` stayed at 24). ✅
+- Error log (both attempts, `flowRunner.ts:514`):
+  `[Flow] Node type "booking.book_appointment" (booking_garden_en) is not supported here - stopping. Booking nodes must be reached via button replies.`
+- Test session: `web_chat_sessions.id = 15`, key `web_9c4ebdf3-7e2f-4aef-8766-4553a81bd949`
+  (5 messages, no bookings). Left in place; harmless, purgeable.
+
+### ⚠️ NEW follow-up #4 — the `stopped` state is NOT sticky (same class as `b69eafb`)
+
+Verified live: the POST response is `stopped`, but the **very next poll / `GET /session` answers
+`awaiting_input` / `{kind:"button"}`** and the client re-enables the main-menu buttons. The visitor's
+"Book Your Stay" click is silently swallowed and the menu comes back → an infinite,
+consequence-free loop.
+
+**Cause.** `flowRunner.ts:504-520` sets `status='stopped'`, `cursor=booking_garden_en` and **breaks
+without calling `host.persist`**, so nothing is written. `stateForSession` → `stateFromContext` →
+`stateFromCursor` then derives from the still-persisted `main_menu_english`, which is a `listMessage`
+node ⇒ `awaiting_input`. The `stopped` status only ever existed in the POST response body.
+
+**Fix plan (NOT implemented — ~25-30 lines, deliberately deferred).** Persist an explicit stop marker
+in the session's `conversation_states.context`, e.g. `__flowStop = { nodeId, reason }`, from the 4
+web-chat run sites in `chat-tick.ts` (bootstrap-create, post-done re-entry, text, button), strip it
+when seeding the next run, and let `stateFromContext` return `{status:"stopped", awaiting:null}`:
+
+```
+pendingBookingState(context) ?? stoppedMarkerState(context) ?? stateFromCursor(definition, cursorId)
+```
+
+Ordering matters: `pendingBookingState` must stay first because the booking engine *legitimately*
+persists `cursor = booking node` while waiting (`booking-engine.ts:315-317`).
+
+- **Do NOT "fix" this by keying off the cursor alone** (i.e. "cursor is a `booking.*` node ⇒
+  stopped"). `bookingAwaitingFromContext` returns `null` for any non-awaiting step, so that heuristic
+  would flash `stopped` mid-booking.
+- Persist the marker from `chat-tick.ts`, **not** from `flowRunner.ts`: the runner is shared with
+  WhatsApp and must stay untouched.
+- UX gap to decide at the same time: with the marker, a flag-off click leaves the visitor at a dead
+  end with no explanation. An "This option is temporarily unavailable" fallback bubble is probably
+  worth including.
+
+### ✅ Follow-up #3 (`check_bookings` on WhatsApp) — DEFERRED, still unexercised
+
+`check_bookings` exists in exactly **two workflows, both inactive**: `25 Booking Test`,
+`26 Test Saloon`. **Workflow 34 has none** (only `booking.book_appointment` at `booking_garden_ar` /
+`booking_garden_en`). Exercising it needs one of those re-activated or the node added to a live flow.
+
+### ✅ DB baseline corrected (the old HANDOFF number was wrong)
+
+The previous section claimed "24 bookings / 0 `web_%` / `max(id) = 34" after deleting test row 35.
+That was **inaccurate**: the 4A-3b end-to-end verification had also left **row 36** (`"Booking 1"`,
+`web_83f0dddf-…`, `workflow_id 34`, `reminder_enabled false`, created 2026-10-24 19:16 UTC). So the
+real state was 25 / 1 / 36.
+
+Row 36 was deleted this session (it was test data, not a customer). **Verified baseline: 24 bookings,
+0 `web_%`, `max(id) = 34`, 0 rows with `workflow_id` set.** Workflow 34 flag restored to `true`.
+
+### 🔴 SECURITY — rotate `WHAPI_PARTNER_TOKEN` (high priority, needs the Whapi dashboard)
+
+`.env:15` holds `WHAPI_PARTNER_TOKEN` as **944 unquoted characters containing shell metacharacters**.
+Consequently `export $(grep -v "^#" .env | xargs)` and `. ./.env` **both execute fragments of it** as
+commands. On 2026-10-25 a fragment of that token was echoed into an agent session transcript while
+doing exactly this. The app itself is unaffected (dotenv does not shell-parse), but **the token should
+be rotated**. It was NOT rotated in this session (needs dashboard access).
+
+**Shell rule for this project:** never source `.env`, and never use `export $(… .env …)`. Use:
+
+```sh
+DBURL=$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | xargs)
+psql "$DBURL" -tAc "SELECT count(*) FROM bookings;"
+```
+
+Quoting note: PowerShell mangles the user's inline `psql "… LIKE '"'"'web_%'"'"'"` one-liners. Write
+the script to a file and pipe it as base64 (`ssh host "echo <b64> | base64 -d | bash"`).
+
+### Local test-harness note
+
+`browser.screenshot` fails with "Screenshot needs a visible tab" unless the desktop window is
+actually visible; DOM `snapshot` + in-page `fetch` (for the real API JSON) are the reliable evidence
+path. `tools.shell` also disappeared from the Code-Mode catalog mid-session — direct `shell` calls
+still work.
+
 ## Phase 4A-3b-2 — COMPLETE ✅ · Feature 4A-3 (Web Chat Adapter) COMPLETE ✅
 
 > **Read this first.** Real bookings now work in the public web chat. Both halves of 4A-3b are
@@ -72,6 +164,9 @@ clicked.
    `web_chat_booking_enabled = false`, a booking node still stops as `unsupported_node`.
 
 ### 3 follow-ups carried into 4A-4 (none blocking)
+
+> **Update (2026-10-25): items 2 and 3 have been actioned and a 4th was found — see the session log at
+> the top of this file. Item 2 now PASSES at the HTTP layer but exposed a non-sticky `stopped` bug.
 
 1. **`check_bookings` is unexercised on WhatsApp.** The `my_bookings` / reschedule / cancel paths were
    never run live. The engine logic is parity-checked but has never executed in production.
