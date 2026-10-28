@@ -1,5 +1,94 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Demo account exemption — deployed `3809d2d` (2026-10-28)
+
+> **Read this first.** Production HEAD is **`3809d2d`**, deployed and verified. This section
+> supersedes the entries below; 4A-3c and the 4A-3 follow-up log are retained unchanged for history.
+
+### Status
+
+- **Production HEAD: `3809d2d`** (`fix(admin): self-heal Demo channel PAUSED state on read`), on top of
+  **`75ace6e`** (`feat(admin): exempt Demo account from channel expiry pause`). Deployed via the manual
+  workflow (backup → pull → `npm ci --include=dev` → build → `pm2 restart`), no schema change, no
+  `db:push`, no new deps. Server bundle `821.8kB`; PM2 `omniplus` online; **no new error-log entries**
+  (log `mtime` 09:50 UTC vs restart 12:26 UTC — only the known AutoExtend 9/10, `EISDIR uploads/use-cases`
+  and WHAPI 524 noise).
+- **Approach A implemented (hardcoded email).** A single helper
+  `isSubscriptionExempt()` in the new `server/demo-account.ts` matches **`demo@gmail.com`**
+  (case-insensitive) and is called at **6 pause/block decision points** + **1 self-heal guard**:
+  - `worker.ts` — hourly expiry cron does not pause the Demo channel; does not mark the Demo user `expired`.
+  - `routes.ts` `GET /api/channels` — does not pause; **self-heals a `PAUSED` Demo channel back to `ACTIVE` on read**.
+  - `routes.ts` — QR fetch, `PATCH /authorize`, and send are no longer blocked by `expiresAt`.
+  - Routes guards use `req.impersonatedUser?.email ?? req.user?.email`, so admin impersonation of Demo
+    also works with **no extra DB read**.
+- **Zero behaviour change for normal users:** the predicate is `false` for every other email, so all 7
+  call sites degrade to the exact pre-change expressions.
+- **Data fix applied:** `users.id = 8` (`Demo@gmail.com`) → **`status = 'active'`** (it was `expired`;
+  the guard only prevents *future* marking, hence the one-time update).
+- **Demo channel `id = 3` verified before/after:**
+
+  | | status | auth_status | whapi_status | expires_at | days_remaining |
+  |---|---|---|---|---|---|
+  | before | `PAUSED` | `AUTHORIZED` | `stopped` | `2026-10-25T18:22:16.577Z` | 0 |
+  | after  | `ACTIVE` | `AUTHORIZED` | `stopped` | `2026-10-25T18:22:16.577Z` (unchanged) | 0 |
+
+  `authStatus` is **stale metadata** and was deliberately **not** reset to `AUTHORIZED` (nor cleared);
+  `expiresAt` was **not** faked forward — the honest past date stays.
+- **Self-heal verified live:** one authenticated `GET /api/channels` as user 8 flipped the row
+  `PAUSED → ACTIVE`; the response already returned `"status":"ACTIVE"`. A second read left `updated_at`
+  byte-identical (`2026-10-28 12:26:31.43`) ⇒ **idempotent, no write amplification**. Verification used a
+  5-minute JWT signed on the VPS from the app's own `SESSION_SECRET` for `userId=8` and sent as the
+  `token` cookie — the same request the Demo browser makes, with no password or secret exposed.
+- **Cron behaviour going forward:** at the top of each hour the cron still *sees* ACTIVE-but-expired for
+  channel 3, but the exemption short-circuits the pause branch; the `else if` branch only rewrites
+  `daysRemaining` (0). **No re-pause, no `logoutChannel()` call.**
+- **`npm run check`** — 9 pre-existing errors only, **0 in changed files** (`storage.ts:1140` and
+  `schema.ts:1449` are the old `1004`/`1250` entries, shifted by 4A-4). **`npm run build`** clean.
+
+### 🔴 Remaining manual step (outside the code)
+
+The Whapi gate for `MANTIS-6D23Z` is **dead**: `/health` and `/channels/MANTIS-6D23Z` on
+`gate.whapi.cloud` both answer **`404 {"error":"Channel not found"}`** (control: channel 8 answers
+`200 status:{code:4,text:"AUTH"}`). The manager API still lists it as `{status:"active", stopped:true,
+activeTill:"2026-10-25T18:22:13Z"}`, and the stored 32-char channel token matches the manager token — so
+the token is fine, the **gate instance is simply not provisioned**.
+
+**The Demo account cannot send messages until this is done by hand:**
+
+1. Extend `MANTIS-6D23Z` on Whapi (`POST manager /channels/MANTIS-6D23Z/extend`).
+2. Wake it up (`GET /health?wakeup=true`).
+3. **Likely a QR re-scan** (the web session was logged out and the gate instance is gone,
+   `whapiStatus='stopped'`). The scan will set `authStatus` correctly on its own.
+4. Reload the Demo dashboard — **no un-pause step is needed any more**: the self-heal guard keeps the
+   channel `ACTIVE`.
+
+### Files changed (in `75ace6e` + `3809d2d`)
+
+- `server/demo-account.ts` (new, 28 lines) — `DEMO_ACCOUNT_EMAIL` + `isSubscriptionExempt()`; header
+  documents the scope limits (no Whapi revive, no `authStatus` reset, no Admin Add Days change).
+- `server/worker.ts` (+2 guards) — expiry cron (line ~99) and the user-level `expired` marking (~149).
+- `server/routes.ts` (+4 guards in `75ace6e`, +1 self-heal in `3809d2d`) — `GET /api/channels` pause +
+  self-heal, QR, authorize, send.
+
+Not touched, as constrained: Admin "Add Days"/activate flow, `storage.addDaysToChannel`,
+`flowRunner.ts`, and the pause logic itself (guards only).
+
+### Future-proofing note
+
+`isSubscriptionExempt()` is the **single seam**. If the Demo account ever needs to be data-driven
+(e.g. `users.is_demo_account` + admin toggle, or multiple demo accounts), only this one helper changes —
+all **7** call sites inherit the new behaviour with no other edits. Known accepted trade-offs: Demo still
+displays **`0 days remaining`** (honest, no masking), and the heal runs on the **read path** only, so a
+pure API send with no prior `GET /api/channels` would still see `PAUSED` (the UI always loads channels
+first; a write-path heal can be added later if it ever matters).
+
+### Next session — start here
+
+1. Read this section.
+2. The Demo account's **Whapi revive is a manual step** (documented above) — **no code work needed**.
+3. Next phase options: Phase 4A-4 follow-ups (owner UI polish), Phase 4A-5 (scope TBD), or the deferred
+   4A-3 items (`check_bookings` on WhatsApp, 🔴 `WHAPI_PARTNER_TOKEN` rotation).
+
 ## Phase 4A-3c — stopped-state fix (deployed `0afad22`)
 
 > **Read this first.** Follow-up #4 is closed: the web-chat `stopped` state is now sticky.
