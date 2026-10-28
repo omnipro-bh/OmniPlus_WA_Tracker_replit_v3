@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { resolveIndustryByTitle } from "@/data/industries";
 
 // Helper function to convert icon name to PascalCase
 const toPascalCase = (str: string): string => {
@@ -499,6 +500,7 @@ export default function Landing() {
               {useCases.map((useCase: any) => {
                 // Filter out empty strings from images array
                 const validImages = useCase.images?.filter((url: string) => url && url.trim() !== "") || [];
+                const useCaseIndustry = resolveIndustryByTitle(useCase.title);
                 
                 return (
                   <Card key={useCase.id} className="overflow-hidden hover-elevate transition-all" data-testid={`usecase-${useCase.id}`}>
@@ -545,6 +547,19 @@ export default function Landing() {
                         {useCase.description}
                       </CardDescription>
                     </CardHeader>
+                    {useCaseIndustry && (
+                      <div className="px-6 pb-6 -mt-2">
+                        <Link href={`/industry/${useCaseIndustry.slug}`}>
+                          <a
+                            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                            data-testid={`usecase-link-${useCase.id}`}
+                          >
+                            See the {useCaseIndustry.title} playbook
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </a>
+                        </Link>
+                      </div>
+                    )}
                   </Card>
                 );
               })}

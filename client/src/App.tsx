@@ -17,6 +17,7 @@ import PrivacyPolicy from "@/pages/privacy-policy";
 import TermsConditions from "@/pages/terms-conditions";
 import ButtonTerms from "@/pages/button-terms";
 import About from "@/pages/about";
+import IndustryRoute from "@/pages/industry";
 import PublicSharePage from "@/pages/public-share";
 import PublicChatPage from "@/pages/public-chat";
 import Dashboard from "@/pages/dashboard";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/terms-conditions" component={TermsConditions} />
       <Route path="/button-terms" component={ButtonTerms} />
       <Route path="/about" component={About} />
+      <Route path="/industry/:slug" component={IndustryRoute} />
       <Route path="/share/:token" component={PublicSharePage} />
       <Route path="/chat/:token" component={PublicChatPage} />
 
