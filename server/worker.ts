@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { logoutChannel, extendWhapiChannel, sendTextMessage, getChannelHealth } from "./whapi";
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { purgeWebChat } from "./workflows/chat-tick";
+import { isSubscriptionExempt } from "./demo-account";
 import fs from "fs";
 import path from "path";
 import dayjs from "dayjs";
@@ -94,8 +95,8 @@ export class BackgroundWorker {
           // Skip non-active channels
           if (channel.status !== "ACTIVE") continue;
 
-          // Check if channel has expired
-          if (channel.expiresAt && new Date(channel.expiresAt) <= now) {
+          // Check if channel has expired (the demo account is never paused)
+          if (channel.expiresAt && new Date(channel.expiresAt) <= now && !isSubscriptionExempt(user.email)) {
             // First, try to logout from WhatsApp via WHAPI
             if (channel.whapiChannelToken) {
               try {
@@ -145,7 +146,7 @@ export class BackgroundWorker {
         const updatedChannels = await storage.getChannelsForUser(user.id);
         const hasActiveChannels = updatedChannels.some(c => c.status === "ACTIVE");
         
-        if (!hasActiveChannels && user.status === "active") {
+        if (!hasActiveChannels && user.status === "active" && !isSubscriptionExempt(user.email)) {
           await storage.updateUser(user.id, {
             status: "expired",
           });

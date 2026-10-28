@@ -27,6 +27,7 @@ import {
 import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalOrder } from "./paypal";
 import { verifyWebhookSignature } from "./paypal-webhooks";
 import * as whapi from "./whapi";
+import { isSubscriptionExempt } from "./demo-account";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
@@ -1236,7 +1237,9 @@ export function registerRoutes(app: Express) {
         let updatedChannel = channel;
         
         // If channel is ACTIVE but expired, mark as PAUSED and logout
-        if (channel.status === "ACTIVE" && channel.expiresAt && new Date(channel.expiresAt) <= now) {
+        // (the demo account is never paused by the subscription check)
+        if (channel.status === "ACTIVE" && channel.expiresAt && new Date(channel.expiresAt) <= now
+          && !isSubscriptionExempt(req.impersonatedUser?.email ?? req.user?.email)) {
           // Logout from WhatsApp if still connected
           if (channel.whapiChannelToken) {
             try {
@@ -1381,7 +1384,8 @@ export function registerRoutes(app: Express) {
       }
 
       // Check if channel is expired
-      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()) {
+      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()
+        && !isSubscriptionExempt(req.impersonatedUser?.email ?? req.user?.email)) {
         return res.status(400).json({ 
           error: "Channel has expired. Please extend the channel before scanning QR code." 
         });
@@ -1426,7 +1430,8 @@ export function registerRoutes(app: Express) {
       }
 
       // Check if channel is expired
-      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()) {
+      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()
+        && !isSubscriptionExempt(req.impersonatedUser?.email ?? req.user?.email)) {
         return res.status(400).json({ 
           error: "Channel has expired. Please add days to your account before authorizing." 
         });
@@ -1876,7 +1881,8 @@ export function registerRoutes(app: Express) {
       }
 
       // Check if channel is expired
-      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()) {
+      if (channel.expiresAt && new Date(channel.expiresAt) <= new Date()
+        && !isSubscriptionExempt(req.impersonatedUser?.email ?? req.user?.email)) {
         return res.status(400).json({ 
           error: "Channel has expired. Please extend the channel before sending messages." 
         });
