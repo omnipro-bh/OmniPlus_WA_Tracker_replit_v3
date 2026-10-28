@@ -1,9 +1,75 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Demo account — linked to live sandbox `ANTMAN-ZR87E` (fully operational) — 2026-10-28
+
+> **Read this first.** Production HEAD is still **`3809d2d`** — **no code changed** since the last deploy;
+> everything in this section is DB/data only. It supersedes the "Remaining manual step" plan in the
+> section below (kept for history): **`MANTIS-6D23Z` is not being revived** — the Demo channel now points
+> at a live Whapi sandbox instead.
+
+### Status
+
+- **Production HEAD: `3809d2d`** (unchanged). No commit, no rebuild, no `pm2 restart` in this step — the
+  channel was repointed with a single SQL `UPDATE` on the VPS.
+- **Demo channel `id = 3` (user 8) repointed** from the dead `MANTIS-6D23Z` to the live sandbox
+  **`ANTMAN-ZR87E`**:
+
+  | column | value |
+  |---|---|
+  | `whapi_channel_id` | `ANTMAN-ZR87E` |
+  | `whapi_channel_token` | sandbox channel token (32 chars; stored **without** the `Bearer ` prefix — the code adds it) |
+  | `status` | `ACTIVE` |
+  | `auth_status` | `AUTHORIZED` |
+  | `whapi_status` | `active` |
+  | `expires_at` | `NULL` |
+  | `days_remaining` | `0` |
+
+- **`MANTIS-6D23Z` fully removed:** `SELECT count(*) FROM channels WHERE whapi_channel_id = 'MANTIS-6D23Z'`
+  → **0**. It appears nowhere in the update or the verification.
+- **Whapi `/health` returns `AUTH`** for `ANTMAN-ZR87E`: `status:{code:4,text:"AUTH"}`, `device_id: 38`,
+  `uptime: 358813`s (≈ **4.15 days**), `user.id: 97313300383` ("OMNI PLUS"), and the manager view reports
+  `{status:"active", stopped:false, mode:"dev"}`. **No wakeup and no QR scan were needed** — the sandbox is
+  already authorised and unlimited.
+- **Send test confirmed end-to-end.** Via the app's own send path (`POST /api/messages/send`, the endpoint
+  `/send` calls), authenticated as Demo: HTTP `200`, `success:true`, job **COMPLETED** (`total 1 / sent 1 /
+  failed 0`), message **SENT** with provider message ID **`Psoh.0gMjDLzqHA-wEsWqFMfnw`**; Whapi answered
+  `{"sent":true,"message":{…}}` and no send error was logged. A UI `/send` from the Demo browser session
+  also succeeded (job `203` → message `4539` → provider ID `PsrjwKkLz9GPRu8-wMcWqd0L7g`) — that row is
+  **left in place** as your own test data.
+- **Test artifacts deleted:** `jobs.id = 202` (the `messages.job_id` FK cascaded, removing
+  `messages.id = 4538`); verified **0** rows remain for both. The `SEND_MESSAGE` audit-trail row was
+  deliberately **not** deleted.
+
+### Three independent layers now prevent expiry
+
+1. **`expires_at = NULL`** — the pause branch is unreachable: in `worker.ts` both `if (channel.expiresAt …)`
+   and `else if (channel.expiresAt)` are skipped, and every `routes.ts` expiry guard (`1239`, `1384`, `1429`,
+   `1898`) short-circuits on a null `expiresAt`.
+2. **6 pause guards** (`isSubscriptionExempt()`, `75ace6e`) — nothing can pause the Demo channel or mark the
+   Demo user `expired`, even if an expiry date is ever written again.
+3. **1 self-heal guard** (`3809d2d`) — any `PAUSED` state that still appears (Admin action, future write
+   path) is flipped back to `ACTIVE` on the next `GET /api/channels`, so the UI can never be left staring at
+   a paused Demo channel.
+
+### Accepted trade-off (no fix attempted)
+
+The UI displays **"0 Days Remaining"** because `expires_at` is `NULL` and `days_remaining` is `0`. The
+account is functionally unlimited; cosmetically it shows zero. The green **"Channel is connected and
+ready"** banner confirms it is alive, and sends succeed. We deliberately did **not** fake a far-future
+`expires_at` just to make the number look better.
+
+### Next session — start here
+
+1. **The Demo account is done — no manual step needed.** It is authorised, active, expiry-exempt at three
+   independent layers, and verified by a real send.
+2. Next phase options: **Phase 4A-4 browser verification**, **Phase 4A-5** (scope TBD), or the deferred
+   4A-3 items (`check_bookings` on WhatsApp, 🔴 `WHAPI_PARTNER_TOKEN` rotation).
+
 ## Demo account exemption — deployed `3809d2d` (2026-10-28)
 
-> **Read this first.** Production HEAD is **`3809d2d`**, deployed and verified. This section
-> supersedes the entries below; 4A-3c and the 4A-3 follow-up log are retained unchanged for history.
+> **Partly superseded by the section above.** The code work described here is still current and deployed;
+> only its "Remaining manual step" plan is void — `MANTIS-6D23Z` was replaced by the live `ANTMAN-ZR87E`
+> sandbox. 4A-3c and the 4A-3 follow-up log are retained unchanged for history.
 
 ### Status
 
@@ -45,22 +111,11 @@
 - **`npm run check`** — 9 pre-existing errors only, **0 in changed files** (`storage.ts:1140` and
   `schema.ts:1449` are the old `1004`/`1250` entries, shifted by 4A-4). **`npm run build`** clean.
 
-### 🔴 Remaining manual step (outside the code)
+### ~~Remaining manual step~~ — VOID
 
-The Whapi gate for `MANTIS-6D23Z` is **dead**: `/health` and `/channels/MANTIS-6D23Z` on
-`gate.whapi.cloud` both answer **`404 {"error":"Channel not found"}`** (control: channel 8 answers
-`200 status:{code:4,text:"AUTH"}`). The manager API still lists it as `{status:"active", stopped:true,
-activeTill:"2026-10-25T18:22:13Z"}`, and the stored 32-char channel token matches the manager token — so
-the token is fine, the **gate instance is simply not provisioned**.
-
-**The Demo account cannot send messages until this is done by hand:**
-
-1. Extend `MANTIS-6D23Z` on Whapi (`POST manager /channels/MANTIS-6D23Z/extend`).
-2. Wake it up (`GET /health?wakeup=true`).
-3. **Likely a QR re-scan** (the web session was logged out and the gate instance is gone,
-   `whapiStatus='stopped'`). The scan will set `authStatus` correctly on its own.
-4. Reload the Demo dashboard — **no un-pause step is needed any more**: the self-heal guard keeps the
-   channel `ACTIVE`.
+Replaced by the top section. `MANTIS-6D23Z` is **not** being revived: the Demo channel was repointed to the
+live sandbox `ANTMAN-ZR87E`, which is already authorised and unlimited — no extend, no wakeup, no QR scan.
+The original gate-404 evidence and the 4-step revive plan are removed so nobody runs them by mistake.
 
 ### Files changed (in `75ace6e` + `3809d2d`)
 
@@ -84,10 +139,8 @@ first; a write-path heal can be added later if it ever matters).
 
 ### Next session — start here
 
-1. Read this section.
-2. The Demo account's **Whapi revive is a manual step** (documented above) — **no code work needed**.
-3. Next phase options: Phase 4A-4 follow-ups (owner UI polish), Phase 4A-5 (scope TBD), or the deferred
-   4A-3 items (`check_bookings` on WhatsApp, 🔴 `WHAPI_PARTNER_TOKEN` rotation).
+See the **top section**: the Demo account is complete and needs no manual step. The "Whapi revive"
+instruction that used to live here is void.
 
 ## Phase 4A-3c — stopped-state fix (deployed `0afad22`)
 
