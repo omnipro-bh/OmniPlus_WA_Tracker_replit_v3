@@ -1,5 +1,125 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase A — Medical industry landing page (committed, NOT deployed) — 2026-10-28
+
+> **Status: code committed, NOT deployed, NOT browser-verified on the VPS.** Commit **`9db5d98`**
+> (`feat(marketing): Phase A — medical industry landing page`) on `main`. Nothing was pulled to
+> `/opt/omniplus`, nothing was rebuilt on the server, PM2 was not restarted. Production HEAD is still
+> **`3809d2d`**. The sections below this one are unchanged and still describe production.
+
+### What shipped
+
+New public route **`/industry/:slug`**, starting with `/industry/medical`, plus a typed data config so
+further industries need no component changes.
+
+- **18 files changed — 16 new + 2 modified — 1,424 insertions** (1,407 lines across the 16 new files,
+  17 lines added across `App.tsx` +2 and `landing.tsx` +15).
+- `client/src/data/industries.ts` (new, 585 lines) — all types + the Medical config. **Pure data**: no
+  React, no JSX, icons referenced by string key (`IconKey`) and resolved by `industry-icon.tsx`.
+- `client/src/components/industry/` (new, 12 files) — one component per section, all config-driven:
+  `industry-page`, `hero-section`, `pain-points`, `demo-section`, `department-features`,
+  `how-it-works`, `roi-stats`, `compliance`, `case-study`, `final-cta`, plus `industry-icon.tsx`
+  (explicit Lucide registry — deliberately not `import { icons }` as `landing.tsx` does, which pulls
+  the whole icon set into the bundle) and `section-heading.tsx` (DRY across 7 sections).
+- `client/src/components/marketing/` (new, 2 files) — `site-nav.tsx`, `site-footer.tsx`. Used **only**
+  by `IndustryPage`; `landing.tsx` keeps its own copies. "Contact" is a `mailto:` here because the
+  landing quote dialog lives in `Landing`'s local state.
+- `client/src/pages/industry.tsx` (new) — route entry: `useRoute("/industry/:slug")`, unknown slugs
+  render the existing `NotFound`, sets `document.title` from `config.metaTitle` in a `useEffect`.
+- `App.tsx` **+2** — one import, one `<Route path="/industry/:slug">`.
+- `landing.tsx` **+15** — one import, one `const useCaseIndustry`, and a 13-line link row appended
+  inside the existing `/use-cases` card. **No existing styling or markup was changed.**
+
+### Alias matching — verified against the live `use_cases` table
+
+Query run on the VPS (`SELECT id, title, sort_order, published FROM use_cases ORDER BY sort_order`):
+
+| id | title | published | resolves to |
+|---|---|---|---|
+| 2 | `Ecommerce Business ` | t | — none yet |
+| 3 | `Health & Wellness business` | t | **`/industry/medical`** |
+| 5 | `Automotive Business  ` | t | — none yet |
+| 4 | `Education Sector` | f | — (unpublished, not rendered) |
+
+Findings worth keeping:
+
+- **There is no real-estate row.** The third published card is **Automotive**. Real-estate, if it ever
+  appears, is net-new content rather than a re-link.
+- Titles carry **trailing spaces** (`Ecommerce Business `, `Automotive Business  `). Matching is
+  therefore normalised — lowercase, `[^a-z0-9]` stripped, then substring test — rather than exact match.
+- **Only one of the three visible cards gains a link today.** Unmatched cards render exactly as before
+  (no link, no layout change), so the section degrades gracefully while configs are missing.
+
+### Verification done locally (not on the VPS)
+
+- `npm run check` → the **same 9 pre-existing errors**, zero in changed files.
+  Note: `AGENTS.md` line references have drifted — `server/storage.ts` is now **1140** (was 1004) and
+  `shared/schema.ts` is now **1449** (was 1250). Pre-existing drift, unrelated to this commit.
+- `npm run build` → success. `client-dist/assets/index-gm9F2xEd.css (135.81 kB)` +
+  `index-CqFhOVix.js (2,891.66 kB)`, `server-dist/index.js` 821.8 kB. Client hash changed.
+- Runtime check against the **production build** (dev server cannot start locally — no `DATABASE_URL`):
+  `document.title`, `<h1>`, all 9 `section[id]`s in order, the 4 `department-*` groups, 4 compliance
+  badges, `button-watch-demo` **disabled**, and `/industry/nonexistent` → 404 all confirmed in the DOM.
+- **Not done:** visual/browser review on a real device — the screenshot tool needs a visible desktop
+  window, which this environment does not have.
+
+### Known findings
+
+- **`tawk.to` overwrites `document.title`.** The chat widget (`client/src/components/chat-widget.tsx`,
+  mounted globally) injects 3 iframes on every page and sets `document.title` to e.g. `"1 new message"`
+  when a preview arrives, stomping `config.metaTitle`. Not a Phase A blocker; affects any page-level
+  title logic.
+- The 3 iframes counted at runtime are **all** tawk.to, pre-existing on every route. The demo section
+  contributes **zero** iframes (`demo.htmlPath` is `null`).
+- `npm run dev` is broken on Windows — the script uses a `NODE_ENV=development` prefix that `cmd`/PowerShell
+  cannot parse. Pre-existing.
+
+### Copy is DRAFT — must be reviewed before public launch
+
+- **Case study is fully placeholder**: `org: "Draft — clinic name to be confirmed"`,
+  `author: "Dr. [Name to confirm]"`, and the quote text itself says it is a placeholder. **Cannot ship
+  as-is.** No case-study screenshot exists (`imagePath` omitted; text + bullets only).
+- **Stats are illustrative targets**, not measurements. Every entry carries
+  `note: "Illustrative target — pilot in progress"`. Values `−30% / −40% / < 60s / 24/7` are
+  placeholders, not claims.
+- **Hero mockup uses a fictional clinic** ("Al Noor Clinic", "Dr. Rahman") inside `heroMock`.
+- Section headings and pain-point copy are author voice (e.g. "What the front desk is really fighting",
+  "Built for a regulated waiting room") and need approval.
+- "Events" department is interpreted as **health camps / screening & vaccination drives** — thinnest
+  group; the whole group can be deleted from the array and the grid reflows to 3 columns.
+
+### Deviations accepted in review
+
+1. `landing.tsx` came to **+15**, not the projected +12/+14 (import + const + 13-line JSX block).
+2. Two components beyond the original 9-section list: `industry-icon.tsx` (bundle-safe icon registry)
+   and `section-heading.tsx` (shared heading block).
+3. **Config type additions** beyond the originally proposed shape, required by the "no hardcoded copy"
+   constraint: `sectionCopy` (7 heading blocks), `heroMock` (hero mockup prose), `demo.disabledLabel`,
+   `compliance[].href`/`hrefLabel`, `stats[].note`, `aliases[]`.
+4. Nav/footer differences from `landing.tsx`: "Contact" is `mailto:`; footer "API Docs" (dead `#`) →
+   "Use Cases" (real anchor); "Blog" (dead `#`) dropped.
+
+### Decisions deferred (do NOT pick these up opportunistically)
+
+- **Ecommerce + automotive configs** — skipped deliberately. Those two cards currently link nowhere.
+  Adding configs is a pure `industries.ts` edit, no component work.
+- **`© 2024` is stale on both footers** (`landing.tsx` and `site-footer.tsx`) — deferred to a cleanup pass.
+- **No `meta` / OG tags** — `metaTitle`/`metaDescription` exist in config but only `document.title` is
+  wired (the app has no head/helmet layer).
+
+### Next session — start here
+
+1. **Deploy Phase A** (backup → pull → `npm ci --include=dev` → build → `pm2 restart omniplus` →
+   check `omniplus-error.log`). No schema change and no `db:push` needed. Confirm production HEAD moves
+   `3809d2d` → `9db5d98`.
+2. **Browser-verify `/industry/medical`** on desktop and mobile, and confirm the `/use-cases` card for
+   "Health & Wellness business" now links to it (the other two must remain unlinked).
+3. **Review the draft copy** above — approve or request edits.
+4. If copy is approved: **Phase B** — place `client/public/demos/medical.html` in the repo, then wire
+   the shadcn `<Dialog>` in `demo-section.tsx` with `{demoOpen && <iframe />}` so the 30-second loop
+   never loads on page paint, and flip `demo.htmlPath` from `null` to `/demos/medical.html`.
+5. **Follow-up to record:** Arabic / RTL variant was explicitly deferred — v1 is English only.
+
 ## Demo account — linked to live sandbox `ANTMAN-ZR87E` (fully operational) — 2026-10-28
 
 > **Read this first.** Production HEAD is still **`3809d2d`** — **no code changed** since the last deploy;
