@@ -1235,7 +1235,21 @@ export function registerRoutes(app: Express) {
       
       for (const channel of channels) {
         let updatedChannel = channel;
-        
+
+        // Demo account self-healing: if the demo channel is found PAUSED (e.g. by a
+        // historical pause, an Admin action, or a stale state), revive it on read.
+        // This complements the 6 pause-guards: those prevent future pauses, this
+        // undoes any pause that already happened. Normal users are unaffected (the
+        // email never matches).
+        if (channel.status === "PAUSED" && isSubscriptionExempt(req.impersonatedUser?.email ?? req.user?.email)) {
+          await storage.updateChannel(channel.id, {
+            status: "ACTIVE",
+            daysRemaining: 0,
+            whapiStatus: "stopped",
+          });
+          channel.status = "ACTIVE";
+        }
+
         // If channel is ACTIVE but expired, mark as PAUSED and logout
         // (the demo account is never paused by the subscription check)
         if (channel.status === "ACTIVE" && channel.expiresAt && new Date(channel.expiresAt) <= now
