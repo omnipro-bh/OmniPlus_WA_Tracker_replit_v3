@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Play } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DemoModal } from "@/components/industry/demo-modal";
 import { IndustryIcon } from "@/components/industry/industry-icon";
 import { SectionHeading } from "@/components/industry/section-heading";
 import type { IndustryDemo, IndustrySectionHeading } from "@/data/industries";
@@ -8,9 +10,10 @@ import type { IndustryDemo, IndustrySectionHeading } from "@/data/industries";
 /**
  * "Watch the demo" call to action.
  *
- * Phase A: `demo.htmlPath` is null, so the button renders disabled and NO iframe
- * exists anywhere in the tree. Phase B swaps the disabled button for a shadcn
- * <Dialog> whose content mounts the iframe only while open.
+ * When `demo.htmlPath` is set the button opens `DemoModal`, which mounts the
+ * iframe only while open. When it is null the button stays disabled and no
+ * iframe exists anywhere in the tree, so an industry without an animation costs
+ * nothing.
  */
 export function DemoSection({
   copy,
@@ -19,6 +22,7 @@ export function DemoSection({
   copy: IndustrySectionHeading;
   demo: IndustryDemo;
 }) {
+  const [demoOpen, setDemoOpen] = useState(false);
   const hasDemo = Boolean(demo.htmlPath);
 
   return (
@@ -37,7 +41,12 @@ export function DemoSection({
                 {demo.disabledLabel}
               </Badge>
             )}
-            <Button size="lg" disabled={!hasDemo} data-testid="button-watch-demo">
+            <Button
+              size="lg"
+              disabled={!hasDemo}
+              onClick={() => setDemoOpen(true)}
+              data-testid="button-watch-demo"
+            >
               <Play className="mr-2 h-4 w-4" />
               {hasDemo ? demo.label : demo.disabledLabel}
             </Button>
@@ -47,6 +56,15 @@ export function DemoSection({
           </div>
         </div>
       </div>
+
+      {hasDemo && (
+        <DemoModal
+          open={demoOpen}
+          onOpenChange={setDemoOpen}
+          htmlPath={demo.htmlPath}
+          title={demo.modalTitle}
+        />
+      )}
     </section>
   );
 }

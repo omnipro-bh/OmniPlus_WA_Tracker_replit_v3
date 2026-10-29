@@ -305,8 +305,7 @@ const medical: IndustryConfig = {
 
   demo: {
     label: "Watch the chatbot demo",
-    // Placeholder: the animation file is not in the repo yet.
-    htmlPath: null,
+    htmlPath: "/demos/medical.html",
     disabledLabel: "Demo coming soon",
     caption: "A 30-second WhatsApp booking flow — no signup required.",
     modalTitle: "Booking a clinic appointment on WhatsApp",
