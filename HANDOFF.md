@@ -1,124 +1,111 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Phase A — Medical industry landing page (committed, NOT deployed) — 2026-10-28
+## Phase A — Medical industry landing page DEPLOYED + polished (`da64671`) — 2026-10-29
 
-> **Status: code committed, NOT deployed, NOT browser-verified on the VPS.** Commit **`9db5d98`**
-> (`feat(marketing): Phase A — medical industry landing page`) on `main`. Nothing was pulled to
-> `/opt/omniplus`, nothing was rebuilt on the server, PM2 was not restarted. Production HEAD is still
-> **`3809d2d`**. The sections below this one are unchanged and still describe production.
+> **Status: live in production, verified.** Production HEAD is **`da64671`**. The sections below this
+> one predate the deploy — where they say "production HEAD is `3809d2d`" or "committed, NOT
+> deployed", this section supersedes them.
 
-### What shipped
+### Production state
 
-New public route **`/industry/:slug`**, starting with `/industry/medical`, plus a typed data config so
-further industries need no component changes.
+- **Production HEAD: `da64671`** — Phase A plus the browser-review copy fixes, deployed and verified.
+- Commit trail:
 
-- **18 files changed — 16 new + 2 modified — 1,424 insertions** (1,407 lines across the 16 new files,
-  17 lines added across `App.tsx` +2 and `landing.tsx` +15).
-- `client/src/data/industries.ts` (new, 585 lines) — all types + the Medical config. **Pure data**: no
-  React, no JSX, icons referenced by string key (`IconKey`) and resolved by `industry-icon.tsx`.
-- `client/src/components/industry/` (new, 12 files) — one component per section, all config-driven:
-  `industry-page`, `hero-section`, `pain-points`, `demo-section`, `department-features`,
-  `how-it-works`, `roi-stats`, `compliance`, `case-study`, `final-cta`, plus `industry-icon.tsx`
-  (explicit Lucide registry — deliberately not `import { icons }` as `landing.tsx` does, which pulls
-  the whole icon set into the bundle) and `section-heading.tsx` (DRY across 7 sections).
-- `client/src/components/marketing/` (new, 2 files) — `site-nav.tsx`, `site-footer.tsx`. Used **only**
-  by `IndustryPage`; `landing.tsx` keeps its own copies. "Contact" is a `mailto:` here because the
-  landing quote dialog lives in `Landing`'s local state.
-- `client/src/pages/industry.tsx` (new) — route entry: `useRoute("/industry/:slug")`, unknown slugs
-  render the existing `NotFound`, sets `document.title` from `config.metaTitle` in a `useEffect`.
-- `App.tsx` **+2** — one import, one `<Route path="/industry/:slug">`.
-- `landing.tsx` **+15** — one import, one `const useCaseIndustry`, and a 13-line link row appended
-  inside the existing `/use-cases` card. **No existing styling or markup was changed.**
+  | commit | contents |
+  |---|---|
+  | `9db5d98` | Phase A code — new `/industry/:slug` route + typed Medical config (18 files, +1,424) |
+  | `a850b68` | HANDOFF doc for Phase A |
+  | `da64671` | Copy fixes from the browser review (3 files, +35 / −22) |
 
-### Alias matching — verified against the live `use_cases` table
+- **Live at <https://wt.omniplus-bh.com/industry/medical> — verified HTTP 200**, serving client
+  bundle `index-nCE1fc-d.js`. Server bundle unchanged at **821.8 kB** (no backend change).
+- Deploy path run: backup → fast-forward `a850b68` → `da64671` → `npm ci --include=dev` →
+  `npm run build` → `pm2 restart omniplus`. **No schema change, no `db:push`.** The error log gained
+  **no new lines** after the restart (last write predated it by ~2.5h).
 
-Query run on the VPS (`SELECT id, title, sort_order, published FROM use_cases ORDER BY sort_order`):
+### Copy fixes applied (`da64671`)
 
-| id | title | published | resolves to |
-|---|---|---|---|
-| 2 | `Ecommerce Business ` | t | — none yet |
-| 3 | `Health & Wellness business` | t | **`/industry/medical`** |
-| 5 | `Automotive Business  ` | t | — none yet |
-| 4 | `Education Sector` | f | — (unpublished, not rendered) |
+- **Pricing removed from the industry page nav.** `SiteNav` gained a `showPricing` prop (default
+  `true`); `IndustryPage` passes `false`. The industry page is a focused vertical funnel — pricing is
+  a distraction. `landing.tsx` keeps its own nav copy with Pricing visible, so nothing else changed.
+  `SiteNav` has one caller, so the prop is purely additive.
+- **"Start free trial" → "Book a Demo"**, `primaryHref` → `mailto:support@omniplus-bh.com` for v1.
+  Note there is **no separate `hero.primaryCtaLabel`**: the hero and the final CTA both read
+  `config.cta`, so they can never drift apart. `cta.subtext` was rewritten to match.
+- **Case study hidden** — `caseStudy.hidden = true`, skipped in `industry-page.tsx`. **Copy is
+  retained**, not deleted: flipping the flag restores the section unchanged. Placeholder quotes
+  (`"Draft — clinic name to be confirmed"`, `"Dr. [Name to confirm]"`) no longer reach the public
+  page.
+- **All `"Draft copy —"` / `"Draft: "` prefixes removed** — six section subtexts, the hero subtext,
+  `metaDescription`, and both step descriptions (01 and 04). Copy now reads as final.
 
-Findings worth keeping:
+### Design decisions from the browser review
 
-- **There is no real-estate row.** The third published card is **Automotive**. Real-estate, if it ever
-  appears, is net-new content rather than a re-link.
-- Titles carry **trailing spaces** (`Ecommerce Business `, `Automotive Business  `). Matching is
-  therefore normalised — lowercase, `[^a-z0-9]` stripped, then substring test — rather than exact match.
-- **Only one of the three visible cards gains a link today.** Unmatched cards render exactly as before
-  (no link, no layout change), so the section degrades gracefully while configs are missing.
+- **Hero CSS mockup is placeholder for v1.** "Al Noor Clinic" / "Dr. Rahman" is fiction. Phase B
+  replaces the CSS conversation with a screenshot frame taken from the HTML demo plus a play overlay
+  that opens the same Dialog.
+- **Events department card is thin** — 3 capabilities vs 4–5 in the other three groups. Kept for v1;
+  it is a legitimate capability. If it is ever dropped, the grid reflows to 3 columns with no
+  component change.
+- **Stats note `"Illustrative target — pilot in progress"` is intentionally honest** and stays.
+  Values `−30% / −40% / < 60s / 24/7` are targets, not measurements. Update when real numbers exist.
+- **`mailto:` CTA caveat, accepted for v1.** On a machine with no configured mail client the button
+  does nothing visible. A `/contact` page (or a modal) is the fix, deferred to a later phase.
 
-### Verification done locally (not on the VPS)
+### Browser verification observations (desktop + mobile)
 
-- `npm run check` → the **same 9 pre-existing errors**, zero in changed files.
-  Note: `AGENTS.md` line references have drifted — `server/storage.ts` is now **1140** (was 1004) and
-  `shared/schema.ts` is now **1449** (was 1250). Pre-existing drift, unrelated to this commit.
-- `npm run build` → success. `client-dist/assets/index-gm9F2xEd.css (135.81 kB)` +
-  `index-CqFhOVix.js (2,891.66 kB)`, `server-dist/index.js` 821.8 kB. Client hash changed.
-- Runtime check against the **production build** (dev server cannot start locally — no `DATABASE_URL`):
-  `document.title`, `<h1>`, all 9 `section[id]`s in order, the 4 `department-*` groups, 4 compliance
-  badges, `button-watch-demo` **disabled**, and `/industry/nonexistent` → 404 all confirmed in the DOM.
-- **Not done:** visual/browser review on a real device — the screenshot tool needs a visible desktop
-  window, which this environment does not have.
+- Hero H1 *"Take the phone queue off your front desk"* resonates — strongest line on the page.
+- Department cards (Operations / Marketing / Management / Events) read correctly.
+- *"Live in four steps"* section works well.
+- **Compliance now flows directly into the final CTA** since the case study is hidden. Confirm there
+  is no awkward gap/whitespace where the section used to sit — the two sections both use `py-20
+  lg:py-28`, so the seam is heavier than elsewhere on the page.
 
-### Known findings
+### Implementation notes carried forward
 
-- **`tawk.to` overwrites `document.title`.** The chat widget (`client/src/components/chat-widget.tsx`,
-  mounted globally) injects 3 iframes on every page and sets `document.title` to e.g. `"1 new message"`
-  when a preview arrives, stomping `config.metaTitle`. Not a Phase A blocker; affects any page-level
-  title logic.
-- The 3 iframes counted at runtime are **all** tawk.to, pre-existing on every route. The demo section
-  contributes **zero** iframes (`demo.htmlPath` is `null`).
-- `npm run dev` is broken on Windows — the script uses a `NODE_ENV=development` prefix that `cmd`/PowerShell
-  cannot parse. Pre-existing.
+Still true, and hard-won — do not re-derive these:
 
-### Copy is DRAFT — must be reviewed before public launch
+- **`/industry/:slug` is config-driven.** `client/src/data/industries.ts` holds all prose; no string
+  appears in a component. Adding ecommerce or automotive is a pure data edit.
+- **Alias matching** against `use_cases.title` is normalised (lowercase, `[^a-z0-9]` stripped,
+  substring) because live titles carry trailing spaces. Only **"Health & Wellness business"**
+  resolves to `/industry/medical`; **Ecommerce** and **Automotive** cards stay unlinked and render
+  exactly as before. There is no real-estate row.
+- **`tawk.to` overwrites `document.title`** (mounted globally by `chat-widget.tsx`), stomping
+  `config.metaTitle`. Affects any page-level title logic. The 3 iframes counted at runtime are all
+  tawk.to; the demo section contributes **zero** (`demo.htmlPath` is still `null`).
+- **`npm run dev` is broken on Windows** — the script uses a `NODE_ENV=` prefix `cmd`/PowerShell
+  cannot parse. Pre-existing; irrelevant on the VPS.
+- **`npm run check` drift:** the same 9 pre-existing errors, but `AGENTS.md`'s line references have
+  moved — `server/storage.ts` is now **1140** and `shared/schema.ts` is now **1449**.
+- **`icons` registry:** `industry-icon.tsx` uses an explicit Lucide map on purpose — `landing.tsx`'s
+  `import { icons }` pulls the entire icon set into the bundle.
 
-- **Case study is fully placeholder**: `org: "Draft — clinic name to be confirmed"`,
-  `author: "Dr. [Name to confirm]"`, and the quote text itself says it is a placeholder. **Cannot ship
-  as-is.** No case-study screenshot exists (`imagePath` omitted; text + bullets only).
-- **Stats are illustrative targets**, not measurements. Every entry carries
-  `note: "Illustrative target — pilot in progress"`. Values `−30% / −40% / < 60s / 24/7` are
-  placeholders, not claims.
-- **Hero mockup uses a fictional clinic** ("Al Noor Clinic", "Dr. Rahman") inside `heroMock`.
-- Section headings and pain-point copy are author voice (e.g. "What the front desk is really fighting",
-  "Built for a regulated waiting room") and need approval.
-- "Events" department is interpreted as **health camps / screening & vaccination drives** — thinnest
-  group; the whole group can be deleted from the array and the grid reflows to 3 columns.
+### Outstanding follow-ups
 
-### Deviations accepted in review
+- 🔴 **Arabic insurance tenant returns `401 "need channel authorization for send message"`** —
+  observed in `omniplus-error.log` at **04:06 on 2026-10-29**, hours *before* this deploy, on a
+  `main_menu_arabic` flow. Unlike the known 524s this is an authorization rejection, not a
+  retryable timeout, so it is probably an expired or revoked channel token on that tenant. **Real
+  customer-facing breakage — needs its own investigation session.** Not touched.
+- **`/contact` page** to replace the `mailto:` CTA.
+- **Arabic / RTL version** of the industry landing page (explicitly deferred; v1 is English only).
+- **`© 2024` is stale** in both footers (`landing.tsx` and `site-footer.tsx`).
+- **No `meta` / OG tags** — `metaTitle` / `metaDescription` exist in config but only
+  `document.title` is wired (the app has no head/helmet layer).
+- **Hero mockup replacement** — Phase B (below).
+- **Al Noor Clinic fiction → a real customer name**, or a clearly generic one.
 
-1. `landing.tsx` came to **+15**, not the projected +12/+14 (import + const + 13-line JSX block).
-2. Two components beyond the original 9-section list: `industry-icon.tsx` (bundle-safe icon registry)
-   and `section-heading.tsx` (shared heading block).
-3. **Config type additions** beyond the originally proposed shape, required by the "no hardcoded copy"
-   constraint: `sectionCopy` (7 heading blocks), `heroMock` (hero mockup prose), `demo.disabledLabel`,
-   `compliance[].href`/`hrefLabel`, `stats[].note`, `aliases[]`.
-4. Nav/footer differences from `landing.tsx`: "Contact" is `mailto:`; footer "API Docs" (dead `#`) →
-   "Use Cases" (real anchor); "Blog" (dead `#`) dropped.
+## Next session — start here: Phase B (modal + real demo)
 
-### Decisions deferred (do NOT pick these up opportunistically)
-
-- **Ecommerce + automotive configs** — skipped deliberately. Those two cards currently link nowhere.
-  Adding configs is a pure `industries.ts` edit, no component work.
-- **`© 2024` is stale on both footers** (`landing.tsx` and `site-footer.tsx`) — deferred to a cleanup pass.
-- **No `meta` / OG tags** — `metaTitle`/`metaDescription` exist in config but only `document.title` is
-  wired (the app has no head/helmet layer).
-
-### Next session — start here
-
-1. **Deploy Phase A** (backup → pull → `npm ci --include=dev` → build → `pm2 restart omniplus` →
-   check `omniplus-error.log`). No schema change and no `db:push` needed. Confirm production HEAD moves
-   `3809d2d` → `9db5d98`.
-2. **Browser-verify `/industry/medical`** on desktop and mobile, and confirm the `/use-cases` card for
-   "Health & Wellness business" now links to it (the other two must remain unlinked).
-3. **Review the draft copy** above — approve or request edits.
-4. If copy is approved: **Phase B** — place `client/public/demos/medical.html` in the repo, then wire
-   the shadcn `<Dialog>` in `demo-section.tsx` with `{demoOpen && <iframe />}` so the 30-second loop
-   never loads on page paint, and flip `demo.htmlPath` from `null` to `/demos/medical.html`.
-5. **Follow-up to record:** Arabic / RTL variant was explicitly deferred — v1 is English only.
+1. **Attach `medical.html`** to OpenCode. Save to `client/public/demos/medical.html`. Commit + push.
+2. **Wire the Dialog + lazy iframe** in `demo-section.tsx`: flip `demo.htmlPath` from `null` to
+   `"/demos/medical.html"`, activating the button.
+3. **Replace the CSS hero mockup** with a screenshot frame from the HTML demo, plus a play overlay
+   that opens the same Dialog.
+4. **Deploy**, then verify both `/industry/medical` (button works, hero screenshot renders, modal
+   opens with the animation) and `/demos/medical.html` (iframe loads, animation plays).
+5. **Mobile test** — the modal should be full-screen-friendly on small viewports.
 
 ## Demo account — linked to live sandbox `ANTMAN-ZR87E` (fully operational) — 2026-10-28
 
