@@ -100,6 +100,12 @@ export interface IndustryStep {
 }
 
 export interface IndustryCaseStudy {
+  /**
+   * Hide the whole section for this industry without deleting the copy.
+   * Used while a case study is still placeholder text: an obviously fake quote
+   * costs more trust than a missing section.
+   */
+  hidden?: boolean;
   org: string;
   headline: string;
   quote: string;
@@ -215,12 +221,12 @@ const medical: IndustryConfig = {
   title: "Medical",
   metaTitle: "WhatsApp automation for clinics and medical practices | OMNI PLUS",
   metaDescription:
-    "Draft: automate appointment booking, patient reminders and front-desk FAQs on WhatsApp — for clinics, polyclinics and specialist practices.",
+    "Automate appointment booking, patient reminders and front-desk FAQs on WhatsApp — for clinics, polyclinics and specialist practices.",
 
   eyebrow: "For clinics, polyclinics & specialist practices",
   headline: "Take the phone queue off your front desk",
   subtext:
-    "Draft copy — OMNI PLUS answers the questions your team answers fifty times a day, books and confirms appointments on WhatsApp, and keeps every department in one inbox.",
+    "OMNI PLUS answers the questions your team answers fifty times a day, books and confirms appointments on WhatsApp, and keeps every department in one inbox.",
   heroBullets: [
     "Patients book, reschedule and cancel in chat — no app to install",
     "Reminders and recall lists send themselves",
@@ -242,33 +248,31 @@ const medical: IndustryConfig = {
   sectionCopy: {
     painPoints: {
       heading: "What the front desk is really fighting",
-      subtext: "Draft copy — four problems we hear from clinics before anything is automated.",
+      subtext: "Four problems we hear from clinics before anything is automated.",
     },
     demo: {
       heading: "See the booking flow before you read about it",
-      subtext: "Draft copy — a short animation of a patient booking on WhatsApp.",
+      subtext: "A short animation of a patient booking on WhatsApp.",
     },
     capabilities: {
       heading: "What each department gets",
-      subtext:
-        "Draft copy — the same platform, seen from the four teams that actually use it.",
+      subtext: "The same platform, seen from the four teams that actually use it.",
     },
     howItWorks: {
       heading: "Live in four steps",
-      subtext: "Draft copy — no developer, no new hardware, no app for patients.",
+      subtext: "No developer, no new hardware, no app for patients.",
     },
     results: {
       heading: "What clinics are aiming for",
-      subtext:
-        "Draft copy — illustrative targets from active pilots, not measured outcomes.",
+      subtext: "Illustrative targets from active pilots, not measured outcomes.",
     },
     compliance: {
       heading: "Built for a regulated waiting room",
-      subtext: "Draft copy — the guardrails we would not ship without.",
+      subtext: "The guardrails we would not ship without.",
     },
     caseStudy: {
       heading: "In a clinic's own words",
-      subtext: "Draft — pending approval from the practice named below.",
+      subtext: "Pending approval from the practice named below.",
     },
   },
 
@@ -444,7 +448,7 @@ const medical: IndustryConfig = {
     {
       title: "Connect your WhatsApp number",
       description:
-        "Scan a QR code or link your business number. Draft: setup takes minutes, not a project.",
+        "Scan a QR code or link your business number. Setup takes minutes, not a project.",
       icon: "phone",
     },
     {
@@ -462,7 +466,7 @@ const medical: IndustryConfig = {
     {
       title: "Go live and watch the queue shrink",
       description:
-        "Draft: the front desk keeps working the same way — it just stops answering the same question forty times.",
+        "The front desk keeps working the same way — it just stops answering the same question forty times.",
       icon: "checkCircle",
     },
   ],
@@ -526,6 +530,7 @@ const medical: IndustryConfig = {
   ],
 
   caseStudy: {
+    hidden: true,
     org: "Draft — clinic name to be confirmed",
     headline: "How a two-branch polyclinic cut its no-show rate",
     quote:
@@ -543,9 +548,9 @@ const medical: IndustryConfig = {
   cta: {
     heading: "Ready to take the phone queue off your front desk?",
     subtext:
-      "Draft: start a free trial, or see how the same flow works for other industries.",
-    primaryLabel: "Start free trial",
-    primaryHref: "/signup",
+      "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
     secondaryLabel: "See all use cases",
     secondaryHref: "/#use-cases",
   },

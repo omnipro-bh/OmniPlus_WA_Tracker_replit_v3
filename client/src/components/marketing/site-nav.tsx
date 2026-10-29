@@ -14,9 +14,13 @@ import { ThemeToggle } from "@/components/theme-toggle";
  *    dialog (that dialog is local state inside Landing and not extractable
  *    without touching landing.tsx).
  *
+ * The "Pricing" link is optional (`showPricing`, default `true`). Industry pages
+ * pass `false`: they are a focused sales funnel and pricing is a distraction
+ * there. The landing page keeps its own nav and is unaffected.
+ *
  * landing.tsx intentionally keeps its own copy of this markup.
  */
-export function SiteNav() {
+export function SiteNav({ showPricing = true }: { showPricing?: boolean }) {
   const { data: authSettings } = useQuery<{
     enableSignin: boolean;
     enableSignup: boolean;
@@ -47,9 +51,11 @@ export function SiteNav() {
             <a href="/#use-cases" className="text-sm font-medium hover-elevate rounded-md px-3 py-2">
               Use Cases
             </a>
-            <a href="/#pricing" className="text-sm font-medium hover-elevate rounded-md px-3 py-2">
-              Pricing
-            </a>
+            {showPricing && (
+              <a href="/#pricing" className="text-sm font-medium hover-elevate rounded-md px-3 py-2">
+                Pricing
+              </a>
+            )}
             <a
               href="mailto:support@omniplus-bh.com"
               className="text-sm font-medium hover-elevate rounded-md px-3 py-2"

@@ -21,7 +21,7 @@ import type { IndustryConfig } from "@/data/industries";
 export default function IndustryPage({ config }: { config: IndustryConfig }) {
   return (
     <div className="min-h-screen bg-background">
-      <SiteNav />
+      <SiteNav showPricing={false} />
 
       <main>
         <HeroSection config={config} />
@@ -34,7 +34,9 @@ export default function IndustryPage({ config }: { config: IndustryConfig }) {
         <HowItWorksSection copy={config.sectionCopy.howItWorks} steps={config.howItWorks} />
         <RoiStatsSection copy={config.sectionCopy.results} stats={config.stats} />
         <ComplianceSection copy={config.sectionCopy.compliance} badges={config.compliance} />
-        <CaseStudySection copy={config.sectionCopy.caseStudy} caseStudy={config.caseStudy} />
+        {!config.caseStudy.hidden && (
+          <CaseStudySection copy={config.sectionCopy.caseStudy} caseStudy={config.caseStudy} />
+        )}
         <FinalCtaSection cta={config.cta} />
       </main>
 
