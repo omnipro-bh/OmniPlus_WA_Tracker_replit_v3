@@ -1,5 +1,71 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Phase B — Hero composite image + demo thumbnail (deployed `f29ac47`) — 2026-10-30
+
+> **Read this first.** Production HEAD is **`f29ac47`**. This supersedes the `HEAD` claims in the
+> sections below.
+
+### Status
+
+- **Production HEAD: `f29ac47`.**
+- Live at <https://wt.omniplus-bh.com/industry/medical>.
+- Both assets served: `/industries/medical/hero.webp` (200, `image/webp`),
+  `/industries/medical/demo-thumb.png` (200, `image/png`).
+- Hero composite image rendered, replacing the CSS "Al Noor Clinic" mockup.
+- Demo section thumbnail (booking confirmation frame) rendered with play button; opens the
+  `DemoModal`.
+- Play overlay on the hero opens the same `DemoModal`.
+- Modal iframe autoplays the `medical.html` animation (unmounts on close, restarts on reopen).
+
+### Copy fixes carried from Phase A polish
+
+**None** — those shipped at `da64671`.
+
+### Assets added
+
+- `client/public/industries/medical/hero.webp` (67KB, WebP q86, 1272×832): composite artwork with
+  woman on phone, WhatsApp bubbles, feature pills. WebP chosen over PNG because photographic
+  composites can't compress to 150KB at usable res.
+- `client/public/industries/medical/demo-thumb.png` (244KB, 787×574): booking confirmation frame
+  from `medical.html`.
+
+### Known limitations / follow-ups (all accepted or deferred)
+
+1. 🔴 **Hero image dark mode:** the WebP is flattened on white (no alpha). In dark mode it appears
+   as a bright rectangle. Fix requires a dark-background export from the source design
+   (Figma/Canva). **Do NOT attempt to key out the white** — it would destroy the chat bubbles and
+   phone screen.
+2. **Hero image color in light mode:** blends well (background near-white like the page).
+3. **Tawk.to launcher overlap:** pre-existing, unrelated. Slightly overlaps the wider hero image
+   now.
+4. **Mobile (375px):** the demo animation renders at ~156px phone width. Asset limitation (the
+   animation is authored for a 790×680 landscape stage). Deferred — accept or author a portrait
+   variant later.
+5. **Al Noor Clinic vs Sarah Smith inconsistency:** the demo names "Sarah Smith — Cardiology"; the
+   hero composite is different. Cosmetic mismatch, accept for v1.
+6. **`/contact` page:** "Book a Demo" CTA uses `mailto:` for now. On machines without a mail client,
+   the button does nothing visible. Real `/contact` page is a future cleanup.
+7. **Arabic/RTL version:** not built. Deferred.
+8. **`© 2024` footer:** stale in both `landing.tsx` and the industry `site-footer`. Fix in a cleanup
+   pass.
+9. **Meta/OG tags:** no head layer yet. `metaTitle` / `metaDescription` in `industries.ts` are dead
+   weight until wired.
+10. 🔴 **Arabic insurance tenant 401:** "need channel authorization for send message" observed in
+    the error log (pre-existing, from before the deploy). Real customer-facing breakage on that
+    tenant's channel. Needs its own investigation session.
+11. **Copy review:** all Medical copy is now deployed and readable. Any wording changes should be
+    done against the live page (via a small config edit), not re-designed.
+
+### Next session — start here
+
+1. Read this section.
+2. Optional: address the 🔴 Arabic tenant 401 if the customer has reported it.
+3. Or: begin the next phase (4A-5, `/contact` page, or the Arabic/RTL version — whichever the user
+   prioritizes).
+4. **Do NOT re-open Phase B** — it's shipped.
+
+**Session ended at ~90%.**
+
 ## Phase A — Medical industry landing page DEPLOYED + polished (`da64671`) — 2026-10-29
 
 > **Status: live in production, verified.** Production HEAD is **`da64671`**. The sections below this
@@ -97,6 +163,9 @@ Still true, and hard-won — do not re-derive these:
 - **Al Noor Clinic fiction → a real customer name**, or a clearly generic one.
 
 ## Next session — start here: Phase B (modal + real demo)
+
+> **Superseded — Phase B shipped at `f29ac47`.** Kept for history only. All five steps below are
+> done; do not re-run them.
 
 1. **Attach `medical.html`** to OpenCode. Save to `client/public/demos/medical.html`. Commit + push.
 2. **Wire the Dialog + lazy iframe** in `demo-section.tsx`: flip `demo.htmlPath` from `null` to
