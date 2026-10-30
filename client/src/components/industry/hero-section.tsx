@@ -7,17 +7,24 @@ import { IndustryIcon } from "@/components/industry/industry-icon";
 import type { IndustryConfig, IndustryHeroMock } from "@/data/industries";
 
 /**
- * CSS-only hero. The visual is a WhatsApp-style conversation mockup built from
- * `config.heroMock`, on a soft gradient.
+ * Hero with a visual on the right, on a soft gradient.
  *
- * When the industry has a demo (`config.demo.htmlPath`), the mockup becomes a
- * play button that opens the same `DemoModal` as the demo section. The mockup
- * is still CSS, not a captured frame of the animation: it is a stand-in visual
- * so the hero does not need a binary asset yet.
+ * The visual is `industries/<slug>/hero.webp` when that file exists, and the
+ * CSS conversation mockup built from `config.heroMock` otherwise. Both are
+ * decided per industry by the slug, so a new industry only has to drop a file
+ * in its folder — no config change, and no risk of one industry showing
+ * another's artwork. If the image 404s, `onError` falls back to the mockup
+ * rather than leaving a broken frame in the most prominent spot on the page.
+ *
+ * When the industry has a demo (`config.demo.htmlPath`), the visual becomes a
+ * play button that opens the same `DemoModal` as the demo section.
  */
 export function HeroSection({ config }: { config: IndustryConfig }) {
   const [demoOpen, setDemoOpen] = useState(false);
+  const [heroBroken, setHeroBroken] = useState(false);
   const hasDemo = Boolean(config.demo.htmlPath);
+  const showHeroImage = Boolean(config.heroMock) && !heroBroken;
+  const heroSrc = `/industries/${config.slug}/hero.webp`;
 
   return (
     <section id="hero" className="relative overflow-hidden py-20 lg:py-28">
@@ -72,9 +79,15 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
             </div>
           </div>
 
-          {/* Mockup — play button when this industry has a demo */}
+          {/* Visual — play button when this industry has a demo */}
           {config.heroMock && (
-            <div className="relative mx-auto w-full max-w-sm">
+            <div
+              className={
+                showHeroImage
+                  ? "relative mx-auto w-full max-w-xl"
+                  : "relative mx-auto w-full max-w-sm"
+              }
+            >
               {hasDemo ? (
                 <button
                   type="button"
@@ -83,7 +96,12 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
                   data-testid="button-hero-demo"
                   className="group relative block w-full rounded-2xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <HeroMockup mock={config.heroMock} />
+                  <HeroVisual
+                    mock={config.heroMock}
+                    src={heroSrc}
+                    showImage={showHeroImage}
+                    onImageError={() => setHeroBroken(true)}
+                  />
                   <span
                     aria-hidden="true"
                     className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/25 transition-colors group-hover:bg-black/35"
@@ -94,7 +112,12 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
                   </span>
                 </button>
               ) : (
-                <HeroMockup mock={config.heroMock} />
+                <HeroVisual
+                  mock={config.heroMock}
+                  src={heroSrc}
+                  showImage={showHeroImage}
+                  onImageError={() => setHeroBroken(true)}
+                />
               )}
             </div>
           )}
@@ -110,6 +133,42 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The hero visual: the exported artwork when one exists, else the CSS mockup.
+ *
+ * The image is a plain `<img>` (not a CSS background) so it carries alt text.
+ * `width`/`height` match the asset so the column does not reflow while it
+ * loads, and the light background of the artwork is framed as a card so the
+ * rectangle edge reads as intentional against the hero gradient.
+ */
+function HeroVisual({
+  mock,
+  src,
+  showImage,
+  onImageError,
+}: {
+  mock: IndustryHeroMock;
+  src: string;
+  showImage: boolean;
+  onImageError: () => void;
+}) {
+  if (!showImage) {
+    return <HeroMockup mock={mock} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt="WhatsApp automation for appointment booking: a patient books in chat and receives a confirmation, a reminder and reschedule options"
+      width={1272}
+      height={832}
+      onError={onImageError}
+      className="block w-full rounded-2xl border border-border/60 shadow-2xl"
+      data-testid="img-hero"
+    />
   );
 }
 

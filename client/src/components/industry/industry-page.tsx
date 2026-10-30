@@ -26,7 +26,11 @@ export default function IndustryPage({ config }: { config: IndustryConfig }) {
       <main>
         <HeroSection config={config} />
         <PainPointsSection copy={config.sectionCopy.painPoints} painPoints={config.painPoints} />
-        <DemoSection copy={config.sectionCopy.demo} demo={config.demo} />
+        <DemoSection
+          copy={config.sectionCopy.demo}
+          demo={config.demo}
+          slug={config.slug}
+        />
         <DepartmentFeaturesSection
           copy={config.sectionCopy.capabilities}
           featureGroups={config.featureGroups}
