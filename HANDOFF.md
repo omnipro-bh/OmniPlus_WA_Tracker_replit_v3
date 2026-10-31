@@ -1,49 +1,47 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Industry pages — 5 deployed: Medical, E-commerce, Automotive, Education, Real Estate (10e82ea, 2026-10-31)
+## Industry pages phase COMPLETE — 6 verticals deployed (58639d9, 2026-10-31)
 
 ### Status
 
-- Production HEAD: `10e82ea`.
-- Five industry pages live: `/industry/medical`, `/industry/ecommerce`, `/industry/automotive`, `/industry/education`, `/industry/real-estate`.
-- All five share: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
+- Production HEAD: `58639d9`.
+- Six industry pages live:
+  - `/industry/medical` (Operations/Marketing/Management/Events)
+  - `/industry/ecommerce` (Sales/Operations/Marketing/Management)
+  - `/industry/automotive` (Sales/Operations/Marketing/Management)
+  - `/industry/education` (Admissions/Student Engagement/Finance/Management)
+  - `/industry/real-estate` (Sales/Operations/Marketing/Management)
+  - `/industry/insurance` (Sales/Claims & Support/Retention/Management)
+- All share: hero image (WebP), demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
 
-### Files added this session (real-estate)
+### Files added this session (insurance)
 
-- `client/public/demos/real-estate.html` (167 KB)
-- `client/public/industries/real-estate/hero.webp` (50 KB, 1115×944)
-- `client/public/industries/real-estate/demo-thumb.png` (256 KB, 726×559)
+- `client/public/demos/insurance.html` (76 KB)
+- `client/public/industries/insurance/hero.webp` (45 KB, 1184×896)
+- `client/public/industries/insurance/demo-thumb.png` (254 KB, 781×571)
 
 ### Code changes (this session)
 
-- `client/src/data/industries.ts`: realEstate config added, registered as `"real-estate"`. `sectionCopy` keys mapped to existing interface (`features`→`capabilities`, `stats`→`results`). `caseStudy` heading added (required by type, but caseStudy is hidden).
-- `client/src/components/industry/industry-icon.tsx`: 4 new icons (`image`, `filter`, `building`, `map`). `chart` already existed as `BarChart3`.
+- `client/src/data/industries.ts`: insurance config added, sectionCopy included.
+- `client/src/components/industry/industry-icon.tsx`: 1 new icon (`hash` for claim reference numbers).
 
-### Notes
+### Industry pages phase summary
 
-- The 4 new icons are now reusable for any future industry.
-- Asset preview: hero at 1115×944 renders correctly at natural ratio (the shared component now derives dimensions, no distortion).
-- One process anomaly: OpenCode reported a "concurrent session" during execution. If two OpenCode tabs were open on the same repo, close one. If only one tab was open, this was an internal execution-state artifact. Either way, the commit `10e82ea` is real and verified.
+Total code: 6 configs + 6 icon additions (17 total icons across all industries) + shared infrastructure changes (hero-section.tsx and demo-section.tsx dimension fixes from e-commerce session). Zero backend changes, zero schema changes, zero new dependencies throughout the phase.
 
-### Remaining follow-ups (carried forward)
+### What's next (in priority order)
 
-- Insurance page (next).
-- Add 3 use-case cards to DB after all pages are live (education, real-estate, insurance).
-- Arabic/RTL version.
-- `/contact` page (replace `mailto` CTA).
-- © 2024 footer update.
-- Hero style unification (5 illustrations now, all slightly different).
-- Supabase credential rotation + project deletion.
+1. **Add 3 missing cards to /use-cases DB** — education, real-estate, insurance. Currently only medical, ecommerce, automotive have cards. Need 3 new rows in `use_cases` table with title, description, image, `published=true`.
+2. **Arabic/RTL version** — high market value in Bahrain (2x reach).
+3. **/contact page** — replace the `mailto:` CTA across all six industry pages (currently opens mail client, does nothing on machines without one).
+4. **© 2024 → © 2025 footer update** — small but visible in both `landing.tsx` and `site-footer.tsx`.
+5. **Fix Arabic insurance tenant 401** — customer-facing breakage from error log history (pre-deploy, unrelated to this phase).
+6. **Supabase credential rotation + project deletion** — after 30-day rollback window (Nov 30).
+7. **Hero style unification** — the 6 hero illustrations have different design styles. A design pass could unify them.
 
 ### Next session — start here
 
-Insurance page. Attach:
-
-- `insurance.html` (animation)
-- insurance hero image
-- insurance demo thumbnail
-
-The infrastructure is fully proven. This will be the fastest page yet.
+The industry pages are done. Next priority: add the 3 missing use-case cards to the DB (education, real-estate, insurance) so the /use-cases page shows all 6 industries. This is a data-only task — no code changes.
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
