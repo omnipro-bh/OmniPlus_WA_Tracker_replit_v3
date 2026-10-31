@@ -11,7 +11,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type DepartmentKey = "operations" | "marketing" | "management" | "events" | "sales";
+export type DepartmentKey = "operations" | "marketing" | "management" | "events" | "sales" | "finance";
 
 /**
  * Icon names are resolved to Lucide components by
@@ -64,7 +64,9 @@ export type IconKey =
   | "play"
   | "wrench"
   | "route"
-  | "calculator";
+  | "calculator"
+  | "userPlus"
+  | "languages";
 
 export interface IndustryPainPoint {
   title: string;
@@ -978,6 +980,186 @@ const automotive: IndustryConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Education
+//
+// ⚠️  ALL COPY BELOW IS PLACEHOLDER / DRAFT for review. Nothing here is a
+//     measured result. Stats are illustrative targets only.
+// ---------------------------------------------------------------------------
+
+const education: IndustryConfig = {
+  slug: "education",
+  title: "Education",
+  metaTitle: "WhatsApp automation for schools & universities | OMNI PLUS",
+  metaDescription:
+    "Streamline student admissions and automate parent communication. Handle admission inquiries, send fee reminders, and broadcast campus alerts — all on WhatsApp.",
+
+  eyebrow: "For schools, universities & training institutes",
+  headline: "Streamline student admissions and automate parent communication",
+  subtext:
+    "Handle thousands of admission inquiries, send automated fee reminders, and broadcast important campus alerts directly via WhatsApp.",
+  heroBullets: [
+    "Admissions inquiries handled 24/7 with AI chatbot",
+    "Automated fee reminders with secure payment links",
+    "Campus broadcasts for events, exams, and emergencies",
+  ],
+
+  heroMock: {
+    header: "Al Noor University",
+    status: "Typically replies in seconds",
+    messages: [
+      { from: "customer", text: "Hi, what are the entry requirements for Computer Science?" },
+      { from: "business", text: "For CS, you need 80%+ in high school with Math. Would you like the full brochure?" },
+      { from: "customer", text: "Yes please, and what are the tuition fees?" },
+      { from: "business", text: "Brochure sent! Tuition is BHD 3,200/year. I've also attached the payment plan. 📚" },
+    ],
+  },
+
+  sectionCopy: {
+    painPoints: {
+      heading: "What the admissions office is really fighting",
+      subtext: "Four problems schools and universities face before anything is automated.",
+    },
+    demo: {
+      heading: "See the admissions flow before you read about it",
+      subtext: "A short animation of a student asking about a program on WhatsApp.",
+    },
+    capabilities: {
+      heading: "What each department gets",
+      subtext: "The same platform, seen from the four teams that run a campus.",
+    },
+    howItWorks: {
+      heading: "Live in four steps",
+      subtext: "No developer, no new portal, no app for students or parents.",
+    },
+    results: {
+      heading: "What institutions are aiming for",
+      subtext: "Illustrative targets from active pilots, not measured outcomes.",
+    },
+    compliance: {
+      heading: "Built for a regulated campus",
+      subtext: "The guardrails we would not ship without.",
+    },
+    caseStudy: {
+      heading: "In an institution's own words",
+      subtext: "Pending approval from the institution named below.",
+    },
+  },
+
+  painPoints: [
+    { title: "Admissions team drowns in repetitive questions", description: "Thousands of students ask the same questions about fees, deadlines, and entry requirements every semester.", icon: "messages" },
+    { title: "Fee reminders are manual and awkward", description: "Chasing parents for payment via phone calls feels intrusive. Automated reminders fix this.", icon: "creditCard" },
+    { title: "Document requests take days", description: "Students email for brochures and transcripts, and wait days for staff to send them manually.", icon: "fileText" },
+    { title: "Campus broadcasts miss half the students", description: "Exam schedules and event announcements sent via email get lost in spam.", icon: "megaphone" },
+  ],
+
+  demo: {
+    label: "Watch the education demo",
+    htmlPath: "/demos/education.html",
+    caption: "A 30-second animated flow — from admissions inquiry to brochure download",
+    modalTitle: "Handling an admissions inquiry on WhatsApp",
+    disabledLabel: "Demo coming soon",
+  },
+
+  featureGroups: [
+    {
+      department: "operations",
+      label: "Admissions",
+      tagline: "Answer every student instantly",
+      icon: "users",
+      features: [
+        { title: "Admissions automation", description: "AI answers questions about tuition, deadlines, and entry requirements 24/7.", icon: "messages" },
+        { title: "Lead capture", description: "Collects prospective student data directly in chat for your CRM.", icon: "userPlus" },
+        { title: "Document delivery", description: "Send brochures, transcripts, and application forms in-chat.", icon: "fileText" },
+        { title: "Smart routing", description: "Route inquiries to Admissions, Finance, IT Support, or specific faculty.", icon: "route" },
+      ],
+    },
+    {
+      department: "marketing",
+      label: "Student Engagement",
+      tagline: "Keep students and parents informed",
+      icon: "megaphone",
+      features: [
+        { title: "Campus broadcasts", description: "Event announcements, exam schedules, and emergency alerts to thousands.", icon: "send" },
+        { title: "Open day invitations", description: "Automated reminders for open days, orientations, and admissions events.", icon: "calendar" },
+        { title: "Program catalogs", description: "Let students browse programs and download course details.", icon: "grid" },
+        { title: "Referral programs", description: "Track which students bring in new applicants and reward them.", icon: "users" },
+      ],
+    },
+    {
+      department: "finance",
+      label: "Finance",
+      tagline: "Get paid on time, politely",
+      icon: "creditCard",
+      features: [
+        { title: "Fee reminders", description: "Automated, polite payment reminders with secure payment links.", icon: "bell" },
+        { title: "Payment plans", description: "Send installment options and track which students are on plan.", icon: "calendar" },
+        { title: "Scholarship info", description: "Answer questions about financial aid and scholarship deadlines in-chat.", icon: "star" },
+        { title: "Receipts and invoices", description: "Send digital receipts immediately after payment.", icon: "fileText" },
+      ],
+    },
+    {
+      department: "management",
+      label: "Management",
+      tagline: "See the whole student journey",
+      icon: "barChart",
+      features: [
+        { title: "Admissions funnel", description: "Track inquiries → applications → enrollments in one dashboard.", icon: "activity" },
+        { title: "Enrollment analytics", description: "See which programs are growing and which need promotion.", icon: "barChart" },
+        { title: "Response time tracking", description: "Monitor staff responsiveness across Admissions, Finance, IT.", icon: "clock" },
+        { title: "Bilingual support", description: "English and Arabic handled natively by the AI.", icon: "languages" },
+      ],
+    },
+  ],
+
+  howItWorks: [
+    { title: "Connect your number", description: "Link your school or university WhatsApp number to OMNI.", icon: "link" },
+    { title: "Set up the AI", description: "Configure the bilingual bot to handle admissions and fee questions.", icon: "zap" },
+    { title: "Go live", description: "Staff manage chats from a unified inbox while the AI handles routine questions.", icon: "play" },
+    { title: "Track results", description: "See inquiries handled, applications captured, and fees collected.", icon: "barChart" },
+  ],
+
+  stats: [
+    { value: "24/7", label: "admissions availability", note: "No missed inquiries" },
+    { value: "70%", label: "faster response time", note: "Illustrative target — pilot in progress" },
+    { value: "3x", label: "more applications", note: "Illustrative target" },
+    { value: "90%", label: "fee collection rate", note: "Illustrative target" },
+  ],
+
+  compliance: [
+    { label: "Meta Business Partner", description: "Official WhatsApp Business API integration", icon: "shield", href: "/privacy-policy", hrefLabel: "Learn more" },
+    { label: "GDPR & PDPA aligned", description: "Student data stays in your control", icon: "lock", href: "/privacy-policy", hrefLabel: "Privacy policy" },
+    { label: "SIS integrations", description: "Works with popular Student Information Systems", icon: "link", href: "/contact", hrefLabel: "Talk to us" },
+    { label: "Secure payment processing", description: "PCI-DSS compliant for fee collection", icon: "creditCard", href: "/privacy-policy", hrefLabel: "Learn more" },
+  ],
+
+  caseStudy: {
+    org: "Draft — institution name to be confirmed",
+    headline: "How a university reduced admissions response time from 2 days to 2 minutes",
+    quote: "Placeholder quote for review.",
+    author: "Draft — name to confirm",
+    role: "Admissions Director, [Institution Name]",
+    imageAlt: "Draft case study image",
+    bullets: [
+      "Draft — 24/7 admissions handling across English and Arabic",
+      "Draft — 3x more applications in the first semester",
+      "Draft — 90% fee collection rate via automated reminders",
+    ],
+    hidden: true,
+  },
+
+  cta: {
+    heading: "Ready to modernize your campus communication?",
+    subtext: "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
+    secondaryLabel: "See all use cases",
+    secondaryHref: "/#use-cases",
+  },
+
+  aliases: ["education", "education sector", "school", "university", "institute", "training"],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
@@ -985,6 +1167,7 @@ export const industries: Record<string, IndustryConfig> = {
   medical,
   ecommerce,
   automotive,
+  education,
 };
 
 /** Ordered list for future index pages / nav menus. */
