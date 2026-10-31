@@ -1,54 +1,55 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Industry pages — Medical + E-commerce deployed (1a81c9a)
+## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
 ### Status
 
-- Production HEAD: `1a81c9a`.
-- Two industry pages live: `/industry/medical` (from previous session), `/industry/ecommerce` (this session).
-- Both have: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
+- Production HEAD: `a44feeb`.
+- Three industry pages live:
+  - `/industry/medical` (from previous session)
+  - `/industry/ecommerce` (from previous session)
+  - `/industry/automotive` (this session)
+- All three share: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
 
-### Files added this session (ecommerce)
+### Files added this session (automotive)
 
-- `client/public/demos/ecommerce.html` (77 KB): animation.
-- `client/public/industries/ecommerce/hero.webp` (41 KB, 1123×944): hero composite.
-- `client/public/industries/ecommerce/demo-thumb.png` (244 KB, 856×591): order confirmation frame.
+- `client/public/demos/automotive.html` (179 KB): animation.
+- `client/public/industries/automotive/hero.webp` (48 KB, 1240×848): hero composite.
+- `client/public/industries/automotive/demo-thumb.png` (276 KB, 777×571): test-drive booking frame.
 
-### Code changes (shared infrastructure)
+### Code changes (this session)
 
-- `client/src/data/industries.ts`: ecommerce config + 16 new icons added to IconKey/registry + DepartmentKey "sales" added + sectionCopy drafted by OpenCode.
-- `client/src/components/industry/industry-icon.tsx`: 16 new Lucide imports.
-- `client/src/components/industry/hero-section.tsx`: removed hardcoded 1272×832 (was distorting ecommerce hero at 1123×944). Now uses natural aspect ratio.
-- `client/src/components/industry/demo-section.tsx`: removed hardcoded 787×574 (same reason).
+- `client/src/data/industries.ts`: automotive config + 3 new icons (`wrench`, `route`, `calculator`).
+- `client/src/components/industry/industry-icon.tsx`: 3 new Lucide imports (`Wrench`, `Route`, `Calculator`).
 
-### Deviations accepted
+### Notes
 
-- Hero image was JPG, converted to WebP q86 (41 KB).
-- Thumbnail provided by user, no Playwright needed.
-- Section headings drafted by OpenCode ("Where the revenue leaks out", "Live in four steps", etc.) — reviewed and approved.
-- The ecommerce demo references Google Fonts (same as medical) — expected, not a blocker.
+- Automotive copy is dealer-focused: Sales (catalog/test drives/financing/trade-in), Operations (service/maintenance/parts/warranty), Marketing (launches/discounts/test drive reminders/referrals), Management (lead attribution/funnel/LTV/team performance).
+- Hero image JPG → WebP q86 via ffmpeg (48 KB, consistent with medical and ecommerce).
+- Use-cases card on `/` now links to `/industry/automotive` for the "Automotive Business" row.
+- Copy is DRAFT — case study hidden, hero mockup fictional ("Prestige Motors"), stats illustrative.
 
-### Remaining follow-ups
+### Deviation accepted (from previous session's over-engineering)
 
-- Automotive page: needs 3 assets (animation, hero, thumbnail) + config entry.
-- Medical page: no changes needed.
-- Ecommerce copy: hero/stat/cta verified, case study hidden (same as medical).
-- Arabic/RTL: still deferred.
-- /contact page: still using mailto.
-- © 2024 footer: still stale.
+- The previous session's fix to remove hardcoded dimensions in `hero-section.tsx` and `demo-section.tsx` paid off here — the automotive hero (1240×848) and thumbnail (777×571) rendered at natural size without any component changes. Zero distortion. If those fixes hadn't been made, we would have had to patch again for automotive.
+
+### Remaining follow-ups (carried forward)
+
+- All industry pages: Arabic/RTL version (deferred).
+- All industry pages: `/contact` page (replace `mailto:` CTA).
+- All industry pages: © 2024 footer still stale (needs year bump).
+- Medical + E-commerce: hero dark-mode export (medical hero is WebP flattened on white).
+- E-commerce + Automotive: hero image style consistency (all three have different illustrated styles — could be unified in a design pass).
+- Historical `workflow_executions` rows (250,025) still gone (per user's decision).
 
 ### Next session — start here
 
-Automotive page. The user will attach:
-- automotive.html (animation)
-- automotive hero image (PNG or JPG)
-- automotive demo thumbnail (PNG)
+All three industry pages are live. Next priorities (user's choice):
 
-Then OpenCode will:
-1. Save all 3 assets to client/public/demos/ and client/public/industries/automotive/.
-2. Add the automotive config to industries.ts.
-3. Verify + build + commit + deploy.
-4. User reviews in browser.
+1. Arabic/RTL version (marginal 2x market expansion in Bahrain).
+2. `/contact` page (replace `mailto:` CTA across all industry pages).
+3. Fix the Arabic insurance tenant 401 (from error log history).
+4. Or a new feature/phase entirely.
 
 ## Migration fully complete — Local Postgres running, backups active, workflows verified (2026-10-31)
 
