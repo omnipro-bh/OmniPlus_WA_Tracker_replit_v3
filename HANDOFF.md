@@ -1,5 +1,77 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## DB Migration Investigation (Supabase → local PostgreSQL) — 2026-10-31
+
+> **Read this first.** This is an investigation session only. Production is unchanged and still on the
+> Supabase DB. The migration itself is planned for later sessions (see "The migration plan" below).
+
+### Status
+
+- Production unchanged — still on the current Supabase DB (pm2 `omniplus`, `online`).
+- Investigation complete. Nothing migrated, nothing stopped, app online throughout.
+- PostgreSQL 17 server + client installed on the VPS (PGDG repo, cluster `17/main` on :5432).
+- Egress confirmed working: schema-only dump succeeded — 292 KB in 6 s, exit 0.
+- Local `main` has an **uncommitted** driver fix: `server/db.ts` + `package.json` (pg driver) +
+  `package-lock.json`.
+
+### Sizes (measured)
+
+- Total DB: **479 MB**.
+- `public` schema (what we migrate): **466 MB** (45 tables).
+- `workflow_executions`: **441 MB** (95% of what we migrate), 250,025 rows.
+- After pruning `workflow_executions` to 30 days + `VACUUM FULL`: expected ~25 MB.
+
+### Critical findings for the migration
+
+1. Supabase runs PostgreSQL **17.6**; `pg_dump` **17.11** installed on the VPS. Dump works.
+2. `pg_dump` must use **`--schema=public`** — otherwise it pulls in Supabase's `auth` (27 tables) /
+   `storage` (8) / `realtime` (3) internals (83 tables total vs 45 in `public`).
+3. The app used `@neondatabase/serverless` (WebSocket driver). Will NOT work against local Postgres.
+   Fixed in local uncommitted change: `pg` driver + conditional SSL (`isLoopback` check).
+4. Supabase pooler has a self-signed cert — `pg` would throw `SELF_SIGNED_CERT_IN_CHAIN`. Fixed with
+   `rejectUnauthorized: false` for non-loopback hosts.
+
+### The migration plan (next sessions)
+
+**Session A — Commit + deploy driver fix (fresh session, ~5% budget)**
+
+1. Commit the driver fix (`server/db.ts`, `package.json`, `package-lock.json`).
+2. Deploy it. Verify the app still works against Supabase (pg is a drop-in).
+3. No `.env` change, no DB migration. This is a "prove the driver change is safe" checkpoint.
+
+**Session B — Migration (fresh session, ~15-20% budget)**
+
+1. Prune `workflow_executions` in Supabase:
+   `DELETE FROM workflow_executions WHERE created_at < now() - interval '30 days';`
+   `VACUUM FULL workflow_executions;`
+2. Measure new table size — expect < 5 MB.
+3. Stop the app (`pm2 stop omniplus`) — ~30 s downtime.
+4. Dump: `pg_dump --schema=public --no-owner --no-privileges --dbname="$DBURL" --file=/tmp/migration.sql`
+5. Create local DB + user:
+   `sudo -u postgres psql -c "CREATE USER omniplus_user WITH PASSWORD 'strong_password';"`
+   `sudo -u postgres psql -c "CREATE DATABASE omniplus_db OWNER omniplus_user;"`
+6. Restore: `psql -U omniplus_user -d omniplus_db -h localhost -f /tmp/migration.sql`
+7. Verify row counts match (spot-check 5 tables).
+8. Backup `.env`, then update `DATABASE_URL` to point to localhost.
+9. `pm2 restart omniplus --update-env`
+10. Check logs, hit `/api/health`.
+11. If successful: cancel Supabase (or downgrade to free tier with a cron backup).
+
+### Security follow-up
+
+- The investigation printed the full `DATABASE_URL` and Supabase keys into the session transcript.
+- Action: after migration (or now), rotate Supabase DB password and API keys.
+
+### Follow-ups (carried)
+
+- Arabic insurance tenant 401.
+- `/contact` page.
+- Arabic/RTL version.
+- Hero dark-mode export.
+- `© 2025` footer.
+- Meta/OG tags.
+- `@neondatabase/serverless` unused dep (can be removed after migration).
+
 ## Phase B — Hero composite image + demo thumbnail (deployed `f29ac47`) — 2026-10-30
 
 > **Read this first.** Production HEAD is **`f29ac47`**. This supersedes the `HEAD` claims in the
