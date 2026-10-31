@@ -1,5 +1,55 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Industry pages — Medical + E-commerce deployed (1a81c9a)
+
+### Status
+
+- Production HEAD: `1a81c9a`.
+- Two industry pages live: `/industry/medical` (from previous session), `/industry/ecommerce` (this session).
+- Both have: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
+
+### Files added this session (ecommerce)
+
+- `client/public/demos/ecommerce.html` (77 KB): animation.
+- `client/public/industries/ecommerce/hero.webp` (41 KB, 1123×944): hero composite.
+- `client/public/industries/ecommerce/demo-thumb.png` (244 KB, 856×591): order confirmation frame.
+
+### Code changes (shared infrastructure)
+
+- `client/src/data/industries.ts`: ecommerce config + 16 new icons added to IconKey/registry + DepartmentKey "sales" added + sectionCopy drafted by OpenCode.
+- `client/src/components/industry/industry-icon.tsx`: 16 new Lucide imports.
+- `client/src/components/industry/hero-section.tsx`: removed hardcoded 1272×832 (was distorting ecommerce hero at 1123×944). Now uses natural aspect ratio.
+- `client/src/components/industry/demo-section.tsx`: removed hardcoded 787×574 (same reason).
+
+### Deviations accepted
+
+- Hero image was JPG, converted to WebP q86 (41 KB).
+- Thumbnail provided by user, no Playwright needed.
+- Section headings drafted by OpenCode ("Where the revenue leaks out", "Live in four steps", etc.) — reviewed and approved.
+- The ecommerce demo references Google Fonts (same as medical) — expected, not a blocker.
+
+### Remaining follow-ups
+
+- Automotive page: needs 3 assets (animation, hero, thumbnail) + config entry.
+- Medical page: no changes needed.
+- Ecommerce copy: hero/stat/cta verified, case study hidden (same as medical).
+- Arabic/RTL: still deferred.
+- /contact page: still using mailto.
+- © 2024 footer: still stale.
+
+### Next session — start here
+
+Automotive page. The user will attach:
+- automotive.html (animation)
+- automotive hero image (PNG or JPG)
+- automotive demo thumbnail (PNG)
+
+Then OpenCode will:
+1. Save all 3 assets to client/public/demos/ and client/public/industries/automotive/.
+2. Add the automotive config to industries.ts.
+3. Verify + build + commit + deploy.
+4. User reviews in browser.
+
 ## Migration fully complete — Local Postgres running, backups active, workflows verified (2026-10-31)
 
 ### Status
