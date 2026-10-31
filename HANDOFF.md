@@ -1,53 +1,55 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Industry pages — Education deployed (6b3133d, 2026-10-31)
+## Industry pages — Medical + E-commerce + Automotive + Education deployed (6b3133d, 2026-10-31)
 
 ### Status
 
 - Production HEAD: `6b3133d`.
-- Four industry pages live:
-  - `/industry/medical`
-  - `/industry/ecommerce`
-  - `/industry/automotive`
-  - `/industry/education` (this session)
+- Four industry pages live: `/industry/medical`, `/industry/ecommerce`, `/industry/automotive`, `/industry/education`.
 - All four share: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
 
 ### Files added this session (education)
 
-- `client/public/demos/education.html` (77 KB): 30-second animation.
-- `client/public/industries/education/hero.webp` (48 KB, 1207×864): hero composite.
-- `client/public/industries/education/demo-thumb.png` (236 KB, 790×577): admissions-inquiry frame.
+- `client/public/demos/education.html` (77 KB)
+- `client/public/industries/education/hero.webp` (48 KB, 1207×864)
+- `client/public/industries/education/demo-thumb.png` (236 KB, 790×577)
 
 ### Code changes (this session)
 
-- `client/src/data/industries.ts`: education config + 2 new icons (`userPlus`, `languages`) + 1 new department key (`finance`).
-- `client/src/components/industry/industry-icon.tsx`: 2 new Lucide imports (`UserPlus`, `Languages`).
+- `client/src/data/industries.ts`: education config + `"finance"` added to `DepartmentKey` + `sectionCopy` drafted.
+- `client/src/components/industry/industry-icon.tsx`: `userPlus`, `languages` icons added.
 
-### Notes
+### Deviations accepted
 
-- Education copy is campus-focused: Admissions (AI answers / lead capture / document delivery / smart routing), Student Engagement (broadcasts / open days / catalogs / referrals), Finance (fee reminders / payment plans / scholarships / receipts), Management (admissions funnel / enrollment analytics / response times / bilingual).
-- `finance` is a new `DepartmentKey` — consumed only as a React key / `data-testid` in `department-features.tsx`, so no component changes were needed.
-- Hero image JPG → WebP q86 via ffmpeg (48 KB, consistent with medical/ecommerce/automotive).
-- Copy is DRAFT — case study hidden, hero mockup fictional ("Al Noor University"), stats illustrative.
-- Bilingual (English/Arabic) surfaced as a management feature (`languages` icon) — a real Bahrain differentiator.
+- `sectionCopy` omitted from initial copy draft — OpenCode generated campus-appropriate headings. Approved.
+- `"finance"` DepartmentKey added — no component changes needed (consumed only as React key).
+- Two new icons (`userPlus`, `languages`) added to registry.
 
 ### Remaining follow-ups (carried forward)
 
-- All industry pages: Arabic/RTL version (deferred).
-- All industry pages: `/contact` page (replace `mailto:` CTA).
-- All industry pages: © 2024 footer still stale (needs year bump).
-- Medical + E-commerce: hero dark-mode export (medical hero is WebP flattened on white).
-- Hero image style consistency (all four industries have different illustrated styles — could be unified in a design pass).
-- Historical `workflow_executions` rows (250,025) still gone (per user's decision).
+- Real Estate page (next).
+- Insurance page (after real estate).
+- Add all three cards to `use_cases` table (after pages are live).
+- Arabic/RTL version (deferred).
+- `/contact` page (replace `mailto` CTA).
+- © 2024 footer update.
+- Hero image style unification (4 pages now have different illustrated styles).
+- Supabase credential rotation + project deletion (user action).
 
 ### Next session — start here
 
-All four industry pages are live. Next priorities (user's choice):
+Real Estate page. The user will attach:
 
-1. Arabic/RTL version (marginal 2x market expansion in Bahrain).
-2. `/contact` page (replace `mailto:` CTA across all industry pages).
-3. Fix the Arabic insurance tenant 401 (from error log history).
-4. Or a new feature/phase entirely.
+- `real-estate.html` (animation)
+- real-estate hero image (PNG or JPG)
+- real-estate demo thumbnail (PNG)
+
+Then OpenCode will:
+
+1. Save all 3 assets to `client/public/demos/` and `client/public/industries/real-estate/`.
+2. Add the real-estate config to `industries.ts`.
+3. Verify + build + commit + deploy.
+4. User reviews in browser.
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
