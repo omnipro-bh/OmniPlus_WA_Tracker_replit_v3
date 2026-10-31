@@ -9,7 +9,7 @@
 - Process manager: PM2 (process name: `omniplus`, ID: 0)
 - Entry point: `/opt/omniplus/server-dist/index.js`
 - Port: `5000` (nginx at wt.omniplus-bh.com proxies 80/443 → 127.0.0.1:5000)
-- App type: Node.js + TypeScript (Vite + Drizzle ORM, Neon Postgres)
+- App type: Node.js + TypeScript (Vite + Drizzle ORM, local PostgreSQL — `localhost:5432/omniplus_db` via the `pg` driver)
 - GitHub repo: github.com/omnipro-bh/OmniPlus_WA_Tracker_replit_v3
 
 ## Rules
