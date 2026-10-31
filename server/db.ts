@@ -1,10 +1,7 @@
 // Database integration from blueprint
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
-
-neonConfig.webSocketConstructor = ws;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -12,5 +9,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL;
+
+// Local/loopback Postgres runs without TLS; managed providers (e.g. the Supabase
+// pooler) require TLS and present a self-signed cert, so verification must be
+// relaxed to match the previous `sslmode=require` behaviour.
+const isLoopback = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(connectionString);
+
+export const pool = new Pool({
+  connectionString,
+  ssl: isLoopback ? undefined : { rejectUnauthorized: false },
+});
+
 export const db = drizzle({ client: pool, schema });
