@@ -61,7 +61,10 @@ export type IconKey =
   | "dollarSign"
   | "activity"
   | "link"
-  | "play";
+  | "play"
+  | "wrench"
+  | "route"
+  | "calculator";
 
 export interface IndustryPainPoint {
   title: string;
@@ -773,12 +776,215 @@ const ecommerce: IndustryConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Automotive
+//
+// ⚠️  ALL COPY BELOW IS PLACEHOLDER / DRAFT for review. Nothing here is a
+//     measured result. Stats are illustrative targets only.
+// ---------------------------------------------------------------------------
+
+const automotive: IndustryConfig = {
+  slug: "automotive",
+  title: "Automotive",
+  metaTitle: "WhatsApp automation for car dealerships | OMNI PLUS",
+  metaDescription:
+    "Book test drives and service, send maintenance reminders, and turn WhatsApp into your dealership's showroom — for sales, service, marketing and management.",
+
+  eyebrow: "For dealerships, service centers & auto groups",
+  headline: "Move more metal with WhatsApp",
+  subtext:
+    "OMNI PLUS books test drives and service appointments, keeps every lead warm, and gives sales, service, marketing and management one shared inbox.",
+  heroBullets: [
+    "Test drives, finance quotes and trade-ins handled in chat",
+    "Service reminders and recall follow-ups send themselves",
+    "One shared inbox for sales, service and management",
+  ],
+
+  heroMock: {
+    header: "Prestige Motors",
+    status: "Typically replies in seconds",
+    inputPlaceholder: "Type a message",
+    messages: [
+      { from: "customer", text: "Hi, can I book a test drive for the Land Cruiser?" },
+      { from: "business", text: "Of course. Tomorrow 10:00 AM or Saturday 2:00 PM?" },
+      { from: "customer", text: "Tomorrow works." },
+      { from: "business", text: "Test drive confirmed for 10:00 AM. Your rep Ahmed will meet you at the showroom. 🚗" },
+    ],
+  },
+
+  sectionCopy: {
+    painPoints: {
+      heading: "Where the showroom loses deals",
+      subtext: "Four problems dealers tell us about before anything is automated.",
+    },
+    demo: {
+      heading: "See a test-drive booking before you read about it",
+      subtext: "A short animation of a customer booking a test drive on WhatsApp.",
+    },
+    capabilities: {
+      heading: "What each department gets",
+      subtext: "The same platform, seen from the four teams that run a dealership.",
+    },
+    howItWorks: {
+      heading: "Live in four steps",
+      subtext: "No developer, no new hardware, no app for customers.",
+    },
+    results: {
+      heading: "What dealerships are aiming for",
+      subtext: "Illustrative targets from an active pilot, not measured outcomes.",
+    },
+    compliance: {
+      heading: "Built for a regulated showroom",
+      subtext: "The guardrails we would not ship without.",
+    },
+    caseStudy: {
+      heading: "In a dealership's own words",
+      subtext: "Pending approval from the dealer group named below.",
+    },
+  },
+
+  painPoints: [
+    {
+      title: "Leads go cold waiting for a salesperson",
+      description:
+        "A customer asks about a model at 8pm and hears back at 9am — by then they've called the next dealership.",
+      icon: "phone",
+    },
+    {
+      title: "Service bookings clog the phone line",
+      description:
+        "Oil changes, warranty work and parts requests all arrive by phone, and the service bay spends its day on hold.",
+      icon: "wrench",
+    },
+    {
+      title: "Test drives get booked, then forgotten",
+      description:
+        "A no-show test drive is a lost sale. Reminders that never go out are the silent killer.",
+      icon: "calendar",
+    },
+    {
+      title: "Marketing can't prove which campaign sold the car",
+      description:
+        "Campaigns go out from a salesperson's personal phone, and nobody can say which one drove a walk-in.",
+      icon: "chart",
+    },
+  ],
+
+  demo: {
+    label: "Watch the automotive demo",
+    htmlPath: "/demos/automotive.html",
+    disabledLabel: "Demo coming soon",
+    caption: "A 30-second test-drive booking flow — no signup required.",
+    modalTitle: "Booking a test drive on WhatsApp",
+  },
+
+  featureGroups: [
+    {
+      department: "sales",
+      label: "Sales",
+      tagline: "From inquiry to keys, in one chat.",
+      icon: "trendingUp",
+      features: [
+        { title: "Vehicle catalog", description: "Browse the lot inside WhatsApp, with photos, specs and pricing.", icon: "grid" },
+        { title: "Test drive scheduling", description: "Customers pick a model and a slot; confirmations resolve themselves.", icon: "route" },
+        { title: "Financing quotes", description: "Collect the details and hand a qualified lead to your F&I team.", icon: "calculator" },
+        { title: "Trade-in valuation", description: "Estimate a trade-in value in chat and attach it to the lead.", icon: "dollarSign" },
+      ],
+    },
+    {
+      department: "operations",
+      label: "Operations",
+      tagline: "The service bay, minus the phone queue.",
+      icon: "wrench",
+      features: [
+        { title: "Service booking", description: "Customers book a service slot and pick a time inside the conversation.", icon: "wrench" },
+        { title: "Maintenance reminders", description: "Oil changes, inspections and recall notices sent on schedule.", icon: "bell" },
+        { title: "Parts inquiry", description: "Answer availability and price questions instantly, in your wording.", icon: "package" },
+        { title: "Warranty tracking", description: "Keep warranty work documented and customers in the loop.", icon: "shield" },
+      ],
+    },
+    {
+      department: "marketing",
+      label: "Marketing",
+      tagline: "Fill the showroom without shouting at everyone.",
+      icon: "megaphone",
+      features: [
+        { title: "Model launch broadcasts", description: "Announce a new model to the right segment, with a test-drive link attached.", icon: "megaphone" },
+        { title: "Discount campaigns", description: "Send finance deals and seasonal offers to opted-in customers.", icon: "tag" },
+        { title: "Test drive reminders", description: "Nudge booked customers the day before, with one-tap reschedule.", icon: "bell" },
+        { title: "Referral programs", description: "Ask for referrals after a sale and route them straight to sales.", icon: "users" },
+      ],
+    },
+    {
+      department: "management",
+      label: "Management",
+      tagline: "The whole dealership, one screen.",
+      icon: "barChart",
+      features: [
+        { title: "Lead attribution", description: "See which channel and campaign each lead came from.", icon: "target" },
+        { title: "Sales funnel", description: "Track every lead from first message to closed deal.", icon: "trendingUp" },
+        { title: "Customer lifetime value", description: "Know which customers service, trade in and refer.", icon: "star" },
+        { title: "Team performance", description: "Response times, conversion and follow-up per salesperson.", icon: "barChart" },
+      ],
+    },
+  ],
+
+  howItWorks: [
+    { title: "Connect your WhatsApp number", description: "Scan a QR code or link your business number. Setup takes minutes, not a project.", icon: "phone" },
+    { title: "Pick a dealership template", description: "Test drives, service booking, reminders or financing — start from a template and edit the wording.", icon: "fileText" },
+    { title: "Set hours, departments and escalation", description: "Decide what the bot handles, what waits for a human, and who gets notified when.", icon: "clock" },
+    { title: "Go live and watch the queue shrink", description: "Your team keeps selling and servicing — the bot stops answering the same question forty times.", icon: "checkCircle" },
+  ],
+
+  stats: [
+    { value: "−30%", label: "showroom phone traffic", note: "Illustrative target — pilot in progress" },
+    { value: "−40%", label: "test-drive no-shows", note: "Illustrative target — pilot in progress" },
+    { value: "< 60s", label: "first response time", note: "Illustrative target — pilot in progress" },
+    { value: "24/7", label: "booking availability", note: "Illustrative target — pilot in progress" },
+  ],
+
+  compliance: [
+    { label: "Consent before the first message", description: "Customers opt in before anything marketing-shaped is sent. Opt-outs are honoured automatically.", icon: "checkCircle", href: "/privacy-policy", hrefLabel: "How we handle consent" },
+    { label: "No financing detail in chat", description: "Flows are designed to route credit applications and personal data to a secure channel, not a message thread.", icon: "shield", href: "/privacy-policy", hrefLabel: "Privacy policy" },
+    { label: "WhatsApp Business Policy", description: "Templates, messaging windows and opt-in rules follow WhatsApp's platform policy, not workarounds.", icon: "fileText", href: "/terms-conditions", hrefLabel: "Terms & conditions" },
+    { label: "Audit trail and access control", description: "Every send, template change and staff action is logged, with per-role permissions.", icon: "lock", href: "/terms-conditions", hrefLabel: "Terms of use" },
+  ],
+
+  caseStudy: {
+    hidden: true,
+    org: "Draft — dealership name to be confirmed",
+    headline: "How a multi-brand dealer group cut its test-drive no-shows",
+    quote: "Placeholder quote for review.",
+    author: "Draft — Dealer Principal name to confirm",
+    role: "Dealer Principal",
+    imageAlt: "",
+    bullets: [
+      "Draft — moved test-drive and service bookings into WhatsApp",
+      "Draft — one shared inbox replaced three staff phones",
+      "Draft — lead response time fell below a minute",
+    ],
+  },
+
+  cta: {
+    heading: "Ready to move more metal with WhatsApp?",
+    subtext: "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
+    secondaryLabel: "See all use cases",
+    secondaryHref: "/#use-cases",
+  },
+
+  // Matches the live admin row "Automotive Business" (id 5).
+  aliases: ["automotive", "automotive business", "car", "cars", "dealer", "dealership", "vehicle", "auto", "motors", "showroom"],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
 export const industries: Record<string, IndustryConfig> = {
   medical,
   ecommerce,
+  automotive,
 };
 
 /** Ordered list for future index pages / nav menus. */

@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  Calculator,
   Calendar,
   CheckCircle2,
   Clock,
@@ -24,6 +25,7 @@ import {
   Play,
   RefreshCw,
   Repeat,
+  Route,
   Send,
   ShieldCheck,
   ShoppingBag,
@@ -40,6 +42,7 @@ import {
   UserCheck,
   Users,
   Workflow,
+  Wrench,
   Zap,
 } from "lucide-react";
 import type { IconKey } from "@/data/industries";
@@ -95,6 +98,9 @@ const registry: Record<IconKey, ComponentType<{ className?: string }>> = {
   activity: Activity,
   link: Link,
   play: Play,
+  wrench: Wrench,
+  route: Route,
+  calculator: Calculator,
 };
 
 export function IndustryIcon({ name, className }: { name: IconKey; className?: string }) {
