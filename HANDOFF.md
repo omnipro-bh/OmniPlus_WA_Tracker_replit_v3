@@ -14,12 +14,27 @@
 - Local `main` has an **uncommitted** driver fix: `server/db.ts` + `package.json` (pg driver) +
   `package-lock.json`.
 
+### CRITICAL pre-commit check — VERIFIED PASSED
+
+The driver fix swaps `@neondatabase/serverless` → `pg`, so the deploy's `npm ci --include=dev`
+must install `pg` from `package-lock.json`. If the lockfile lacked `pg`, the build would pass
+(type-check uses `@types/pg`) but the runtime would crash with `Cannot find module 'pg'`.
+
+- **Verified 2026-10-31:** `package-lock.json` contains both entries, fully resolved:
+  - `node_modules/pg` → `8.23.1` (root dep `"pg": "^8.23.1"`)
+  - `node_modules/@types/pg` → `8.23.1` (root devDep `"@types/pg": "^8.23.1"`)
+- **The commit MUST include `package-lock.json`**, not just `server/db.ts` + `package.json`.
+- Re-run immediately before committing: `grep '"pg"' package-lock.json` and
+  `grep '"@types/pg"' package-lock.json` must each return a root-dep entry. If missing, run
+  `npm install pg @types/pg` locally and re-verify.
+
 ### Sizes (measured)
 
 - Total DB: **479 MB**.
 - `public` schema (what we migrate): **466 MB** (45 tables).
-- `workflow_executions`: **441 MB** (95% of what we migrate), 250,025 rows.
-- After pruning `workflow_executions` to 30 days + `VACUUM FULL`: expected ~25 MB.
+- `workflow_executions`: **441 MB** (95% of what we migrate), 250,025 rows. **Excluded from the
+  migration dump** — per user it is not important. Do **NOT** prune/`VACUUM FULL` it in Supabase.
+- Actual migration size after excluding `workflow_executions`: **~25 MB**. Trivial egress.
 
 ### Critical findings for the migration
 
@@ -35,27 +50,29 @@
 
 **Session A — Commit + deploy driver fix (fresh session, ~5% budget)**
 
-1. Commit the driver fix (`server/db.ts`, `package.json`, `package-lock.json`).
+1. Re-run the CRITICAL pre-commit check (above), then commit **all three files**:
+   `server/db.ts`, `package.json`, `package-lock.json`.
 2. Deploy it. Verify the app still works against Supabase (pg is a drop-in).
 3. No `.env` change, no DB migration. This is a "prove the driver change is safe" checkpoint.
 
 **Session B — Migration (fresh session, ~15-20% budget)**
 
-1. Prune `workflow_executions` in Supabase:
-   `DELETE FROM workflow_executions WHERE created_at < now() - interval '30 days';`
-   `VACUUM FULL workflow_executions;`
-2. Measure new table size — expect < 5 MB.
+1. **Full backup first** (safety/rollback, includes `workflow_executions`):
+   `pg_dump --schema=public --no-owner --no-privileges --dbname="$DBURL" --file=/tmp/full-backup.sql`
+   (~466 MB).
+2. **Migration dump excluding `workflow_executions`** (~25 MB):
+   `pg_dump --schema=public --no-owner --no-privileges --exclude-table=workflow_executions --dbname="$DBURL" --file=/tmp/migration.sql`
+   (Do NOT put `--exclude-table` on the full backup — that defeats its rollback purpose.)
 3. Stop the app (`pm2 stop omniplus`) — ~30 s downtime.
-4. Dump: `pg_dump --schema=public --no-owner --no-privileges --dbname="$DBURL" --file=/tmp/migration.sql`
-5. Create local DB + user:
+4. Create local DB + user:
    `sudo -u postgres psql -c "CREATE USER omniplus_user WITH PASSWORD 'strong_password';"`
    `sudo -u postgres psql -c "CREATE DATABASE omniplus_db OWNER omniplus_user;"`
-6. Restore: `psql -U omniplus_user -d omniplus_db -h localhost -f /tmp/migration.sql`
-7. Verify row counts match (spot-check 5 tables).
-8. Backup `.env`, then update `DATABASE_URL` to point to localhost.
-9. `pm2 restart omniplus --update-env`
-10. Check logs, hit `/api/health`.
-11. If successful: cancel Supabase (or downgrade to free tier with a cron backup).
+5. Restore: `psql -U omniplus_user -d omniplus_db -h localhost -f /tmp/migration.sql`
+6. Verify row counts match (spot-check 5 tables).
+7. Backup `.env`, then update `DATABASE_URL` to point to localhost.
+8. `pm2 restart omniplus --update-env`
+9. Check logs, hit `/api/health`.
+10. If successful: cancel Supabase (or downgrade to free tier with a cron backup).
 
 ### Security follow-up
 
