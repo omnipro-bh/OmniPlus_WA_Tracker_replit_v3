@@ -1,55 +1,49 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Industry pages — Medical + E-commerce + Automotive + Education deployed (6b3133d, 2026-10-31)
+## Industry pages — 5 deployed: Medical, E-commerce, Automotive, Education, Real Estate (10e82ea, 2026-10-31)
 
 ### Status
 
-- Production HEAD: `6b3133d`.
-- Four industry pages live: `/industry/medical`, `/industry/ecommerce`, `/industry/automotive`, `/industry/education`.
-- All four share: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
+- Production HEAD: `10e82ea`.
+- Five industry pages live: `/industry/medical`, `/industry/ecommerce`, `/industry/automotive`, `/industry/education`, `/industry/real-estate`.
+- All five share: hero image, demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
 
-### Files added this session (education)
+### Files added this session (real-estate)
 
-- `client/public/demos/education.html` (77 KB)
-- `client/public/industries/education/hero.webp` (48 KB, 1207×864)
-- `client/public/industries/education/demo-thumb.png` (236 KB, 790×577)
+- `client/public/demos/real-estate.html` (167 KB)
+- `client/public/industries/real-estate/hero.webp` (50 KB, 1115×944)
+- `client/public/industries/real-estate/demo-thumb.png` (256 KB, 726×559)
 
 ### Code changes (this session)
 
-- `client/src/data/industries.ts`: education config + `"finance"` added to `DepartmentKey` + `sectionCopy` drafted.
-- `client/src/components/industry/industry-icon.tsx`: `userPlus`, `languages` icons added.
+- `client/src/data/industries.ts`: realEstate config added, registered as `"real-estate"`. `sectionCopy` keys mapped to existing interface (`features`→`capabilities`, `stats`→`results`). `caseStudy` heading added (required by type, but caseStudy is hidden).
+- `client/src/components/industry/industry-icon.tsx`: 4 new icons (`image`, `filter`, `building`, `map`). `chart` already existed as `BarChart3`.
 
-### Deviations accepted
+### Notes
 
-- `sectionCopy` omitted from initial copy draft — OpenCode generated campus-appropriate headings. Approved.
-- `"finance"` DepartmentKey added — no component changes needed (consumed only as React key).
-- Two new icons (`userPlus`, `languages`) added to registry.
+- The 4 new icons are now reusable for any future industry.
+- Asset preview: hero at 1115×944 renders correctly at natural ratio (the shared component now derives dimensions, no distortion).
+- One process anomaly: OpenCode reported a "concurrent session" during execution. If two OpenCode tabs were open on the same repo, close one. If only one tab was open, this was an internal execution-state artifact. Either way, the commit `10e82ea` is real and verified.
 
 ### Remaining follow-ups (carried forward)
 
-- Real Estate page (next).
-- Insurance page (after real estate).
-- Add all three cards to `use_cases` table (after pages are live).
-- Arabic/RTL version (deferred).
+- Insurance page (next).
+- Add 3 use-case cards to DB after all pages are live (education, real-estate, insurance).
+- Arabic/RTL version.
 - `/contact` page (replace `mailto` CTA).
 - © 2024 footer update.
-- Hero image style unification (4 pages now have different illustrated styles).
-- Supabase credential rotation + project deletion (user action).
+- Hero style unification (5 illustrations now, all slightly different).
+- Supabase credential rotation + project deletion.
 
 ### Next session — start here
 
-Real Estate page. The user will attach:
+Insurance page. Attach:
 
-- `real-estate.html` (animation)
-- real-estate hero image (PNG or JPG)
-- real-estate demo thumbnail (PNG)
+- `insurance.html` (animation)
+- insurance hero image
+- insurance demo thumbnail
 
-Then OpenCode will:
-
-1. Save all 3 assets to `client/public/demos/` and `client/public/industries/real-estate/`.
-2. Add the real-estate config to `industries.ts`.
-3. Verify + build + commit + deploy.
-4. User reviews in browser.
+The infrastructure is fully proven. This will be the fastest page yet.
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
