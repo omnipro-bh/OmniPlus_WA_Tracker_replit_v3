@@ -1,47 +1,43 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Industry pages phase COMPLETE — 6 verticals deployed (58639d9, 2026-10-31)
+## Marketing site COMPLETE — 6 industry pages + 6 use-case cards live (58639d9 + data updates, 2026-10-31)
 
 ### Status
 
-- Production HEAD: `58639d9`.
-- Six industry pages live:
-  - `/industry/medical` (Operations/Marketing/Management/Events)
-  - `/industry/ecommerce` (Sales/Operations/Marketing/Management)
-  - `/industry/automotive` (Sales/Operations/Marketing/Management)
-  - `/industry/education` (Admissions/Student Engagement/Finance/Management)
-  - `/industry/real-estate` (Sales/Operations/Marketing/Management)
-  - `/industry/insurance` (Sales/Claims & Support/Retention/Management)
-- All share: hero image (WebP), demo animation (modal), demo thumbnail, 4 department cards, pain points, how it works, ROI stats, compliance, CTA.
+- Production HEAD: `58639d9` (last code deploy).
+- Marketing site is fully live and feature-complete.
+- Six industry pages:
+  - /industry/medical
+  - /industry/ecommerce
+  - /industry/automotive
+  - /industry/education
+  - /industry/real-estate
+  - /industry/insurance
+- Six use-case cards on /#use-cases, each with an image, description, and "See the [Industry] playbook" link.
+- Data change (not code): 3 new rows in `use_cases` (Education published from existing unpublished row, Real Estate + Insurance newly inserted).
 
-### Files added this session (insurance)
+### Final architecture notes
 
-- `client/public/demos/insurance.html` (76 KB)
-- `client/public/industries/insurance/hero.webp` (45 KB, 1184×896)
-- `client/public/industries/insurance/demo-thumb.png` (254 KB, 781×571)
+- Industry pages are entirely config-driven. Adding a 7th industry requires: 1 config in industries.ts, 3 assets (animation HTML, hero WebP, thumbnail PNG), and a DB row in use_cases. ~30 minutes per industry.
+- All pages share the same section components (hero, pain points, demo modal, department features, how it works, ROI stats, compliance, CTA).
+- All 6 pages have working demo animations (modal opens on click, plays on loop, unmounts on close).
 
-### Code changes (this session)
+### Remaining follow-ups (in priority order)
 
-- `client/src/data/industries.ts`: insurance config added, sectionCopy included.
-- `client/src/components/industry/industry-icon.tsx`: 1 new icon (`hash` for claim reference numbers).
-
-### Industry pages phase summary
-
-Total code: 6 configs + 6 icon additions (17 total icons across all industries) + shared infrastructure changes (hero-section.tsx and demo-section.tsx dimension fixes from e-commerce session). Zero backend changes, zero schema changes, zero new dependencies throughout the phase.
-
-### What's next (in priority order)
-
-1. **Add 3 missing cards to /use-cases DB** — education, real-estate, insurance. Currently only medical, ecommerce, automotive have cards. Need 3 new rows in `use_cases` table with title, description, image, `published=true`.
-2. **Arabic/RTL version** — high market value in Bahrain (2x reach).
-3. **/contact page** — replace the `mailto:` CTA across all six industry pages (currently opens mail client, does nothing on machines without one).
-4. **© 2024 → © 2025 footer update** — small but visible in both `landing.tsx` and `site-footer.tsx`.
-5. **Fix Arabic insurance tenant 401** — customer-facing breakage from error log history (pre-deploy, unrelated to this phase).
-6. **Supabase credential rotation + project deletion** — after 30-day rollback window (Nov 30).
-7. **Hero style unification** — the 6 hero illustrations have different design styles. A design pass could unify them.
+1. **Arabic/RTL version** — high market value in Bahrain.
+2. **/contact page** — replace mailto: CTA across all 6 pages.
+3. **Fix Arabic insurance tenant 401** — pre-existing, customer-facing.
+4. **Hero style unification** — 6 illustrations have slightly different visual styles.
+5. **© 2024 → © 2025 footer update**.
+6. **Supabase credential rotation + project deletion** — after 30-day window (Nov 30).
+7. **Optional: more industries** — logistics, hospitality, F&B. Each ~30 min.
 
 ### Next session — start here
 
-The industry pages are done. Next priority: add the 3 missing use-case cards to the DB (education, real-estate, insurance) so the /use-cases page shows all 6 industries. This is a data-only task — no code changes.
+The marketing site is done. Next priorities (user's choice):
+- Arabic/RTL version (highest business value)
+- /contact page (fixes a real conversion killer)
+- Or a new feature/phase entirely
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
