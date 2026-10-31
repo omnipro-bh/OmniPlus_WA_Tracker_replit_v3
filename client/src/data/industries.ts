@@ -66,7 +66,11 @@ export type IconKey =
   | "route"
   | "calculator"
   | "userPlus"
-  | "languages";
+  | "languages"
+  | "image"
+  | "filter"
+  | "building"
+  | "map";
 
 export interface IndustryPainPoint {
   title: string;
@@ -1160,6 +1164,205 @@ const education: IndustryConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Real Estate
+//
+// ⚠️  ALL COPY BELOW IS PLACEHOLDER / DRAFT for review. Nothing here is a
+//     measured result. Stats are illustrative targets only.
+// ---------------------------------------------------------------------------
+
+const realEstate: IndustryConfig = {
+  slug: "real-estate",
+  title: "Real Estate",
+  metaTitle: "WhatsApp automation for real estate agents | OMNI PLUS",
+  metaDescription:
+    "Capture leads, schedule viewings, and send property details instantly on WhatsApp. Never miss a buyer inquiry again.",
+  eyebrow: "For agencies, brokers & property developers",
+  headline: "Turn WhatsApp into your highest-converting property showroom",
+  subtext:
+    "Capture buyer leads, schedule viewings, and send property details instantly — without your agents playing phone tag all day.",
+  heroBullets: [
+    "Instant responses to property inquiries, 24/7",
+    "Automated viewing scheduling with calendar sync",
+    "Send photos, floor plans, and prices directly in-chat",
+  ],
+
+  heroMock: {
+    header: "Prime Estates",
+    status: "Typically replies in seconds",
+    messages: [
+      { from: "customer", text: "Hi, is the 3-bedroom in Seef still available?" },
+      { from: "business", text: "Yes! BHD 850/month. Would you like to see the photos and floor plan?" },
+      { from: "customer", text: "Yes please, and can I view it this weekend?" },
+      { from: "business", text: "Photos sent! Viewing booked for Sat 4:00 PM with Fatima. See you then! 🏡" },
+    ],
+  },
+
+  sectionCopy: {
+    painPoints: {
+      heading: "Why agencies lose deals before the first viewing",
+      subtext: "Four bottlenecks that turn serious buyers into lost commissions.",
+    },
+    demo: {
+      heading: "See the viewing flow before you read about it",
+      subtext: "A short animation of a buyer finding and booking a property on WhatsApp.",
+    },
+    capabilities: {
+      heading: "What each role gets",
+      subtext: "The same platform, seen from the four teams that use it daily.",
+    },
+    howItWorks: {
+      heading: "Live in four steps",
+      subtext: "No developer, no new software for your agents.",
+    },
+    results: {
+      heading: "What agencies are aiming for",
+      subtext: "Illustrative targets from active pilots, not measured outcomes.",
+    },
+    compliance: {
+      heading: "Built for a regulated industry",
+      subtext: "The guardrails we would not ship without.",
+    },
+    caseStudy: {
+      heading: "In an agency's own words",
+      subtext: "Pending approval from the agency named below.",
+    },
+  },
+
+  painPoints: [
+    {
+      title: "Buyers inquire, then go cold",
+      description:
+        "By the time your agent calls back, the buyer has already messaged three other agencies.",
+      icon: "clock",
+    },
+    {
+      title: "Viewing scheduling is chaos",
+      description:
+        "Agents juggle WhatsApp, email, and phone calls to book a single viewing.",
+      icon: "calendar",
+    },
+    {
+      title: "Property details are scattered",
+      description:
+        "Photos, floor plans, and prices live in different places. Sending them takes 10 minutes per inquiry.",
+      icon: "image",
+    },
+    {
+      title: "No visibility into agent performance",
+      description:
+        "Which agents respond fastest? Which listings get the most interest? You have no idea.",
+      icon: "barChart",
+    },
+  ],
+
+  demo: {
+    label: "Watch the real estate demo",
+    htmlPath: "/demos/real-estate.html",
+    caption: "A 30-second animated flow — from property inquiry to viewing confirmation",
+    modalTitle: "Booking a property viewing on WhatsApp",
+    disabledLabel: "Demo coming soon",
+  },
+
+  featureGroups: [
+    {
+      department: "sales",
+      label: "Sales",
+      tagline: "Turn inquiries into viewings",
+      icon: "users",
+      features: [
+        { title: "Instant inquiry response", description: "AI answers questions about price, availability, and location in seconds.", icon: "messages" },
+        { title: "Viewing scheduling", description: "Buyers book viewings 24/7, synced directly to your agent's calendar.", icon: "calendar" },
+        { title: "Property catalogs", description: "Send photos, videos, and floor plans in-chat with one tap.", icon: "image" },
+        { title: "Lead qualification", description: "AI filters serious buyers from browsers before routing to agents.", icon: "filter" },
+      ],
+    },
+    {
+      department: "operations",
+      label: "Operations",
+      tagline: "Manage listings without chaos",
+      icon: "building",
+      features: [
+        { title: "Listing distribution", description: "Broadcast new listings to matching buyer segments automatically.", icon: "send" },
+        { title: "Document delivery", description: "Send tenancy contracts, NOCs, and legal documents in-chat.", icon: "fileText" },
+        { title: "Viewing reminders", description: "Automated 24h and 2h reminders reduce no-shows.", icon: "bell" },
+        { title: "Follow-up sequences", description: "Automated nudges for buyers who went quiet.", icon: "route" },
+      ],
+    },
+    {
+      department: "marketing",
+      label: "Marketing",
+      tagline: "Fill your pipeline",
+      icon: "megaphone",
+      features: [
+        { title: "New listing broadcasts", description: "Announce new properties to opted-in buyers with photos and price.", icon: "send" },
+        { title: "Open house invitations", description: "Automated invitations and reminders for open house events.", icon: "calendar" },
+        { title: "Neighborhood guides", description: "Send area guides, school info, and amenities for each listing.", icon: "map" },
+        { title: "Referral programs", description: "Track which clients refer new buyers and reward them.", icon: "users" },
+      ],
+    },
+    {
+      department: "management",
+      label: "Management",
+      tagline: "See agent performance clearly",
+      icon: "barChart",
+      features: [
+        { title: "Lead attribution", description: "See which campaigns and channels bring real buyers.", icon: "dollarSign" },
+        { title: "Agent performance", description: "Monitor response times, viewings booked, and deals closed per agent.", icon: "activity" },
+        { title: "Listing analytics", description: "Which properties get the most views, inquiries, and viewings.", icon: "chart" },
+        { title: "Pipeline visibility", description: "Track every lead from inquiry to close in one dashboard.", icon: "star" },
+      ],
+    },
+  ],
+
+  howItWorks: [
+    { title: "Connect your number", description: "Link your agency WhatsApp number to OMNI.", icon: "link" },
+    { title: "Set up the AI", description: "Configure the bot to answer listing questions and book viewings.", icon: "zap" },
+    { title: "Go live", description: "Agents manage chats from a unified inbox while the AI handles routine inquiries.", icon: "play" },
+    { title: "Track results", description: "See viewings booked, deals closed, and agent performance.", icon: "barChart" },
+  ],
+
+  stats: [
+    { value: "24/7", label: "inquiry response", note: "No missed buyers" },
+    { value: "60%", label: "more viewings booked", note: "Illustrative target — pilot in progress" },
+    { value: "3x", label: "faster response time", note: "Illustrative target" },
+    { value: "40%", label: "higher lead-to-deal rate", note: "Illustrative target" },
+  ],
+
+  compliance: [
+    { label: "Meta Business Partner", description: "Official WhatsApp Business API integration", icon: "shield", href: "/privacy-policy", hrefLabel: "Learn more" },
+    { label: "GDPR & PDPA aligned", description: "Buyer data stays in your control", icon: "lock", href: "/privacy-policy", hrefLabel: "Privacy policy" },
+    { label: "CRM integrations", description: "Works with popular property CRMs", icon: "link", href: "/contact", hrefLabel: "Talk to us" },
+    { label: "Secure document handling", description: "Encrypted delivery of contracts and legal docs", icon: "fileText", href: "/privacy-policy", hrefLabel: "Learn more" },
+  ],
+
+  caseStudy: {
+    hidden: true,
+    org: "Draft — agency name to be confirmed",
+    headline: "How a boutique agency booked 80 viewings in 30 days",
+    quote: "Placeholder quote for review.",
+    author: "Draft — name to confirm",
+    role: "Managing Director, [Agency Name]",
+    imageAlt: "Draft case study image",
+    bullets: [
+      "Draft — 80 viewings booked via WhatsApp in the first month",
+      "Draft — response time reduced from 4 hours to 2 minutes",
+      "Draft — 40% higher lead-to-deal conversion",
+    ],
+  },
+
+  cta: {
+    heading: "Ready to modernize your agency's customer experience?",
+    subtext: "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
+    secondaryLabel: "See all use cases",
+    secondaryHref: "/#use-cases",
+  },
+
+  aliases: ["real-estate", "real estate", "real estate business", "property", "agency", "broker"],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
@@ -1168,6 +1371,7 @@ export const industries: Record<string, IndustryConfig> = {
   ecommerce,
   automotive,
   education,
+  "real-estate": realEstate,
 };
 
 /** Ordered list for future index pages / nav menus. */
