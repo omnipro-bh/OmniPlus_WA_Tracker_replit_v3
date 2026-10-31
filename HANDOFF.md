@@ -1,5 +1,32 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Migration fully complete — Local Postgres running, backups active, workflows verified (2026-10-31)
+
+### Status
+
+- **Session D finalized the Supabase → local PostgreSQL migration.** The app runs on
+  local Postgres (`localhost:5432/omniplus_db`); no Supabase dependency remains.
+- **Webhook Logs verified in the UI:** `workflow_executions` is writing new rows
+  (Oct 31, 12:35 UTC). Workflows are executing successfully.
+- **`@neondatabase/serverless` removed** from `package.json` (unused since the `pg`
+  driver swap in `b34c4e9`).
+- Daily `pg_dump` backup cron is live (03:00 UTC, `/root/omniplus-backup.sh`,
+  retention 7 daily / 4 weekly / 3 monthly).
+
+### Warnings
+
+- **`.env.supabase.bak` holds PRE-ROTATION credentials.** If the Supabase password is
+  rotated in the dashboard, this file becomes stale — update it if ever rolling back.
+- **Off-VPS backup is manual** (weekly `scp`). Automate later if desired.
+
+### Follow-ups (carried forward)
+
+- Rotate Supabase credentials (dashboard action).
+- Cancel Supabase after 30 days.
+- Weekly off-VPS backup (manual `scp`).
+- Arabic/RTL version of the marketing page.
+- `/contact` page.
+
 ## Session C — Local Postgres backup + Supabase cleanup + workflow_executions fix COMPLETE (2026-10-31)
 
 ### Status
