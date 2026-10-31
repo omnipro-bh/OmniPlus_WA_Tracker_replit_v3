@@ -1,5 +1,62 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## Session C — Local Postgres backup + Supabase cleanup + workflow_executions fix COMPLETE (2026-10-31)
+
+### Status
+
+- Local Postgres daily backup cron is live and verified.
+- Dead Supabase env vars removed from `.env`; app verified healthy (`/api/plans` → 200).
+- 🔴 Missing `workflow_executions` table recreated (schema-only); workflow errors resolved.
+
+### Backup strategy (NEW)
+
+- **Daily** `pg_dump` at **03:00 UTC** via root crontab.
+- Script: `/root/omniplus-backup.sh` (mode 700).
+- Location: `/root/omniplus-backups/{daily,weekly,monthly}/` on the VPS.
+- Retention: **7 daily + 4 weekly (Sundays) + 3 monthly (1st of month)**.
+- Log: `/root/omniplus-backups/backup.log`.
+- First test backup: `/root/omniplus-backups/daily/omniplus_20261031_091931.sql.gz` (8.6 MB),
+  validated `gzip OK` + correct `pg_dump` header.
+
+### Off-VPS backup (manual, weekly — NOT yet automated)
+
+```bash
+scp watracker:/root/omniplus-backups/daily/$(ssh watracker 'ls -t /root/omniplus-backups/daily/ | head -1') C:\Users\HP\OmniPlusBackups\
+```
+
+- **TODO:** automate the off-VPS sync in a future session.
+
+### Supabase cleanup (Part 2)
+
+- `.env` backed up to `/opt/omniplus/.env.before-supabase-cleanup`.
+- Removed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- `grep -c supabase .env` → 0. `DATABASE_URL` still `localhost:5432/omniplus_db`.
+- App restarted (`pm2 restart omniplus --update-env`), `/api/plans` → 200.
+
+### workflow_executions fix
+
+- The table was missing after the Session B migration (excluded) — workflows were
+  failing on **every** inbound message with `relation "workflow_executions" does not exist`.
+- Recreated **schema-only (empty)** from `shared/schema.ts` (matches the Supabase dump):
+  10 columns, identity PK, FK → `workflows(id) ON DELETE CASCADE`.
+- ⚠️ First attempt used a hand-written DDL (`created_at` + `incoming_message`, nullable
+  defaults) that did **NOT** match the code — the runtime immediately errored
+  `column "executed_at" does not exist`. Corrected by dropping and recreating with the
+  authoritative schema.
+- **Historical rows (250,025) are NOT restored — gone.** New rows write to local Postgres
+  normally.
+
+### 🔴 Findings / follow-ups (for user)
+
+1. **Supabase credentials still need manual rotation** in the Supabase dashboard
+   (Project Settings → Database → Reset password, and Project Settings → API →
+   Regenerate JWT secret). After rotation, `.env.supabase.bak` holds **stale**
+   credentials — update it if ever rolling back.
+2. **Manual off-VPS backup** — run the `scp` command weekly (TODO: automate).
+3. **Rollback path intact** — `.env.supabase.bak`, `/tmp/migration.sql`,
+   `/tmp/supabase_full_backup.sql` all present.
+
 ## Session B — Supabase → local PostgreSQL migration COMPLETE (2026-10-31)
 
 ### Status
