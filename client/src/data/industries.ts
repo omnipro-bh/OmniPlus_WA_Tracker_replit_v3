@@ -11,7 +11,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type DepartmentKey = "operations" | "marketing" | "management" | "events";
+export type DepartmentKey = "operations" | "marketing" | "management" | "events" | "sales";
 
 /**
  * Icon names are resolved to Lucide components by
@@ -45,7 +45,23 @@ export type IconKey =
   | "mapPin"
   | "lock"
   | "repeat"
-  | "timer";
+  | "timer"
+  | "cart"
+  | "package"
+  | "store"
+  | "shoppingBag"
+  | "grid"
+  | "creditCard"
+  | "truck"
+  | "alertCircle"
+  | "refreshCw"
+  | "shoppingCart"
+  | "tag"
+  | "barChart"
+  | "dollarSign"
+  | "activity"
+  | "link"
+  | "play";
 
 export interface IndustryPainPoint {
   title: string;
@@ -559,11 +575,210 @@ const medical: IndustryConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// E-commerce
+//
+// ⚠️  ALL COPY BELOW IS PLACEHOLDER / DRAFT for review. Nothing here is a
+//     measured result. Stats are illustrative targets only.
+// ---------------------------------------------------------------------------
+
+const ecommerce: IndustryConfig = {
+  slug: "ecommerce",
+  title: "E-commerce",
+  metaTitle: "WhatsApp automation for e-commerce stores | OMNI PLUS",
+  metaDescription:
+    "Recover abandoned carts, automate order tracking, and turn WhatsApp into your highest-converting storefront.",
+
+  eyebrow: "For retail, D2C brands & online stores",
+  headline: "Turn WhatsApp into your highest-converting storefront",
+  subtext:
+    "Recover abandoned carts, send order updates, and answer support questions instantly — without building a custom app.",
+  heroBullets: [
+    "Abandoned cart recovery at 1h, 24h, and 72h intervals",
+    "Automated order tracking and shipping notifications",
+    "One shared inbox for sales, ops, and support",
+  ],
+
+  heroMock: {
+    header: "Fashion Forward",
+    status: "Typically replies in seconds",
+    inputPlaceholder: "Type a message",
+    messages: [
+      { from: "customer", text: "Hi, I left something in my cart..." },
+      { from: "business", text: "Of course! I see a Summer Dress (19.000 BHD). Want me to complete the checkout?" },
+      { from: "customer", text: "Yes please" },
+      { from: "business", text: "Order placed! You'll receive tracking info within 24h. 🎉" },
+    ],
+  },
+
+  sectionCopy: {
+    painPoints: {
+      heading: "Where the revenue leaks out",
+      subtext: "Four problems stores face before anything is automated.",
+    },
+    demo: {
+      heading: "See the abandoned-cart recovery before you read about it",
+      subtext: "A short animation of a shopper recovering their cart on WhatsApp.",
+    },
+    capabilities: {
+      heading: "What each team gets",
+      subtext: "The same platform, seen from the four teams that actually use it.",
+    },
+    howItWorks: {
+      heading: "Live in four steps",
+      subtext: "No developer, no new storefront, no app for customers.",
+    },
+    results: {
+      heading: "What stores are aiming for",
+      subtext: "Illustrative targets from an active pilot, not measured outcomes.",
+    },
+    compliance: {
+      heading: "Built for a regulated storefront",
+      subtext: "The guardrails we would not ship without.",
+    },
+    caseStudy: {
+      heading: "In a store's own words",
+      subtext: "Pending approval from the brand named below.",
+    },
+  },
+
+  painPoints: [
+    {
+      title: "Abandoned carts are lost revenue",
+      description: "70% of shoppers abandon their cart. Without a nudge, that revenue disappears.",
+      icon: "cart",
+    },
+    {
+      title: "'Where is my order?' floods the inbox",
+      description: "Your team spends 60% of their day answering the same shipping questions.",
+      icon: "package",
+    },
+    {
+      title: "Catalog browsing requires an app",
+      description: "Customers want to browse and buy inside the chat they already use — WhatsApp.",
+      icon: "store",
+    },
+    {
+      title: "Generic recommendations don't convert",
+      description: "Manual suggestions don't scale. Customers want AI-powered, personalized picks.",
+      icon: "sparkles",
+    },
+  ],
+
+  demo: {
+    label: "Watch the e-commerce demo",
+    htmlPath: "/demos/ecommerce.html",
+    caption: "A 30-second animated flow — from cart abandonment to order confirmation",
+    modalTitle: "Recovering an abandoned cart on WhatsApp",
+    disabledLabel: "Demo coming soon",
+  },
+
+  featureGroups: [
+    {
+      department: "sales",
+      label: "Sales",
+      tagline: "Your store, inside a chat",
+      icon: "shoppingBag",
+      features: [
+        { title: "Product catalogs", description: "Let customers browse your full catalog inside WhatsApp.", icon: "grid" },
+        { title: "Checkout in chat", description: "Complete purchases without leaving the conversation.", icon: "creditCard" },
+        { title: "AI recommendations", description: "Suggest products based on purchase history and browsing behavior.", icon: "sparkles" },
+        { title: "Upsell / cross-sell", description: "Increase average order value with intelligent add-ons.", icon: "trendingUp" },
+      ],
+    },
+    {
+      department: "operations",
+      label: "Operations",
+      tagline: "Answer fewer tickets",
+      icon: "package",
+      features: [
+        { title: "Automated order tracking", description: "Send shipping updates at every stage, from dispatch to delivery.", icon: "truck" },
+        { title: "Delivery exceptions", description: "Proactively notify customers of delays before they ask.", icon: "alertCircle" },
+        { title: "Returns processing", description: "Automate return requests and issue labels in-chat.", icon: "refreshCw" },
+        { title: "Real-time notifications", description: "Push notifications for order status changes.", icon: "bell" },
+      ],
+    },
+    {
+      department: "marketing",
+      label: "Marketing",
+      tagline: "Recover lost revenue",
+      icon: "megaphone",
+      features: [
+        { title: "Abandoned cart recovery", description: "Automated WhatsApp nudges at 1h, 24h, and 72h intervals.", icon: "shoppingCart" },
+        { title: "Bulk broadcast campaigns", description: "Launch sales, promos, and announcements to segmented lists.", icon: "send" },
+        { title: "Loyalty and discount codes", description: "Send personalized offers that drive repeat purchases.", icon: "tag" },
+        { title: "Referral tracking", description: "See which campaigns bring customers, and which don't.", icon: "users" },
+      ],
+    },
+    {
+      department: "management",
+      label: "Management",
+      tagline: "See what's working",
+      icon: "barChart",
+      features: [
+        { title: "Revenue attribution", description: "Track which campaigns and messages drive real revenue.", icon: "dollarSign" },
+        { title: "Team performance", description: "Monitor response times and agent productivity.", icon: "users" },
+        { title: "Customer lifetime value", description: "See high-value customers and reward them.", icon: "star" },
+        { title: "Real-time dashboard", description: "Revenue, orders, and conversations in one view.", icon: "activity" },
+      ],
+    },
+  ],
+
+  howItWorks: [
+    { title: "Connect your store", description: "Link your Shopify, WooCommerce, or custom backend to OMNI in minutes.", icon: "link" },
+    { title: "Set up triggers", description: "Configure abandoned cart recovery, order updates, and AI rules.", icon: "zap" },
+    { title: "Go live", description: "Your team manages conversations while the AI handles the routine.", icon: "play" },
+    { title: "Track results", description: "See recovered revenue, response times, and customer satisfaction.", icon: "barChart" },
+  ],
+
+  stats: [
+    { value: "30%", label: "average cart recovery", note: "Illustrative target — pilot in progress" },
+    { value: "98%", label: "WhatsApp open rate", note: "Industry standard" },
+    { value: "< 60s", label: "average response time", note: "Illustrative target" },
+    { value: "3x", label: "repeat purchase rate", note: "Illustrative target" },
+  ],
+
+  compliance: [
+    { label: "Meta Business Partner", description: "Official WhatsApp Business API integration", icon: "shield", href: "/privacy-policy", hrefLabel: "Learn more" },
+    { label: "GDPR & PDPA aligned", description: "Customer data stays in your control", icon: "lock", href: "/privacy-policy", hrefLabel: "Privacy policy" },
+    { label: "Shopify & WooCommerce ready", description: "Plug-and-play integrations", icon: "shoppingBag", href: "/contact", hrefLabel: "Talk to us" },
+    { label: "PCI-DSS compliant payments", description: "Secure payment processing", icon: "creditCard", href: "/privacy-policy", hrefLabel: "Learn more" },
+  ],
+
+  caseStudy: {
+    hidden: true,
+    org: "Draft — store name to be confirmed",
+    headline: "How a D2C brand recovered $40K in abandoned carts in 30 days",
+    quote: "Placeholder quote for review.",
+    author: "Draft — Founder name to confirm",
+    role: "Founder, [Store Name]",
+    imageAlt: "Draft case study image",
+    bullets: [
+      "Draft — recovered 30% of abandoned carts via WhatsApp",
+      "Draft — reduced support tickets by 40%",
+      "Draft — increased repeat purchase rate by 3x",
+    ],
+  },
+
+  cta: {
+    heading: "Ready to boost your store's revenue with WhatsApp?",
+    subtext: "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
+    secondaryLabel: "See all use cases",
+    secondaryHref: "/#use-cases",
+  },
+
+  // Matches the live admin row "Ecommerce Business".
+  aliases: ["ecommerce", "e-commerce", "ecommerce business", "retail", "online store"],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
 export const industries: Record<string, IndustryConfig> = {
   medical,
+  ecommerce,
 };
 
 /** Ordered list for future index pages / nav menus. */

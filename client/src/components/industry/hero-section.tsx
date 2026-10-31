@@ -25,6 +25,7 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
   const hasDemo = Boolean(config.demo.htmlPath);
   const showHeroImage = Boolean(config.heroMock) && !heroBroken;
   const heroSrc = `/industries/${config.slug}/hero.webp`;
+  const heroAlt = `${config.title} — WhatsApp automation demo`;
 
   return (
     <section id="hero" className="relative overflow-hidden py-20 lg:py-28">
@@ -99,6 +100,7 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
                   <HeroVisual
                     mock={config.heroMock}
                     src={heroSrc}
+                    alt={heroAlt}
                     showImage={showHeroImage}
                     onImageError={() => setHeroBroken(true)}
                   />
@@ -115,6 +117,7 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
                 <HeroVisual
                   mock={config.heroMock}
                   src={heroSrc}
+                  alt={heroAlt}
                   showImage={showHeroImage}
                   onImageError={() => setHeroBroken(true)}
                 />
@@ -139,19 +142,22 @@ export function HeroSection({ config }: { config: IndustryConfig }) {
 /**
  * The hero visual: the exported artwork when one exists, else the CSS mockup.
  *
- * The image is a plain `<img>` (not a CSS background) so it carries alt text.
- * `width`/`height` match the asset so the column does not reflow while it
- * loads, and the light background of the artwork is framed as a card so the
- * rectangle edge reads as intentional against the hero gradient.
+ * The image is a plain `<img>` (not a CSS background) so it carries alt text,
+ * and it renders at its natural aspect ratio (the medical and e-commerce
+ * artwork have different dimensions, so no fixed `width`/`height` is set).
+ * The light background of the artwork is framed as a card so the rectangle
+ * edge reads as intentional against the hero gradient.
  */
 function HeroVisual({
   mock,
   src,
+  alt,
   showImage,
   onImageError,
 }: {
   mock: IndustryHeroMock;
   src: string;
+  alt: string;
   showImage: boolean;
   onImageError: () => void;
 }) {
@@ -162,9 +168,7 @@ function HeroVisual({
   return (
     <img
       src={src}
-      alt="WhatsApp automation for appointment booking: a patient books in chat and receives a confirmation, a reminder and reschedule options"
-      width={1272}
-      height={832}
+      alt={alt}
       onError={onImageError}
       className="block w-full rounded-2xl border border-border/60 shadow-2xl"
       data-testid="img-hero"

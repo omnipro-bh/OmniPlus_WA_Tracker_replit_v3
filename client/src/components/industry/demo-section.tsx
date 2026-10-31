@@ -50,9 +50,7 @@ export function DemoSection({
           >
             <img
               src={thumbSrc}
-              alt={`Preview of the WhatsApp booking flow: ${demo.modalTitle}`}
-              width={787}
-              height={574}
+              alt={`Preview of the WhatsApp flow: ${demo.modalTitle}`}
               loading="lazy"
               onError={() => setThumbBroken(true)}
               className="block w-full"
