@@ -70,7 +70,8 @@ export type IconKey =
   | "image"
   | "filter"
   | "building"
-  | "map";
+  | "map"
+  | "hash";
 
 export interface IndustryPainPoint {
   title: string;
@@ -1363,6 +1364,184 @@ const realEstate: IndustryConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Insurance
+//
+// ⚠️  ALL COPY BELOW IS PLACEHOLDER / DRAFT for review. Nothing here is a
+//     measured result. Stats are illustrative targets only.
+// ---------------------------------------------------------------------------
+
+const insurance: IndustryConfig = {
+  slug: "insurance",
+  title: "Insurance",
+  metaTitle: "WhatsApp automation for insurance companies | OMNI PLUS",
+  metaDescription: "Automate quotes, claims, and policy renewals on WhatsApp. Give policyholders instant answers without waiting on hold.",
+
+  eyebrow: "For insurers, brokers & agents",
+  headline: "Automate quotes, claims, and policy renewals on WhatsApp",
+  subtext: "Give your policyholders instant answers, allow them to file claims 24/7, and send automated renewal reminders — all without waiting on hold.",
+  heroBullets: [
+    "Instant quotes and renewals with secure payment links",
+    "24/7 claim filing with photo upload and instant reference numbers",
+    "Proactive renewal reminders prevent coverage lapses",
+  ],
+
+  heroMock: {
+    header: "Gulf Insurance",
+    status: "Typically replies in seconds",
+    messages: [
+      { from: "customer", text: "Hi, my car insurance is due next week. Can I renew?" },
+      { from: "business", text: "Of course! Your renewal is BHD 180 for the year. Would you like to pay now?" },
+      { from: "customer", text: "Yes, send me the link please" },
+      { from: "business", text: "Payment received! Your new policy card is attached. Valid until Oct 2027. 🛡️" },
+    ],
+  },
+
+  sectionCopy: {
+    painPoints: {
+      heading: "Why insurers lose policies before renewal",
+      subtext: "Four bottlenecks that turn loyal policyholders into lapsed customers.",
+    },
+    demo: {
+      heading: "See the quote-to-policy flow before you read about it",
+      subtext: "A short animation of a customer getting a car insurance quote on WhatsApp.",
+    },
+    capabilities: {
+      heading: "What each team gets",
+      subtext: "The same platform, seen from the four teams that use it daily.",
+    },
+    howItWorks: {
+      heading: "Live in four steps",
+      subtext: "No developer, no new software for your agents.",
+    },
+    results: {
+      heading: "What insurers are aiming for",
+      subtext: "Illustrative targets from active pilots, not measured outcomes.",
+    },
+    compliance: {
+      heading: "Built for a regulated industry",
+      subtext: "The guardrails we would not ship without.",
+    },
+    caseStudy: {
+      heading: "In a policyholder's own words",
+      subtext: "Pending approval from the insurer named below.",
+    },
+  },
+
+  painPoints: [
+    { title: "Quotes happen over days, not minutes", description: "Policyholders call, wait on hold, and often hang up. Every abandoned call is lost premium.", icon: "clock" },
+    { title: "Claims filing is paperwork hell", description: "Customers submit photos and reports via email, then wait days for a reference number.", icon: "fileText" },
+    { title: "Renewals slip through the cracks", description: "Without proactive reminders, policies lapse. Re-acquiring the customer costs 5x more.", icon: "bell" },
+    { title: "Agents spend hours on simple questions", description: "Coverage info, policy details, document requests — repetitive questions eat your team's day.", icon: "messages" },
+  ],
+
+  demo: {
+    label: "Watch the insurance demo",
+    htmlPath: "/demos/insurance.html",
+    caption: "A 30-second animated flow — from quote request to digital policy card",
+    modalTitle: "Getting a car insurance quote on WhatsApp",
+    disabledLabel: "Demo coming soon",
+  },
+
+  featureGroups: [
+    {
+      department: "sales",
+      label: "Sales",
+      tagline: "Quote, renew, and close in chat",
+      icon: "users",
+      features: [
+        { title: "Instant quotes", description: "AI generates quotes for auto, home, and travel in under 60 seconds.", icon: "zap" },
+        { title: "In-chat renewals", description: "Policyholders renew with a secure payment link, no form filling.", icon: "refreshCw" },
+        { title: "Product catalogs", description: "Send coverage options, deductibles, and pricing comparisons.", icon: "grid" },
+        { title: "Cross-sell opportunities", description: "Suggest add-ons (home, travel, life) based on the existing policy.", icon: "trendingUp" },
+      ],
+    },
+    {
+      department: "operations",
+      label: "Claims & Support",
+      tagline: "File, track, and resolve faster",
+      icon: "shield",
+      features: [
+        { title: "24/7 claim filing", description: "Customers submit claims with photo evidence and police reports in-chat.", icon: "fileText" },
+        { title: "Instant claim references", description: "System generates a reference number immediately, so customers have proof.", icon: "hash" },
+        { title: "Claim status tracking", description: "Policyholders check status and receive updates at each stage.", icon: "activity" },
+        { title: "Document delivery", description: "Send policy PDFs, insurance cards, and receipts instantly.", icon: "send" },
+      ],
+    },
+    {
+      department: "marketing",
+      label: "Retention",
+      tagline: "Keep the policies you have",
+      icon: "megaphone",
+      features: [
+        { title: "Renewal reminders", description: "Automated 30-day, 7-day, and 1-day reminders prevent lapses.", icon: "bell" },
+        { title: "Cross-sell campaigns", description: "Announce new products (travel, life) to existing auto policyholders.", icon: "send" },
+        { title: "Seasonal offers", description: "Promote bundled coverage during travel season or Ramadan.", icon: "tag" },
+        { title: "Referral programs", description: "Track which policyholders bring in new clients and reward them.", icon: "users" },
+      ],
+    },
+    {
+      department: "management",
+      label: "Management",
+      tagline: "See the whole policyholder lifecycle",
+      icon: "barChart",
+      features: [
+        { title: "Conversion funnel", description: "Track inquiries → quotes → policies closed in one dashboard.", icon: "activity" },
+        { title: "Agent performance", description: "Monitor response times and claim resolution rates per agent.", icon: "users" },
+        { title: "Claims analytics", description: "See which claim types are growing, and where to intervene.", icon: "barChart" },
+        { title: "Renewal retention", description: "Track lapses, renewals, and win-back campaigns.", icon: "dollarSign" },
+      ],
+    },
+  ],
+
+  howItWorks: [
+    { title: "Connect your system", description: "Integrate your CRM or policy management system with OMNI.", icon: "link" },
+    { title: "Set up the AI", description: "Configure the bot to handle quotes, renewals, and standard FAQs.", icon: "zap" },
+    { title: "Go live", description: "Agents manage complex claims and high-value clients from a unified inbox.", icon: "play" },
+    { title: "Track results", description: "See quotes issued, renewals completed, claims filed, and retention rate.", icon: "barChart" },
+  ],
+
+  stats: [
+    { value: "3min", label: "average quote-to-policy", note: "Illustrative target — pilot in progress" },
+    { value: "80%", label: "faster claim filing", note: "Illustrative target" },
+    { value: "95%", label: "renewal retention", note: "Illustrative target" },
+    { value: "24/7", label: "policyholder support", note: "No missed inquiries" },
+  ],
+
+  compliance: [
+    { label: "Meta Business Partner", description: "Official WhatsApp Business API integration", icon: "shield", href: "/privacy-policy", hrefLabel: "Learn more" },
+    { label: "GDPR & PDPA aligned", description: "Policyholder data stays in your control", icon: "lock", href: "/privacy-policy", hrefLabel: "Privacy policy" },
+    { label: "CRM integrations", description: "Works with popular insurance CRMs", icon: "link", href: "/contact", hrefLabel: "Talk to us" },
+    { label: "Encrypted document delivery", description: "Secure delivery of policies and claims", icon: "fileText", href: "/privacy-policy", hrefLabel: "Learn more" },
+  ],
+
+  caseStudy: {
+    hidden: true,
+    org: "Draft — insurer name to be confirmed",
+    headline: "How a regional insurer cut quote turnaround from 24 hours to 3 minutes",
+    quote: "Placeholder quote for review.",
+    author: "Draft — name to confirm",
+    role: "Head of Digital, [Insurer Name]",
+    imageAlt: "Draft case study image",
+    bullets: [
+      "Draft — 3min average quote-to-policy via WhatsApp",
+      "Draft — 80% reduction in claim filing time",
+      "Draft — 95% policy renewal retention via automated reminders",
+    ],
+  },
+
+  cta: {
+    heading: "Ready to modernize your policyholder experience?",
+    subtext: "Book a demo, or see how the same flow works for other industries.",
+    primaryLabel: "Book a Demo",
+    primaryHref: "mailto:support@omniplus-bh.com",
+    secondaryLabel: "See all use cases",
+    secondaryHref: "/#use-cases",
+  },
+
+  aliases: ["insurance", "insurance company", "insurer", "broker", "policy"],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
@@ -1372,6 +1551,7 @@ export const industries: Record<string, IndustryConfig> = {
   automotive,
   education,
   "real-estate": realEstate,
+  insurance,
 };
 
 /** Ordered list for future index pages / nav menus. */

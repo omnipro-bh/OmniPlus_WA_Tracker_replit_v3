@@ -14,6 +14,7 @@ import {
   DollarSign,
   FileText,
   Filter,
+  Hash,
   HeartPulse,
   Image,
   Languages,
@@ -113,6 +114,7 @@ const registry: Record<IconKey, ComponentType<{ className?: string }>> = {
   filter: Filter,
   building: Building2,
   map: Map,
+  hash: Hash,
 };
 
 export function IndustryIcon({ name, className }: { name: IconKey; className?: string }) {
