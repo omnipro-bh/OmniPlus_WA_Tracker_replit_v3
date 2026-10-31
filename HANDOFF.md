@@ -1,108 +1,51 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## DB Migration Investigation (Supabase → local PostgreSQL) — 2026-10-31
-
-> **Read this first.** Session A (driver swap → `pg`) is **complete and deployed**. Production HEAD is
-> **`37af24d`**, still on the Supabase DB. The migration itself is **Session B** (see "The migration
-> plan" below).
+## Session B — Supabase → local PostgreSQL migration COMPLETE (2026-10-31)
 
 ### Status
 
-- **Production HEAD: `37af24d`** — the `pg` driver fix is live and verified against Supabase
-  (pm2 `omniplus`, `online`).
-- The `pg` driver is a proven drop-in for `@neondatabase/serverless` — no `.env` change, no migration.
-- Investigation + driver fix complete. Nothing migrated, nothing stopped.
-- PostgreSQL 17 server + client installed on the VPS (PGDG repo, cluster `17/main` on :5432).
-- Egress confirmed working: schema-only dump succeeded — 292 KB in 6 s, exit 0.
+- Production HEAD: unchanged (no code changes — this was data + config only).
+- App is now running against local PostgreSQL 17 on the VPS (`localhost:5432/omniplus_db`).
+- `/api/plans` returns 200 with JSON (8 plans).
+- All 5 spot-checked row counts match Supabase exactly.
+- Zero new connection errors in the PM2 log.
 
-### CRITICAL pre-commit check — VERIFIED PASSED
+### Migration record
 
-The driver fix swaps `@neondatabase/serverless` → `pg`, so the deploy's `npm ci --include=dev`
-must install `pg` from `package-lock.json`. If the lockfile lacked `pg`, the build would pass
-(type-check uses `@types/pg`) but the runtime would crash with `Cannot find module 'pg'`.
+- Full backup: `/tmp/supabase_full_backup.sql` (461 MB).
+- Migration dump: `/tmp/migration.sql` (20 MB, excludes `workflow_executions`).
+- Row counts (Supabase → local): users 8→8, bookings 26→26, workflows 24→24, messages 4520→4520, web_chat_sessions 4→4.
+- 44 tables restored (`workflow_executions` excluded — not migrated, per user's decision it's not important).
+- One benign ERROR during restore (schema "public" already exists) — standard `pg_dump` artifact.
 
-- **Verified 2026-10-31:** `package-lock.json` contains both entries, fully resolved:
-  - `node_modules/pg` → `8.23.1` (root dep `"pg": "^8.23.1"`)
-  - `node_modules/@types/pg` → `8.23.1` (root devDep `"@types/pg": "^8.23.1"`)
-- **The commit MUST include `package-lock.json`**, not just `server/db.ts` + `package.json`.
-- Re-run immediately before committing: `grep '"pg"' package-lock.json` and
-  `grep '"@types/pg"' package-lock.json` must each return a root-dep entry. If missing, run
-  `npm install pg @types/pg` locally and re-verify.
+### Rollback path (kept for 30 days)
 
-### Sizes (measured)
+```bash
+ssh watracker "cp /opt/omniplus/.env.supabase.bak /opt/omniplus/.env && pm2 restart omniplus --update-env"
+```
 
-- Total DB: **479 MB**.
-- `public` schema (what we migrate): **466 MB** (45 tables).
-- `workflow_executions`: **441 MB** (95% of what we migrate), 250,025 rows. **Excluded from the
-  migration dump** — per user it is not important. Do **NOT** prune/`VACUUM FULL` it in Supabase.
-- Actual migration size after excluding `workflow_executions`: **~25 MB**. Trivial egress.
+### Preserved (do not delete)
 
-### Critical findings for the migration
+- Supabase project — untouched.
+- `/tmp/supabase_full_backup.sql` (461 MB) — copy to local machine for off-VPS backup.
+- `/tmp/migration.sql` (20 MB).
+- `/opt/omniplus/.env.supabase.bak`.
 
-1. Supabase runs PostgreSQL **17.6**; `pg_dump` **17.11** installed on the VPS. Dump works.
-2. `pg_dump` must use **`--schema=public`** — otherwise it pulls in Supabase's `auth` (27 tables) /
-   `storage` (8) / `realtime` (3) internals (83 tables total vs 45 in `public`).
-3. The app used `@neondatabase/serverless` (WebSocket driver). Will NOT work against local Postgres.
-   Fixed in `b34c4e9`: `pg` driver + conditional SSL (`isLoopback` check).
-4. Supabase pooler has a self-signed cert — `pg` throws `SELF_SIGNED_CERT_IN_CHAIN`.
-   `ssl: { rejectUnauthorized: false }` alone was **NOT** enough: pg's `ConnectionParameters` does
-   `Object.assign({}, config, parse(connectionString))`, so the parsed URL (which contained
-   `?sslmode=require`) wins over the explicit `ssl` option. Fixed in `37af24d`: strip `sslmode`
-   from the URL before passing to `Pool`, so the explicit `ssl` option survives.
+### 🔴 High-priority follow-ups (Session C or later)
 
-### The migration plan (next sessions)
+1. **Rotate Supabase credentials:** The full DATABASE_URL and Supabase API keys were leaked into a session transcript during the investigation. Rotate the Supabase DB password + anon/service-role keys. This is now urgent because Supabase is no longer the primary — but the leaked credentials still grant access.
+2. **Set up local Postgres backups:** The VPS is now the sole data store. Without a backup cron, a VPS failure = total data loss. Recommended: daily pg_dump to /root/backups/ + weekly download to local.
+3. **Remove `@neondatabase/serverless`** from package.json (unused since driver swap).
+4. **Cancel/downgrade Supabase** after 30 days of clean local operation.
+5. **Update AGENTS.md** to reflect that database operations now use local Postgres, not Supabase.
+6. **Update the deploy docs** — new deploys no longer need Supabase-specific env vars.
 
-**Session A — Commit + deploy driver fix — ✅ COMPLETE (deployed `37af24d`)**
+### Session C — start here
 
-1. ✅ Re-ran the CRITICAL pre-commit check; committed **all three files** as `b34c4e9`
-   (`server/db.ts`, `package.json`, `package-lock.json`).
-2. ⚠️ First deploy (`b34c4e9`) failed against Supabase: `SELF_SIGNED_CERT_IN_CHAIN` on every DB
-   query (`/api/plans` → 500). Root cause: `sslmode=require` clobbered the explicit `ssl` option
-   (see finding #4).
-3. ✅ Fixed in `37af24d` (strip `sslmode` from the URL) and redeployed. Verified: `/api/plans` → 200,
-   no new `SELF_SIGNED_CERT_IN_CHAIN` (57 historical from the ~15 min `b34c4e9` window), webhooks
-   processing normally.
-4. ✅ No `.env` change, no DB migration. The `pg` driver is a proven drop-in.
-
-**Session B — Migration — ⏭️ NEXT SESSION, START HERE (fresh session, ~15-20% budget)**
-
-1. **Full backup first** (safety/rollback, includes `workflow_executions`):
-   `pg_dump --schema=public --no-owner --no-privileges --dbname="$DBURL" --file=/tmp/full-backup.sql`
-   (~466 MB).
-2. **Migration dump excluding `workflow_executions`** (~25 MB):
-   `pg_dump --schema=public --no-owner --no-privileges --exclude-table=workflow_executions --dbname="$DBURL" --file=/tmp/migration.sql`
-   (Do NOT put `--exclude-table` on the full backup — that defeats its rollback purpose.)
-3. Stop the app (`pm2 stop omniplus`) — ~30 s downtime.
-4. Create local DB + user:
-   `sudo -u postgres psql -c "CREATE USER omniplus_user WITH PASSWORD 'strong_password';"`
-   `sudo -u postgres psql -c "CREATE DATABASE omniplus_db OWNER omniplus_user;"`
-5. Restore: `psql -U omniplus_user -d omniplus_db -h localhost -f /tmp/migration.sql`
-6. Verify row counts match (spot-check 5 tables).
-7. Backup `.env`, then update `DATABASE_URL` to point to localhost.
-8. `pm2 restart omniplus --update-env`
-9. Check logs, then hit a real DB-backed endpoint — **`/api/plans`** (public, no auth, queries the DB).
-   **Note: there is no `/api/health` route** — it returns the SPA fallback `index.html` with 200, so it
-   does NOT verify the DB. Spot-check row counts instead (step 6).
-10. If successful: cancel Supabase (or downgrade to free tier with a cron backup).
-
-> The driver is now proven against Supabase (with `sslmode` stripped) AND correctly handles the
-> `isLoopback` case (local Postgres → no TLS), so the migration itself is genuinely a ~2-minute
-> operation once the dumps are written.
-
-### Security follow-up (still pending)
-
-- The investigation printed the full `DATABASE_URL` and Supabase keys into the session transcript.
-- Action: after migration (or now), rotate Supabase DB password and API keys. **Not yet done.**
-
-### Follow-ups (carried)
-
-- Arabic insurance tenant 401.
-- `/contact` page.
-- Arabic/RTL version.
-- Hero dark-mode export.
-- `© 2025` footer.
-- Meta/OG tags.
-- `@neondatabase/serverless` unused dep (can be removed after migration).
+Priority order:
+1. Set up the local Postgres backup cron (highest priority — a VPS failure today = data loss).
+2. Rotate Supabase credentials.
+3. Cancel/downgrade Supabase after 30 days.
 
 ## Phase B — Hero composite image + demo thumbnail (deployed `f29ac47`) — 2026-10-30
 
