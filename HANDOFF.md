@@ -2,17 +2,18 @@
 
 ## DB Migration Investigation (Supabase → local PostgreSQL) — 2026-10-31
 
-> **Read this first.** This is an investigation session only. Production is unchanged and still on the
-> Supabase DB. The migration itself is planned for later sessions (see "The migration plan" below).
+> **Read this first.** Session A (driver swap → `pg`) is **complete and deployed**. Production HEAD is
+> **`37af24d`**, still on the Supabase DB. The migration itself is **Session B** (see "The migration
+> plan" below).
 
 ### Status
 
-- Production unchanged — still on the current Supabase DB (pm2 `omniplus`, `online`).
-- Investigation complete. Nothing migrated, nothing stopped, app online throughout.
+- **Production HEAD: `37af24d`** — the `pg` driver fix is live and verified against Supabase
+  (pm2 `omniplus`, `online`).
+- The `pg` driver is a proven drop-in for `@neondatabase/serverless` — no `.env` change, no migration.
+- Investigation + driver fix complete. Nothing migrated, nothing stopped.
 - PostgreSQL 17 server + client installed on the VPS (PGDG repo, cluster `17/main` on :5432).
 - Egress confirmed working: schema-only dump succeeded — 292 KB in 6 s, exit 0.
-- Local `main` has an **uncommitted** driver fix: `server/db.ts` + `package.json` (pg driver) +
-  `package-lock.json`.
 
 ### CRITICAL pre-commit check — VERIFIED PASSED
 
@@ -42,20 +43,28 @@ must install `pg` from `package-lock.json`. If the lockfile lacked `pg`, the bui
 2. `pg_dump` must use **`--schema=public`** — otherwise it pulls in Supabase's `auth` (27 tables) /
    `storage` (8) / `realtime` (3) internals (83 tables total vs 45 in `public`).
 3. The app used `@neondatabase/serverless` (WebSocket driver). Will NOT work against local Postgres.
-   Fixed in local uncommitted change: `pg` driver + conditional SSL (`isLoopback` check).
-4. Supabase pooler has a self-signed cert — `pg` would throw `SELF_SIGNED_CERT_IN_CHAIN`. Fixed with
-   `rejectUnauthorized: false` for non-loopback hosts.
+   Fixed in `b34c4e9`: `pg` driver + conditional SSL (`isLoopback` check).
+4. Supabase pooler has a self-signed cert — `pg` throws `SELF_SIGNED_CERT_IN_CHAIN`.
+   `ssl: { rejectUnauthorized: false }` alone was **NOT** enough: pg's `ConnectionParameters` does
+   `Object.assign({}, config, parse(connectionString))`, so the parsed URL (which contained
+   `?sslmode=require`) wins over the explicit `ssl` option. Fixed in `37af24d`: strip `sslmode`
+   from the URL before passing to `Pool`, so the explicit `ssl` option survives.
 
 ### The migration plan (next sessions)
 
-**Session A — Commit + deploy driver fix (fresh session, ~5% budget)**
+**Session A — Commit + deploy driver fix — ✅ COMPLETE (deployed `37af24d`)**
 
-1. Re-run the CRITICAL pre-commit check (above), then commit **all three files**:
-   `server/db.ts`, `package.json`, `package-lock.json`.
-2. Deploy it. Verify the app still works against Supabase (pg is a drop-in).
-3. No `.env` change, no DB migration. This is a "prove the driver change is safe" checkpoint.
+1. ✅ Re-ran the CRITICAL pre-commit check; committed **all three files** as `b34c4e9`
+   (`server/db.ts`, `package.json`, `package-lock.json`).
+2. ⚠️ First deploy (`b34c4e9`) failed against Supabase: `SELF_SIGNED_CERT_IN_CHAIN` on every DB
+   query (`/api/plans` → 500). Root cause: `sslmode=require` clobbered the explicit `ssl` option
+   (see finding #4).
+3. ✅ Fixed in `37af24d` (strip `sslmode` from the URL) and redeployed. Verified: `/api/plans` → 200,
+   no new `SELF_SIGNED_CERT_IN_CHAIN` (57 historical from the ~15 min `b34c4e9` window), webhooks
+   processing normally.
+4. ✅ No `.env` change, no DB migration. The `pg` driver is a proven drop-in.
 
-**Session B — Migration (fresh session, ~15-20% budget)**
+**Session B — Migration — ⏭️ NEXT SESSION, START HERE (fresh session, ~15-20% budget)**
 
 1. **Full backup first** (safety/rollback, includes `workflow_executions`):
    `pg_dump --schema=public --no-owner --no-privileges --dbname="$DBURL" --file=/tmp/full-backup.sql`
@@ -71,13 +80,19 @@ must install `pg` from `package-lock.json`. If the lockfile lacked `pg`, the bui
 6. Verify row counts match (spot-check 5 tables).
 7. Backup `.env`, then update `DATABASE_URL` to point to localhost.
 8. `pm2 restart omniplus --update-env`
-9. Check logs, hit `/api/health`.
+9. Check logs, then hit a real DB-backed endpoint — **`/api/plans`** (public, no auth, queries the DB).
+   **Note: there is no `/api/health` route** — it returns the SPA fallback `index.html` with 200, so it
+   does NOT verify the DB. Spot-check row counts instead (step 6).
 10. If successful: cancel Supabase (or downgrade to free tier with a cron backup).
 
-### Security follow-up
+> The driver is now proven against Supabase (with `sslmode` stripped) AND correctly handles the
+> `isLoopback` case (local Postgres → no TLS), so the migration itself is genuinely a ~2-minute
+> operation once the dumps are written.
+
+### Security follow-up (still pending)
 
 - The investigation printed the full `DATABASE_URL` and Supabase keys into the session transcript.
-- Action: after migration (or now), rotate Supabase DB password and API keys.
+- Action: after migration (or now), rotate Supabase DB password and API keys. **Not yet done.**
 
 ### Follow-ups (carried)
 
