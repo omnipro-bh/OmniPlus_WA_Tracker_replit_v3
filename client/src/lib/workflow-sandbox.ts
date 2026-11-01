@@ -17,6 +17,7 @@ export type TraceOutcome =
   | "evaluated"
   | "assigned"
   | "http"
+  | "sheets"
   | "awaiting"
   | "stopped"
   | "error";

@@ -52,6 +52,7 @@ interface WorkflowTestPanelProps {
 /** Reserved context keys surfaced with an "internal" badge in the Variables panel. */
 const RESERVED_KEYS = new Set([
   "http",
+  "sheets",
   "bookingState",
   "captureActive",
   "captureSequenceName",
@@ -135,6 +136,7 @@ const OUTCOME_STYLE: Record<TraceOutcome, string> = {
   evaluated: "text-violet-500",
   assigned: "text-amber-500",
   http: "text-cyan-500",
+  sheets: "text-emerald-500",
   awaiting: "text-primary",
   stopped: "text-destructive",
   error: "text-destructive",

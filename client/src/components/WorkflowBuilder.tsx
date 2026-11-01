@@ -78,6 +78,7 @@ import {
   GitBranch,
   Variable,
   Search,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 /** A single draggable entry in the node palette. */
@@ -174,6 +175,13 @@ export const nodeTypes = {
       icon: Network,
       cost: 0,
       description: 'Call external APIs with custom HTTP requests'
+    },
+    {
+      id: 'action.google_sheets',
+      label: 'Google Sheets',
+      icon: FileSpreadsheet,
+      cost: 0,
+      description: 'Read, append, or update rows in a Google Sheet'
     },
   ],
   INPUTS: [

@@ -39,6 +39,11 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const [isTestingHttp, setIsTestingHttp] = useState(false);
   const [httpTestResult, setHttpTestResult] = useState<any>(null);
 
+  // Google Sheets test states
+  const [sheetsTestDialogOpen, setSheetsTestDialogOpen] = useState(false);
+  const [isTestingSheets, setIsTestingSheets] = useState(false);
+  const [sheetsTestResult, setSheetsTestResult] = useState<any>(null);
+
   // Fetch active channels for test functionality
   const { data: channels = [] } = useQuery<any[]>({
     queryKey: ['/api/channels'],
@@ -224,6 +229,66 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       });
     } finally {
       setIsTestingHttp(false);
+    }
+  };
+
+  const handleTestGoogleSheets = async () => {
+    if (!config.spreadsheetId) {
+      toast({
+        title: 'Spreadsheet ID required',
+        description: 'Please enter a spreadsheet ID to test',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsTestingSheets(true);
+    setSheetsTestResult(null);
+
+    try {
+      const res = await apiRequest('POST', '/api/workflows/test-google-sheets', {
+        config: {
+          operation: config.operation || 'read',
+          spreadsheetId: config.spreadsheetId,
+          range: config.range,
+          lookupKey: config.lookupKey,
+          lookupColumn: config.lookupColumn,
+          returnColumn: config.returnColumn,
+          returnVariable: config.returnVariable,
+          dataMapping: config.dataMapping || [],
+        },
+        testContext: {}, // Empty context for testing
+      });
+      const result: any = await res.json();
+
+      setSheetsTestResult(result);
+      setSheetsTestDialogOpen(true);
+
+      if (result.success) {
+        toast({
+          title: 'Test successful',
+          description: `Google Sheets ${config.operation || 'read'} operation completed`,
+        });
+      } else {
+        toast({
+          title: 'Test failed',
+          description: result.error || 'Google Sheets operation failed',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      setSheetsTestResult({
+        success: false,
+        error: error.message || 'Failed to test Google Sheets node',
+      });
+      setSheetsTestDialogOpen(true);
+      toast({
+        title: 'Test error',
+        description: error.message || 'Failed to test Google Sheets node',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTestingSheets(false);
     }
   };
 
@@ -2196,6 +2261,280 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
         <p className="text-xs text-amber-600 mt-4">
           Note: HTTP requests will have a success path (2xx responses) and an error path (non-2xx or network errors). Connect both paths to handle all scenarios.
+        </p>
+      </div>
+    );
+  }
+
+  // Google Sheets Node Configuration
+  if (nodeType === 'action.google_sheets') {
+    const dataMapping = config.dataMapping || [];
+    const operation = config.operation || 'read';
+
+    const addMapping = () => {
+      updateConfig('dataMapping', [...dataMapping, { column: '', value: '' }]);
+    };
+
+    const removeMapping = (index: number) => {
+      updateConfig('dataMapping', dataMapping.filter((_: any, i: number) => i !== index));
+    };
+
+    const updateMapping = (index: number, field: string, value: string) => {
+      const newMapping = [...dataMapping];
+      newMapping[index] = { ...newMapping[index], [field]: value };
+      updateConfig('dataMapping', newMapping);
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Operation */}
+        <div>
+          <Label htmlFor="sheets-operation">Operation *</Label>
+          <Select
+            value={operation}
+            onValueChange={(value) => updateConfig('operation', value)}
+          >
+            <SelectTrigger id="sheets-operation" data-testid="select-sheets-operation">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="read">Read / Lookup</SelectItem>
+              <SelectItem value="append">Append Row</SelectItem>
+              <SelectItem value="update">Update Row</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Spreadsheet ID */}
+        <div>
+          <Label htmlFor="spreadsheet-id">Spreadsheet ID *</Label>
+          <Input
+            id="spreadsheet-id"
+            placeholder="1c9aMFP34N20EtG2SeZy4jK5dMGlSa2eIZyWk4"
+            value={config.spreadsheetId || ''}
+            onChange={(e) => updateConfig('spreadsheetId', e.target.value)}
+            data-testid="input-sheets-spreadsheet-id"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            From the sheet URL: /d/[id]/edit. The sheet must be shared with the service account.
+          </p>
+        </div>
+
+        {/* Range */}
+        <div>
+          <Label htmlFor="sheets-range">Range *</Label>
+          <Input
+            id="sheets-range"
+            placeholder="Sheet1!A:F"
+            value={config.range || ''}
+            onChange={(e) => updateConfig('range', e.target.value)}
+            data-testid="input-sheets-range"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            A1 notation, e.g. <code className="bg-muted px-1 py-0.5 rounded">Sheet1!A:F</code>
+          </p>
+        </div>
+
+        {/* Lookup fields (read + update) */}
+        {(operation === 'read' || operation === 'update') && (
+          <>
+            <Separator />
+            <div>
+              <Label htmlFor="lookup-column">Lookup Column *</Label>
+              <Input
+                id="lookup-column"
+                placeholder="A (or header name, e.g. Student ID)"
+                value={config.lookupColumn || ''}
+                onChange={(e) => updateConfig('lookupColumn', e.target.value)}
+                data-testid="input-sheets-lookup-column"
+              />
+            </div>
+            <div>
+              <Label htmlFor="lookup-key">Lookup Key *</Label>
+              <Input
+                id="lookup-key"
+                placeholder="12345 or {{studentId}}"
+                value={config.lookupKey || ''}
+                onChange={(e) => updateConfig('lookupKey', e.target.value)}
+                data-testid="input-sheets-lookup-key"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Return fields (read only) */}
+        {operation === 'read' && (
+          <>
+            <div>
+              <Label htmlFor="return-column">Return Column</Label>
+              <Input
+                id="return-column"
+                placeholder="B (or header name, e.g. Fees)"
+                value={config.returnColumn || ''}
+                onChange={(e) => updateConfig('returnColumn', e.target.value)}
+                data-testid="input-sheets-return-column"
+              />
+            </div>
+            <div>
+              <Label htmlFor="return-variable">Return Variable</Label>
+              <Input
+                id="return-variable"
+                placeholder="fees"
+                value={config.returnVariable || ''}
+                onChange={(e) => updateConfig('returnVariable', e.target.value)}
+                data-testid="input-sheets-return-variable"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Store the returned value in this context variable for use in later nodes.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Data mapping (append + update) */}
+        {(operation === 'append' || operation === 'update') && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Column Mapping</Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addMapping}
+                  data-testid="button-add-sheets-mapping"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Column
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Map columns to values. Use {`{{variableName}}`} for variable substitution.
+              </p>
+              {dataMapping.map((mapping: any, index: number) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    placeholder="Column (e.g. A)"
+                    value={mapping.column || ''}
+                    onChange={(e) => updateMapping(index, 'column', e.target.value)}
+                    data-testid={`input-sheets-mapping-${index}-column`}
+                  />
+                  <Input
+                    placeholder="Value"
+                    value={mapping.value || ''}
+                    onChange={(e) => updateMapping(index, 'value', e.target.value)}
+                    data-testid={`input-sheets-mapping-${index}-value`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeMapping(index)}
+                    data-testid={`button-remove-sheets-mapping-${index}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Test Button */}
+        <Separator />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleTestGoogleSheets}
+            disabled={isTestingSheets || !config.spreadsheetId}
+            data-testid="button-test-google-sheets"
+            className="w-full"
+          >
+            {isTestingSheets ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <TestTube className="h-4 w-4 mr-2" />
+                Test Operation
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Test Results Dialog */}
+        <Dialog open={sheetsTestDialogOpen} onOpenChange={setSheetsTestDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Google Sheets Test Results</DialogTitle>
+              <DialogDescription>
+                {sheetsTestResult?.success ? 'Operation completed successfully' : 'Operation failed'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {sheetsTestResult && (
+              <div className="space-y-4">
+                {/* Status */}
+                <div>
+                  <Label className="text-sm font-medium">Status</Label>
+                  <div className={`text-sm p-2 rounded border ${
+                    sheetsTestResult.success
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                  }`}>
+                    {sheetsTestResult.success ? (
+                      <>✓ Success - {sheetsTestResult.operation}</>
+                    ) : (
+                      <>✗ Failed - {sheetsTestResult.error}</>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row index */}
+                {sheetsTestResult.rowIndex && (
+                  <div>
+                    <Label className="text-sm font-medium">Row</Label>
+                    <div className="text-sm">{sheetsTestResult.rowIndex}</div>
+                  </div>
+                )}
+
+                {/* Result Data */}
+                {sheetsTestResult.data !== undefined && sheetsTestResult.data !== null && (
+                  <div>
+                    <Label className="text-sm font-medium">Result Data</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(sheetsTestResult.data, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Mapped Variables */}
+                {sheetsTestResult.mappedVariables && Object.keys(sheetsTestResult.mappedVariables).length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Mapped Variables</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(sheetsTestResult.mappedVariables, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Error Details */}
+                {sheetsTestResult.error && (
+                  <div>
+                    <Label className="text-sm font-medium text-destructive">Error</Label>
+                    <div className="text-sm p-3 bg-destructive/10 rounded border border-destructive/20 text-destructive">
+                      {sheetsTestResult.error}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <p className="text-xs text-amber-600 mt-4">
+          Note: Google Sheets nodes have a success path and an error path (API errors or a lookup with no match). Connect both paths to handle all scenarios.
         </p>
       </div>
     );

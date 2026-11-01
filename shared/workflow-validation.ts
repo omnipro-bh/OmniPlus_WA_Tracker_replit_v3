@@ -19,6 +19,7 @@ export const VARIABLE_PATH_RE =
 /** Internal context keys that workflows must not overwrite. */
 export const RESERVED_CONTEXT_KEYS = [
   'http',
+  'sheets',
   'bookingState',
   'checkBookingsState',
   'captureActive',

@@ -67,6 +67,7 @@ export type TraceOutcome =
   | 'evaluated'
   | 'assigned'
   | 'http'
+  | 'sheets'
   | 'awaiting'
   | 'stopped'
   | 'error';
@@ -118,6 +119,13 @@ export interface FlowHost {
 
   /** Execute an HTTP node and return the next handle plus the new context. */
   runHttp(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
+
+  /**
+   * Execute a Google Sheets node and return the next handle plus the new
+   * context. Optional: the sandbox host omits it, so a `action.google_sheets`
+   * node is unsupported there (mirrors `handleBookingNode`).
+   */
+  runGoogleSheets?(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
 
   /** Persist context/cursor. `mode` is chosen by the node type (see PersistMode). */
   persist(context: any, cursor: string | null, mode: PersistMode): Promise<void>;
@@ -400,6 +408,55 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
         if (!nextNodeId) {
           console.log(
             `HTTP node ${nodeId} has no ${httpResult.nextHandle} handle connected - workflow ends here`
+          );
+          status = 'done';
+          stopReason = 'no_next_node';
+          cursor = null;
+          break;
+        }
+
+        cursor = nextNodeId;
+        continue;
+      }
+
+      // ── Google Sheets ──────────────────────────────────────────────────
+      if (nodeType === 'action.google_sheets') {
+        if (!host.runGoogleSheets) {
+          emit({
+            nodeId,
+            nodeType,
+            outcome: 'stopped',
+            ms: Date.now() - startedAt,
+            detail: { reason: 'unsupported_node' },
+          });
+          console.warn(
+            `[Flow] Google Sheets node "${nodeType}" (${nodeId}) is not supported here - stopping.`
+          );
+          status = 'stopped';
+          stopReason = 'unsupported_node';
+          cursor = nodeId;
+          break;
+        }
+
+        const sheetsResult = await host.runGoogleSheets(node, nodeId, context);
+        context = sheetsResult.context;
+
+        // Cursor stays on the sheets node (same as the HTTP node).
+        await host.persist(context, nodeId, 'cursor');
+
+        emit({
+          nodeId,
+          nodeType,
+          outcome: 'sheets',
+          handle: sheetsResult.nextHandle,
+          ms: Date.now() - startedAt,
+          detail: { success: sheetsResult.ok, ...(sheetsResult.detail || {}) },
+        });
+
+        const nextNodeId = getNextNodeByHandle(nodeId, sheetsResult.nextHandle, edges);
+        if (!nextNodeId) {
+          console.log(
+            `Google Sheets node ${nodeId} has no ${sheetsResult.nextHandle} handle connected - workflow ends here`
           );
           status = 'done';
           stopReason = 'no_next_node';

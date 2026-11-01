@@ -35,6 +35,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
+import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonTarget, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
   enforceContextCeiling,
@@ -10627,6 +10628,29 @@ export function registerRoutes(app: Express) {
                   };
                 },
 
+                runGoogleSheets: async (node, nodeId, ctx) => {
+                  const sheetsResult = await executeGoogleSheetsWorkflowNode(
+                    node,
+                    { ...state, context: ctx } as any,
+                    incomingMessage,
+                    { phone, userId: activeWorkflow.userId }
+                  );
+
+                  executionLog.responsesSent.push({
+                    nodeId,
+                    nodeType: 'action.google_sheets',
+                    success: sheetsResult.success,
+                    handle: sheetsResult.nextHandle,
+                    result: sheetsResult.result,
+                  });
+
+                  return {
+                    ok: sheetsResult.success,
+                    nextHandle: sheetsResult.nextHandle,
+                    context: sheetsResult.stateUpdate,
+                  };
+                },
+
                 persist: async (ctx, cursor, mode) => {
                   state = { ...state, context: ctx };
                   if (mode === 'none') return;
@@ -11771,6 +11795,29 @@ export function registerRoutes(app: Express) {
         };
       },
 
+      runGoogleSheets: async (node, nodeId, ctx) => {
+        const sheetsResult = await executeGoogleSheetsWorkflowNode(
+          node,
+          { ...state, context: ctx } as any,
+          incomingMessage,
+          { phone, userId: activeWorkflow.userId }
+        );
+
+        executionLog.responsesSent.push({
+          nodeId,
+          nodeType: 'action.google_sheets',
+          success: sheetsResult.success,
+          handle: sheetsResult.nextHandle,
+          result: sheetsResult.result,
+        });
+
+        return {
+          ok: sheetsResult.success,
+          nextHandle: sheetsResult.nextHandle,
+          context: sheetsResult.stateUpdate,
+        };
+      },
+
       persist: async (ctx, cursor, mode) => {
         if (mode === 'none') return;
 
@@ -11872,6 +11919,40 @@ export function registerRoutes(app: Express) {
       res.status(500).json({ 
         success: false,
         error: error.message || "Failed to test HTTP request" 
+      });
+    }
+  });
+
+  // Test Google Sheets Node
+  app.post("/api/workflows/test-google-sheets", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { config, testContext } = req.body;
+
+      if (!config || !config.spreadsheetId) {
+        return res.status(400).json({ error: "Google Sheets configuration with spreadsheetId is required" });
+      }
+
+      // Build minimal execution context for testing
+      const executionContext = testContext || {};
+
+      // Use the Google Sheets executor to perform the operation
+      const { executeGoogleSheetsNode } = await import("./workflows/googleSheetsExecutor");
+      const result = await executeGoogleSheetsNode(config, executionContext);
+
+      res.json({
+        success: result.success,
+        operation: result.operation,
+        found: result.found,
+        rowIndex: result.rowIndex,
+        data: result.data,
+        mappedVariables: result.mappedVariables,
+        error: result.error,
+      });
+    } catch (error: any) {
+      console.error("Test Google Sheets error:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Failed to test Google Sheets node",
       });
     }
   });
