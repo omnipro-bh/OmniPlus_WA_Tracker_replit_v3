@@ -25,6 +25,7 @@
 import { z } from "zod";
 import { enforceContextCeiling, getNextNodeBySingleEdge, MAX_CAPTURE_LENGTH } from "./flowControl";
 import { executeHttpNode } from "./httpNodeExecutor";
+import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
 import {
   FLOW_STEP_LIMITS,
   type FlowHost,
@@ -361,6 +362,28 @@ export function buildSandboxHost(opts: {
         nextHandle: httpResult.nextHandle,
         context: next,
         detail: { mocked: false, status: httpResult.result?.status },
+      };
+    },
+
+    runGoogleSheets: async (node, nodeId, ctx) => {
+      // Google Sheets has no mock mode: it always hits the real Sheets API via
+      // the shared service account (the sandbox just feeds it synthetic context).
+      // Mirrors the live host's runGoogleSheets.
+      const sheetsResult = await executeGoogleSheetsWorkflowNode(
+        node,
+        { context: ctx } as any,
+        {},
+        { phone: "sandbox", userId: opts.userId }
+      );
+
+      return {
+        ok: sheetsResult.success,
+        nextHandle: sheetsResult.nextHandle,
+        context: sheetsResult.stateUpdate,
+        detail: {
+          operation: sheetsResult.result?.operation,
+          found: sheetsResult.result?.found,
+        },
       };
     },
 
