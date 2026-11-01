@@ -36,6 +36,7 @@ import path from "path";
 import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
+import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonTarget, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
   enforceContextCeiling,
@@ -10159,7 +10160,7 @@ export function registerRoutes(app: Express) {
                 
                 try {
                   // Send the entry node's message
-                  const response = await sendNodeMessage(phone, entryNode, workflow.userId, workflow.id);
+                  const response = await sendNodeMessage(phone, entryNode, workflow.userId, workflow.id, nameCheckContext);
                   
                   // Only add to execution log if this is the current workflow
                   if (workflow.id === activeWorkflow.id) {
@@ -10600,7 +10601,7 @@ export function registerRoutes(app: Express) {
                 maxSteps: FLOW_STEP_LIMITS.live,
 
                 sendMessage: async (node, nodeId) => {
-                  const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+                  const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id, state.context);
                   executionLog.responsesSent.push(response);
                   return { ok: true, payload: response };
                 },
@@ -11408,9 +11409,25 @@ export function registerRoutes(app: Express) {
   }
 
   // Helper function to send node message via WHAPI
-  async function sendNodeMessage(phone: string, node: any, workflowUserId: number, workflowId?: number): Promise<any> {
+  async function sendNodeMessage(phone: string, node: any, workflowUserId: number, workflowId?: number, context?: any): Promise<any> {
     const nodeType = node.data?.type || node.data?.nodeType;
-    const config = node.data?.config || {};
+
+    // Resolve {{variable}} placeholders in message text using the current
+    // conversation context. Mirrors the HTTP node's template behaviour: a
+    // missing variable resolves to an empty string, and text with no
+    // placeholders is returned unchanged.
+    const ctx = context || {};
+    const resolve = (value: any): any => {
+      if (typeof value === 'string') return resolveTemplate(value, ctx);
+      if (Array.isArray(value)) return value.map(resolve);
+      if (value && typeof value === 'object') {
+        const out: Record<string, any> = {};
+        for (const key of Object.keys(value)) out[key] = resolve(value[key]);
+        return out;
+      }
+      return value;
+    };
+    const config = resolve(node.data?.config || {});
 
     // Get user's first active and authorized channel
     const userChannels = await storage.getChannelsForUser(workflowUserId);
@@ -11767,7 +11784,7 @@ export function registerRoutes(app: Express) {
       maxSteps: FLOW_STEP_LIMITS.textResume,
 
       sendMessage: async (node, nodeId) => {
-        const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id);
+        const response = await sendNodeMessage(phone, node, activeWorkflow.userId, activeWorkflow.id, state.context);
         executionLog.responsesSent.push(response);
         return { ok: true, payload: response };
       },
@@ -11819,6 +11836,9 @@ export function registerRoutes(app: Express) {
       },
 
       persist: async (ctx, cursor, mode) => {
+        // Keep the in-memory context current so sendMessage can resolve
+        // {{variables}} against the latest values (mirrors the button path).
+        state = { ...state, context: ctx };
         if (mode === 'none') return;
 
         if (mode === 'context') {
