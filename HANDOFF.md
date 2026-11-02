@@ -1,56 +1,44 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Workflow canvas — step edges deployed (2026-11-02)
+## Web chat continuation fixed + Sheets support across all 4 hosts (2026-11-02)
 
 ### Status
 
-- Production HEAD: `a6924ae` (edge style change).
-- Workflow canvas edges changed from bezier curves to "smoothstep" (or "step") for better readability on complex flows with loops.
-- No node connections were affected — only the visual rendering.
-- Confirmed: loops (error retry, main menu navigation) work correctly in the engine (verified in previous commit); no cycle validation blocks them. maxSteps (100 live / 25 sandbox) prevents infinite loops.
+- Production HEAD: `f07f1f6`.
+- Web chat now supports `action.google_sheets` (read, and by extension append/update).
+- Web chat `sendMessage` now interpolates `{{variables}}`.
+- All 4 hosts (WhatsApp button, WhatsApp text-resume, Test Panel sandbox, Web Chat) are now aligned.
 
-### Session accomplishments (full arc, multi-commit)
+### Bugs fixed this session
 
-1. Google Sheets node (read/append/update, multi-variable mapping, auto range expansion) — deployed and verified end-to-end on WhatsApp and Test Panel.
-2. WhatsApp message interpolation fix — all text fields now resolve {{variables}} in both live and sandbox.
-3. Sandbox Google Sheets support — Test Panel can execute and preview Sheets nodes.
-4. Loop support confirmed — no cycle validation exists; maxSteps protects against infinite loops.
-5. Step edge style — cleaner visual for complex flows.
-
-### Files changed (cumulative)
-
-- server/workflows/googleSheetsExecutor.ts (new)
-- server/workflows/flowRunner.ts (sheets branch, message context)
-- server/workflows/sandbox.ts (sheets wiring, message interpolation)
-- server/routes.ts (sheets in live hosts, sendNodeMessage interpolation, test endpoint)
-- client/src/components/WorkflowBuilder.tsx (palette entry, edge style)
-- client/src/components/WorkflowNodeConfig.tsx (sheets config form)
-- client/src/components/CustomWorkflowNode.tsx (sheets node renderer)
-- client/src/lib/workflow-sandbox.ts, WorkflowTestPanel.tsx (sheets trace)
-- shared/workflow-validation.ts (sheets reserved key)
-- package.json (@googleapis/sheets@14.0.0, google-auth-library@10.5.0)
+1. `buildChatHost` was missing `runGoogleSheets` → Sheets node stopped with `unsupported_node`.
+2. `buildChatHost.sendMessage` ignored the context param → `{{variables}}` rendered as blank.
 
 ### Key learnings
 
-1. Node 20 constraint: @googleapis/sheets pinned to 14.0.0.
-2. google-auth-library pinned to exactly 10.5.0 (interop requirement — otherwise silent JWT failure).
-3. Message interpolation was a pre-existing limitation (4A-2a). Fixed for live + sandbox.
-4. Range auto-expansion in Google Sheets node prevents "empty column" bugs when mapping beyond declared range.
-5. Loops are natively supported; no code change needed. maxSteps is the guard.
-6. React Flow edge type is purely visual — existing connections are preserved.
+- The multi-host pattern means new node types must be wired in 4 places (not 3). The HANDOFF should call this out explicitly so future integrations don't miss web chat.
+- The flowRunner already gracefully degrades unsupported nodes to stopped/unsupported_node — no crash, just a silent no-reply. This masked the bug for weeks. Consider logging at WARN level for unsupported_node specifically.
 
-### Remaining follow-ups (priority order)
+### Multi-host wiring checklist (for future integrations)
 
-1. Test append + update operations end-to-end (read is fully verified).
-2. Arabic/RTL version of marketing site.
-3. /contact page (replace mailto CTA).
-4. Fix Arabic insurance tenant 401 (pre-existing, customer-facing).
-5. Phase 2 Google Sheets (per-user OAuth) when first external client asks.
-6. More industries (logistics, hospitality, F&B).
-7. Supabase credential rotation + project deletion (after Nov 30).
-8. Hero style unification across 6 industry pages.
+When adding a new node type that runs an executor, wire it in:
 
-### Session ended at ~45% budget
+1. `server/workflows/flowRunner.ts` (add branch to `runFlow`)
+2. `server/workflows/sandbox.ts` (`buildSandboxHost.run*`)
+3. `server/workflows/chat-host.ts` (`buildChatHost.run*`)
+4. `server/routes.ts` (both FlowHost instances: button path + text-resume path)
+
+And ensure each host passes context to `sendMessage` (which the runner provides as the third arg).
+
+### Remaining follow-ups
+
+- Test append + update operations end-to-end (read is fully verified).
+- Arabic/RTL version.
+- /contact page.
+- Arabic insurance tenant 401.
+- Phase 2 Google Sheets (OAuth).
+- More industries.
+- Supabase credential rotation + deletion.
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
