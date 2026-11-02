@@ -1,34 +1,20 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Web chat continuation fixed + Sheets support across all 4 hosts (2026-11-02)
+## Web chat Sheets fix — verified live (9b5b825, 2026-11-02)
 
 ### Status
 
-- Production HEAD: `f07f1f6`.
-- Web chat now supports `action.google_sheets` (read, and by extension append/update).
-- Web chat `sendMessage` now interpolates `{{variables}}`.
-- All 4 hosts (WhatsApp button, WhatsApp text-resume, Test Panel sandbox, Web Chat) are now aligned.
+- Production HEAD: `9b5b825` (`f07f1f6` code + docs).
+- Web chat now supports `action.google_sheets` (read + append/update via same hook).
+- Web chat `sendMessage` interpolates `{{variables}}`.
+- All 4 hosts (WhatsApp button, WhatsApp text-resume, Test Panel sandbox, Web Chat) verified aligned.
+- End-to-end verified: Web Chat → Check Fees → `12352` → bot replied with interpolated fees/name/due_date/class.
 
-### Bugs fixed this session
+### Regression checks
 
-1. `buildChatHost` was missing `runGoogleSheets` → Sheets node stopped with `unsupported_node`.
-2. `buildChatHost.sendMessage` ignored the context param → `{{variables}}` rendered as blank.
-
-### Key learnings
-
-- The multi-host pattern means new node types must be wired in 4 places (not 3). The HANDOFF should call this out explicitly so future integrations don't miss web chat.
-- The flowRunner already gracefully degrades unsupported nodes to stopped/unsupported_node — no crash, just a silent no-reply. This masked the bug for weeks. Consider logging at WARN level for unsupported_node specifically.
-
-### Multi-host wiring checklist (for future integrations)
-
-When adding a new node type that runs an executor, wire it in:
-
-1. `server/workflows/flowRunner.ts` (add branch to `runFlow`)
-2. `server/workflows/sandbox.ts` (`buildSandboxHost.run*`)
-3. `server/workflows/chat-host.ts` (`buildChatHost.run*`)
-4. `server/routes.ts` (both FlowHost instances: button path + text-resume path)
-
-And ensure each host passes context to `sendMessage` (which the runner provides as the third arg).
+- Test Panel: still works (no change).
+- WhatsApp: still works (no change).
+- Web Chat: fixed and verified.
 
 ### Remaining follow-ups
 
