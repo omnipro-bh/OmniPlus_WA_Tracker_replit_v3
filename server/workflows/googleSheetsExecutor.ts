@@ -166,6 +166,47 @@ function resolveColumnOffset(rows: any[][], rangeStartCol: string, spec: string)
   return -1;
 }
 
+/**
+ * Expand a range's end column to cover the right-most of the given columns.
+ * Only letter columns (A, B, ...) are considered; header names are ignored
+ * (their offset is resolved later against the fetched rows).
+ *
+ * Examples:
+ *   expandRangeEnd("Sheet1!A:C", ["A", "D", "E"]) -> "Sheet1!A:E"
+ *   expandRangeEnd("Sheet1!A2:C100", ["D"])       -> "Sheet1!A2:D100"
+ */
+function expandRangeEnd(range: string, columns: string[]): string {
+  const parts = range.split('!');
+  const sheet = parts.length > 1 ? parts[0] : '';
+  const cells = parts.length > 1 ? parts[1] : parts[0];
+
+  const m = cells.match(/^([A-Za-z]+)(\d*)(?::([A-Za-z]+)(\d*))?$/);
+  if (!m) return range;
+
+  const startCol = (m[1] || 'A').toUpperCase();
+  const startRow = m[2] || '';
+  const endCol = (m[3] || '').toUpperCase();
+  const endRow = m[4] || '';
+
+  let maxCol = startCol;
+  const consider = (c: string) => {
+    const cc = c.toUpperCase();
+    if (cc && isColumnLetter(cc) && columnToIndex(cc) > columnToIndex(maxCol)) {
+      maxCol = cc;
+    }
+  };
+  if (endCol) consider(endCol);
+  for (const c of columns) {
+    if (c) consider(c);
+  }
+
+  const cellRange = startRow !== '' || endRow !== ''
+    ? `${startCol}${startRow}:${maxCol}${endRow}`
+    : `${startCol}:${maxCol}`;
+
+  return sheet ? `${sheet}!${cellRange}` : cellRange;
+}
+
 // ── Operations ─────────────────────────────────────────────────────────────
 
 async function doRead(
@@ -178,7 +219,21 @@ async function doRead(
   const lookupKey = resolveTemplate(config.lookupKey ?? '', context);
   const { startCol, startRow } = parseRange(range);
 
-  const res = await client.spreadsheets.values.get({ spreadsheetId, range });
+  // Return mappings: either the new multi-column `returnMappings`, or the
+  // legacy single `returnColumn`/`returnVariable` fallback.
+  const returnMappings = (config.returnMappings || []).filter(
+    (m: any) => m?.column && m?.variable
+  );
+
+  // Expand the fetch range so it covers the lookup column and every return
+  // column. Otherwise columns beyond the configured range (e.g. range
+  // "Sheet1!A:C" with a mapping for "E") are silently dropped.
+  const returnSpecs = returnMappings.length > 0
+    ? returnMappings.map((m: any) => m.column)
+    : (config.returnColumn ? [config.returnColumn] : []);
+  const fetchRange = expandRangeEnd(range, [config.lookupColumn || 'A', ...returnSpecs]);
+
+  const res = await client.spreadsheets.values.get({ spreadsheetId, range: fetchRange });
   const rows: any[][] = res.data.values || [];
 
   const lookupOffset = resolveColumnOffset(rows, startCol, config.lookupColumn || 'A');
@@ -186,15 +241,9 @@ async function doRead(
     return {
       success: false,
       operation: 'read',
-      error: `Lookup column "${config.lookupColumn}" not found in range ${range}`,
+      error: `Lookup column "${config.lookupColumn}" not found in range ${fetchRange}`,
     };
   }
-
-  // Return mappings: either the new multi-column `returnMappings`, or the
-  // legacy single `returnColumn`/`returnVariable` fallback.
-  const returnMappings = (config.returnMappings || []).filter(
-    (m: any) => m?.column && m?.variable
-  );
 
   // Pre-resolve return columns (validate up front, before scanning rows).
   let resolvedReturns: Array<{ offset: number; variable: string }> | null = null;
