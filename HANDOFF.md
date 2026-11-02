@@ -1,43 +1,56 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Marketing site COMPLETE — 6 industry pages + 6 use-case cards live (58639d9 + data updates, 2026-10-31)
+## Workflow canvas — step edges deployed (2026-11-02)
 
 ### Status
 
-- Production HEAD: `58639d9` (last code deploy).
-- Marketing site is fully live and feature-complete.
-- Six industry pages:
-  - /industry/medical
-  - /industry/ecommerce
-  - /industry/automotive
-  - /industry/education
-  - /industry/real-estate
-  - /industry/insurance
-- Six use-case cards on /#use-cases, each with an image, description, and "See the [Industry] playbook" link.
-- Data change (not code): 3 new rows in `use_cases` (Education published from existing unpublished row, Real Estate + Insurance newly inserted).
+- Production HEAD: `a6924ae` (edge style change).
+- Workflow canvas edges changed from bezier curves to "smoothstep" (or "step") for better readability on complex flows with loops.
+- No node connections were affected — only the visual rendering.
+- Confirmed: loops (error retry, main menu navigation) work correctly in the engine (verified in previous commit); no cycle validation blocks them. maxSteps (100 live / 25 sandbox) prevents infinite loops.
 
-### Final architecture notes
+### Session accomplishments (full arc, multi-commit)
 
-- Industry pages are entirely config-driven. Adding a 7th industry requires: 1 config in industries.ts, 3 assets (animation HTML, hero WebP, thumbnail PNG), and a DB row in use_cases. ~30 minutes per industry.
-- All pages share the same section components (hero, pain points, demo modal, department features, how it works, ROI stats, compliance, CTA).
-- All 6 pages have working demo animations (modal opens on click, plays on loop, unmounts on close).
+1. Google Sheets node (read/append/update, multi-variable mapping, auto range expansion) — deployed and verified end-to-end on WhatsApp and Test Panel.
+2. WhatsApp message interpolation fix — all text fields now resolve {{variables}} in both live and sandbox.
+3. Sandbox Google Sheets support — Test Panel can execute and preview Sheets nodes.
+4. Loop support confirmed — no cycle validation exists; maxSteps protects against infinite loops.
+5. Step edge style — cleaner visual for complex flows.
 
-### Remaining follow-ups (in priority order)
+### Files changed (cumulative)
 
-1. **Arabic/RTL version** — high market value in Bahrain.
-2. **/contact page** — replace mailto: CTA across all 6 pages.
-3. **Fix Arabic insurance tenant 401** — pre-existing, customer-facing.
-4. **Hero style unification** — 6 illustrations have slightly different visual styles.
-5. **© 2024 → © 2025 footer update**.
-6. **Supabase credential rotation + project deletion** — after 30-day window (Nov 30).
-7. **Optional: more industries** — logistics, hospitality, F&B. Each ~30 min.
+- server/workflows/googleSheetsExecutor.ts (new)
+- server/workflows/flowRunner.ts (sheets branch, message context)
+- server/workflows/sandbox.ts (sheets wiring, message interpolation)
+- server/routes.ts (sheets in live hosts, sendNodeMessage interpolation, test endpoint)
+- client/src/components/WorkflowBuilder.tsx (palette entry, edge style)
+- client/src/components/WorkflowNodeConfig.tsx (sheets config form)
+- client/src/components/CustomWorkflowNode.tsx (sheets node renderer)
+- client/src/lib/workflow-sandbox.ts, WorkflowTestPanel.tsx (sheets trace)
+- shared/workflow-validation.ts (sheets reserved key)
+- package.json (@googleapis/sheets@14.0.0, google-auth-library@10.5.0)
 
-### Next session — start here
+### Key learnings
 
-The marketing site is done. Next priorities (user's choice):
-- Arabic/RTL version (highest business value)
-- /contact page (fixes a real conversion killer)
-- Or a new feature/phase entirely
+1. Node 20 constraint: @googleapis/sheets pinned to 14.0.0.
+2. google-auth-library pinned to exactly 10.5.0 (interop requirement — otherwise silent JWT failure).
+3. Message interpolation was a pre-existing limitation (4A-2a). Fixed for live + sandbox.
+4. Range auto-expansion in Google Sheets node prevents "empty column" bugs when mapping beyond declared range.
+5. Loops are natively supported; no code change needed. maxSteps is the guard.
+6. React Flow edge type is purely visual — existing connections are preserved.
+
+### Remaining follow-ups (priority order)
+
+1. Test append + update operations end-to-end (read is fully verified).
+2. Arabic/RTL version of marketing site.
+3. /contact page (replace mailto CTA).
+4. Fix Arabic insurance tenant 401 (pre-existing, customer-facing).
+5. Phase 2 Google Sheets (per-user OAuth) when first external client asks.
+6. More industries (logistics, hospitality, F&B).
+7. Supabase credential rotation + project deletion (after Nov 30).
+8. Hero style unification across 6 industry pages.
+
+### Session ended at ~45% budget
 
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
