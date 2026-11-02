@@ -926,6 +926,7 @@ export default function WorkflowBuilder({
               onDragOver={onDragOver}
               onNodeClick={onNodeClick}
               nodeTypes={customNodeTypes}
+              defaultEdgeOptions={{ type: 'smoothstep' }}
               fitView
               minZoom={0.1}
               maxZoom={2}
