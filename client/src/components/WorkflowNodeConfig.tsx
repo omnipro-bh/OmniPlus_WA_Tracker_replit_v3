@@ -255,6 +255,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           lookupColumn: config.lookupColumn,
           returnColumn: config.returnColumn,
           returnVariable: config.returnVariable,
+          returnMappings: config.returnMappings || [],
           dataMapping: config.dataMapping || [],
         },
         testContext: {}, // Empty context for testing
@@ -2285,6 +2286,22 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       updateConfig('dataMapping', newMapping);
     };
 
+    const returnMappings = config.returnMappings || [];
+
+    const addReturnMapping = () => {
+      updateConfig('returnMappings', [...returnMappings, { column: '', variable: '' }]);
+    };
+
+    const removeReturnMapping = (index: number) => {
+      updateConfig('returnMappings', returnMappings.filter((_: any, i: number) => i !== index));
+    };
+
+    const updateReturnMapping = (index: number, field: string, value: string) => {
+      const newMapping = [...returnMappings];
+      newMapping[index] = { ...newMapping[index], [field]: value };
+      updateConfig('returnMappings', newMapping);
+    };
+
     return (
       <div className="space-y-4">
         {/* Operation */}
@@ -2365,8 +2382,55 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         {/* Return fields (read only) */}
         {operation === 'read' && (
           <>
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Return Mappings</Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addReturnMapping}
+                  data-testid="button-add-sheets-return-mapping"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Mapping
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Map multiple columns to context variables for use in later nodes.
+              </p>
+              {returnMappings.map((mapping: any, index: number) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    placeholder="Column (e.g. A)"
+                    value={mapping.column || ''}
+                    onChange={(e) => updateReturnMapping(index, 'column', e.target.value)}
+                    data-testid={`input-sheets-return-mapping-${index}-column`}
+                  />
+                  <Input
+                    placeholder="Variable (e.g. fees)"
+                    value={mapping.variable || ''}
+                    onChange={(e) => updateReturnMapping(index, 'variable', e.target.value)}
+                    data-testid={`input-sheets-return-mapping-${index}-variable`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeReturnMapping(index)}
+                    data-testid={`button-remove-sheets-return-mapping-${index}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <Separator />
+            <p className="text-xs text-amber-600">
+              Legacy single-column return (kept for old workflows — prefer Return Mappings above).
+            </p>
             <div>
-              <Label htmlFor="return-column">Return Column</Label>
+              <Label htmlFor="return-column">Return Column (legacy)</Label>
               <Input
                 id="return-column"
                 placeholder="B (or header name, e.g. Fees)"
@@ -2376,7 +2440,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               />
             </div>
             <div>
-              <Label htmlFor="return-variable">Return Variable</Label>
+              <Label htmlFor="return-variable">Return Variable (legacy)</Label>
               <Input
                 id="return-variable"
                 placeholder="fees"

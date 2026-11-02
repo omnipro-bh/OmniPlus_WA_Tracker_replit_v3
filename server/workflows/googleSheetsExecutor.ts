@@ -36,6 +36,14 @@ export interface GoogleSheetsDataMapping {
   value: string;
 }
 
+/** read: map a single column to a context variable (multi-column return). */
+export interface GoogleSheetsReturnMapping {
+  /** Column to read: "A" or a header name like "Fees". */
+  column: string;
+  /** Context variable name to store the value into. */
+  variable: string;
+}
+
 export interface GoogleSheetsNodeConfig {
   operation: GoogleSheetsOperation;
   /** Spreadsheet ID from the sheet URL (the long id between /d/ and /edit). */
@@ -46,10 +54,12 @@ export interface GoogleSheetsNodeConfig {
   lookupKey: string;
   /** Column the key lives in: "A" or a header name like "Student ID". */
   lookupColumn: string;
-  /** read: column to return ("B" or a header name like "Fees"). */
+  /** read (legacy): column to return ("B" or a header name like "Fees"). */
   returnColumn?: string;
-  /** read: context variable to store the returned value into. */
+  /** read (legacy): context variable to store the returned value into. */
   returnVariable?: string;
+  /** read: return multiple columns, each mapped to a variable name. */
+  returnMappings?: GoogleSheetsReturnMapping[];
   /** append/update: columns and values to write. */
   dataMapping?: GoogleSheetsDataMapping[];
 }
@@ -180,15 +190,41 @@ async function doRead(
     };
   }
 
-  const returnOffset = config.returnColumn
-    ? resolveColumnOffset(rows, startCol, config.returnColumn)
-    : null;
-  if (config.returnColumn && (returnOffset === null || returnOffset < 0)) {
-    return {
-      success: false,
-      operation: 'read',
-      error: `Return column "${config.returnColumn}" not found in range ${range}`,
-    };
+  // Return mappings: either the new multi-column `returnMappings`, or the
+  // legacy single `returnColumn`/`returnVariable` fallback.
+  const returnMappings = (config.returnMappings || []).filter(
+    (m: any) => m?.column && m?.variable
+  );
+
+  // Pre-resolve return columns (validate up front, before scanning rows).
+  let resolvedReturns: Array<{ offset: number; variable: string }> | null = null;
+  if (returnMappings.length > 0) {
+    resolvedReturns = [];
+    for (const m of returnMappings) {
+      const offset = resolveColumnOffset(rows, startCol, m.column);
+      if (offset < 0) {
+        return {
+          success: false,
+          operation: 'read',
+          error: `Return column "${m.column}" not found in range ${range}`,
+        };
+      }
+      resolvedReturns.push({ offset, variable: m.variable });
+    }
+  }
+
+  let legacyReturnOffset: number | null = null;
+  if (returnMappings.length === 0) {
+    legacyReturnOffset = config.returnColumn
+      ? resolveColumnOffset(rows, startCol, config.returnColumn)
+      : null;
+    if (config.returnColumn && (legacyReturnOffset === null || legacyReturnOffset < 0)) {
+      return {
+        success: false,
+        operation: 'read',
+        error: `Return column "${config.returnColumn}" not found in range ${range}`,
+      };
+    }
   }
 
   for (let i = 0; i < rows.length; i++) {
@@ -196,11 +232,30 @@ async function doRead(
     const cell = row[lookupOffset];
     if (cell !== undefined && cell !== null && String(cell) === lookupKey) {
       const sheetRow = startRow + i;
-      const value = returnOffset !== null && returnOffset >= 0 ? row[returnOffset] : row;
 
       const mappedVariables: Record<string, any> = {};
-      if (config.returnVariable) {
-        mappedVariables[config.returnVariable] = value;
+      let data: any;
+
+      if (resolvedReturns) {
+        // Multi-column return: one variable per mapping.
+        for (const r of resolvedReturns) {
+          mappedVariables[r.variable] = row[r.offset];
+        }
+        data = { ...mappedVariables };
+      } else if (legacyReturnOffset !== null && legacyReturnOffset >= 0) {
+        // Legacy: single returnColumn.
+        const value = row[legacyReturnOffset];
+        if (config.returnVariable) {
+          mappedVariables[config.returnVariable] = value;
+        }
+        data = value;
+      } else {
+        // Legacy: no returnColumn — return the whole row.
+        const value = row;
+        if (config.returnVariable) {
+          mappedVariables[config.returnVariable] = value;
+        }
+        data = value;
       }
 
       return {
@@ -208,7 +263,7 @@ async function doRead(
         operation: 'read',
         found: true,
         rowIndex: sheetRow,
-        data: value,
+        data,
         mappedVariables,
       };
     }
@@ -417,6 +472,7 @@ export async function executeGoogleSheetsWorkflowNode(
     lookupColumn: node.data?.config?.lookupColumn || 'A',
     returnColumn: node.data?.config?.returnColumn,
     returnVariable: node.data?.config?.returnVariable,
+    returnMappings: node.data?.config?.returnMappings || [],
     dataMapping: node.data?.config?.dataMapping || [],
   };
 
