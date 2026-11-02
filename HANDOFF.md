@@ -26,6 +26,21 @@
 - More industries.
 - Supabase credential rotation + deletion.
 
+## Multi-host wiring checklist (for future integrations)
+
+When adding a new node type that runs an executor, it must be wired in **all 4 places**, or it will silently degrade to `unsupported_node` on the missed host:
+
+1. `server/workflows/flowRunner.ts` — add the branch to `runFlow` and to the `FlowHost` interface.
+2. `server/workflows/sandbox.ts` — implement the host method on `buildSandboxHost`.
+3. `server/workflows/chat-host.ts` — implement the host method on `buildChatHost`.
+4. `server/routes.ts` — implement the host method on **both** live `FlowHost` instances (button path + text-resume path).
+
+Additionally:
+- Every host's `sendMessage` must pass the context (third arg) to `buildSandboxMessage` / `sendNodeMessage`, or `{{variables}}` will render blank.
+- `flowRunner.ts` silently degrades missing host methods to `status: stopped, stopReason: unsupported_node`. This masks the bug — always check the `[Flow] ... is not supported here - stopping` warning in `omniplus-error.log` after deploying a new node type.
+
+Precedent: the Google Sheets node was wired in 3 of 4 hosts (missing chat-host.ts), which broke web chat silently for weeks (fixed in commit `f07f1f6`).
+
 ## Industry pages — Medical + E-commerce + Automotive deployed (a44feeb, 2026-10-31)
 
 ### Status
