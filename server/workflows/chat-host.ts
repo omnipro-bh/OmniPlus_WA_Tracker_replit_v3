@@ -21,7 +21,6 @@
  *
  * Deliberately NOT fixed here (pre-existing 4A-2a behaviour, identical in
  * production WhatsApp — see HANDOFF "Known limitations / deferred items"):
- *   - `message.text` bodies do not substitute `{{variables}}`.
  *   - `buildExecutionContext` spreads `conversationState.context` last, so a
  *     visitor variable named `phone` / `message` / `name` shadows the built-ins.
  *
@@ -36,6 +35,7 @@ import { conversationStates } from "@shared/schema";
 import type { WebChatMessage, WebChatSession } from "@shared/schema";
 import { storage } from "../storage";
 import { executeHttpNode } from "./httpNodeExecutor";
+import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
 import type { FlowHost, TraceEntry } from "./flowRunner";
 import {
   buildSandboxMessage,
@@ -246,8 +246,8 @@ export function buildChatHost(opts: {
     errorPolicy: "stop",
     maxSteps: CHAT_MAX_STEPS,
 
-    sendMessage: async (node, nodeId) => {
-      const bubble = buildSandboxMessage(node, nodeId);
+    sendMessage: async (node, nodeId, context) => {
+      const bubble = buildSandboxMessage(node, nodeId, context);
       const payload = toBubblePayload(bubble);
 
       // Throws ⇒ the runner catches it and stops with `stopReason: 'error'`,
@@ -290,6 +290,27 @@ export function buildChatHost(opts: {
         ok: httpResult.success,
         nextHandle: httpResult.nextHandle,
         context: next,
+      };
+    },
+
+    runGoogleSheets: async (node, nodeId, context) => {
+      // Mirrors sandbox.ts runGoogleSheets. Google Sheets has no mock mode: it
+      // always hits the real Sheets API via the shared service account.
+      const sheetsResult = await executeGoogleSheetsWorkflowNode(
+        node,
+        { context } as any,
+        {},
+        { phone: sessionKey, userId: opts.linkUserId }
+      );
+
+      return {
+        ok: sheetsResult.success,
+        nextHandle: sheetsResult.nextHandle,
+        context: sheetsResult.stateUpdate,
+        detail: {
+          operation: sheetsResult.result?.operation,
+          found: sheetsResult.result?.found,
+        },
       };
     },
 
