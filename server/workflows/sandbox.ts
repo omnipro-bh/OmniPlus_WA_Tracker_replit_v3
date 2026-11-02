@@ -26,6 +26,7 @@ import { z } from "zod";
 import { enforceContextCeiling, getNextNodeBySingleEdge, MAX_CAPTURE_LENGTH } from "./flowControl";
 import { executeHttpNode } from "./httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
+import { resolveTemplate } from "./httpExecutor";
 import {
   FLOW_STEP_LIMITS,
   type FlowHost,
@@ -169,9 +170,24 @@ export const sandboxTickSchema = z.object({
  * read by `sendNodeMessage` in routes.ts (the production sender), so the
  * sandbox preview shows what production would render.
  */
-export function buildSandboxMessage(node: any, nodeId: string): SandboxMessage {
+export function buildSandboxMessage(node: any, nodeId: string, context?: any): SandboxMessage {
   const nodeType = node?.data?.type || node?.data?.nodeType || "";
-  const c = node?.data?.config || {};
+
+  // Resolve {{variable}} placeholders in the message text against the current
+  // flow context (same behaviour as the live sendNodeMessage). Missing
+  // variables resolve to an empty string; plain text is unchanged.
+  const ctx = context || {};
+  const resolve = (value: any): any => {
+    if (typeof value === 'string') return resolveTemplate(value, ctx);
+    if (Array.isArray(value)) return value.map(resolve);
+    if (value && typeof value === 'object') {
+      const out: Record<string, any> = {};
+      for (const key of Object.keys(value)) out[key] = resolve(value[key]);
+      return out;
+    }
+    return value;
+  };
+  const c = resolve(node?.data?.config || {});
   const base = { nodeId, nodeType };
 
   switch (nodeType) {
@@ -303,8 +319,8 @@ export function buildSandboxHost(opts: {
     errorPolicy: "stop",
     maxSteps: opts.maxSteps ?? FLOW_STEP_LIMITS.sandbox,
 
-    sendMessage: async (node, nodeId) => {
-      const msg = buildSandboxMessage(node, nodeId);
+    sendMessage: async (node, nodeId, ctx) => {
+      const msg = buildSandboxMessage(node, nodeId, ctx);
       messages.push(msg);
       return { ok: true, payload: msg };
     },

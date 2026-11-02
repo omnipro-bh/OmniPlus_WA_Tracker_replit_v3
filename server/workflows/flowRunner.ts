@@ -115,7 +115,7 @@ export interface BookingNodeResult {
  */
 export interface FlowHost {
   /** Send the node's outbound message. May throw — `errorPolicy` decides. */
-  sendMessage(node: any, nodeId: string): Promise<SentMessage>;
+  sendMessage(node: any, nodeId: string, context: any): Promise<SentMessage>;
 
   /** Execute an HTTP node and return the next handle plus the new context. */
   runHttp(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
@@ -537,7 +537,7 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
 
       // ── Text input (stop and wait) ─────────────────────────────────────
       if (nodeType === 'input.text') {
-        const sent = await host.sendMessage(node, nodeId);
+        const sent = await host.sendMessage(node, nodeId, context);
 
         await host.persist(context, nodeId, 'cursor');
 
@@ -604,7 +604,7 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
         nodeType &&
         (nodeType.startsWith('message.') || INTERACTIVE_NODE_TYPES.includes(nodeType))
       ) {
-        const sent = await host.sendMessage(node, nodeId);
+        const sent = await host.sendMessage(node, nodeId, context);
 
         if (sent.ok && host.afterNodeSent) {
           const extended = await host.afterNodeSent(node, nodeId, context);
