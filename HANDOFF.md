@@ -1,30 +1,55 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## Web chat Sheets fix — verified live (9b5b825, 2026-11-02)
+## Public chat page — split layout + WhatsApp theme + demo copy (b86f378, 2026-11-03)
 
 ### Status
 
-- Production HEAD: `9b5b825` (`f07f1f6` code + docs).
-- Web chat now supports `action.google_sheets` (read + append/update via same hook).
-- Web chat `sendMessage` interpolates `{{variables}}`.
-- All 4 hosts (WhatsApp button, WhatsApp text-resume, Test Panel sandbox, Web Chat) verified aligned.
-- End-to-end verified: Web Chat → Check Fees → `12352` → bot replied with interpolated fees/name/due_date/class.
+- Production HEAD: `b86f378`.
+- Public chat page (`/chat/:token`) is now a split-layout product experience:
+  - Left panel: heading (workflow name), "How to use" (3 demo steps), "Important notes" (3 demo bullets), Start over, End chat link, Need help, Powered by OMNI PLUS.
+  - Right panel: CSS phone frame with WhatsApp theme (green header, beige wallpaper, white incoming, green outgoing with ✓✓).
+  - Mobile: collapsible intro card above full-width chat.
+- Backend meta projection added: workflowName + linkLabel on bootstrap and GET /session.
+- ChatBubble theme prop (default | whatsapp) — non-breaking.
+- Chat engine (usePublicChat) untouched.
 
-### Regression checks
+### Files changed (this session)
 
-- Test Panel: still works (no change).
-- WhatsApp: still works (no change).
-- Web Chat: fixed and verified.
+- server/routes.ts (+8) — meta projection
+- client/src/lib/chat-api.ts (+7) — ChatPageMeta type
+- client/src/lib/chat-page-config.ts (new) — config type + default copy
+- client/src/components/chat/phone-frame.tsx (new) — CSS device frame
+- client/src/components/chat/chat-panel.tsx (new) — extracted chat surface
+- client/src/components/chat/chat-left-panel.tsx (new) — desktop panel + mobile intro
+- client/src/components/chat/ChatBubble.tsx (+38/-11) — theme prop + WhatsApp styling
+- client/src/pages/public-chat.tsx (rewritten) — thin composition layer
 
-### Remaining follow-ups
+### Key learnings
 
-- Test append + update operations end-to-end (read is fully verified).
-- Arabic/RTL version.
-- /contact page.
-- Arabic insurance tenant 401.
-- Phase 2 Google Sheets (OAuth).
-- More industries.
-- Supabase credential rotation + deletion.
+- Chat tokens are stored as SHA-256 only. Live URLs can't be recovered from repo or DB — owners must save the URL on create/rotate, or rotate to get a new one.
+- ChatBubble theme prop is non-breaking: default = current OMNI blue (used elsewhere); whatsapp = green/beige/✓✓.
+- The chat engine is fully decoupled from the visual layer — future UI changes (e.g., adding a dark mode) won't touch the polling logic.
+
+### Remaining follow-ups (priority order)
+
+1. **AI Agent node** (user's next priority) — see next section.
+2. Test append + update operations of Google Sheets node end-to-end.
+3. Arabic/RTL version of marketing site.
+4. /contact page (replace mailto CTA).
+5. Arabic insurance tenant 401 (pre-existing, customer-facing).
+6. Phase 2 Google Sheets (per-user OAuth).
+7. More industries (logistics, hospitality, F&B).
+8. Supabase credential rotation + project deletion (after Nov 30).
+
+### Next session — AI Agent node (starting point)
+
+The user is planning to build an AI Agent node for the workflow engine. This is expected to be a large feature. Before implementation, the next session should:
+
+1. Read HANDOFF's "AI Agent node — investigation needed" section (once written).
+2. Decide on LLM provider (OpenAI, Anthropic, Google Gemini, or local).
+3. Decide on authentication model (shared service account like Google Sheets Model A, or per-user OAuth).
+4. Propose node config schema (system prompt, model, temperature, available tools/functions, context injection).
+5. Investigate how the flowRunner passes context to the node, and how the AI response should route to success/error handles.
 
 ## Multi-host wiring checklist (for future integrations)
 
