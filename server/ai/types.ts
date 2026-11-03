@@ -60,6 +60,20 @@ export interface LlmUsage {
   totalTokens: number;
 }
 
+/**
+ * The wire value for the OpenAI `tool_choice` param. A specific function object
+ * forces the model to call exactly that tool; `auto`/`required`/`none` are the
+ * standard string forms.
+ */
+export type LlmToolChoice =
+  | 'auto'
+  | 'none'
+  | 'required'
+  | { type: 'function'; function: { name: string } };
+
+/** Owner-facing tool-choice override for an AI node (Phase 2). */
+export type AiForceToolChoice = 'auto' | 'send_buttons' | 'handover';
+
 export interface LlmCompletionRequest {
   messages: LlmMessage[];
   /** Defaults to the client's `defaultModel` when omitted. */
@@ -75,7 +89,7 @@ export interface LlmCompletionRequest {
   /** Tool definitions offered to the model (Phase 2). Omit for plain chat. */
   tools?: LlmToolDef[];
   /** How the model may use tools. Defaults to `auto` when `tools` is set. */
-  toolChoice?: 'auto' | 'none' | 'required';
+  toolChoice?: LlmToolChoice;
   /** Disable parallel tool calls (one tool call per turn). */
   parallelToolCalls?: boolean;
 }
@@ -118,4 +132,6 @@ export interface AiAgentSettings {
   historyLimit: number;
   /** Context root variable that receives the reply (default `ai_response`). */
   responseVariable: string;
+  /** Force the model to use a specific tool (`auto` lets it decide). */
+  forceToolChoice: AiForceToolChoice;
 }

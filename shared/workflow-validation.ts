@@ -52,6 +52,9 @@ export const AI_MAX_HISTORY_LIMIT = 50;
 export const AI_MAX_BUTTONS = 3;
 export const AI_BUTTON_ID_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
+/** Phase 2 forced tool-choice values (config.forceToolChoice). */
+export const AI_FORCE_TOOL_CHOICES = ['auto', 'send_buttons', 'handover'] as const;
+
 /** Entry nodes that the runtime can actually start from the first-message path. */
 const SUPPORTED_ENTRY_TYPES = [
   'message.text',
@@ -222,6 +225,34 @@ export function validateWorkflowNodeConfigs(
         addWarning(
           nodeId,
           `"${label}" (AI Agent): system prompt is empty; the AI will improvise its business instructions.`
+        );
+      }
+
+      // Phase 2: forced tool choice must be a known value.
+      const forceToolChoice =
+        typeof config.forceToolChoice === 'string' && config.forceToolChoice
+          ? config.forceToolChoice
+          : 'auto';
+      if (!(AI_FORCE_TOOL_CHOICES as readonly string[]).includes(forceToolChoice)) {
+        addError(
+          nodeId,
+          `"${label}" (AI Agent): tool choice must be one of auto, send_buttons, handover.`
+        );
+      } else if (
+        forceToolChoice === 'send_buttons' &&
+        !(Array.isArray(config.buttons) && config.buttons.length > 0)
+      ) {
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): tool choice forces send_buttons, but no buttons are configured.`
+        );
+      } else if (
+        forceToolChoice === 'handover' &&
+        !(Array.isArray(config.handoverDepartments) && config.handoverDepartments.length > 0)
+      ) {
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): tool choice forces handover, but no handover departments are configured.`
         );
       }
 

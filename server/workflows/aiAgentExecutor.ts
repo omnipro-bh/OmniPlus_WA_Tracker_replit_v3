@@ -38,11 +38,14 @@ import {
 } from '../ai/tools';
 import type {
   AiAgentSettings,
+  AiForceToolChoice,
   LlmClient,
   LlmCompletionResult,
   LlmFinishReason,
   LlmMessage,
   LlmProviderId,
+  LlmToolChoice,
+  LlmToolDef,
   LlmUsage,
 } from '../ai/types';
 
@@ -76,6 +79,8 @@ export interface AiAgentNodeConfig {
   buttons?: AiButtonSlot[];
   /** Phase 2: declared departments for handover. */
   handoverDepartments?: AiDepartmentSlot[];
+  /** Phase 2: force the model to use a specific tool (`auto` lets it decide). */
+  forceToolChoice?: AiForceToolChoice | string;
 }
 
 export interface AiAgentExecutionContext {
@@ -154,6 +159,28 @@ function normalizeResponseVariable(value: any): string {
   return name;
 }
 
+/** Resolve the owner-facing tool-choice override, defaulting to `auto`. */
+function normalizeForceToolChoice(value: any): AiForceToolChoice {
+  if (value === 'send_buttons' || value === 'handover') return value;
+  return 'auto';
+}
+
+/**
+ * Map `forceToolChoice` to the wire `tool_choice`. A forced tool is only applied
+ * when that tool was actually declared (an empty enum can't be forced); otherwise
+ * we fall back to `auto` rather than sending an unreachable function object.
+ */
+function resolveToolChoice(force: AiForceToolChoice, tools: LlmToolDef[]): LlmToolChoice {
+  if (force === 'send_buttons' || force === 'handover') {
+    const name = force === 'send_buttons' ? TOOL_SEND_BUTTONS : TOOL_HANDOVER;
+    if (tools.some((tool) => tool.function.name === name)) {
+      return { type: 'function', function: { name } };
+    }
+    console.warn(`[AI Executor] forceToolChoice "${force}" ignored: no "${name}" tool declared.`);
+  }
+  return 'auto';
+}
+
 /**
  * Turn raw node config into validated settings. Invalid values fall back to safe
  * defaults rather than failing the node — the save-time validator in
@@ -172,6 +199,7 @@ export function normalizeAiConfig(config: AiAgentNodeConfig | undefined): AiAgen
       clampNumber(config?.historyLimit, 1, AI_MAX_HISTORY_LIMIT, AI_DEFAULT_HISTORY_LIMIT)
     ),
     responseVariable: normalizeResponseVariable(config?.responseVariable),
+    forceToolChoice: normalizeForceToolChoice(config?.forceToolChoice),
   };
 }
 
@@ -389,7 +417,7 @@ export async function executeAiAgentNode(
   };
   if (tools.length > 0) {
     requestBase.tools = tools;
-    requestBase.toolChoice = 'auto';
+    requestBase.toolChoice = resolveToolChoice(settings.forceToolChoice, tools);
     requestBase.parallelToolCalls = false;
   }
 
@@ -610,6 +638,7 @@ export async function executeAiAgentWorkflowNode(
     responseVariable: rawConfig.responseVariable,
     buttons: rawConfig.buttons,
     handoverDepartments: rawConfig.handoverDepartments,
+    forceToolChoice: rawConfig.forceToolChoice,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);

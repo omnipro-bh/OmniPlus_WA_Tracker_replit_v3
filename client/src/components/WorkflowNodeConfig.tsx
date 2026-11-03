@@ -2975,6 +2975,28 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           )}
         </div>
 
+        {/* Force Tool Choice */}
+        <div>
+          <Label htmlFor="ai-force-tool-choice">Tool Choice</Label>
+          <Select
+            value={config.forceToolChoice || 'auto'}
+            onValueChange={(value) => updateConfig('forceToolChoice', value)}
+          >
+            <SelectTrigger id="ai-force-tool-choice" data-testid="select-ai-force-tool-choice">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto (let AI decide)</SelectItem>
+              <SelectItem value="send_buttons">Force: Send Buttons</SelectItem>
+              <SelectItem value="handover">Force: Handover</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Force the model to use a specific tool instead of letting it decide. Forcing requires
+            the matching tool to be configured (buttons / departments).
+          </p>
+        </div>
+
         <Separator />
 
         {/* Test */}
