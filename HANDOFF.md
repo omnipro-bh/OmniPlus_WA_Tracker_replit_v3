@@ -1,67 +1,55 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## AI Agent Phase 1 — fully verified end-to-end (65c56fc, 2026-11-03)
+## AI Agent Phase 2 Part 1 — tool loop + send_buttons + handover (0a84d65, 2026-11-03)
 
 ### Status
 
-- Production HEAD: `65c56fc`.
-- AI Agent Phase 1 is fully deployed and verified on all 3 channels:
-  - WhatsApp: verified (real DeepSeek + Groq calls working).
-  - Test Panel: verified in mock mode (zero cost).
-  - Web Chat: verified end-to-end (user's loop-back pattern works).
-- Both providers verified with live API calls:
-  - DeepSeek: `deepseek-chat` (1.1s latency).
-  - Groq: `qwen/qwen3.8-27b` (331ms latency).
+- Production HEAD: `65c56fc` (unchanged — no deploy yet).
+- Local repo HEAD: `0a84d65` (2 commits ahead of production).
+- Repo commits: `76ffc21` (types) + `0a84d65` (tool loop).
+- Phase 2 Part 1 is complete: tool infrastructure + executor tool loop + 43 tests passing.
+- Phase 2 Part 2 (host wiring + UI + validation + deploy) is pending.
 
-### Phase 1 delivered
+### What Part 1 delivered
 
-- `action.ai_agent` node in palette
-- Provider dropdown: deepseek / groq / mock
-- System prompt with language rules (Arabic in → Arabic out)
-- Per-node conversation history (12 msgs / 8KB cap)
-- `context.ai_response` variable interpolation
-- `ai_usage_logs` table (logging only)
-- Multi-host wiring (WhatsApp button + WhatsApp text-resume + web chat + Test Panel sandbox)
-- Test AI Reply button in config form (real API call from builder)
-- 32 unit tests passing
-- Phase 1 scope: no tools, no debounce, no schedule, no limits (Phase 2/3 pending)
+- `server/ai/types.ts`: `LlmToolDef`, `LlmToolCall`, `tool` role, `tool_calls`/`tool_call_id`/`name` fields, `'tool_calls'` finish reason, `tools`/`toolChoice`/`parallelToolCalls` on request, `toolCalls` on result.
+- `server/ai/clients/openaiCompatible.ts`: tool passthrough, `tool_calls` parsing (malformed-JSON-guarded), `tool` role serialization.
+- `server/ai/clients/mock.ts`: scripted tool-call queue.
+- `server/ai/registry.ts`: DeepSeek defaults updated to `deepseek-flash` / `deepseek-v4-pro`.
+- `server/ai/tools.ts` (new): `buildSendButtonsTool` (enum-constrained, maxItems 3), `buildHandoverTool` (enum-constrained department), `buildToolList`, arg validation.
+- `server/workflows/aiAgentExecutor.ts`: 3-round tool loop, terminal tools (`send_buttons`, `handover`), undeclared ID rejection, handover context write, `nextHandle` widened to `'success' | 'buttons' | 'handover' | 'error'`.
+- `server/workflows/flowRunner.ts`: `HttpRunResult.nextHandle` widened.
+- 11 new tests (43 total, all passing).
 
-### Verified behaviors
+### 7 decisions locked (from investigation)
 
-- AI correctly declines to hallucinate data (e.g., fees) and directs users to human contact. This is the safe default behavior we designed.
-- Arabic messages get Arabic replies (via system prompt).
-- Conversation history persists across turns within the per-node cap.
-- 402 error on DeepSeek was a billing issue (now resolved).
+- Q1: Per-button handles (N+3 total on the AI node).
+- Q2: Terminal tools (`send_buttons`/`handover` execute once and route; no second model round).
+- Q3: Model's content becomes button body text; fallback "Please choose an option:".
+- Q4: Keep text on store-in-context path (`{{ai_response}}`); only buttons direct-send.
+- Q5: Handover is signal-only; downstream graph owns the message + HTTP notify.
+- Q6: DeepSeek defaults updated to `deepseek-flash` / `deepseek-v4-pro`.
+- Q7: Declared buttons capped at 3 in config UI.
 
-### Known limitations (Phase 2/3)
+### What Part 2 must do (next session)
 
-1. Test Panel AI mode is hardcoded to mock (Live toggle only controls HTTP nodes).
-2. AI node must be reached via a text tick (input.text before it).
-3. No tools (buttons/handover/tools) — Phase 2.
-4. No schedule — Phase 3.
-5. No usage limits — Phase 3 (logging only).
-6. No per-conversation message cap — Phase 3.
-7. No PII redaction before sending to LLM — Phase 2/3.
+1. Wire `send_buttons` payload through `routes.ts` (both hosts), `sandbox.ts`, `chat-host.ts` — direct button sending (not store-in-context).
+2. Wire handover context through the same 4 places (already have `context.ai[nodeId].handover`; downstream nodes read it).
+3. Config UI: buttons list (max 3), handover departments list, in `WorkflowNodeConfig.tsx`.
+4. `CustomWorkflowNode.tsx`: render N+3 handles (one per button + success + handover + error).
+5. `shared/workflow-validation.ts`: validate button/department IDs (unique, ≤20 chars, ≤3 buttons).
+6. Update the `WorkflowNodeConfig.tsx:2674` placeholder from `'deepseek-chat'` to `'deepseek-flash'`.
+7. Deploy + verify end-to-end on WhatsApp (real `send_buttons` call) + web chat (button bubble) + Test Panel (mock mode with queue).
 
-### Remaining roadmap
+### Known limitations carried into Part 2
 
-- Phase 2 (Tools): send_buttons tool, handover tool, function-calling normalization per provider, button routing validation, web chat debounce. Est. 2-3 sessions.
-- Phase 3 (Limits & Schedule): schedule config (timezone-aware), daily/monthly usage caps, per-conversation message cap that triggers handover. Est. 1-2 sessions.
+- Mock provider only supports text replies in sandbox; need to verify tool-call queue works there (Phase 2 Part 2 test).
+- Button routing at config save needs the "AI-invented ID" rejection test.
+- The dead DeepSeek models are now updated, but the AI node's config UI hint still says `'deepseek-chat'`.
 
-### Multi-host wiring checklist (for Phase 2)
+### Next session — start Phase 2 Part 2
 
-Every new node or tool must be wired in 4 places: flowRunner, sandbox, chat-host, routes.ts (both live hosts). The AI node is now wired in all 4 — Phase 2 tools will reuse the same `runAi` host method, so no new wiring is needed for tools.
-
-### Next session — start Phase 2
-
-Begin Phase 2 implementation:
-1. Function-calling normalization (OpenAI format canonical for DeepSeek/Groq; Anthropic translation when Anthropic ships).
-2. Tools: send_buttons (enum-constrained to node config's declared buttons), handover (to sales/support departments).
-3. Tool loop (multi-round: model calls tool → engine executes → model responds).
-4. Button routing validation (AI-invented IDs must be rejected at config save).
-5. Web chat debounce (optional, based on user preference).
-
-Read this section first. All Phase 1 decisions are locked.
+Read this section. Implement Part 2 scope: host wiring + UI + validation + deploy + verify. Do NOT redo Part 1 work (types, tool loop, tools are all committed and tested).
 
 ## AI Agent node — investigation complete, Phase 1 ready to implement (2026-11-03)
 
