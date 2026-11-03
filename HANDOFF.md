@@ -1,5 +1,84 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## AI Agent node — investigation complete, Phase 1 ready to implement (2026-11-03)
+
+### Status
+
+- Production HEAD: `d23c1d3` (unchanged — this session was investigation + docs only).
+- AI Agent node investigation is **complete**. Full architecture / provider / chat-handling / testing report delivered; all 12 open questions answered and locked (below).
+- **Phase 1 is ready to implement**: OpenAI only, no tools, no debounce, capped in-context history.
+- **No code written yet.** The only changed file in this session is `HANDOFF.md`.
+
+### Locked decisions
+
+1. **Auth/billing** — shared platform API key with hard limits (Model A, same shape as the Google Sheets service account). Per-tenant BYO key deferred to Phase 3.
+2. **Providers** — OpenAI only in Phase 1 (`gpt-4o-mini`). Anthropic + DeepSeek in Phase 2. Gemini last.
+3. **History storage** — Phase 1 keeps history in context, capped at **8 KB / 12 messages**. `ai_messages` table in Phase 2.
+4. **Buttons** — owner-declared slots only. No free-form AI-generated button IDs.
+5. **Handover** — the node only signals the `handover` handle; documented pattern is message + HTTP notify.
+6. **Streaming** — none. Deferred to Phase 3+.
+7. **Debounce** — web chat in Phase 2. WhatsApp needs an async queue, deferred to Phase 2b.
+8. **Timeout/retry** — 20 s timeout; 2 retries on 429/5xx only; no retry on 4xx.
+9. **Handles** — `success`, `buttons`, `handover`, `error`. `outside_hours` added in Phase 3.
+10. **PII** — redact phone numbers in Phase 2; document the third-party data flow in the owner UI.
+11. **Handover keywords** — Arabic: `موظف`, `مندوب`, `بشري`, `مدير`. English: "real person", "speak to someone".
+12. **Cost caps** — `$2/day` dev cap; `$0.50/day` per workflow cap in Phase 1 production.
+
+### Investigation findings (critical)
+
+1. **`MAX_CONTEXT_BYTES = 65536`** (`server/workflows/flowControl.ts:47`, measured as `JSON.stringify(context).length`). History stored in `conversation_states.context` will **silently break after 8-12 messages**. `enforceContextCeiling` only truncates a single named key — it cannot trim nested history. Phase 1 caps at 8 KB / 12 messages; Phase 2 moves history to `ai_messages`.
+2. **No WhatsApp message transcript exists in the DB.** `messages` is the bulk-send queue, `sent_messages` is a 24 h button-routing map, `workflow_executions` only holds `trigger_data` / `responses_sent`. WhatsApp AI history must live in `context.ai[nodeId].history` (Phase 1) or `ai_messages` (Phase 2). Web chat does have a real transcript in `web_chat_messages`.
+3. **The Gemini SDK named in the brief is dead.** `@google/generative-ai` is deprecated (critical-fix-only, EOL 2025-11-30). Use **`@google/genai`** when Gemini ships.
+4. **The `openai` SDK covers 5 providers** (OpenAI, DeepSeek, GLM/Zhipu, Grok/xAI, Mistral) via `baseURL` override. Net new dependencies: **3 total** — `openai`, `@anthropic-ai/sdk`, `@google/genai`.
+5. **AI-invented button IDs cannot route.** `resolveButtonTarget` (`flowRunner.ts:190-321`) needs either `edge.sourceHandle === buttonId` or a matching entry in the source node's `data.config.buttons[]`. A model-invented ID matches neither and the tap silently does nothing. The `send_buttons` tool must be **enum-constrained** to owner-declared slots from node config, and save-time validation must warn about declared buttons with no outgoing edge.
+6. **WhatsApp debounce cannot be synchronous.** The WHAPI webhook must return 200 fast or it retries (and re-runs the flow); a server-side wait also risks the 524s already in the error log. Phase 1: no debounce. Phase 2: web chat only. Phase 2b: async queue.
+
+Bonus finding: an AI turn is always triggered by a text reply, so the AI node runs in the **text-resume host** (`routes.ts:11790`), not the button host — that is the wiring most likely to be forgotten. The AI node should store its reply in `context.ai[nodeId].text` and let a downstream `message.text` node send `{{ai.<nodeId>.text}}`; this needs zero engine changes and works in all hosts.
+
+### Files to create in Phase 1 (~900 LOC)
+
+Server:
+- `server/ai/types.ts` — `LlmClient`, `LlmMessage`, `LlmToolDef`, `LlmCompletionResult`
+- `server/ai/registry.ts` — provider registry + env resolution + client cache
+- `server/ai/prompt.ts` — system prompt skeleton + language rules (Arabic in → Arabic out)
+- `server/ai/contextBuilder.ts` — history trim (8 KB / 12 msgs) + token-budget estimate
+- `server/ai/clients/openaiCompatible.ts` — one class for the whole OpenAI-compatible family
+- `server/ai/clients/mock.ts` — deterministic mock provider (no network, no spend)
+- `server/workflows/aiAgentExecutor.ts` — pure executor + node wrapper, mirroring `googleSheetsExecutor.ts`
+
+Wiring (see "Multi-host wiring checklist" below — a missed host degrades **silently** to `unsupported_node`):
+- `flowRunner.ts` — `runAi` host method + `'ai'` added to `TraceOutcome`
+- `sandbox.ts` — with `aiMode: 'mock' | 'live'`, **default mock**
+- `chat-host.ts`
+- `routes.ts` — **both** hosts (button path `~10607`, text-resume `~11790`) + `POST /api/workflows/test-ai`
+
+Client / shared:
+- `WorkflowBuilder.tsx` — palette entry `action.ai_agent`
+- `CustomWorkflowNode.tsx` — 2 handles in Phase 1 (`success`, `error`); 4 from Phase 2
+- `WorkflowNodeConfig.tsx` — provider, model, system prompt, temperature, max tokens, context window
+- `shared/workflow-validation.ts` — `ai` added to `RESERVED_CONTEXT_KEYS` + AI config validation
+
+DB:
+- `ai_usage_logs` table + a row written on every call. **Logging only in Phase 1** — enforcement lands in Phase 3.
+
+Testing:
+- `node --import tsx --test` + an `npm test` script (the repo currently has **zero tests and no runner**; this adds no dependencies).
+- Unit tests: history trimming, token budget, provider argument parsing, `detectScript`, mock-provider tool loop.
+
+### Phase 1 exit criteria
+
+- `action.ai_agent` node runs end-to-end on **WhatsApp and web chat**.
+- One provider only: OpenAI `gpt-4o-mini`.
+- No tools, no debounce, no scheduling, no usage-limit enforcement.
+- Arabic message in → Arabic reply out (via system prompt, not a detection call).
+- Sandbox preview **defaults to mock mode** and spends $0.
+- Total real spend under **$2**.
+- No `[Flow] ... is not supported here` warnings in `omniplus-error.log`.
+
+### Next session — start Phase 1
+
+Read this section, then implement Phase 1 exactly as designed above. **Do NOT add tools, debounce, scheduling, or usage-limit enforcement** — those are Phase 2/3. Prove the basic node works first.
+
 ## Public chat page — split layout + WhatsApp theme + demo copy (b86f378, 2026-11-03)
 
 ### Status
@@ -43,13 +122,7 @@
 
 ### Next session — AI Agent node (starting point)
 
-The user is planning to build an AI Agent node for the workflow engine. This is expected to be a large feature. Before implementation, the next session should:
-
-1. Read HANDOFF's "AI Agent node — investigation needed" section (once written).
-2. Decide on LLM provider (OpenAI, Anthropic, Google Gemini, or local).
-3. Decide on authentication model (shared service account like Google Sheets Model A, or per-user OAuth).
-4. Propose node config schema (system prompt, model, temperature, available tools/functions, context injection).
-5. Investigate how the flowRunner passes context to the node, and how the AI response should route to success/error handles.
+Superseded — see **"AI Agent node — investigation complete, Phase 1 ready to implement"** at the top of this file.
 
 ## Multi-host wiring checklist (for future integrations)
 
