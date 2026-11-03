@@ -1,10 +1,11 @@
 /**
  * Phase 4A-1 — lightweight, dependency-free validation for the new workflow
- * node types (`input.text`, `condition`, `setVariable`).
+ * node types (`input.text`, `condition`, `setVariable`). Phase 1 of the AI Agent
+ * node (`action.ai_agent`) is validated here too.
  *
  * This deliberately does NOT validate the whole `definitionJson` shape. Full
  * schema validation of the graph is out of scope for 4A-1; only the config of
- * the three new node types is checked, on save, on both client and server.
+ * the newer node types is checked, on save, on both client and server.
  */
 
 export const VARIABLE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -20,6 +21,7 @@ export const VARIABLE_PATH_RE =
 export const RESERVED_CONTEXT_KEYS = [
   'http',
   'sheets',
+  'ai',
   'bookingState',
   'checkBookingsState',
   'captureActive',
@@ -40,6 +42,11 @@ const SUPPORTED_CONDITION_OPERATORS = [
   'exists',
   'not_exists',
 ];
+
+/** Phase 1 AI providers. OpenAI lands in Phase 2. */
+export const AI_PROVIDERS = ['deepseek', 'groq', 'mock'] as const;
+export const AI_MAX_TOKENS_LIMIT = 8192;
+export const AI_MAX_HISTORY_LIMIT = 50;
 
 /** Entry nodes that the runtime can actually start from the first-message path. */
 const SUPPORTED_ENTRY_TYPES = [
@@ -141,6 +148,76 @@ export function validateWorkflowNodeConfigs(
         if (min !== undefined && min !== null && min !== '' && Number(min) > maxNum) {
           addError(nodeId, `"${label}" (Text Input): maximum length cannot be smaller than the minimum length.`);
         }
+      }
+
+      continue;
+    }
+
+    if (type === 'action.ai_agent') {
+      const provider = typeof config.provider === 'string' && config.provider ? config.provider : 'deepseek';
+
+      if (!(AI_PROVIDERS as readonly string[]).includes(provider)) {
+        addError(nodeId, `"${label}" (AI Agent): choose a valid provider.`);
+      }
+
+      const model = typeof config.model === 'string' ? config.model.trim() : '';
+      if (!model) {
+        addWarning(nodeId, `"${label}" (AI Agent): no model set; the provider default will be used.`);
+      }
+
+      if (config.temperature !== undefined && config.temperature !== null && config.temperature !== '') {
+        const temperature = Number(config.temperature);
+        if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+          addError(nodeId, `"${label}" (AI Agent): temperature must be a number between 0 and 2.`);
+        }
+      }
+
+      if (config.maxTokens !== undefined && config.maxTokens !== null && config.maxTokens !== '') {
+        const maxTokens = Number(config.maxTokens);
+        if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > AI_MAX_TOKENS_LIMIT) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): max tokens must be a whole number between 1 and ${AI_MAX_TOKENS_LIMIT}.`
+          );
+        }
+      }
+
+      if (config.historyLimit !== undefined && config.historyLimit !== null && config.historyLimit !== '') {
+        const historyLimit = Number(config.historyLimit);
+        if (!Number.isInteger(historyLimit) || historyLimit < 1 || historyLimit > AI_MAX_HISTORY_LIMIT) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): history limit must be a whole number between 1 and ${AI_MAX_HISTORY_LIMIT}.`
+          );
+        }
+      }
+
+      const responseVariable =
+        typeof config.responseVariable === 'string' ? config.responseVariable.trim() : '';
+      if (responseVariable) {
+        if (!VARIABLE_NAME_RE.test(responseVariable)) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): response variable "${responseVariable}" is invalid. Use letters, numbers and underscores only, and do not start with a digit.`
+          );
+        } else if (RESERVED_CONTEXT_KEYS.includes(responseVariable)) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): "${responseVariable}" is a reserved internal variable and cannot be overwritten.`
+          );
+        } else {
+          const writers = variableWriters.get(responseVariable) || [];
+          writers.push(nodeId);
+          variableWriters.set(responseVariable, writers);
+        }
+      }
+
+      const systemPrompt = typeof config.systemPrompt === 'string' ? config.systemPrompt.trim() : '';
+      if (!systemPrompt) {
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): system prompt is empty; the AI will improvise its business instructions.`
+        );
       }
 
       continue;

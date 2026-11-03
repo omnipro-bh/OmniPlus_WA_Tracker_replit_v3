@@ -8,8 +8,12 @@
  *
  * Design notes:
  * - No Express, drizzle, whapi or storage imports. The host is pure; the only
- *   I/O is `executeHttpNode` for `httpMode: 'live'`, which reuses the exact
- *   https-only + admin allowlist + no-redirect rules of production.
+ *   I/O is `executeHttpNode` for `httpMode: 'live'` and `executeAiAgentWorkflowNode`
+ *   for `aiMode: 'live'`, which reuse the exact https-only + admin allowlist +
+ *   no-redirect rules of production.
+ * - `aiMode` defaults to `'mock'`: an AI Agent node uses the mock provider, so a
+ *   preview costs $0 and needs no API key. Sandbox ticks never write
+ *   `ai_usage_logs`.
  * - `persist` is a no-op; the runner returns its working context/cursor in
  *   `RunResult` and the sandbox must never write conversation_states.
  * - `handleBookingNode` is a MOCK (4A-2d): it walks the booking sub-flow with
@@ -26,6 +30,7 @@ import { z } from "zod";
 import { enforceContextCeiling, getNextNodeBySingleEdge, MAX_CAPTURE_LENGTH } from "./flowControl";
 import { executeHttpNode } from "./httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
+import { executeAiAgentWorkflowNode } from "./aiAgentExecutor";
 import { resolveTemplate } from "./httpExecutor";
 import {
   FLOW_STEP_LIMITS,
@@ -64,6 +69,8 @@ export interface SandboxTickRequest {
   context: Record<string, any>;
   input: SandboxTickInput;
   httpMode: "mock" | "live";
+  /** AI Agent nodes: 'mock' (default, $0) or 'live' (real provider call). */
+  aiMode: "mock" | "live";
   maxSteps?: number;
 }
 
@@ -158,6 +165,8 @@ export const sandboxTickSchema = z.object({
     text: z.string().optional(),
   }),
   httpMode: z.enum(["mock", "live"]).optional().default("mock"),
+  // AI Agent previews spend $0 unless the caller explicitly opts into 'live'.
+  aiMode: z.enum(["mock", "live"]).optional().default("mock"),
   maxSteps: z.number().int().min(1).max(50).optional(),
 });
 
@@ -306,14 +315,19 @@ export interface SandboxHostBundle {
 
 export function buildSandboxHost(opts: {
   httpMode: "mock" | "live";
+  /** AI Agent nodes: 'mock' forces the mock provider; 'live' uses node config. */
+  aiMode?: "mock" | "live";
   userId: number;
   maxSteps?: number;
+  /** Text of the tick's input, used as the AI node's user message. */
+  lastText?: string;
   /** Draft graph — only the edges are used, for the `booked` / `no_slots` lookups. */
   definition?: { nodes?: any[]; edges?: any[] };
 }): SandboxHostBundle {
   const messages: SandboxMessage[] = [];
   const bookingTrace: MockBookingTraceEntry[] = [];
   const edges = Array.isArray(opts.definition?.edges) ? (opts.definition!.edges as any[]) : [];
+  const aiMode = opts.aiMode ?? "mock";
 
   const host: FlowHost = {
     errorPolicy: "stop",
@@ -399,6 +413,42 @@ export function buildSandboxHost(opts: {
         detail: {
           operation: sheetsResult.result?.operation,
           found: sheetsResult.result?.found,
+        },
+      };
+    },
+
+    runAi: async (node, nodeId, ctx) => {
+      // Mock mode rewrites the node's provider so no key is needed and no money
+      // is spent. Live mode uses whatever the node config says.
+      const effectiveNode =
+        aiMode === "live"
+          ? node
+          : {
+              ...node,
+              data: {
+                ...(node?.data || {}),
+                config: { ...(node?.data?.config || {}), provider: "mock" },
+              },
+            };
+
+      const aiResult = await executeAiAgentWorkflowNode(
+        effectiveNode,
+        { context: ctx } as any,
+        { text: { body: opts.lastText || (ctx as any)?.message?.text || "" } },
+        { phone: "sandbox", userId: opts.userId },
+        // The sandbox never writes ai_usage_logs: it stays DB-free and free of charge.
+        { channel: "sandbox", logUsage: false }
+      );
+
+      return {
+        ok: aiResult.success,
+        nextHandle: aiResult.nextHandle,
+        context: aiResult.stateUpdate,
+        detail: {
+          provider: aiResult.result?.provider,
+          model: aiResult.result?.model,
+          finishReason: aiResult.result?.finishReason,
+          mocked: aiMode !== "live",
         },
       };
     },

@@ -36,6 +36,7 @@ import path from "path";
 import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
+import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonTarget, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
@@ -7524,8 +7525,10 @@ export function registerRoutes(app: Express) {
 
       const { host, messages, drainBookingTrace } = buildSandboxHost({
         httpMode: body.httpMode,
+        aiMode: body.aiMode,
         userId: effectiveUserId,
         maxSteps: body.maxSteps,
+        lastText: body.input.text,
         definition,
       });
 
@@ -10660,6 +10663,37 @@ export function registerRoutes(app: Express) {
                   };
                 },
 
+                runAi: async (node, nodeId, ctx) => {
+                  const aiResult = await executeAiAgentWorkflowNode(
+                    node,
+                    { ...state, context: ctx } as any,
+                    incomingMessage,
+                    { phone, userId: activeWorkflow.userId },
+                    { channel: 'whatsapp', workflowId: activeWorkflow.id, businessName: activeWorkflow.name }
+                  );
+
+                  executionLog.responsesSent.push({
+                    nodeId,
+                    nodeType: 'action.ai_agent',
+                    success: aiResult.success,
+                    handle: aiResult.nextHandle,
+                    result: {
+                      provider: aiResult.result.provider,
+                      model: aiResult.result.model,
+                      finishReason: aiResult.result.finishReason,
+                      usage: aiResult.result.usage,
+                      latencyMs: aiResult.result.latencyMs,
+                      error: aiResult.result.error,
+                    },
+                  });
+
+                  return {
+                    ok: aiResult.success,
+                    nextHandle: aiResult.nextHandle,
+                    context: aiResult.stateUpdate,
+                  };
+                },
+
                 persist: async (ctx, cursor, mode) => {
                   state = { ...state, context: ctx };
                   if (mode === 'none') return;
@@ -11843,6 +11877,40 @@ export function registerRoutes(app: Express) {
         };
       },
 
+      // Text-resume is the path that actually runs for WhatsApp: an AI turn is
+      // always triggered by a text reply. Omitting this host method would stop
+      // the flow with `unsupported_node`.
+      runAi: async (node, nodeId, ctx) => {
+        const aiResult = await executeAiAgentWorkflowNode(
+          node,
+          { ...state, context: ctx } as any,
+          incomingMessage,
+          { phone, userId: activeWorkflow.userId },
+          { channel: 'whatsapp', workflowId: activeWorkflow.id, businessName: activeWorkflow.name }
+        );
+
+        executionLog.responsesSent.push({
+          nodeId,
+          nodeType: 'action.ai_agent',
+          success: aiResult.success,
+          handle: aiResult.nextHandle,
+          result: {
+            provider: aiResult.result.provider,
+            model: aiResult.result.model,
+            finishReason: aiResult.result.finishReason,
+            usage: aiResult.result.usage,
+            latencyMs: aiResult.result.latencyMs,
+            error: aiResult.result.error,
+          },
+        });
+
+        return {
+          ok: aiResult.success,
+          nextHandle: aiResult.nextHandle,
+          context: aiResult.stateUpdate,
+        };
+      },
+
       persist: async (ctx, cursor, mode) => {
         // Keep the in-memory context current so sendMessage can resolve
         // {{variables}} against the latest values (mirrors the button path).
@@ -11981,6 +12049,48 @@ export function registerRoutes(app: Express) {
       res.status(500).json({
         success: false,
         error: error.message || "Failed to test Google Sheets node",
+      });
+    }
+  });
+
+  // Test AI Agent Node
+  app.post("/api/workflows/test-ai", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { config, testContext, message } = req.body;
+
+      if (!config || typeof config !== "object") {
+        return res.status(400).json({ error: "AI Agent configuration is required" });
+      }
+
+      // Never call a provider with an empty user turn.
+      const userMessage =
+        typeof message === "string" && message.trim() ? message.trim() : "Hello!";
+
+      const { executeAiAgentNode } = await import("./workflows/aiAgentExecutor");
+      const result = await executeAiAgentNode(config, {
+        nodeId: "test",
+        context: testContext || {},
+        userMessage,
+        channel: "sandbox",
+        useHistory: false, // ad-hoc test: no history read/write
+      });
+
+      res.json({
+        success: result.success,
+        provider: result.provider,
+        model: result.model,
+        text: result.text,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        latencyMs: result.latencyMs,
+        attempts: result.attempts,
+        error: result.error,
+      });
+    } catch (error: any) {
+      console.error("Test AI Agent error:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Failed to test AI Agent node",
       });
     }
   });

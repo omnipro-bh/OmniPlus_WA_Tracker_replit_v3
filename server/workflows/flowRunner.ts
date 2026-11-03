@@ -68,6 +68,7 @@ export type TraceOutcome =
   | 'assigned'
   | 'http'
   | 'sheets'
+  | 'ai'
   | 'awaiting'
   | 'stopped'
   | 'error';
@@ -126,6 +127,14 @@ export interface FlowHost {
    * node is unsupported there (mirrors `handleBookingNode`).
    */
   runGoogleSheets?(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
+
+  /**
+   * Execute an AI Agent node (`action.ai_agent`) and return the next handle plus
+   * the new context. Optional: a host that omits it stops with
+   * `unsupported_node` instead of silently continuing (same contract as
+   * `runGoogleSheets`).
+   */
+  runAi?(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
 
   /** Persist context/cursor. `mode` is chosen by the node type (see PersistMode). */
   persist(context: any, cursor: string | null, mode: PersistMode): Promise<void>;
@@ -457,6 +466,55 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
         if (!nextNodeId) {
           console.log(
             `Google Sheets node ${nodeId} has no ${sheetsResult.nextHandle} handle connected - workflow ends here`
+          );
+          status = 'done';
+          stopReason = 'no_next_node';
+          cursor = null;
+          break;
+        }
+
+        cursor = nextNodeId;
+        continue;
+      }
+
+      // ── AI Agent ───────────────────────────────────────────────────────
+      if (nodeType === 'action.ai_agent') {
+        if (!host.runAi) {
+          emit({
+            nodeId,
+            nodeType,
+            outcome: 'stopped',
+            ms: Date.now() - startedAt,
+            detail: { reason: 'unsupported_node' },
+          });
+          console.warn(
+            `[Flow] AI Agent node "${nodeType}" (${nodeId}) is not supported here - stopping.`
+          );
+          status = 'stopped';
+          stopReason = 'unsupported_node';
+          cursor = nodeId;
+          break;
+        }
+
+        const aiResult = await host.runAi(node, nodeId, context);
+        context = aiResult.context;
+
+        // Cursor stays on the AI node (same as HTTP / Google Sheets).
+        await host.persist(context, nodeId, 'cursor');
+
+        emit({
+          nodeId,
+          nodeType,
+          outcome: 'ai',
+          handle: aiResult.nextHandle,
+          ms: Date.now() - startedAt,
+          detail: { success: aiResult.ok, ...(aiResult.detail || {}) },
+        });
+
+        const nextNodeId = getNextNodeByHandle(nodeId, aiResult.nextHandle, edges);
+        if (!nextNodeId) {
+          console.log(
+            `AI Agent node ${nodeId} has no ${aiResult.nextHandle} handle connected - workflow ends here`
           );
           status = 'done';
           stopReason = 'no_next_node';

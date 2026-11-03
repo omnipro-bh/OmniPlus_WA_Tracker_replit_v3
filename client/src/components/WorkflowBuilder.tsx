@@ -79,6 +79,7 @@ import {
   Variable,
   Search,
   FileSpreadsheet,
+  Sparkles,
 } from 'lucide-react';
 
 /** A single draggable entry in the node palette. */
@@ -182,6 +183,13 @@ export const nodeTypes = {
       icon: FileSpreadsheet,
       cost: 0,
       description: 'Read, append, or update rows in a Google Sheet'
+    },
+    {
+      id: 'action.ai_agent',
+      label: 'AI Agent',
+      icon: Sparkles,
+      cost: 0,
+      description: 'Reply with an AI model (DeepSeek or Groq) and store the answer in a variable'
     },
   ],
   INPUTS: [

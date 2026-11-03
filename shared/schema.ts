@@ -613,6 +613,45 @@ export const labelLogsRelations = relations(labelLogs, ({ one }) => ({
   }),
 }));
 
+// AI usage logs — one row per LLM call made by an `action.ai_agent` node.
+// Phase 1 is LOGGING ONLY: nothing here blocks a request or enforces a cap.
+// Phase 3 adds the daily spend ceiling on top of these rows.
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+  nodeId: text("node_id"), // Flow node id — for per-node cost debugging
+  provider: text("provider").notNull(), // 'deepseek' | 'groq' | 'mock'
+  model: text("model").notNull(),
+  channel: text("channel").notNull().default("whatsapp"), // 'whatsapp' | 'web_chat' | 'sandbox'
+  conversationPhone: text("conversation_phone"), // WhatsApp phone or web_<uuid> session key
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  latencyMs: integer("latency_ms").notNull().default(0),
+  success: boolean("success").notNull().default(true),
+  finishReason: text("finish_reason"), // 'stop' | 'length' | 'error'
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userCreatedIdx: index("ai_usage_logs_user_created_idx").on(table.userId, table.createdAt),
+  workflowCreatedIdx: index("ai_usage_logs_workflow_created_idx").on(table.workflowId, table.createdAt),
+}));
+
+export const aiUsageLogsRelations = relations(aiUsageLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [aiUsageLogs.userId],
+    references: [users.id],
+  }),
+  workflow: one(workflows, {
+    fields: [aiUsageLogs.workflowId],
+    references: [workflows.id],
+  }),
+}));
+
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+export type InsertAiUsageLog = typeof aiUsageLogs.$inferInsert;
+
 // Audit Logs table
 export const auditLogs = pgTable("audit_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

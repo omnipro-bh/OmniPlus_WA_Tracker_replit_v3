@@ -137,6 +137,7 @@ const OUTCOME_STYLE: Record<TraceOutcome, string> = {
   assigned: "text-amber-500",
   http: "text-cyan-500",
   sheets: "text-emerald-500",
+  ai: "text-indigo-500",
   awaiting: "text-primary",
   stopped: "text-destructive",
   error: "text-destructive",

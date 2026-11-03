@@ -20,6 +20,9 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
   
   // Check if this is a Google Sheets node (has success and error outputs)
   const isSheetsNode = nodeType === 'action.google_sheets';
+
+  // Check if this is an AI Agent node (Phase 1: success and error outputs)
+  const isAiNode = nodeType === 'action.ai_agent';
   
   // Check if this is a Condition node (has true and false outputs)
   const isConditionNode = nodeType === 'condition';
@@ -146,6 +149,14 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
           style={{ zIndex: 1 }}
         >
           SET
+        </Badge>
+      )}
+      {isAiNode && (
+        <Badge
+          className="absolute -top-2 right-2 bg-indigo-600 text-white text-[10px] px-1.5 pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          AI
         </Badge>
       )}
       
@@ -399,6 +410,56 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
           
+          {/* AI Agent Node - success and error outputs (Phase 1) */}
+          {isAiNode && (
+            <div className="space-y-1 mt-3">
+              {/* Success path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/20"
+                  title="Success (the model answered)"
+                >
+                  Success
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="success"
+                  className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+              {/* Error path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20"
+                  title="Error (missing API key, timeout, provider error)"
+                >
+                  Error
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="error"
+                  className="!w-3 !h-3 !bg-red-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          
           {/* Booking Node - booked and no_slots outputs */}
           {isBookingNode && (
             <div className="space-y-1 mt-3">
@@ -497,8 +558,8 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
 
-          {/* Default single output handle if no buttons/options and not HTTP/Condition/Booking/Sheets node */}
-          {!hasMultipleOutputs && !isHttpNode && !isSheetsNode && !isConditionNode && !isBookingNode && (
+          {/* Default single output handle if no buttons/options and not HTTP/Condition/Booking/Sheets/AI node */}
+          {!hasMultipleOutputs && !isHttpNode && !isSheetsNode && !isAiNode && !isConditionNode && !isBookingNode && (
             <Handle
               type="source"
               position={Position.Right}

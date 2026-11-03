@@ -36,6 +36,7 @@ import type { WebChatMessage, WebChatSession } from "@shared/schema";
 import { storage } from "../storage";
 import { executeHttpNode } from "./httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
+import { executeAiAgentWorkflowNode } from "./aiAgentExecutor";
 import type { FlowHost, TraceEntry } from "./flowRunner";
 import {
   buildSandboxMessage,
@@ -310,6 +311,29 @@ export function buildChatHost(opts: {
         detail: {
           operation: sheetsResult.result?.operation,
           found: sheetsResult.result?.found,
+        },
+      };
+    },
+
+    runAi: async (node, nodeId, context) => {
+      // Same executor as WhatsApp: the visitor's latest message is the user
+      // turn, history lives in this session's conversation_states.context.
+      const aiResult = await executeAiAgentWorkflowNode(
+        node,
+        { context } as any,
+        toWhapiShapedMessage(sessionKey, opts.lastVisitorText ?? ""),
+        { phone: sessionKey, userId: opts.linkUserId },
+        { channel: "web_chat", workflowId: opts.session.workflowId }
+      );
+
+      return {
+        ok: aiResult.success,
+        nextHandle: aiResult.nextHandle,
+        context: aiResult.stateUpdate,
+        detail: {
+          provider: aiResult.result?.provider,
+          model: aiResult.result?.model,
+          finishReason: aiResult.result?.finishReason,
         },
       };
     },

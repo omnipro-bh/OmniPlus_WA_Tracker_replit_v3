@@ -18,6 +18,7 @@ export type TraceOutcome =
   | "assigned"
   | "http"
   | "sheets"
+  | "ai"
   | "awaiting"
   | "stopped"
   | "error";
@@ -50,6 +51,8 @@ export interface SandboxTickParams {
   context: Record<string, any>;
   input: SandboxTickInput;
   httpMode: "mock" | "live";
+  /** AI Agent nodes: 'mock' (default) never calls a provider. */
+  aiMode?: "mock" | "live";
   maxSteps?: number;
 }
 
@@ -137,7 +140,7 @@ function parseRetryAfter(res: Response): number | undefined {
 }
 
 export async function tick(params: SandboxTickParams): Promise<SandboxTickResponse> {
-  const { workflowId, definitionJson, entryNodeId, cursor, context, input, httpMode, maxSteps } =
+  const { workflowId, definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps } =
     params;
 
   const controller = new AbortController();
@@ -150,7 +153,7 @@ export async function tick(params: SandboxTickParams): Promise<SandboxTickRespon
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       signal: controller.signal,
-      body: JSON.stringify({ definitionJson, entryNodeId, cursor, context, input, httpMode, maxSteps }),
+      body: JSON.stringify({ definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps }),
     });
   } catch (e) {
     clearTimeout(timeoutId);

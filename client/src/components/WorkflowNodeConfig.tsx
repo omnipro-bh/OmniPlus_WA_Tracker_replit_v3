@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { TestTube, Plus, X, RefreshCw, Database, ChevronDown } from 'lucide-react';
 import { useState, useRef } from 'react';
@@ -43,6 +44,12 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const [sheetsTestDialogOpen, setSheetsTestDialogOpen] = useState(false);
   const [isTestingSheets, setIsTestingSheets] = useState(false);
   const [sheetsTestResult, setSheetsTestResult] = useState<any>(null);
+
+  // AI Agent test states
+  const [aiTestDialogOpen, setAiTestDialogOpen] = useState(false);
+  const [isTestingAi, setIsTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<any>(null);
+  const [aiTestMessage, setAiTestMessage] = useState('Hello! What are your opening hours?');
 
   // Fetch active channels for test functionality
   const { data: channels = [] } = useQuery<any[]>({
@@ -290,6 +297,57 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       });
     } finally {
       setIsTestingSheets(false);
+    }
+  };
+
+  const handleTestAi = async () => {
+    setIsTestingAi(true);
+    setAiTestResult(null);
+
+    try {
+      const res = await apiRequest('POST', '/api/workflows/test-ai', {
+        config: {
+          provider: config.provider || 'deepseek',
+          model: config.model,
+          systemPrompt: config.systemPrompt,
+          temperature: config.temperature,
+          maxTokens: config.maxTokens,
+          historyLimit: config.historyLimit,
+          responseVariable: config.responseVariable,
+        },
+        testContext: {},
+        message: aiTestMessage,
+      });
+      const result: any = await res.json();
+
+      setAiTestResult(result);
+      setAiTestDialogOpen(true);
+
+      if (result.success) {
+        toast({
+          title: 'Test successful',
+          description: `${result.provider} answered in ${result.latencyMs} ms`,
+        });
+      } else {
+        toast({
+          title: 'Test failed',
+          description: result.error || 'AI provider call failed',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      setAiTestResult({
+        success: false,
+        error: error.message || 'Failed to test AI Agent node',
+      });
+      setAiTestDialogOpen(true);
+      toast({
+        title: 'Test error',
+        description: error.message || 'Failed to test AI Agent node',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTestingAi(false);
     }
   };
 
@@ -2599,6 +2657,260 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
         <p className="text-xs text-amber-600 mt-4">
           Note: Google Sheets nodes have a success path and an error path (API errors or a lookup with no match). Connect both paths to handle all scenarios.
+        </p>
+      </div>
+    );
+  }
+
+  // AI Agent Node Configuration (Phase 1: DeepSeek + Groq + Mock, no tools)
+  if (nodeType === 'action.ai_agent') {
+    const provider = config.provider || 'deepseek';
+    const temperature = typeof config.temperature === 'number' ? config.temperature : 0.7;
+    const modelPlaceholder =
+      provider === 'groq'
+        ? 'llama-3.3-70b-versatile'
+        : provider === 'mock'
+          ? 'mock-model'
+          : 'deepseek-chat';
+
+    return (
+      <div className="space-y-4">
+        {/* Provider */}
+        <div>
+          <Label htmlFor="ai-provider">Provider *</Label>
+          <Select
+            value={provider}
+            onValueChange={(value) => updateConfig('provider', value)}
+          >
+            <SelectTrigger id="ai-provider" data-testid="select-ai-provider">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="deepseek">DeepSeek</SelectItem>
+              <SelectItem value="groq">Groq</SelectItem>
+              <SelectItem value="mock">Mock (no API call)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Uses the platform API key — nothing to configure per workflow. Mock never calls a
+            provider and costs nothing (the sandbox preview always uses it).
+          </p>
+        </div>
+
+        {/* Model */}
+        <div>
+          <Label htmlFor="ai-model">Model</Label>
+          <Input
+            id="ai-model"
+            placeholder={modelPlaceholder}
+            value={config.model || ''}
+            onChange={(e) => updateConfig('model', e.target.value)}
+            data-testid="input-ai-model"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Leave empty to use the provider default ({modelPlaceholder}).
+          </p>
+        </div>
+
+        {/* System prompt */}
+        <div>
+          <Label htmlFor="ai-system-prompt">System Prompt</Label>
+          <Textarea
+            id="ai-system-prompt"
+            placeholder="You are the support assistant for ... Answer questions about ... "
+            value={config.systemPrompt || ''}
+            onChange={(e) => updateConfig('systemPrompt', e.target.value)}
+            rows={6}
+            data-testid="textarea-ai-system-prompt"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Business instructions only. Language rules (Arabic in → Arabic out) are added
+            automatically. You can use {`{{variableName}}`} placeholders.
+          </p>
+        </div>
+
+        {/* Temperature */}
+        <div>
+          <div className="flex items-center justify-between">
+            <Label>Temperature</Label>
+            <span className="text-xs text-muted-foreground">{temperature.toFixed(1)}</span>
+          </div>
+          <Slider
+            value={[temperature]}
+            min={0}
+            max={2}
+            step={0.1}
+            onValueChange={(value) => updateConfig('temperature', value[0])}
+            data-testid="slider-ai-temperature"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Lower is more predictable (0.2–0.5 for support), higher is more creative.
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Limits */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="ai-max-tokens">Max tokens</Label>
+            <Input
+              id="ai-max-tokens"
+              type="number"
+              min={1}
+              max={8192}
+              placeholder="500"
+              value={config.maxTokens ?? ''}
+              onChange={(e) =>
+                updateConfig('maxTokens', e.target.value === '' ? undefined : Number(e.target.value))
+              }
+              data-testid="input-ai-max-tokens"
+            />
+          </div>
+          <div>
+            <Label htmlFor="ai-history-limit">History messages</Label>
+            <Input
+              id="ai-history-limit"
+              type="number"
+              min={1}
+              max={50}
+              placeholder="12"
+              value={config.historyLimit ?? ''}
+              onChange={(e) =>
+                updateConfig('historyLimit', e.target.value === '' ? undefined : Number(e.target.value))
+              }
+              data-testid="input-ai-history-limit"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          History is capped at 12 messages / 8 KB per conversation so the workflow context cannot
+          overflow.
+        </p>
+
+        {/* Response variable */}
+        <div>
+          <Label htmlFor="ai-response-variable">Response Variable</Label>
+          <Input
+            id="ai-response-variable"
+            placeholder="ai_response"
+            value={config.responseVariable || ''}
+            onChange={(e) => updateConfig('responseVariable', e.target.value)}
+            data-testid="input-ai-response-variable"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            The reply is stored in this variable and in {`{{ai.<nodeId>.text}}`}. Use it in a
+            downstream message node, e.g. {`{{ai_response}}`}.
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Test */}
+        <div className="space-y-2">
+          <Label htmlFor="ai-test-message">Test message</Label>
+          <Input
+            id="ai-test-message"
+            value={aiTestMessage}
+            onChange={(e) => setAiTestMessage(e.target.value)}
+            data-testid="input-ai-test-message"
+          />
+          <Button
+            variant="outline"
+            onClick={handleTestAi}
+            disabled={isTestingAi || !aiTestMessage.trim()}
+            data-testid="button-test-ai"
+            className="w-full"
+          >
+            {isTestingAi ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <TestTube className="h-4 w-4 mr-2" />
+                Test AI Reply
+              </>
+            )}
+          </Button>
+          {provider === 'mock' && (
+            <p className="text-xs text-muted-foreground">
+              Mock returns the test message echoed back — useful to check wiring without spending.
+            </p>
+          )}
+        </div>
+
+        {/* Test Results Dialog */}
+        <Dialog open={aiTestDialogOpen} onOpenChange={setAiTestDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>AI Agent Test Results</DialogTitle>
+              <DialogDescription>
+                {aiTestResult?.success ? 'The model answered' : 'The model call failed'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {aiTestResult && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Status</Label>
+                  <div className={`text-sm p-2 rounded border ${
+                    aiTestResult.success
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                  }`}>
+                    {aiTestResult.success ? (
+                      <>✓ Success - {aiTestResult.provider} / {aiTestResult.model}</>
+                    ) : (
+                      <>✗ Failed - {aiTestResult.error}</>
+                    )}
+                  </div>
+                </div>
+
+                {aiTestResult.text && (
+                  <div>
+                    <Label className="text-sm font-medium">Reply</Label>
+                    <div className="text-sm p-3 bg-muted rounded border whitespace-pre-wrap">
+                      {aiTestResult.text}
+                    </div>
+                  </div>
+                )}
+
+                {aiTestResult.usage && (
+                  <div>
+                    <Label className="text-sm font-medium">Usage</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(
+                        {
+                          ...aiTestResult.usage,
+                          latencyMs: aiTestResult.latencyMs,
+                          attempts: aiTestResult.attempts,
+                          finishReason: aiTestResult.finishReason,
+                        },
+                        null,
+                        2
+                      )}
+                    </pre>
+                  </div>
+                )}
+
+                {aiTestResult.error && (
+                  <div>
+                    <Label className="text-sm font-medium text-destructive">Error</Label>
+                    <div className="text-sm p-3 bg-destructive/10 rounded border border-destructive/20 text-destructive">
+                      {aiTestResult.error}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <p className="text-xs text-amber-600 mt-4">
+          Note: AI Agent nodes have a success path and an error path (missing API key, timeout,
+          provider error). Connect both paths to handle all scenarios.
         </p>
       </div>
     );
