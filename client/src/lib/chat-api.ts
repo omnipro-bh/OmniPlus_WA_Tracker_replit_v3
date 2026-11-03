@@ -47,6 +47,12 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/** Safe public metadata for the instructional panel (workflow/link identity). */
+export interface ChatPageMeta {
+  workflowName: string | null;
+  linkLabel: string | null;
+}
+
 export interface ChatSessionResponse {
   sessionId: number;
   startedAt: string;
@@ -56,6 +62,7 @@ export interface ChatSessionResponse {
   awaiting: ChatAwaiting | null;
   /** GET /session only. */
   canRestart?: boolean;
+  meta?: ChatPageMeta;
   serverTime: string;
 }
 

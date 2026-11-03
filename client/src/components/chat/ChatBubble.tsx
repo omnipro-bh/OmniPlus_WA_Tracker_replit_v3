@@ -21,7 +21,7 @@
 //     disabled. URL buttons stay live — they do not route the flow.
 
 import { useState } from "react";
-import { Copy, Link as LinkIcon, Paperclip, Phone } from "lucide-react";
+import { CheckCheck, Copy, Link as LinkIcon, Paperclip, Phone } from "lucide-react";
 import type { ChatMessage } from "@/lib/chat-api";
 import type { SandboxButton } from "@/lib/workflow-sandbox";
 
@@ -30,6 +30,8 @@ export interface ChatBubbleProps {
   /** True only for the last bot message while awaiting a button and nothing is pending. */
   interactive: boolean;
   onButton: (buttonId: string) => void;
+  /** Visual theme. `whatsapp` uses WhatsApp colors + timestamps/ticks. */
+  theme?: "default" | "whatsapp";
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +84,13 @@ function PaperclipFallback() {
       <Paperclip className="h-5 w-5 text-muted-foreground" />
     </div>
   );
+}
+
+/** HH:MM, locale-aware; empty when the timestamp is invalid. */
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 // ---------------------------------------------------------------------------
@@ -153,18 +162,29 @@ function ActionControl({
 // Bubble
 // ---------------------------------------------------------------------------
 
-export function ChatBubble({ message, interactive, onButton }: ChatBubbleProps) {
+export function ChatBubble({ message, interactive, onButton, theme = "default" }: ChatBubbleProps) {
   const payload = message.payload ?? {};
 
   // Visitor rows: right-aligned plain text. NEVER switch on `kind` here —
   // button/list clicks are persisted as kind:'text' with the title in payload.text.
   if (message.role === "visitor") {
     const visitorText = typeof payload.text === "string" ? payload.text : "";
+    const wa = theme === "whatsapp";
     return (
       <div className="flex justify-end" data-testid={`chat-msg-${message.id}`}>
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
-          {visitorText}
-        </div>
+        {wa ? (
+          <div className="max-w-[80%] rounded-lg rounded-br-none bg-[#d9fdd3] px-3 py-2 text-sm text-gray-900 shadow-sm">
+            <span className="whitespace-pre-wrap break-words">{visitorText}</span>
+            <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-gray-500">
+              {formatTime(message.createdAt)}
+              <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
+            </span>
+          </div>
+        ) : (
+          <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
+            {visitorText}
+          </div>
+        )}
       </div>
     );
   }
@@ -328,7 +348,13 @@ export function ChatBubble({ message, interactive, onButton }: ChatBubbleProps) 
 
   return (
     <div className="flex justify-start" data-testid={`chat-msg-${message.id}`}>
-      <div className="max-w-[85%] space-y-1.5 rounded-2xl rounded-bl-sm border bg-card px-3 py-2 text-sm">
+      <div
+        className={
+          theme === "whatsapp"
+            ? "max-w-[85%] space-y-1.5 rounded-lg rounded-bl-none bg-white px-3 py-2 text-sm text-gray-900 shadow-sm"
+            : "max-w-[85%] space-y-1.5 rounded-2xl rounded-bl-sm border bg-card px-3 py-2 text-sm"
+        }
+      >
         {headerText ? <p className="break-words text-xs font-medium">{headerText}</p> : null}
         {body}
         {footerText ? (

@@ -23,26 +23,17 @@
 //   • Poll results never overwrite status/awaiting while a mutation is pending.
 //   • No booking UI and no booking logic — the backend gate is the source of truth.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRoute } from "wouter";
-import { AlertCircle, ArrowDown, Loader2, RotateCcw, Send, X } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { PhoneFrame } from "@/components/chat/phone-frame";
+import { ChatPanel } from "@/components/chat/chat-panel";
+import { ChatLeftPanel, ChatMobileIntro } from "@/components/chat/chat-left-panel";
+import { DEFAULT_CHAT_PAGE_COPY } from "@/lib/chat-page-config";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { ChatBubble } from "@/components/chat/ChatBubble";
-import {
-  CHAT_TEXT_MAX,
   ChatApiError,
   bootstrapChat,
   endChat,
@@ -55,6 +46,7 @@ import {
   sendWithBusyRetry,
   type ChatAwaiting,
   type ChatMessage,
+  type ChatPageMeta,
   type ChatSendInput,
   type ChatSendPayload,
   type ChatStatus,
@@ -82,7 +74,7 @@ type ChatPhase =
   | "maintenance"
   | "error";
 
-interface ChatViewState {
+export interface ChatViewState {
   phase: ChatPhase;
   sessionId: number | null;
   status: ChatStatus | null;
@@ -90,6 +82,7 @@ interface ChatViewState {
   canRestart: boolean;
   startedAt: string | null;
   expiresAt: string | null;
+  meta: ChatPageMeta | null;
   messages: ChatMessage[];
   nextSinceId: number;
   pending: null | "send" | "restart" | "end";
@@ -106,6 +99,7 @@ const INITIAL_STATE: ChatViewState = {
   canRestart: false,
   startedAt: null,
   expiresAt: null,
+  meta: null,
   messages: [],
   nextSinceId: 0,
   pending: null,
@@ -231,6 +225,7 @@ function usePublicChat(token: string) {
         sessionId: res.sessionId,
         startedAt: res.startedAt ?? null,
         expiresAt: res.expiresAt ?? null,
+        meta: res.meta ?? null,
         canRestart: true,
         messages: mergeMessages([], initial),
         nextSinceId: sinceRef.current,
@@ -529,62 +524,6 @@ export default function PublicChatPage() {
   const { state, draft, setDraft, rateLimitLeft, sendInput, restart, leaveChat, bootstrap } =
     usePublicChat(token);
 
-  const [endOpen, setEndOpen] = useState(false);
-  const [restartOpen, setRestartOpen] = useState(false);
-
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [pinned, setPinned] = useState(true);
-  const [showNewPill, setShowNewPill] = useState(false);
-
-  const rateLimited = rateLimitLeft > 0;
-  const busy = state.pending !== null;
-  const awaitingButton = state.awaiting?.kind === "button";
-  const inputEnabled = state.phase === "ready" && !busy && !rateLimited && !awaitingButton;
-  const terminal = state.status === "done" || state.status === "stopped";
-
-  const lastBotId = useMemo(() => {
-    for (let i = state.messages.length - 1; i >= 0; i -= 1) {
-      if (state.messages[i].role === "bot") return state.messages[i].id;
-    }
-    return -1;
-  }, [state.messages]);
-
-  const interactiveFor = (m: ChatMessage) =>
-    m.role === "bot" && m.id === lastBotId && awaitingButton && !busy && !rateLimited;
-
-  function scrollToBottom(behavior: ScrollBehavior = "smooth") {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
-    setShowNewPill(false);
-  }
-
-  function onScroll() {
-    const el = listRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    setPinned(nearBottom);
-    if (nearBottom) setShowNewPill(false);
-  }
-
-  useEffect(() => {
-    if (state.messages.length === 0) return;
-    if (pinned) scrollToBottom("smooth");
-    else setShowNewPill(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.messages.length]);
-
-  function submitText() {
-    const text = draft.trim();
-    if (!text || !inputEnabled) return;
-    void sendInput({ type: "text", text });
-  }
-
-  function clickButton(buttonId: string) {
-    if (!awaitingButton || busy || rateLimited) return;
-    void sendInput({ type: "button", buttonId });
-  }
-
   // ----- non-ready screens -----
 
   if (!token) {
@@ -644,216 +583,44 @@ export default function PublicChatPage() {
   // ----- ready -----
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-background">
-      <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold">Live Chat</h1>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setRestartOpen(true)}
-            disabled={busy || rateLimited || !state.canRestart}
-            aria-label="Restart conversation"
-            data-testid="chat-restart"
-          >
-            <RotateCcw className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setEndOpen(true)}
-            disabled={busy}
-            aria-label="End chat"
-            data-testid="chat-end"
-          >
-            <X className="h-4 w-4" />
-            <span className="ml-1 hidden sm:inline">End chat</span>
-          </Button>
-        </div>
-      </header>
+    <div className="flex h-[100dvh] w-full flex-col md:grid md:grid-cols-[40%_60%]">
+      {/* Left: instructions (desktop only) */}
+      <aside className="hidden overflow-y-auto bg-background md:block md:p-8 lg:p-10">
+        <ChatLeftPanel
+          config={DEFAULT_CHAT_PAGE_COPY}
+          meta={state.meta}
+          onStartOver={() => void restart()}
+          onEndChat={() => void leaveChat()}
+        />
+      </aside>
 
-      <div
-        ref={listRef}
-        onScroll={onScroll}
-        className="flex-1 space-y-3 overflow-y-auto px-4 py-4"
-        data-testid="chat-transcript"
-      >
-        {state.messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-            <p>This conversation has no messages.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRestartOpen(true)}
-              disabled={busy}
-              data-testid="chat-empty-restart"
-            >
-              Restart conversation
-            </Button>
-          </div>
-        ) : (
-          state.messages.map((m) => (
-            <ChatBubble
-              key={m.id}
-              message={m}
-              interactive={interactiveFor(m)}
-              onButton={clickButton}
+      {/* Right: phone-framed chat */}
+      <section className="flex min-h-0 flex-1 flex-col bg-card/30">
+        {/* Mobile instructions (collapsible) */}
+        <div className="md:hidden">
+          <ChatMobileIntro
+            config={DEFAULT_CHAT_PAGE_COPY}
+            meta={state.meta}
+            onStartOver={() => void restart()}
+            onEndChat={() => void leaveChat()}
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 md:flex md:items-center md:justify-center md:p-6">
+          <PhoneFrame>
+            <ChatPanel
+              state={state}
+              draft={draft}
+              setDraft={setDraft}
+              rateLimitLeft={rateLimitLeft}
+              sendInput={sendInput}
+              restart={restart}
+              meta={state.meta}
+              theme="whatsapp"
             />
-          ))
-        )}
-
-        {state.pending === "send" ? (
-          <div className="flex justify-start">
-            <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm border bg-card px-3 py-2">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.1s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      {showNewPill && !pinned ? (
-        <div className="relative">
-          <div className="absolute -top-12 left-0 right-0 flex justify-center">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="rounded-full shadow"
-              onClick={() => scrollToBottom("smooth")}
-              data-testid="chat-new-messages"
-            >
-              <ArrowDown className="mr-1 h-3.5 w-3.5" />
-              New messages
-            </Button>
-          </div>
+          </PhoneFrame>
         </div>
-      ) : null}
-
-      <footer className="border-t px-4 py-3">
-        {state.error ? (
-          <div
-            className="mb-2 flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-            data-testid="chat-error"
-          >
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{state.error}</span>
-          </div>
-        ) : null}
-
-        {state.inlineHint ? (
-          <p className="mb-2 text-xs text-muted-foreground" data-testid="chat-hint">
-            {state.inlineHint}
-          </p>
-        ) : null}
-
-        {awaitingButton ? (
-          <p className="text-xs text-muted-foreground" data-testid="chat-choose-option">
-            Choose an option above to continue.
-          </p>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitText();
-            }}
-            className="flex items-end gap-2"
-          >
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submitText();
-                }
-              }}
-              placeholder={
-                rateLimited
-                  ? `Too many messages — try again in ${rateLimitLeft}s`
-                  : terminal
-                    ? "Send a message to start a new conversation…"
-                    : "Type your message…"
-              }
-              maxLength={CHAT_TEXT_MAX}
-              disabled={!inputEnabled}
-              rows={2}
-              className="min-h-[44px] resize-none text-sm"
-              data-testid="chat-input"
-            />
-            <Button
-              type="submit"
-              disabled={!inputEnabled || draft.trim().length === 0}
-              aria-label="Send message"
-              data-testid="chat-send"
-            >
-              {state.pending === "send" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </form>
-        )}
-
-        {rateLimited && !awaitingButton ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Please wait — messages will re-enable automatically.
-          </p>
-        ) : null}
-      </footer>
-
-      {/* End chat */}
-      <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>End this conversation?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You will not be able to continue this chat. You can start a new one with the same link.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep chatting</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setEndOpen(false);
-                void leaveChat();
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="chat-confirm-end"
-            >
-              End chat
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Restart */}
-      <AlertDialog open={restartOpen} onOpenChange={setRestartOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start over?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The conversation will start again from the beginning. Your previous messages stay in this
-              transcript.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setRestartOpen(false);
-                void restart();
-              }}
-              data-testid="chat-confirm-restart"
-            >
-              Start over
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </section>
     </div>
   );
 }

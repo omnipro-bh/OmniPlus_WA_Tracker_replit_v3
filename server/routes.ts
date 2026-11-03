@@ -7041,6 +7041,10 @@ export function registerRoutes(app: Express) {
         messages: result.initialMessages,
         status: result.state.status,
         awaiting: result.state.awaiting,
+        meta: {
+          workflowName: result.workflow.name,
+          linkLabel: result.link.label,
+        },
         serverTime: new Date().toISOString(),
       });
     } catch (error: any) {
@@ -7065,6 +7069,10 @@ export function registerRoutes(app: Express) {
         status: state.status,
         awaiting: state.awaiting,
         canRestart: session.status === "active" && session.endedAt == null,
+        meta: {
+          workflowName: workflow.name,
+          linkLabel: req.chatSession!.link.label,
+        },
         serverTime: new Date().toISOString(),
       });
     } catch (error: any) {
