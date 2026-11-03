@@ -1,5 +1,69 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## AI Agent node Phase 1 — DEPLOYED to production (b39d4b1, 2026-11-03)
+
+### Status
+
+- **Production HEAD: `b39d4b1`** — deployed and live. PM2 `omniplus` (pid 135860, ↺ 47) restarted `--update-env` and is online.
+- Running the **new build**: `server-dist/index.js` 876.9 kB, built 14:19, contains `ai_agent` + `test-ai`.
+- `action.ai_agent` (DeepSeek / Groq / Mock) is wired in **all 4 hosts** (flowRunner, sandbox, chat-host, routes.ts ×2).
+- `ai_usage_logs` created and queryable — **0 rows** (expected; no live AI call has run).
+- Health check: `GET /api/plans` → **200**. Error log shows only the known pre-existing noise.
+- **Browser verification NOT done — that is the next session.**
+- ⚠️ **DeepSeek account is out of credit.** The key is valid and the API is reachable, but every call returns `402 Insufficient Balance`. See "Provider findings" before any live test.
+
+### Deploy record
+
+| Step | Result |
+| --- | --- |
+| Backup | `/root/omniplus-pre-deploy-2026-11-03-1417.tar.gz` (350 MB) — rollback path |
+| `git pull` | fast-forward `b86f378..b39d4b1` |
+| `npm ci --include=dev` | `openai@7.47.0` installed |
+| `npm run build` | `server-dist/index.js` 876.9 kB |
+| `npm run db:push` | `ai_usage_logs` created (FIRST push). Later push runs printed only pre-existing drift — see below |
+| `pm2 restart --update-env` | online, no new error types |
+| `GET /api/plans` | 200 |
+| `SELECT count(*) FROM ai_usage_logs` | 0 |
+
+### `ai_usage_logs` — verified structure
+
+- **16 columns**, all nullability/defaults as designed (`channel` default `'whatsapp'`, `prompt/completion/total_tokens` and `latency_ms` default `0`, `success` default `true`, `created_at` default `now()`).
+- **2 explicit indexes** (`ai_usage_logs_user_created_idx`, `ai_usage_logs_workflow_created_idx`) **+ primary key** = 3 total.
+- **2 foreign keys** → `users`, `workflows`.
+- Public table count after the push: **46**.
+
+### Pre-existing schema drift — CONFIRMED, unrelated to the AI change
+
+`db:push` reports `[✓] Changes applied` on **every** run and never converges to `No changes detected`. The full statement list (captured via `drizzle-kit push --verbose` with stdin closed, i.e. **not re-applied**) is **18 statements** across 4 dropped/re-added FKs and 10 `ALTER COLUMN ... SET DEFAULT` resets:
+
+- **FK churn (4 DROP + 4 ADD)** on `booking_custom_fields` (`calc_field_a_id`, `calc_field_b_id`), `channel_days_ledger` (`balance_transaction_id`), `booking_custom_field_values` (`field_id`).
+- **Root cause — identifier truncation.** Postgres caps identifiers at **63 bytes**; all four Drizzle-canonical names are longer (65, 65, 69, 64 bytes), so Postgres stores a truncated name, Drizzle never matches it, and drops/re-adds forever. This is why the drift reappears on every push.
+- **DEFAULT resets (10)** on `sent_messages.expires_at`, `plans` (`daily_messages_limit`, `bulk_messages_limit`, `chatbots_limit`, `phonebook_limit`, `capture_sequence_limit`, `page_access`), `use_cases.images`, `workflows.webhook_token`, `users.bulk_webhook_token` — expression/formatting differences between schema and DB.
+- **Origin: the Supabase → local Postgres migration era. NOT caused by the AI node.** The deploy was paused at this point, the catalog was inspected directly, and the DB was confirmed intact (all 9 unrelated FK constraints still present, semantics preserved). Decision: **proceeded** with the restart; the drift fix is a separate session.
+
+### Follow-up — schema cleanup (separate session, do NOT bundle with features)
+
+1. **Shorten the 4 FK constraint names to ≤63 bytes.** Define them explicitly in `shared/schema.ts` with `foreignKey({ name: '...' })` using abbreviated names (e.g. `bcf_calc_field_a_fk`). This permanently ends the drop/re-add loop.
+2. **Align the 10 `DEFAULT` expressions** with what the DB actually holds (or make the schema the source of truth and push once more).
+3. Re-run `db:push` until it reports **`No changes detected`** — that is the exit criterion for the cleanup.
+
+### Provider findings (critical for the next session)
+
+- **DeepSeek** — key present (`sk-0…4d76`, 35 chars), endpoint reachable, TLS + auth OK, but **HTTP 402 Insufficient Balance**. Nothing about the integration is wrong; the account simply has **$0 credit**. Top up, or test with Mock/Groq.
+- **Groq** — key present (`gsk_…6ghi`, 56 chars) and **working**, but the model configured in Phase 1 (`llama-3.3-70b-versatile`) **no longer exists on this account** (404); Groq's current catalog is 11 models. Verified working chat models:
+  - `qwen/qwen3.8-27b` → returned `Hello` (fast, clean, no reasoning burn) — **best replacement**
+  - `openai/gpt-oss-120b` → works, but burns ~18 **reasoning tokens**, so it returns an **empty string** with `max_tokens: 10`. Requires a higher `max_tokens`.
+- **Mock** — works, deterministic, $0, and is the sandbox default. **Recommended for the browser verification pass.**
+- `AI_DEFAULT_PROVIDER` is **absent** from `.env`, so the code default (`deepseek`) applies — which currently 402s. Do not run a live deepseek test until the balance is topped up.
+
+### Next session — browser verification pass
+
+1. Open the Workflow Builder and confirm the `action.ai_agent` palette entry, config form, handles and test button render.
+2. Run the node in the **sandbox (mock, $0)** first — confirms wiring end-to-end without provider cost.
+3. Then a live run using **Groq + `qwen/qwen3.8-27b`** (change the model in the node config, not the code) and confirm a row lands in `ai_usage_logs`.
+4. Confirm no `[Flow] ... is not supported here` warnings appear in `omniplus-error.log`.
+5. Deferred to Phase 2 by decision: Test Panel `aiMode` toggle (mock stays the default).
+
 ## AI Agent node — investigation complete, Phase 1 ready to implement (2026-11-03)
 
 ### Status
