@@ -2671,7 +2671,46 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
         ? 'qwen/qwen3.8-27b'
         : provider === 'mock'
           ? 'mock-model'
-          : 'deepseek-chat';
+          : 'deepseek-flash';
+
+    // Phase 2: declared button slots (send_buttons) and handover departments.
+    // Stored as `buttons` / `handoverDepartments` — the exact keys the executor reads.
+    const aiButtons = config.buttons || [];
+    const aiDepartments = config.handoverDepartments || [];
+
+    const addAiButton = () => {
+      if (aiButtons.length >= 3) {
+        toast({
+          title: 'Maximum buttons reached',
+          description: 'AI Agent supports up to 3 buttons',
+          variant: 'destructive',
+        });
+        return;
+      }
+      updateConfig('buttons', [...aiButtons, { title: '', id: generateId('btn') }]);
+    };
+    const removeAiButton = (index: number) => {
+      updateConfig('buttons', aiButtons.filter((_: any, i: number) => i !== index));
+    };
+    const updateAiButton = (index: number, field: string, value: string) => {
+      const next = [...aiButtons];
+      next[index] = { ...next[index], [field]: value };
+      updateConfig('buttons', next);
+    };
+    const regenerateAiButtonId = (index: number) => updateAiButton(index, 'id', generateId('btn'));
+
+    const addAiDepartment = () => {
+      updateConfig('handoverDepartments', [...aiDepartments, { title: '', id: generateId('dept') }]);
+    };
+    const removeAiDepartment = (index: number) => {
+      updateConfig('handoverDepartments', aiDepartments.filter((_: any, i: number) => i !== index));
+    };
+    const updateAiDepartment = (index: number, field: string, value: string) => {
+      const next = [...aiDepartments];
+      next[index] = { ...next[index], [field]: value };
+      updateConfig('handoverDepartments', next);
+    };
+    const regenerateAiDepartmentId = (index: number) => updateAiDepartment(index, 'id', generateId('dept'));
 
     return (
       <div className="space-y-4">
@@ -2802,6 +2841,138 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             The reply is stored in this variable and in {`{{ai.<nodeId>.text}}`}. Use it in a
             downstream message node, e.g. {`{{ai_response}}`}.
           </p>
+        </div>
+
+        <Separator />
+
+        {/* AI Buttons (send_buttons) — hidden for mock (no tool calls) */}
+        {provider !== 'mock' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>AI Buttons (max 3)</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addAiButton}
+                disabled={aiButtons.length >= 3}
+                data-testid="button-ai-add"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Button
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The AI can offer one or more of these as quick replies via the send_buttons tool. Each
+              becomes a separate handle on the node. IDs must be unique and at most 20 characters.
+            </p>
+            {aiButtons.map((button: any, i: number) => (
+              <div key={button.id || i} className="p-3 border rounded-md space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Button {i + 1}</Label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeAiButton(i)}
+                    data-testid={`button-ai-remove-${i}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Input
+                  placeholder="Button Title"
+                  value={button.title || ''}
+                  onChange={(e) => updateAiButton(i, 'title', e.target.value)}
+                  maxLength={20}
+                  data-testid={`input-ai-button-${i}-title`}
+                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Button ID"
+                    value={button.id || ''}
+                    onChange={(e) => updateAiButton(i, 'id', e.target.value)}
+                    data-testid={`input-ai-button-${i}-id`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => regenerateAiButtonId(i)}
+                    title="Generate new ID"
+                    data-testid={`button-ai-regenerate-${i}-id`}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {aiButtons.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Click "Add Button" to let the AI offer choices
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Handover Departments */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Handover Departments</Label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addAiDepartment}
+              data-testid="button-ai-dept-add"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Department
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Departments the AI can escalate to via the handover tool (e.g. Sales, Support). Each
+            must have a unique ID.
+          </p>
+          {aiDepartments.map((dept: any, i: number) => (
+            <div key={dept.id || i} className="p-3 border rounded-md space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Department {i + 1}</Label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeAiDepartment(i)}
+                  data-testid={`button-ai-dept-remove-${i}`}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <Input
+                placeholder="Department Title"
+                value={dept.title || ''}
+                onChange={(e) => updateAiDepartment(i, 'title', e.target.value)}
+                data-testid={`input-ai-dept-${i}-title`}
+              />
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Department ID"
+                  value={dept.id || ''}
+                  onChange={(e) => updateAiDepartment(i, 'id', e.target.value)}
+                  data-testid={`input-ai-dept-${i}-id`}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => regenerateAiDepartmentId(i)}
+                  title="Generate new ID"
+                  data-testid={`button-ai-dept-regenerate-${i}-id`}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          {aiDepartments.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Click "Add Department" to enable AI handover
+            </p>
+          )}
         </div>
 
         <Separator />

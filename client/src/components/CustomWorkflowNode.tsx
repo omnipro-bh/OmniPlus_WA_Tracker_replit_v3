@@ -410,7 +410,7 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
             </div>
           )}
           
-          {/* AI Agent Node - success and error outputs (Phase 1) */}
+          {/* AI Agent Node - button + success + handover + error outputs */}
           {isAiNode && (
             <div className="space-y-1 mt-3">
               {/* Success path */}
@@ -427,6 +427,28 @@ export const CustomWorkflowNode = memo(({ data, selected, id }: NodeProps) => {
                   position={Position.Right}
                   id="success"
                   className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+                  style={{ 
+                    position: 'absolute',
+                    right: '-12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }}
+                />
+              </div>
+              {/* Handover path */}
+              <div className="relative flex items-center justify-end gap-2 h-6">
+                <Badge 
+                  variant="secondary" 
+                  className="text-xs truncate max-w-[140px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
+                  title="Handover (the AI asked for a human)"
+                >
+                  Handover
+                </Badge>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="handover"
+                  className="!w-3 !h-3 !bg-amber-500 !border-2 !border-white dark:!border-gray-800"
                   style={{ 
                     position: 'absolute',
                     right: '-12px',

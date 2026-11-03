@@ -440,6 +440,23 @@ export function buildSandboxHost(opts: {
         { channel: "sandbox", logUsage: false }
       );
 
+      // Phase 2: `send_buttons` → a button bubble in the panel (same projection
+      // the web chat transcript uses). Handover / success / error keep Phase 1.
+      if (aiResult.nextHandle === "buttons") {
+        const selectedButtons = (aiResult.result?.buttons || []).slice(0, 3);
+        messages.push({
+          nodeId,
+          nodeType: "action.ai_agent",
+          type: "buttons",
+          text: aiResult.result?.buttonText || "Please choose an option:",
+          buttons: selectedButtons.map((b) => ({
+            id: b.id,
+            title: b.title,
+            type: "quick_reply",
+          })),
+        });
+      }
+
       return {
         ok: aiResult.success,
         nextHandle: aiResult.nextHandle,

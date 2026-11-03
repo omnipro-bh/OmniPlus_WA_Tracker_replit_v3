@@ -10687,6 +10687,42 @@ export function registerRoutes(app: Express) {
                     },
                   });
 
+                  // Phase 2: `send_buttons` → direct WhatsApp interactive button
+                  // message (not store-in-context). Handover / success / error keep
+                  // Phase 1 behaviour (the executor already writes the context).
+                  if (aiResult.nextHandle === 'buttons') {
+                    const selectedButtons = (aiResult.result.buttons || []).slice(0, 3);
+                    const buttonText = aiResult.result.buttonText || 'Please choose an option:';
+                    if (selectedButtons.length > 0) {
+                      try {
+                        const response = await sendAiButtonMessage(
+                          phone,
+                          buttonText,
+                          selectedButtons,
+                          activeWorkflow.userId,
+                          activeWorkflow.id
+                        );
+                        executionLog.responsesSent.push({
+                          nodeId,
+                          nodeType: 'action.ai_agent',
+                          success: true,
+                          handle: 'buttons',
+                          messageType: 'ai_buttons',
+                          result: response,
+                        });
+                      } catch (sendError: any) {
+                        console.error(`[AI Buttons] Failed to send buttons for node ${nodeId}: ${sendError.message}`);
+                        executionLog.responsesSent.push({
+                          nodeId,
+                          nodeType: 'action.ai_agent',
+                          success: false,
+                          handle: 'buttons',
+                          error: sendError.message,
+                        });
+                      }
+                    }
+                  }
+
                   return {
                     ok: aiResult.success,
                     nextHandle: aiResult.nextHandle,
@@ -11450,6 +11486,42 @@ export function registerRoutes(app: Express) {
     }
   }
 
+  // Helper to send an AI Agent `send_buttons` bubble as a WhatsApp interactive
+  // button message (Phase 2). Mirrors the quickReply payload: a single button
+  // body with up to 3 quick_reply buttons, each id being an AI node handle id.
+  async function sendAiButtonMessage(
+    phone: string,
+    bodyText: string,
+    buttons: { id: string; title: string }[],
+    workflowUserId: number,
+    workflowId?: number
+  ): Promise<any> {
+    const userChannels = await storage.getChannelsForUser(workflowUserId);
+    const activeChannel = userChannels.find(
+      (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED" && ch.whapiChannelToken
+    );
+    if (!activeChannel || !activeChannel.whapiChannelToken) {
+      throw new Error("No active authorized channel found for user");
+    }
+
+    const payload: any = {
+      to: phone,
+      type: "button",
+      body: { text: bodyText || "Please choose an option:" },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({
+          type: "quick_reply",
+          title: String(b.title || "").slice(0, 20),
+          id: b.id,
+        })),
+      },
+    };
+
+    const response = await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, payload);
+    await trackSentMessage(workflowId, response?.id, phone, "ai_buttons");
+    return response;
+  }
+
   // Helper function to send node message via WHAPI
   async function sendNodeMessage(phone: string, node: any, workflowUserId: number, workflowId?: number, context?: any): Promise<any> {
     const nodeType = node.data?.type || node.data?.nodeType;
@@ -11903,6 +11975,40 @@ export function registerRoutes(app: Express) {
             error: aiResult.result.error,
           },
         });
+
+        // Phase 2: `send_buttons` → direct WhatsApp interactive button message.
+        if (aiResult.nextHandle === 'buttons') {
+          const selectedButtons = (aiResult.result.buttons || []).slice(0, 3);
+          const buttonText = aiResult.result.buttonText || 'Please choose an option:';
+          if (selectedButtons.length > 0) {
+            try {
+              const response = await sendAiButtonMessage(
+                phone,
+                buttonText,
+                selectedButtons,
+                activeWorkflow.userId,
+                activeWorkflow.id
+              );
+              executionLog.responsesSent.push({
+                nodeId,
+                nodeType: 'action.ai_agent',
+                success: true,
+                handle: 'buttons',
+                messageType: 'ai_buttons',
+                result: response,
+              });
+            } catch (sendError: any) {
+              console.error(`[AI Buttons] Failed to send buttons for node ${nodeId}: ${sendError.message}`);
+              executionLog.responsesSent.push({
+                nodeId,
+                nodeType: 'action.ai_agent',
+                success: false,
+                handle: 'buttons',
+                error: sendError.message,
+              });
+            }
+          }
+        }
 
         return {
           ok: aiResult.success,

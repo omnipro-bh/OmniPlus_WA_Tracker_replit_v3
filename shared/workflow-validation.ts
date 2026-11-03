@@ -48,6 +48,10 @@ export const AI_PROVIDERS = ['deepseek', 'groq', 'mock'] as const;
 export const AI_MAX_TOKENS_LIMIT = 8192;
 export const AI_MAX_HISTORY_LIMIT = 50;
 
+/** Phase 2 AI button/department slots (send_buttons / handover). */
+export const AI_MAX_BUTTONS = 3;
+export const AI_BUTTON_ID_RE = /^[a-zA-Z0-9_]{1,20}$/;
+
 /** Entry nodes that the runtime can actually start from the first-message path. */
 const SUPPORTED_ENTRY_TYPES = [
   'message.text',
@@ -91,6 +95,7 @@ export function validateWorkflowNodeConfigs(
 ): WorkflowValidationIssue[] {
   const issues: WorkflowValidationIssue[] = [];
   const nodes: any[] = Array.isArray(definitionJson?.nodes) ? definitionJson.nodes : [];
+  const edges: any[] = Array.isArray(definitionJson?.edges) ? definitionJson.edges : [];
 
   const addError = (nodeId: string, message: string) =>
     issues.push({ nodeId, level: 'error', message });
@@ -218,6 +223,80 @@ export function validateWorkflowNodeConfigs(
           nodeId,
           `"${label}" (AI Agent): system prompt is empty; the AI will improvise its business instructions.`
         );
+      }
+
+      // Phase 2: declared button slots (send_buttons).
+      const buttons = Array.isArray(config.buttons) ? config.buttons : [];
+      if (buttons.length > AI_MAX_BUTTONS) {
+        addError(
+          nodeId,
+          `"${label}" (AI Agent): at most ${AI_MAX_BUTTONS} buttons may be declared.`
+        );
+      }
+
+      const buttonIds = new Set<string>();
+      for (const button of buttons) {
+        const buttonId = typeof button?.id === 'string' ? button.id.trim() : '';
+        const buttonTitle = typeof button?.title === 'string' ? button.title.trim() : '';
+
+        if (!buttonId) {
+          addError(nodeId, `"${label}" (AI Agent): every button needs an id.`);
+        } else if (!AI_BUTTON_ID_RE.test(buttonId)) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): button id "${buttonId}" is invalid. Use 1-20 letters, numbers or underscores.`
+          );
+        } else if (buttonIds.has(buttonId)) {
+          addError(nodeId, `"${label}" (AI Agent): duplicate button id "${buttonId}".`);
+        } else {
+          buttonIds.add(buttonId);
+        }
+
+        if (!buttonTitle) {
+          addError(nodeId, `"${label}" (AI Agent): button id "${buttonId}" is missing a title.`);
+        } else if (buttonTitle.length > 20) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): button title "${buttonTitle}" is longer than 20 characters.`
+          );
+        }
+      }
+
+      // Phase 2: declared handover departments.
+      const departments = Array.isArray(config.handoverDepartments) ? config.handoverDepartments : [];
+      const departmentIds = new Set<string>();
+      for (const department of departments) {
+        const departmentId = typeof department?.id === 'string' ? department.id.trim() : '';
+        const departmentTitle = typeof department?.title === 'string' ? department.title.trim() : '';
+
+        if (!departmentId) {
+          addError(nodeId, `"${label}" (AI Agent): every handover department needs an id.`);
+        } else if (departmentIds.has(departmentId)) {
+          addError(nodeId, `"${label}" (AI Agent): duplicate department id "${departmentId}".`);
+        } else {
+          departmentIds.add(departmentId);
+        }
+
+        if (!departmentTitle) {
+          addError(nodeId, `"${label}" (AI Agent): department id "${departmentId}" is missing a title.`);
+        }
+      }
+
+      // Warn (not error) when a declared button has no outgoing edge yet, so a
+      // customer tap would silently do nothing (resolveButtonTarget Tier 1).
+      if (buttons.length > 0) {
+        const nodeEdges = edges.filter((e: any) => e.source === nodeId);
+        for (const button of buttons) {
+          const buttonId = typeof button?.id === 'string' ? button.id.trim() : '';
+          if (!buttonId) continue;
+          const connected = nodeEdges.some((e: any) => e.sourceHandle === buttonId);
+          if (!connected) {
+            addWarning(
+              nodeId,
+              `"${label}" (AI Agent): button "${buttonId}" has no outgoing edge yet — connect it so a tap can route.`
+            );
+          }
+        }
       }
 
       continue;

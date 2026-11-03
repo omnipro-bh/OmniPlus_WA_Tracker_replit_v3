@@ -243,28 +243,35 @@ export function buildChatHost(opts: {
   const inserted: WebChatMessage[] = [];
   const sessionKey = opts.session.sessionKey;
 
+  // Persist a normalized bubble as a `web_chat_messages` row and expose it in the
+  // tick's `messages` list. Shared by `sendMessage` and the AI `send_buttons` path.
+  const persistBubble = async (bubble: SandboxMessage): Promise<PublicMessage> => {
+    const payload = toBubblePayload(bubble);
+
+    // Throws ⇒ the runner catches it and stops with `stopReason: 'error'`,
+    // which the endpoint renders as a fixed `stopped` status (never a 500).
+    const row = await storage.createWebChatMessage({
+      sessionId: opts.session.id,
+      workflowId: opts.session.workflowId,
+      role: "bot",
+      kind: bubble.type,
+      nodeId: bubble.nodeId,
+      payload,
+    });
+
+    inserted.push(row);
+    const publicMessage = toPublicMessage(row);
+    messages.push(publicMessage);
+    return publicMessage;
+  };
+
   const host: FlowHost = {
     errorPolicy: "stop",
     maxSteps: CHAT_MAX_STEPS,
 
     sendMessage: async (node, nodeId, context) => {
       const bubble = buildSandboxMessage(node, nodeId, context);
-      const payload = toBubblePayload(bubble);
-
-      // Throws ⇒ the runner catches it and stops with `stopReason: 'error'`,
-      // which the endpoint renders as a fixed `stopped` status (never a 500).
-      const row = await storage.createWebChatMessage({
-        sessionId: opts.session.id,
-        workflowId: opts.session.workflowId,
-        role: "bot",
-        kind: bubble.type,
-        nodeId,
-        payload,
-      });
-
-      inserted.push(row);
-      const publicMessage = toPublicMessage(row);
-      messages.push(publicMessage);
+      const publicMessage = await persistBubble(bubble);
       return { ok: true, payload: publicMessage };
     },
 
@@ -325,6 +332,23 @@ export function buildChatHost(opts: {
         { phone: sessionKey, userId: opts.linkUserId },
         { channel: "web_chat", workflowId: opts.session.workflowId }
       );
+
+      // Phase 2: `send_buttons` → a persisted button bubble in the transcript.
+      // Handover / success / error keep Phase 1 behaviour.
+      if (aiResult.nextHandle === "buttons") {
+        const selectedButtons = (aiResult.result?.buttons || []).slice(0, 3);
+        await persistBubble({
+          nodeId,
+          nodeType: "action.ai_agent",
+          type: "buttons",
+          text: aiResult.result?.buttonText || "Please choose an option:",
+          buttons: selectedButtons.map((b) => ({
+            id: b.id,
+            title: b.title,
+            type: "quick_reply",
+          })),
+        });
+      }
 
       return {
         ok: aiResult.success,
