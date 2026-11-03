@@ -41,8 +41,8 @@ export const LLM_PROVIDERS: Record<LlmProviderId, LlmProviderDefinition> = {
     label: 'Groq',
     envKey: 'GROQ_API_KEY',
     baseURL: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.3-70b-versatile',
-    suggestedModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+    defaultModel: 'qwen/qwen3.8-27b',
+    suggestedModels: ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'],
   },
   mock: {
     id: 'mock',

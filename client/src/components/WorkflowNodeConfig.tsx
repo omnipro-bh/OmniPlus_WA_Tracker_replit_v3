@@ -2668,7 +2668,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     const temperature = typeof config.temperature === 'number' ? config.temperature : 0.7;
     const modelPlaceholder =
       provider === 'groq'
-        ? 'llama-3.3-70b-versatile'
+        ? 'qwen/qwen3.8-27b'
         : provider === 'mock'
           ? 'mock-model'
           : 'deepseek-chat';

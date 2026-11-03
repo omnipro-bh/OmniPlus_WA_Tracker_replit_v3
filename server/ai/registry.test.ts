@@ -44,7 +44,7 @@ test('provider definitions carry the locked base URLs and models', () => {
   assert.equal(LLM_PROVIDERS.deepseek.envKey, 'DEEPSEEK_API_KEY');
 
   assert.equal(LLM_PROVIDERS.groq.baseURL, 'https://api.groq.com/openai/v1');
-  assert.equal(LLM_PROVIDERS.groq.defaultModel, 'llama-3.3-70b-versatile');
+  assert.equal(LLM_PROVIDERS.groq.defaultModel, 'qwen/qwen3.8-27b');
   assert.equal(LLM_PROVIDERS.groq.envKey, 'GROQ_API_KEY');
 
   assert.equal(LLM_PROVIDERS.mock.envKey, null);
@@ -60,8 +60,8 @@ test('isLlmProviderId rejects unknown providers', () => {
 
 test('resolveModel falls back to the provider default', () => {
   assert.equal(resolveModel('deepseek', ''), 'deepseek-chat');
-  assert.equal(resolveModel('groq', '   '), 'llama-3.3-70b-versatile');
-  assert.equal(resolveModel('groq', ' llama-3.1-8b-instant '), 'llama-3.1-8b-instant');
+  assert.equal(resolveModel('groq', '   '), 'qwen/qwen3.8-27b');
+  assert.equal(resolveModel('groq', ' openai/gpt-oss-120b '), 'openai/gpt-oss-120b');
 });
 
 test('mock needs no API key and is cached', () => {
@@ -94,7 +94,7 @@ test('groq with a key resolves to the OpenAI-compatible client and is cached', (
     const client = getLlmClient('groq');
     assert.ok(client instanceof OpenAiCompatibleClient);
     assert.equal(client.id, 'groq');
-    assert.equal(client.defaultModel, 'llama-3.3-70b-versatile');
+    assert.equal(client.defaultModel, 'qwen/qwen3.8-27b');
     assert.equal(getLlmClient('groq'), client, 'expected the same cached instance');
   } finally {
     restore();
