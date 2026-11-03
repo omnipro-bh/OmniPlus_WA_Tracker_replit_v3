@@ -61,10 +61,10 @@ export function ChatLeftPanel({ config, meta, onStartOver, onEndChat }: ChatLeft
 
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Try these
+          Important notes
         </h2>
         <ul className="space-y-2.5">
-          {config.tryThese.map((item, i) => (
+          {config.importantNotes.map((item, i) => (
             <li key={i} className="flex items-start gap-2.5">
               <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
               <span className="text-sm text-muted-foreground">{item}</span>

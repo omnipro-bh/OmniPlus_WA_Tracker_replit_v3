@@ -17,8 +17,8 @@ export interface ChatPageCopy {
   subtext: string;
   /** Numbered "How to use" list. */
   howToUse: string[];
-  /** Bullet "Try these" list. */
-  tryThese: string[];
+  /** Bullet "Important notes" list. */
+  importantNotes: string[];
   startOverLabel: string;
   contact: ChatPageContact;
   /** Small print at the bottom of the panel, e.g. "Powered by OMNI PLUS". */
@@ -32,14 +32,14 @@ export const DEFAULT_CHAT_PAGE_COPY: ChatPageCopy = {
   subtext:
     "This assistant replies instantly — type a message or tap an option to continue.",
   howToUse: [
-    "Type your question in the box below and press send.",
-    "Tap a button when it appears to choose an option.",
+    "Click on the start over button to start the bot menu.",
+    "Navigate by clicking on message buttons.",
     "Your conversation stays private to this link.",
   ],
-  tryThese: [
-    "Ask what this assistant can help with.",
-    "Type “hello” to start.",
-    "Choose one of the options shown.",
+  importantNotes: [
+    "This is only demo bot not a full product.",
+    "You can reach out to us for any customizations.",
+    "The bot link is active for limited time only.",
   ],
   startOverLabel: "Start over",
   contact: {
