@@ -17,12 +17,25 @@ import type {
   LlmCompletionResult,
   LlmMessage,
   LlmProviderId,
+  LlmToolCall,
 } from '../types';
 import { approxTokens } from '../contextBuilder';
+
+/** A scripted tool-call the mock should emit for a given turn. */
+export interface MockToolCall {
+  name: string;
+  arguments?: Record<string, any>;
+}
 
 export interface MockClientOptions {
   /** Replies returned in order, one per call. */
   replies?: string[];
+  /**
+   * Per-call tool-call script. Each entry is the `toolCalls` to return for that
+   * call, or `null` for a plain text reply. A call that consumes a non-empty
+   * entry returns `finishReason: 'tool_calls'` and empty text.
+   */
+  toolCalls?: (MockToolCall[] | null)[];
   defaultModel?: string;
   /**
    * When set, `complete()` returns `finishReason: 'error'` instead of a reply.
@@ -43,6 +56,7 @@ export class MockLlmClient implements LlmClient {
   readonly defaultModel: string;
 
   private queue: string[];
+  private readonly toolCallQueue: (MockToolCall[] | null)[];
   private readonly failWith?: string;
 
   /** Every request received, in order. Tests assert against this. */
@@ -50,6 +64,7 @@ export class MockLlmClient implements LlmClient {
 
   constructor(options: MockClientOptions = {}) {
     this.queue = [...(options.replies ?? [])];
+    this.toolCallQueue = [...(options.toolCalls ?? [])];
     this.defaultModel = options.defaultModel ?? 'mock-model';
     this.failWith = options.failWith;
   }
@@ -69,6 +84,7 @@ export class MockLlmClient implements LlmClient {
     this.requests.push(request);
 
     const model = request.model || this.defaultModel;
+    const promptTokens = request.messages.reduce((sum, m) => sum + approxTokens(m.content), 0);
 
     if (this.failWith) {
       return {
@@ -80,12 +96,39 @@ export class MockLlmClient implements LlmClient {
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         latencyMs: Date.now() - startedAt,
         attempts: 1,
+        toolCalls: [],
         error: this.failWith,
       };
     }
 
+    // A scripted tool-call turn takes priority over the text queue. A `null`
+    // entry means "answer with text this turn" (fall through to the reply).
+    if (this.toolCallQueue.length > 0) {
+      const scripted = this.toolCallQueue.shift();
+      const calls = Array.isArray(scripted) ? scripted : null;
+
+      if (calls && calls.length > 0) {
+        const toolCalls: LlmToolCall[] = calls.map((call, index) => ({
+          id: `call_${call.name}_${index}`,
+          name: call.name,
+          arguments: call.arguments ?? {},
+        }));
+
+        return {
+          ok: true,
+          text: '',
+          provider: this.id,
+          model,
+          finishReason: 'tool_calls',
+          usage: { promptTokens, completionTokens: 0, totalTokens: promptTokens },
+          latencyMs: Date.now() - startedAt,
+          attempts: 1,
+          toolCalls,
+        };
+      }
+    }
+
     const text = this.queue.length > 0 ? (this.queue.shift() as string) : `Mock reply: ${lastUserContent(request.messages)}`;
-    const promptTokens = request.messages.reduce((sum, m) => sum + approxTokens(m.content), 0);
     const completionTokens = approxTokens(text);
 
     return {
@@ -101,6 +144,7 @@ export class MockLlmClient implements LlmClient {
       },
       latencyMs: Date.now() - startedAt,
       attempts: 1,
+      toolCalls: [],
     };
   }
 }

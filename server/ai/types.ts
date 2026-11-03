@@ -14,15 +14,44 @@
 /** Providers shipped in Phase 1. OpenAI is deferred to Phase 2. */
 export type LlmProviderId = 'deepseek' | 'groq' | 'mock';
 
-export type LlmRole = 'system' | 'user' | 'assistant';
+export type LlmRole = 'system' | 'user' | 'assistant' | 'tool';
+
+/**
+ * One function the model may call, in the OpenAI `tools` JSON-schema form.
+ * Phase 2: `send_buttons` and `handover` are built from node config by
+ * `server/ai/tools.ts`.
+ */
+export interface LlmToolDef {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, any>;
+  };
+}
+
+/** One parsed tool-call request returned by the model. */
+export interface LlmToolCall {
+  /** Provider call id — echoed back on the matching `tool` message. */
+  id: string;
+  name: string;
+  /** Parsed JSON arguments (`{}` when absent or malformed). */
+  arguments: Record<string, any>;
+}
 
 export interface LlmMessage {
   role: LlmRole;
   content: string;
+  /** Assistant messages that requested tools carry these (Phase 2). */
+  tool_calls?: LlmToolCall[];
+  /** `tool` result messages echo the call id they answer (Phase 2). */
+  tool_call_id?: string;
+  /** `tool` result messages carry the called function's name (Phase 2). */
+  name?: string;
 }
 
 /** Why the model stopped. `'error'` means the call itself failed. */
-export type LlmFinishReason = 'stop' | 'length' | 'error';
+export type LlmFinishReason = 'stop' | 'length' | 'tool_calls' | 'error';
 
 /** Token accounting as reported by the provider (0 when unknown). */
 export interface LlmUsage {
@@ -43,6 +72,12 @@ export interface LlmCompletionRequest {
   timeoutMs?: number;
   /** Caller-owned cancellation (also fired by the timeout controller). */
   signal?: AbortSignal;
+  /** Tool definitions offered to the model (Phase 2). Omit for plain chat. */
+  tools?: LlmToolDef[];
+  /** How the model may use tools. Defaults to `auto` when `tools` is set. */
+  toolChoice?: 'auto' | 'none' | 'required';
+  /** Disable parallel tool calls (one tool call per turn). */
+  parallelToolCalls?: boolean;
 }
 
 export interface LlmCompletionResult {
@@ -57,6 +92,8 @@ export interface LlmCompletionResult {
   latencyMs: number;
   /** Network/HTTP attempts performed (mock = 1). */
   attempts: number;
+  /** Tool-call requests in this turn (`[]` when the model answered with text). */
+  toolCalls: LlmToolCall[];
   error?: string;
 }
 

@@ -40,7 +40,7 @@ test('registry exposes the three Phase 1 providers', () => {
 
 test('provider definitions carry the locked base URLs and models', () => {
   assert.equal(LLM_PROVIDERS.deepseek.baseURL, 'https://api.deepseek.com/v1');
-  assert.equal(LLM_PROVIDERS.deepseek.defaultModel, 'deepseek-chat');
+  assert.equal(LLM_PROVIDERS.deepseek.defaultModel, 'deepseek-flash');
   assert.equal(LLM_PROVIDERS.deepseek.envKey, 'DEEPSEEK_API_KEY');
 
   assert.equal(LLM_PROVIDERS.groq.baseURL, 'https://api.groq.com/openai/v1');
@@ -59,7 +59,7 @@ test('isLlmProviderId rejects unknown providers', () => {
 });
 
 test('resolveModel falls back to the provider default', () => {
-  assert.equal(resolveModel('deepseek', ''), 'deepseek-chat');
+  assert.equal(resolveModel('deepseek', ''), 'deepseek-flash');
   assert.equal(resolveModel('groq', '   '), 'qwen/qwen3.8-27b');
   assert.equal(resolveModel('groq', ' openai/gpt-oss-120b '), 'openai/gpt-oss-120b');
 });

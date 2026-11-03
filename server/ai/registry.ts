@@ -33,8 +33,8 @@ export const LLM_PROVIDERS: Record<LlmProviderId, LlmProviderDefinition> = {
     label: 'DeepSeek',
     envKey: 'DEEPSEEK_API_KEY',
     baseURL: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    suggestedModels: ['deepseek-chat', 'deepseek-reasoner'],
+    defaultModel: 'deepseek-flash',
+    suggestedModels: ['deepseek-flash', 'deepseek-v4-pro'],
   },
   groq: {
     id: 'groq',
