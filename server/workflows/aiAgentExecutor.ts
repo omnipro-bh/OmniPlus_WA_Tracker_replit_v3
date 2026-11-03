@@ -26,9 +26,20 @@ import { buildChatContext, historyBytes, trimHistory } from '../ai/contextBuilde
 import { buildSystemPrompt } from '../ai/prompt';
 import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry';
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
+import {
+  TOOL_HANDOVER,
+  TOOL_SEND_BUTTONS,
+  ToolArgumentError,
+  buildToolList,
+  parseHandoverArgs,
+  parseSendButtonsArgs,
+  type AiButtonSlot,
+  type AiDepartmentSlot,
+} from '../ai/tools';
 import type {
   AiAgentSettings,
   LlmClient,
+  LlmCompletionResult,
   LlmFinishReason,
   LlmMessage,
   LlmProviderId,
@@ -44,6 +55,11 @@ export const AI_DEFAULT_TEMPERATURE = 0.7;
 export const AI_MAX_TOKENS = 8192;
 export const AI_MAX_HISTORY_LIMIT = 50;
 
+/** Phase 2: max tool-calling rounds before the node gives up (prevents loops). */
+export const AI_MAX_TOOL_ROUNDS = 3;
+/** Fallback body text when the model calls `send_buttons` with no content. */
+export const AI_BUTTON_TEXT_FALLBACK = 'Please choose an option:';
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AiChannel = 'whatsapp' | 'web_chat' | 'sandbox';
@@ -56,6 +72,10 @@ export interface AiAgentNodeConfig {
   maxTokens?: number | string;
   historyLimit?: number | string;
   responseVariable?: string;
+  /** Phase 2: declared button slots the model may offer (send_buttons). */
+  buttons?: AiButtonSlot[];
+  /** Phase 2: declared departments for handover. */
+  handoverDepartments?: AiDepartmentSlot[];
 }
 
 export interface AiAgentExecutionContext {
@@ -74,8 +94,12 @@ export interface AiAgentExecutionContext {
   timeoutMs?: number;
 }
 
+/** The handle the node routes to after a turn. */
+export type AiNextHandle = 'success' | 'buttons' | 'handover' | 'error';
+
 export interface AiAgentExecutionResult {
   success: boolean;
+  nextHandle: AiNextHandle;
   provider: LlmProviderId;
   model: string;
   text: string;
@@ -88,12 +112,18 @@ export interface AiAgentExecutionResult {
   history: LlmMessage[];
   /** Context after this turn (history + response variable). */
   stateUpdate: Record<string, any>;
+  /** Populated when the model called `send_buttons` (buttons bubble to send). */
+  buttons?: { id: string; title: string }[];
+  /** Body text for the buttons bubble (model content or fallback). */
+  buttonText?: string;
+  /** Populated when the model called `handover`. */
+  handover?: { department: string; reason: string; title: string };
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
 export interface AiAgentNodeExecutionResult {
   success: boolean;
-  nextHandle: 'success' | 'error';
+  nextHandle: AiNextHandle;
   result: AiAgentExecutionResult;
   stateUpdate: any;
 }
@@ -182,6 +212,63 @@ function fitContextCeiling(stateUpdate: Record<string, any>, nodeId: string): vo
 
 // ── Pure executor ──────────────────────────────────────────────────────────
 
+/** Normalize declared button slots from raw config, dropping malformed entries. */
+function normalizeButtonSlots(raw: any): AiButtonSlot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((b: any) => b && typeof b.id === 'string' && b.id.trim())
+    .map((b: any) => ({
+      id: b.id.trim(),
+      title: typeof b.title === 'string' && b.title.trim() ? b.title : b.id,
+    }));
+}
+
+/** Normalize declared handover departments from raw config. */
+function normalizeDepartmentSlots(raw: any): AiDepartmentSlot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((d: any) => d && typeof d.id === 'string' && d.id.trim())
+    .map((d: any) => ({
+      id: d.id.trim(),
+      title: typeof d.title === 'string' && d.title.trim() ? d.title : d.id,
+    }));
+}
+
+/** Execute `send_buttons`: validate ids against declared slots, build the bubble. */
+function executeSendButtons(
+  args: Record<string, any>,
+  declared: AiButtonSlot[],
+  modelContent: string
+): { buttons: { id: string; title: string }[]; buttonText: string } {
+  const ids = parseSendButtonsArgs(args);
+  const byId = new Map(declared.map((b) => [b.id, b]));
+
+  const buttons: { id: string; title: string }[] = [];
+  for (const id of ids) {
+    const slot = byId.get(id);
+    if (!slot) {
+      throw new ToolArgumentError(`send_buttons: "${id}" is not a declared button id.`);
+    }
+    buttons.push({ id: slot.id, title: slot.title });
+  }
+
+  const buttonText = (modelContent || '').trim() || AI_BUTTON_TEXT_FALLBACK;
+  return { buttons, buttonText };
+}
+
+/** Execute `handover`: validate department against declared slots. */
+function executeHandover(
+  args: Record<string, any>,
+  declared: AiDepartmentSlot[]
+): { department: string; reason: string; title: string } {
+  const { department, reason } = parseHandoverArgs(args);
+  const slot = declared.find((d) => d.id === department);
+  if (!slot) {
+    throw new ToolArgumentError(`handover: "${department}" is not a declared department.`);
+  }
+  return { department, reason, title: slot.title };
+}
+
 function emptyResult(
   settings: AiAgentSettings,
   error: string,
@@ -212,6 +299,7 @@ function emptyResult(
 
   return {
     success: false,
+    nextHandle: 'error',
     provider: settings.provider,
     model: settings.model,
     text: '',
@@ -279,27 +367,114 @@ export async function executeAiAgentNode(
     return emptyResult(settings, message, previousHistory, stateUpdate, nodeId, useHistory);
   }
 
-  const completion = await client.complete({
-    messages,
+  const declaredButtons = normalizeButtonSlots(config.buttons);
+  const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
+  const tools = buildToolList({ buttons: declaredButtons, handoverDepartments: declaredDepartments });
+
+  const startedAt = Date.now();
+  let totalUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let totalAttempts = 0;
+  let lastCompletion: LlmCompletionResult | null = null;
+  let toolOutcome:
+    | { kind: 'buttons'; buttons: { id: string; title: string }[]; buttonText: string }
+    | { kind: 'handover'; handover: { department: string; reason: string; title: string } }
+    | null = null;
+  let toolError: string | null = null;
+
+  const requestBase: Record<string, any> = {
     model: settings.model,
     temperature: settings.temperature,
     maxTokens: settings.maxTokens,
     timeoutMs: exec.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-  });
-
-  const entry: Record<string, any> = {
-    provider: completion.provider,
-    model: completion.model,
-    text: completion.text,
-    finishReason: completion.finishReason,
-    usage: completion.usage,
-    latencyMs: completion.latencyMs,
-    attempts: completion.attempts,
-    updatedAt: new Date().toISOString(),
   };
+  if (tools.length > 0) {
+    requestBase.tools = tools;
+    requestBase.toolChoice = 'auto';
+    requestBase.parallelToolCalls = false;
+  }
 
-  if (!completion.ok) {
-    entry.error = completion.error || 'AI provider failed';
+  // Tool loop: model → (tool) → model → … up to `AI_MAX_TOOL_ROUNDS` rounds.
+  // With no tools configured this is exactly one `complete()` call (Phase 1).
+  for (let round = 0; round < AI_MAX_TOOL_ROUNDS; round++) {
+    const completion = await client.complete({ messages, ...requestBase });
+    lastCompletion = completion;
+
+    totalUsage = {
+      promptTokens: totalUsage.promptTokens + completion.usage.promptTokens,
+      completionTokens: totalUsage.completionTokens + completion.usage.completionTokens,
+      totalTokens: totalUsage.totalTokens + completion.usage.totalTokens,
+    };
+    totalAttempts += completion.attempts;
+
+    if (!completion.ok) {
+      toolError = completion.error || 'AI provider failed';
+      break;
+    }
+
+    // Plain text answer → done.
+    if (completion.toolCalls.length === 0) break;
+
+    // Execute the first recognized (terminal) tool call. Both Phase 2 tools are
+    // terminal; anything else is fed a failure result and the loop continues.
+    let terminal = false;
+    for (const toolCall of completion.toolCalls) {
+      if (toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_HANDOVER) {
+        try {
+          if (toolCall.name === TOOL_SEND_BUTTONS) {
+            const { buttons, buttonText } = executeSendButtons(
+              toolCall.arguments,
+              declaredButtons,
+              completion.text
+            );
+            toolOutcome = { kind: 'buttons', buttons, buttonText };
+          } else {
+            toolOutcome = { kind: 'handover', handover: executeHandover(toolCall.arguments, declaredDepartments) };
+          }
+          terminal = true;
+        } catch (error: any) {
+          toolError = error?.message || 'Invalid tool arguments';
+        }
+        break;
+      }
+    }
+
+    if (toolError) break;
+    if (terminal) break;
+
+    // No terminal tool this round: append the assistant tool_calls + a result
+    // for each call, then let the model try again (also exercises the cap).
+    messages.push({
+      role: 'assistant',
+      content: completion.text,
+      tool_calls: completion.toolCalls,
+    });
+    for (const toolCall of completion.toolCalls) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        name: toolCall.name,
+        content: JSON.stringify({ ok: false, error: `Unknown tool "${toolCall.name}"` }),
+      });
+    }
+  }
+
+  const completion = lastCompletion as LlmCompletionResult;
+
+  // ── Error paths ─────────────────────────────────────────────────────────
+  if (!completion || toolError || !completion.ok) {
+    const error = toolError || completion?.error || 'AI provider failed';
+    const entry: Record<string, any> = {
+      provider: settings.provider,
+      model: settings.model,
+      text: '',
+      finishReason: 'error',
+      usage: totalUsage,
+      latencyMs: Date.now() - startedAt,
+      attempts: totalAttempts,
+      error,
+      updatedAt: new Date().toISOString(),
+    };
+
     if (useHistory) {
       stateUpdate.ai = {
         ...(stateUpdate.ai || {}),
@@ -309,30 +484,65 @@ export async function executeAiAgentNode(
 
     return {
       success: false,
-      provider: completion.provider,
-      model: completion.model,
+      nextHandle: 'error',
+      provider: settings.provider,
+      model: settings.model,
       text: '',
       finishReason: 'error',
-      usage: completion.usage,
-      latencyMs: completion.latencyMs,
-      attempts: completion.attempts,
-      error: entry.error,
+      usage: totalUsage,
+      latencyMs: Date.now() - startedAt,
+      attempts: totalAttempts,
+      error,
       history: previousHistory,
       stateUpdate,
     };
   }
 
+  // Model kept returning tool calls past the cap without a terminal tool or a
+  // final answer (an unknown tool loop). A terminal tool is handled below.
+  if (completion.toolCalls.length > 0 && !toolOutcome) {
+    const message = `AI did not produce a final answer after ${AI_MAX_TOOL_ROUNDS} tool rounds`;
+    console.warn(`[AI Executor] ${message}`);
+    return emptyResult(settings, message, previousHistory, stateUpdate, nodeId, useHistory);
+  }
+
+  // ── Success: determine the handle and final text ─────────────────────────
+  let nextHandle: AiNextHandle = 'success';
+  let finalText = completion.text;
+  let buttons: { id: string; title: string }[] | undefined;
+  let buttonText: string | undefined;
+  let handover: { department: string; reason: string; title: string } | undefined;
+
+  if (toolOutcome?.kind === 'buttons') {
+    nextHandle = 'buttons';
+    buttons = toolOutcome.buttons;
+    buttonText = toolOutcome.buttonText;
+    finalText = toolOutcome.buttonText;
+  } else if (toolOutcome?.kind === 'handover') {
+    nextHandle = 'handover';
+    handover = toolOutcome.handover;
+    finalText = completion.text;
+  }
+
   // Successful turn: append both sides so the next message sees the exchange.
+  const assistantTurn: LlmMessage[] = [{ role: 'user' as const, content: userMessage }];
+  if (finalText) assistantTurn.push({ role: 'assistant' as const, content: finalText });
   const history = useHistory
-    ? trimHistory(
-        [
-          ...previousHistory,
-          { role: 'user' as const, content: userMessage },
-          { role: 'assistant' as const, content: completion.text },
-        ],
-        { maxMessages: settings.historyLimit }
-      )
+    ? trimHistory([...previousHistory, ...assistantTurn], { maxMessages: settings.historyLimit })
     : [];
+
+  const entry: Record<string, any> = {
+    provider: settings.provider,
+    model: settings.model,
+    text: finalText,
+    finishReason: completion.finishReason,
+    usage: totalUsage,
+    latencyMs: Date.now() - startedAt,
+    attempts: totalAttempts,
+    updatedAt: new Date().toISOString(),
+  };
+  if (buttons) entry.buttons = buttons;
+  if (handover) entry.handover = handover;
 
   if (useHistory) {
     stateUpdate.ai = {
@@ -340,21 +550,24 @@ export async function executeAiAgentNode(
       [nodeId]: { ...entry, history },
     };
     // Downstream nodes read {{ai.<nodeId>.text}} or the response variable.
-    stateUpdate[settings.responseVariable] = completion.text;
+    stateUpdate[settings.responseVariable] = finalText;
     fitContextCeiling(stateUpdate, nodeId);
   }
 
   return {
     success: true,
-    provider: completion.provider,
-    model: completion.model,
-    text: completion.text,
+    nextHandle,
+    provider: settings.provider,
+    model: settings.model,
+    text: finalText,
     finishReason: completion.finishReason,
-    usage: completion.usage,
-    latencyMs: completion.latencyMs,
-    attempts: completion.attempts,
+    usage: totalUsage,
+    latencyMs: Date.now() - startedAt,
+    attempts: totalAttempts,
     history,
     stateUpdate,
+    ...(buttons ? { buttons, buttonText } : {}),
+    ...(handover ? { handover } : {}),
   };
 }
 
@@ -395,6 +608,8 @@ export async function executeAiAgentWorkflowNode(
     maxTokens: rawConfig.maxTokens,
     historyLimit: rawConfig.historyLimit,
     responseVariable: rawConfig.responseVariable,
+    buttons: rawConfig.buttons,
+    handoverDepartments: rawConfig.handoverDepartments,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);
@@ -409,7 +624,7 @@ export async function executeAiAgentWorkflowNode(
     businessName: options.businessName,
   });
 
-  const nextHandle: 'success' | 'error' = result.success ? 'success' : 'error';
+  const nextHandle: AiNextHandle = result.nextHandle;
 
   if (options.logUsage !== false && options.workflowId !== undefined && userMetadata?.userId) {
     const { logAiUsage } = await import('./ai-usage');

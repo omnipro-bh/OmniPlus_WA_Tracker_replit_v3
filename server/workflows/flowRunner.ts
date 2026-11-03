@@ -100,7 +100,8 @@ export interface SentMessage {
 
 export interface HttpRunResult {
   ok: boolean;
-  nextHandle: 'success' | 'error';
+  /** HTTP/Sheets use `success`/`error`; the AI node adds `buttons`/`handover`. */
+  nextHandle: 'success' | 'error' | 'buttons' | 'handover';
   context: any;
   detail?: Record<string, any>;
 }
