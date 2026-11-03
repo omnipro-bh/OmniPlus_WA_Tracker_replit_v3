@@ -58,6 +58,20 @@ export function isRetryableStatus(status: number | null): boolean {
   return status === 429 || status >= 500;
 }
 
+/**
+ * Groq (and some other OpenAI-compatible providers) intermittently rejects a
+ * tool call the model made *even when `tool_choice: 'auto'`* with a 400 whose
+ * code is `tool_use_failed` ("Tool choice is none, but model called a tool").
+ * It is a model behaviour, not a config error, and Groq documents retrying it.
+ * 400s are otherwise non-retryable, so this one is detected explicitly.
+ */
+export function isToolUseFailure(error: any): boolean {
+  const code = error?.code ?? error?.error?.code;
+  if (code === 'tool_use_failed') return true;
+  const message = String(error?.message ?? error?.error?.message ?? '');
+  return message.includes('Tool choice is none');
+}
+
 function messageOf(error: any): string {
   if (isTimeoutError(error)) {
     return 'The AI provider did not answer in time.';
@@ -200,7 +214,7 @@ export class OpenAiCompatibleClient implements LlmClient {
               parameters: tool.function.parameters,
             },
           }));
-          body.tool_choice = request.toolChoice ?? 'auto';
+          body.tool_choice = request.toolChoice ?? 'auto'; // never default to 'none'
           if (typeof request.parallelToolCalls === 'boolean') {
             body.parallel_tool_calls = request.parallelToolCalls;
           }
@@ -237,7 +251,10 @@ export class OpenAiCompatibleClient implements LlmClient {
           ? `The AI provider did not answer within ${timeoutMs}ms.`
           : messageOf(error);
 
-        const canRetry = attempt < MAX_ATTEMPTS - 1 && !timedOut && isRetryableStatus(status);
+        const canRetry =
+          attempt < MAX_ATTEMPTS - 1 &&
+          !timedOut &&
+          (isRetryableStatus(status) || isToolUseFailure(error));
         if (!canRetry) {
           if (status !== null) lastError = `${lastError} (HTTP ${status})`;
           break;
