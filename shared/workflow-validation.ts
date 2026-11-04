@@ -388,32 +388,51 @@ export function validateWorkflowNodeConfigs(
       }
 
       // Phase 3: business-hours schedule. A single window across the selected days.
+      // A schedule object may exist with all fields empty; treat that as "no
+      // schedule". Only validate the hours when at least one is present — an
+      // empty optional section must not block saving.
       const aiSchedule = config.aiSchedule;
       if (aiSchedule !== undefined && aiSchedule !== null) {
-        const scheduleStart = Number(aiSchedule?.startHour);
-        const scheduleEnd = Number(aiSchedule?.endHour);
-        if (!Number.isInteger(scheduleStart) || scheduleStart < 0 || scheduleStart > 23) {
-          addError(
-            nodeId,
-            `"${label}" (AI Agent): schedule start hour must be a whole number between 0 and 23.`
-          );
+        const hasStart =
+          aiSchedule?.startHour !== undefined &&
+          aiSchedule?.startHour !== null &&
+          aiSchedule?.startHour !== '';
+        const hasEnd =
+          aiSchedule?.endHour !== undefined &&
+          aiSchedule?.endHour !== null &&
+          aiSchedule?.endHour !== '';
+
+        if (hasStart || hasEnd) {
+          const scheduleStart = Number(aiSchedule?.startHour);
+          const scheduleEnd = Number(aiSchedule?.endHour);
+          const startOk =
+            hasStart && Number.isInteger(scheduleStart) && scheduleStart >= 0 && scheduleStart <= 23;
+          const endOk =
+            hasEnd && Number.isInteger(scheduleEnd) && scheduleEnd >= 0 && scheduleEnd <= 23;
+
+          if (!hasStart || !hasEnd) {
+            addWarning(
+              nodeId,
+              `"${label}" (AI Agent): schedule needs both a start and end hour to take effect.`
+            );
+          } else if (!startOk) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): schedule start hour must be a whole number between 0 and 23.`
+            );
+          } else if (!endOk) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): schedule end hour must be a whole number between 0 and 23.`
+            );
+          } else if (scheduleStart === scheduleEnd) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): schedule start and end hour must be different.`
+            );
+          }
         }
-        if (!Number.isInteger(scheduleEnd) || scheduleEnd < 0 || scheduleEnd > 23) {
-          addError(
-            nodeId,
-            `"${label}" (AI Agent): schedule end hour must be a whole number between 0 and 23.`
-          );
-        }
-        if (
-          Number.isInteger(scheduleStart) &&
-          Number.isInteger(scheduleEnd) &&
-          scheduleStart === scheduleEnd
-        ) {
-          addError(
-            nodeId,
-            `"${label}" (AI Agent): schedule start and end hour must be different.`
-          );
-        }
+
         const scheduleDays = Array.isArray(aiSchedule?.daysOfWeek) ? aiSchedule.daysOfWeek : [];
         for (const day of scheduleDays) {
           if (!Number.isInteger(day) || day < 0 || day > 6) {

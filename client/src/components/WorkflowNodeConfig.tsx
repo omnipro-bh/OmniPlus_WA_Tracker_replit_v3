@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { TestTube, Plus, X, RefreshCw, Database, ChevronDown } from 'lucide-react';
 import { useState, useRef } from 'react';
@@ -2741,6 +2742,28 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     };
     const regenerateAiListRowId = (index: number) => updateAiListRow(index, 'id', generateId('row'));
 
+    // Phase 3: schedule / usage limits / message cap.
+    const aiSchedule = config.aiSchedule || {};
+    const aiScheduleDays: number[] = Array.isArray(aiSchedule.daysOfWeek)
+      ? aiSchedule.daysOfWeek
+      : [];
+    const usageLimits = config.usageLimits || {};
+    const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    const updateAiSchedule = (patch: Record<string, any>) => {
+      updateConfig('aiSchedule', { ...aiSchedule, ...patch });
+    };
+    const toggleScheduleDay = (day: number) => {
+      const next = aiScheduleDays.includes(day)
+        ? aiScheduleDays.filter((d) => d !== day)
+        : [...aiScheduleDays, day].sort((a, b) => a - b);
+      updateAiSchedule({ daysOfWeek: next });
+    };
+    const updateUsageLimit = (field: string, value: string) => {
+      const next = { ...usageLimits, [field]: value === '' ? undefined : Number(value) };
+      updateConfig('usageLimits', next);
+    };
+
     return (
       <div className="space-y-4">
         {/* Provider */}
@@ -3097,6 +3120,149 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           <p className="text-xs text-muted-foreground mt-1">
             Force the model to use a specific tool instead of letting it decide. Forcing requires
             the matching tool to be configured (buttons / departments).
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Schedule (optional) */}
+        <div className="space-y-3">
+          <Label>Schedule (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Restrict the AI to business hours. Leave both hours empty to stay always active.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ai-schedule-start">Start hour (0–23)</Label>
+              <Input
+                id="ai-schedule-start"
+                type="number"
+                min={0}
+                max={23}
+                placeholder="9"
+                value={aiSchedule.startHour ?? ''}
+                onChange={(e) =>
+                  updateAiSchedule({
+                    startHour: e.target.value === '' ? undefined : Number(e.target.value),
+                  })
+                }
+                data-testid="input-ai-schedule-start"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ai-schedule-end">End hour (0–23)</Label>
+              <Input
+                id="ai-schedule-end"
+                type="number"
+                min={0}
+                max={23}
+                placeholder="17"
+                value={aiSchedule.endHour ?? ''}
+                onChange={(e) =>
+                  updateAiSchedule({
+                    endHour: e.target.value === '' ? undefined : Number(e.target.value),
+                  })
+                }
+                data-testid="input-ai-schedule-end"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Days active</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {DAY_LABELS.map((label, day) => (
+                <label key={day} className="flex items-center gap-1 text-xs cursor-pointer">
+                  <Checkbox
+                    checked={aiScheduleDays.includes(day)}
+                    onCheckedChange={() => toggleScheduleDay(day)}
+                    data-testid={`checkbox-ai-schedule-day-${day}`}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Leave all days unchecked for every day.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="ai-schedule-tz">Timezone</Label>
+            <Input
+              id="ai-schedule-tz"
+              placeholder="Asia/Bahrain"
+              value={aiSchedule.tz || ''}
+              onChange={(e) => updateAiSchedule({ tz: e.target.value })}
+              data-testid="input-ai-schedule-tz"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              IANA name, e.g. Asia/Bahrain. Leave empty for the platform default.
+            </p>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Usage Limits (optional) */}
+        <div className="space-y-3">
+          <Label>Usage Limits (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Cap how many AI calls this workflow can make. Counted per workflow across all its AI
+            nodes.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="ai-daily-cap">Daily cap</Label>
+              <Input
+                id="ai-daily-cap"
+                type="number"
+                min={1}
+                placeholder="Unlimited"
+                value={usageLimits.dailyMax ?? ''}
+                onChange={(e) => updateUsageLimit('dailyMax', e.target.value)}
+                data-testid="input-ai-daily-cap"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ai-monthly-cap">Monthly cap</Label>
+              <Input
+                id="ai-monthly-cap"
+                type="number"
+                min={1}
+                placeholder="Unlimited"
+                value={usageLimits.monthlyMax ?? ''}
+                onChange={(e) => updateUsageLimit('monthlyMax', e.target.value)}
+                data-testid="input-ai-monthly-cap"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Resets at midnight / on the 1st in Asia/Bahrain. When reached, the AI routes to its
+            error handle.
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Message Cap (optional) */}
+        <div>
+          <Label htmlFor="ai-message-cap">Message Cap (optional)</Label>
+          <Input
+            id="ai-message-cap"
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={config.maxMessagesPerConversation ?? ''}
+            onChange={(e) =>
+              updateConfig(
+                'maxMessagesPerConversation',
+                e.target.value === '' ? undefined : Number(e.target.value)
+              )
+            }
+            data-testid="input-ai-message-cap"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Force a handover after this many AI turns in one conversation. Requires handover
+            departments to be configured.
           </p>
         </div>
 
