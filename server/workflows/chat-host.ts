@@ -322,13 +322,13 @@ export function buildChatHost(opts: {
       };
     },
 
-    runAi: async (node, nodeId, context) => {
+    runAi: async (node, nodeId, context, userMessage) => {
       // Same executor as WhatsApp: the visitor's latest message is the user
       // turn, history lives in this session's conversation_states.context.
       const aiResult = await executeAiAgentWorkflowNode(
         node,
         { context } as any,
-        toWhapiShapedMessage(sessionKey, opts.lastVisitorText ?? ""),
+        toWhapiShapedMessage(sessionKey, userMessage ?? opts.lastVisitorText ?? ""),
         { phone: sessionKey, userId: opts.linkUserId },
         { channel: "web_chat", workflowId: opts.session.workflowId }
       );
@@ -347,6 +347,29 @@ export function buildChatHost(opts: {
             title: b.title,
             type: "quick_reply",
           })),
+        });
+      }
+
+      // Phase 2.5: `send_list` → a persisted list bubble (same projection the
+      // `listMessage` node uses, so the panel/transcript render identically).
+      if (aiResult.nextHandle === "list") {
+        const rows = (aiResult.result?.listRows || []).slice(0, 10);
+        await persistBubble({
+          nodeId,
+          nodeType: "action.ai_agent",
+          type: "list",
+          text: aiResult.result?.listTitle || "Please choose:",
+          buttonLabel: "Choose option",
+          sections: [
+            {
+              title: "Options",
+              rows: rows.map((r) => ({
+                id: r.id,
+                title: r.title,
+                description: r.description || "",
+              })),
+            },
+          ],
         });
       }
 

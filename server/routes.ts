@@ -38,7 +38,7 @@ import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecut
 import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
 import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { resolveTemplate } from "./workflows/httpExecutor";
-import { FLOW_STEP_LIMITS, resolveButtonTarget, runFlow, type FlowHost } from "./workflows/flowRunner";
+import { FLOW_STEP_LIMITS, resolveButtonRoute, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
   enforceContextCeiling,
   getNextNodeBySingleEdge,
@@ -7594,16 +7594,17 @@ export function registerRoutes(app: Express) {
           return res.json(bookingTick.response);
         }
 
-        const edge = resolveButtonTarget(definition, buttonId);
-        if (!edge || !edge.target) {
+        const route = resolveButtonRoute(definition, buttonId, body.cursor ?? undefined);
+        if (!route) {
           return res.status(400).json({ error: "button_not_routed" });
         }
 
         const result = await runFlow({
           definition,
-          startNodeId: edge.target,
+          startNodeId: route.nodeId,
           context: body.context,
           host,
+          userMessage: route.kind === "ai" ? route.title : undefined,
         });
         return res.json(
           assembleSandboxResponse(result, definition, messages, drainBookingTrace())
@@ -10386,13 +10387,15 @@ export function registerRoutes(app: Express) {
           
           // Phase 4A-2a: button -> edge resolution moved to ./workflows/flowRunner
           // so the sandbox routes simulated clicks exactly like production.
-          const targetEdge = resolveButtonTarget(definition, buttonId);
+          // Phase 2.5: an AI-owned option is consumed by the AI node (the click
+          // becomes the next user turn); other node types keep edge routing.
+          const buttonRoute = resolveButtonRoute(definition, buttonId);
 
-          if (targetEdge) {
-            const targetNodeId = targetEdge.target;
+          if (buttonRoute) {
+            const targetNodeId = buttonRoute.nodeId;
             const targetNode = definition.nodes?.find((n: any) => n.id === targetNodeId);
             
-            console.log(`[Button Reply Debug] Target node ID: ${targetNodeId}`);
+            console.log(`[Button Reply Debug] Route kind: ${buttonRoute.kind}, target node ID: ${targetNodeId}`);
             console.log(`[Button Reply Debug] Target node found: ${!!targetNode}`);
             
             // Extract button title for capture and other features
@@ -10403,6 +10406,10 @@ export function registerRoutes(app: Express) {
               clickedButtonTitle = incomingMessage.reply.list_reply?.title || "";
             } else if (incomingMessage.button?.text) {
               clickedButtonTitle = incomingMessage.button.text;
+            }
+            // Phase 2.5: the config title is the reliable source for an AI option.
+            if (!clickedButtonTitle && buttonRoute.kind === 'ai') {
+              clickedButtonTitle = buttonRoute.title;
             }
             
             if (targetNode) {
@@ -10464,7 +10471,7 @@ export function registerRoutes(app: Express) {
                   buttonId: buttonId,
                   buttonTitle: clickedButtonTitle,
                   timestamp: new Date().toISOString(),
-                  nodeId: targetEdge.source, // The node the button was on
+                  nodeId: buttonRoute.kind === 'node' ? buttonRoute.sourceId : buttonRoute.nodeId, // The node the button was on
                 });
                 
                 console.log(`[Data Capture] Recorded click: "${clickedButtonTitle}" (total: ${capturedClicks.length})`);
@@ -10663,11 +10670,18 @@ export function registerRoutes(app: Express) {
                   };
                 },
 
-                runAi: async (node, nodeId, ctx) => {
+                runAi: async (node, nodeId, ctx, userMessage) => {
+                  // Phase 2.5: an AI-owned button/list click resumes at THIS node,
+                  // so the picked option is the visitor's turn. WhatsApp puts the
+                  // label in reply.*.title, not text.body, so synthesize it.
+                  const aiIncoming = userMessage
+                    ? { ...incomingMessage, text: { body: userMessage } }
+                    : incomingMessage;
+
                   const aiResult = await executeAiAgentWorkflowNode(
                     node,
                     { ...state, context: ctx } as any,
-                    incomingMessage,
+                    aiIncoming,
                     { phone, userId: activeWorkflow.userId },
                     { channel: 'whatsapp', workflowId: activeWorkflow.id, businessName: activeWorkflow.name }
                   );
@@ -10717,6 +10731,40 @@ export function registerRoutes(app: Express) {
                           nodeType: 'action.ai_agent',
                           success: false,
                           handle: 'buttons',
+                          error: sendError.message,
+                        });
+                      }
+                    }
+                  }
+
+                  // Phase 2.5: `send_list` → WhatsApp interactive list message.
+                  if (aiResult.nextHandle === 'list') {
+                    const rows = (aiResult.result.listRows || []).slice(0, 10);
+                    const listTitle = aiResult.result.listTitle || 'Please choose:';
+                    if (rows.length > 0) {
+                      try {
+                        const response = await sendAiListMessage(
+                          phone,
+                          listTitle,
+                          rows,
+                          activeWorkflow.userId,
+                          activeWorkflow.id
+                        );
+                        executionLog.responsesSent.push({
+                          nodeId,
+                          nodeType: 'action.ai_agent',
+                          success: true,
+                          handle: 'list',
+                          messageType: 'ai_list',
+                          result: response,
+                        });
+                      } catch (sendError: any) {
+                        console.error(`[AI List] Failed to send list for node ${nodeId}: ${sendError.message}`);
+                        executionLog.responsesSent.push({
+                          nodeId,
+                          nodeType: 'action.ai_agent',
+                          success: false,
+                          handle: 'list',
                           error: sendError.message,
                         });
                       }
@@ -10797,6 +10845,7 @@ export function registerRoutes(app: Express) {
                 startNodeId: targetNodeId,
                 context: (state.context || {}) as any,
                 host: liveHost,
+                userMessage: buttonRoute.kind === 'ai' ? buttonRoute.title : undefined,
               });
 
               state = { ...state, context: flowResult.context };
@@ -11522,6 +11571,50 @@ export function registerRoutes(app: Express) {
     return response;
   }
 
+  // Helper to send an AI Agent `send_list` bubble as a WhatsApp interactive list
+  // message (Phase 2.5). Mirrors the `listMessage` node payload: one section with
+  // up to 10 rows, each id being a declared `config.listRows[].id`.
+  async function sendAiListMessage(
+    phone: string,
+    bodyText: string,
+    rows: { id: string; title: string; description?: string }[],
+    workflowUserId: number,
+    workflowId?: number
+  ): Promise<any> {
+    const userChannels = await storage.getChannelsForUser(workflowUserId);
+    const activeChannel = userChannels.find(
+      (ch: any) => ch.status === "ACTIVE" && ch.authStatus === "AUTHORIZED" && ch.whapiChannelToken
+    );
+    if (!activeChannel || !activeChannel.whapiChannelToken) {
+      throw new Error("No active authorized channel found for user");
+    }
+
+    const payload: any = {
+      to: phone,
+      type: "list",
+      body: { text: bodyText || "Please choose:" },
+      action: {
+        list: {
+          label: "Choose option",
+          sections: [
+            {
+              title: "Options",
+              rows: rows.slice(0, 10).map((r) => ({
+                id: r.id,
+                title: String(r.title || "").slice(0, 24),
+                description: String(r.description || "").slice(0, 72),
+              })),
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await whapi.sendInteractiveMessage(activeChannel.whapiChannelToken, payload);
+    await trackSentMessage(workflowId, response?.id, phone, "ai_list");
+    return response;
+  }
+
   // Helper function to send node message via WHAPI
   async function sendNodeMessage(phone: string, node: any, workflowUserId: number, workflowId?: number, context?: any): Promise<any> {
     const nodeType = node.data?.type || node.data?.nodeType;
@@ -11952,11 +12045,15 @@ export function registerRoutes(app: Express) {
       // Text-resume is the path that actually runs for WhatsApp: an AI turn is
       // always triggered by a text reply. Omitting this host method would stop
       // the flow with `unsupported_node`.
-      runAi: async (node, nodeId, ctx) => {
+      runAi: async (node, nodeId, ctx, userMessage) => {
+        const aiIncoming = userMessage
+          ? { ...incomingMessage, text: { body: userMessage } }
+          : incomingMessage;
+
         const aiResult = await executeAiAgentWorkflowNode(
           node,
           { ...state, context: ctx } as any,
-          incomingMessage,
+          aiIncoming,
           { phone, userId: activeWorkflow.userId },
           { channel: 'whatsapp', workflowId: activeWorkflow.id, businessName: activeWorkflow.name }
         );
@@ -12004,6 +12101,40 @@ export function registerRoutes(app: Express) {
                 nodeType: 'action.ai_agent',
                 success: false,
                 handle: 'buttons',
+                error: sendError.message,
+              });
+            }
+          }
+        }
+
+        // Phase 2.5: `send_list` → WhatsApp interactive list message.
+        if (aiResult.nextHandle === 'list') {
+          const rows = (aiResult.result.listRows || []).slice(0, 10);
+          const listTitle = aiResult.result.listTitle || 'Please choose:';
+          if (rows.length > 0) {
+            try {
+              const response = await sendAiListMessage(
+                phone,
+                listTitle,
+                rows,
+                activeWorkflow.userId,
+                activeWorkflow.id
+              );
+              executionLog.responsesSent.push({
+                nodeId,
+                nodeType: 'action.ai_agent',
+                success: true,
+                handle: 'list',
+                messageType: 'ai_list',
+                result: response,
+              });
+            } catch (sendError: any) {
+              console.error(`[AI List] Failed to send list for node ${nodeId}: ${sendError.message}`);
+              executionLog.responsesSent.push({
+                nodeId,
+                nodeType: 'action.ai_agent',
+                success: false,
+                handle: 'list',
                 error: sendError.message,
               });
             }

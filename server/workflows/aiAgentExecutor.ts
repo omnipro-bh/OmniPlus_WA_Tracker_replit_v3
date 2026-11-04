@@ -29,12 +29,15 @@ import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
 import {
   TOOL_HANDOVER,
   TOOL_SEND_BUTTONS,
+  TOOL_SEND_LIST,
   ToolArgumentError,
   buildToolList,
   parseHandoverArgs,
   parseSendButtonsArgs,
+  parseSendListArgs,
   type AiButtonSlot,
   type AiDepartmentSlot,
+  type AiListRowSlot,
 } from '../ai/tools';
 import type {
   AiAgentSettings,
@@ -62,6 +65,8 @@ export const AI_MAX_HISTORY_LIMIT = 50;
 export const AI_MAX_TOOL_ROUNDS = 3;
 /** Fallback body text when the model calls `send_buttons` with no content. */
 export const AI_BUTTON_TEXT_FALLBACK = 'Please choose an option:';
+/** Fallback body text when the model calls `send_list` with no content. */
+export const AI_LIST_TITLE_FALLBACK = 'Please choose:';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,8 @@ export interface AiAgentNodeConfig {
   responseVariable?: string;
   /** Phase 2: declared button slots the model may offer (send_buttons). */
   buttons?: AiButtonSlot[];
+  /** Phase 2.5: declared list rows the model may offer (send_list). */
+  listRows?: AiListRowSlot[];
   /** Phase 2: declared departments for handover. */
   handoverDepartments?: AiDepartmentSlot[];
   /** Phase 2: force the model to use a specific tool (`auto` lets it decide). */
@@ -100,7 +107,7 @@ export interface AiAgentExecutionContext {
 }
 
 /** The handle the node routes to after a turn. */
-export type AiNextHandle = 'success' | 'buttons' | 'handover' | 'error';
+export type AiNextHandle = 'success' | 'buttons' | 'list' | 'handover' | 'error';
 
 export interface AiAgentExecutionResult {
   success: boolean;
@@ -121,6 +128,10 @@ export interface AiAgentExecutionResult {
   buttons?: { id: string; title: string }[];
   /** Body text for the buttons bubble (model content or fallback). */
   buttonText?: string;
+  /** Populated when the model called `send_list` (list bubble to send). */
+  listRows?: { id: string; title: string; description?: string }[];
+  /** Body text for the list bubble (model content or fallback). */
+  listTitle?: string;
   /** Populated when the model called `handover`. */
   handover?: { department: string; reason: string; title: string };
 }
@@ -251,6 +262,18 @@ function normalizeButtonSlots(raw: any): AiButtonSlot[] {
     }));
 }
 
+/** Normalize declared list rows from raw config, dropping malformed entries. */
+function normalizeListRows(raw: any): AiListRowSlot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((r: any) => r && typeof r.id === 'string' && r.id.trim())
+    .map((r: any) => ({
+      id: r.id.trim(),
+      title: typeof r.title === 'string' && r.title.trim() ? r.title : r.id,
+      description: typeof r.description === 'string' ? r.description.trim() : '',
+    }));
+}
+
 /** Normalize declared handover departments from raw config. */
 function normalizeDepartmentSlots(raw: any): AiDepartmentSlot[] {
   if (!Array.isArray(raw)) return [];
@@ -282,6 +305,35 @@ function executeSendButtons(
 
   const buttonText = (modelContent || '').trim() || AI_BUTTON_TEXT_FALLBACK;
   return { buttons, buttonText };
+}
+
+/** Execute `send_list`: validate ids against declared rows, build the bubble. */
+function executeSendList(
+  args: Record<string, any>,
+  declared: AiListRowSlot[],
+  modelContent: string
+): {
+  listRows: { id: string; title: string; description?: string }[];
+  listTitle: string;
+} {
+  const ids = parseSendListArgs(args);
+  const byId = new Map(declared.map((r) => [r.id, r]));
+
+  const listRows: { id: string; title: string; description?: string }[] = [];
+  for (const id of ids) {
+    const slot = byId.get(id);
+    if (!slot) {
+      throw new ToolArgumentError(`send_list: "${id}" is not a declared list row id.`);
+    }
+    listRows.push({
+      id: slot.id,
+      title: slot.title,
+      ...(slot.description ? { description: slot.description } : {}),
+    });
+  }
+
+  const listTitle = (modelContent || '').trim() || AI_LIST_TITLE_FALLBACK;
+  return { listRows, listTitle };
 }
 
 /** Execute `handover`: validate department against declared slots. */
@@ -396,8 +448,13 @@ export async function executeAiAgentNode(
   }
 
   const declaredButtons = normalizeButtonSlots(config.buttons);
+  const declaredRows = normalizeListRows(config.listRows);
   const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
-  const tools = buildToolList({ buttons: declaredButtons, handoverDepartments: declaredDepartments });
+  const tools = buildToolList({
+    buttons: declaredButtons,
+    listRows: declaredRows,
+    handoverDepartments: declaredDepartments,
+  });
 
   const startedAt = Date.now();
   let totalUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -405,6 +462,11 @@ export async function executeAiAgentNode(
   let lastCompletion: LlmCompletionResult | null = null;
   let toolOutcome:
     | { kind: 'buttons'; buttons: { id: string; title: string }[]; buttonText: string }
+    | {
+        kind: 'list';
+        listRows: { id: string; title: string; description?: string }[];
+        listTitle: string;
+      }
     | { kind: 'handover'; handover: { department: string; reason: string; title: string } }
     | null = null;
   let toolError: string | null = null;
@@ -446,7 +508,11 @@ export async function executeAiAgentNode(
     // terminal; anything else is fed a failure result and the loop continues.
     let terminal = false;
     for (const toolCall of completion.toolCalls) {
-      if (toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_HANDOVER) {
+      if (
+        toolCall.name === TOOL_SEND_BUTTONS ||
+        toolCall.name === TOOL_SEND_LIST ||
+        toolCall.name === TOOL_HANDOVER
+      ) {
         try {
           if (toolCall.name === TOOL_SEND_BUTTONS) {
             const { buttons, buttonText } = executeSendButtons(
@@ -455,6 +521,13 @@ export async function executeAiAgentNode(
               completion.text
             );
             toolOutcome = { kind: 'buttons', buttons, buttonText };
+          } else if (toolCall.name === TOOL_SEND_LIST) {
+            const { listRows, listTitle } = executeSendList(
+              toolCall.arguments,
+              declaredRows,
+              completion.text
+            );
+            toolOutcome = { kind: 'list', listRows, listTitle };
           } else {
             toolOutcome = { kind: 'handover', handover: executeHandover(toolCall.arguments, declaredDepartments) };
           }
@@ -539,6 +612,8 @@ export async function executeAiAgentNode(
   let finalText = completion.text;
   let buttons: { id: string; title: string }[] | undefined;
   let buttonText: string | undefined;
+  let listRows: { id: string; title: string; description?: string }[] | undefined;
+  let listTitle: string | undefined;
   let handover: { department: string; reason: string; title: string } | undefined;
 
   if (toolOutcome?.kind === 'buttons') {
@@ -546,6 +621,11 @@ export async function executeAiAgentNode(
     buttons = toolOutcome.buttons;
     buttonText = toolOutcome.buttonText;
     finalText = toolOutcome.buttonText;
+  } else if (toolOutcome?.kind === 'list') {
+    nextHandle = 'list';
+    listRows = toolOutcome.listRows;
+    listTitle = toolOutcome.listTitle;
+    finalText = toolOutcome.listTitle;
   } else if (toolOutcome?.kind === 'handover') {
     nextHandle = 'handover';
     handover = toolOutcome.handover;
@@ -570,6 +650,10 @@ export async function executeAiAgentNode(
     updatedAt: new Date().toISOString(),
   };
   if (buttons) entry.buttons = buttons;
+  if (listRows) {
+    entry.listRows = listRows;
+    entry.listTitle = listTitle;
+  }
   if (handover) entry.handover = handover;
 
   if (useHistory) {
@@ -595,6 +679,7 @@ export async function executeAiAgentNode(
     history,
     stateUpdate,
     ...(buttons ? { buttons, buttonText } : {}),
+    ...(listRows ? { listRows, listTitle } : {}),
     ...(handover ? { handover } : {}),
   };
 }
@@ -637,6 +722,7 @@ export async function executeAiAgentWorkflowNode(
     historyLimit: rawConfig.historyLimit,
     responseVariable: rawConfig.responseVariable,
     buttons: rawConfig.buttons,
+    listRows: rawConfig.listRows,
     handoverDepartments: rawConfig.handoverDepartments,
     forceToolChoice: rawConfig.forceToolChoice,
   };

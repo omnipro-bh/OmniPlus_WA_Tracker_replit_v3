@@ -12,9 +12,11 @@ import {
   ToolArgumentError,
   buildHandoverTool,
   buildSendButtonsTool,
+  buildSendListTool,
   buildToolList,
   parseHandoverArgs,
   parseSendButtonsArgs,
+  parseSendListArgs,
 } from './tools';
 
 test('buildSendButtonsTool constrains buttons to declared ids and caps at 3', () => {
@@ -65,6 +67,53 @@ test('parseSendButtonsArgs validates shape', () => {
   assert.throws(() => parseSendButtonsArgs({ buttons: 'a' }), ToolArgumentError);
   assert.throws(() => parseSendButtonsArgs({ buttons: [] }), ToolArgumentError);
   assert.throws(() => parseSendButtonsArgs({ buttons: ['a', 'b', 'c', 'd'] }), ToolArgumentError);
+});
+
+test('buildSendListTool constrains rows to declared ids and caps at 10', () => {
+  const rows = Array.from({ length: 10 }, (_, i) => ({
+    id: `row_${i}`,
+    title: `Row ${i}`,
+    description: `Description ${i}`,
+  }));
+  const tool = buildSendListTool(rows);
+
+  assert.equal(tool.type, 'function');
+  assert.equal(tool.function.name, 'send_list');
+  const schema = tool.function.parameters;
+  assert.equal(schema.properties.rows.maxItems, 10);
+  assert.deepEqual(schema.properties.rows.items.enum, rows.map((r) => r.id));
+  assert.deepEqual(schema.required, ['rows']);
+});
+
+test('buildToolList offers send_list only when list rows are declared', () => {
+  const names = (config: any) => buildToolList(config).map((t) => t.function.name);
+
+  assert.deepEqual(
+    names({ listRows: [{ id: 'row_a', title: 'A' }] }),
+    ['send_list']
+  );
+
+  assert.deepEqual(
+    names({
+      buttons: [{ id: 'b1', title: 'B1' }],
+      listRows: [{ id: 'row_a', title: 'A' }],
+      handoverDepartments: [{ id: 'sales', title: 'Sales' }],
+    }),
+    ['send_buttons', 'send_list', 'handover']
+  );
+
+  assert.deepEqual(names({ listRows: [] }), []);
+});
+
+test('parseSendListArgs validates shape', () => {
+  assert.deepEqual(parseSendListArgs({ rows: ['a', 'b'] }), ['a', 'b']);
+  assert.throws(() => parseSendListArgs({}), ToolArgumentError);
+  assert.throws(() => parseSendListArgs({ rows: 'a' }), ToolArgumentError);
+  assert.throws(() => parseSendListArgs({ rows: [] }), ToolArgumentError);
+  assert.throws(
+    () => parseSendListArgs({ rows: Array.from({ length: 11 }, (_, i) => `r${i}`) }),
+    ToolArgumentError
+  );
 });
 
 test('parseHandoverArgs validates shape', () => {

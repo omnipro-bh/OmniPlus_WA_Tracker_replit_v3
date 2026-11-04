@@ -51,7 +51,8 @@ import { resolveWebChatLinkByToken } from "../chat-links";
 import { captureSandboxText, resolveSandboxStartNode } from "./sandbox";
 import {
   INTERACTIVE_NODE_TYPES,
-  resolveButtonTarget,
+  findButtonTitle,
+  resolveButtonRoute,
   runFlow,
   type RunResult,
 } from "./flowRunner";
@@ -155,30 +156,6 @@ function asDefinition(workflow: Workflow): { nodes: any[]; edges: any[] } {
     nodes: Array.isArray(raw.nodes) ? raw.nodes : [],
     edges: Array.isArray(raw.edges) ? raw.edges : [],
   };
-}
-
-/**
- * Title of the button/row/card the visitor clicked, for the transcript bubble.
- * Best-effort: an unknown id falls back to the raw id.
- */
-function findButtonTitle(definition: { nodes: any[] }, buttonId: string): string | null {
-  for (const node of definition.nodes) {
-    const config = node?.data?.config || {};
-    for (const button of Array.isArray(config.buttons) ? config.buttons : []) {
-      if (button?.id === buttonId && typeof button.title === "string") return button.title;
-    }
-    for (const section of Array.isArray(config.sections) ? config.sections : []) {
-      for (const row of Array.isArray(section?.rows) ? section.rows : []) {
-        if (row?.id === buttonId && typeof row.title === "string") return row.title;
-      }
-    }
-    for (const card of Array.isArray(config.cards) ? config.cards : []) {
-      for (const button of Array.isArray(card?.buttons) ? card.buttons : []) {
-        if (button?.id === buttonId && typeof button.title === "string") return button.title;
-      }
-    }
-  }
-  return null;
 }
 
 /**
@@ -772,7 +749,7 @@ export async function handleChatMessage(
     // This returns before the text guard, so that guard only fires for a real
     // cursor node that is not `input.text`.
     if (cursorId === null && (input.type === "text" || input.type === "button")) {
-      if (input.type === "button" && (!input.buttonId || !resolveButtonTarget(definition, input.buttonId))) {
+      if (input.type === "button" && (!input.buttonId || !resolveButtonRoute(definition, input.buttonId))) {
         return { ok: false, reason: "button_not_routed" };
       }
 
@@ -820,6 +797,7 @@ export async function handleChatMessage(
         startNodeId: entryNodeId,
         context: {},
         host,
+        userMessage: input.type === "button" ? text : undefined,
       });
 
       await logExecution({
@@ -941,8 +919,13 @@ export async function handleChatMessage(
     // ── button ───────────────────────────────────────────────────────────
     if (!input.buttonId) return { ok: false, reason: "button_not_routed" };
 
-    const edge = resolveButtonTarget(definition, input.buttonId);
-    if (!edge || !edge.target) return { ok: false, reason: "button_not_routed" };
+    // Phase 2.5: an option declared by an AI node is consumed by that node — the
+    // click becomes the visitor's next turn instead of jumping to the edge target.
+    // Legacy quickReply/list/carousel nodes keep edge routing.
+    const route = resolveButtonRoute(definition, input.buttonId, cursorId ?? undefined);
+    if (!route) return { ok: false, reason: "button_not_routed" };
+
+    const optionTitle = findButtonTitle(definition, input.buttonId) ?? input.buttonId;
 
     const visitorRow = await storage.createWebChatMessage({
       sessionId: session.id,
@@ -951,7 +934,7 @@ export async function handleChatMessage(
       kind: "text",
       payload: {
         type: "text",
-        text: findButtonTitle(definition, input.buttonId) ?? input.buttonId,
+        text: optionTitle,
       },
       clientMsgId: input.clientMsgId,
     });
@@ -968,9 +951,10 @@ export async function handleChatMessage(
 
     const result = await runFlow({
       definition,
-      startNodeId: edge.target,
+      startNodeId: route.nodeId,
       context: stripStopMarker(conv.context),
       host,
+      userMessage: route.kind === "ai" ? route.title : undefined,
     });
 
     await logExecution({

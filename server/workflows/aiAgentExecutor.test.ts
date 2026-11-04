@@ -50,6 +50,35 @@ test('send_buttons routes to the buttons handle and stores the bubble', async ()
   assert.equal(mock.callCount, 1);
 });
 
+test('send_list routes to the list handle and stores the rows', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [[{ name: 'send_list', arguments: { rows: ['row_cardio', 'row_derma'] } }]],
+  });
+
+  const result = await run(
+    {
+      ...baseConfig,
+      buttons: [{ id: 'btn_a', title: 'A' }],
+      listRows: [
+        { id: 'row_cardio', title: 'Cardiology', description: 'Heart' },
+        { id: 'row_derma', title: 'Dermatology' },
+      ],
+    },
+    mock
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.nextHandle, 'list');
+  assert.deepEqual(result.listRows, [
+    { id: 'row_cardio', title: 'Cardiology', description: 'Heart' },
+    { id: 'row_derma', title: 'Dermatology' },
+  ]);
+  assert.equal(result.listTitle, 'Please choose:');
+  assert.deepEqual(result.stateUpdate.ai.n1.listRows, result.listRows);
+  assert.equal(result.stateUpdate.ai.n1.listTitle, 'Please choose:');
+  assert.equal(mock.callCount, 1);
+});
+
 test('handover is terminal and routes to the handover handle', async () => {
   const mock = new MockLlmClient({
     toolCalls: [[{ name: 'handover', arguments: { department: 'sales', reason: 'wants a quote' } }]],

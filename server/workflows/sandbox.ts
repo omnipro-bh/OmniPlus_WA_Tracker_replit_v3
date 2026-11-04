@@ -417,7 +417,7 @@ export function buildSandboxHost(opts: {
       };
     },
 
-    runAi: async (node, nodeId, ctx) => {
+    runAi: async (node, nodeId, ctx, userMessage) => {
       // Mock mode rewrites the node's provider so no key is needed and no money
       // is spent. Live mode uses whatever the node config says.
       const effectiveNode =
@@ -434,7 +434,7 @@ export function buildSandboxHost(opts: {
       const aiResult = await executeAiAgentWorkflowNode(
         effectiveNode,
         { context: ctx } as any,
-        { text: { body: opts.lastText || (ctx as any)?.message?.text || "" } },
+        { text: { body: userMessage || opts.lastText || (ctx as any)?.message?.text || "" } },
         { phone: "sandbox", userId: opts.userId },
         // The sandbox never writes ai_usage_logs: it stays DB-free and free of charge.
         { channel: "sandbox", logUsage: false }
@@ -454,6 +454,28 @@ export function buildSandboxHost(opts: {
             title: b.title,
             type: "quick_reply",
           })),
+        });
+      }
+
+      // Phase 2.5: `send_list` → a list bubble (same shape as `listMessage`).
+      if (aiResult.nextHandle === "list") {
+        const rows = (aiResult.result?.listRows || []).slice(0, 10);
+        messages.push({
+          nodeId,
+          nodeType: "action.ai_agent",
+          type: "list",
+          text: aiResult.result?.listTitle || "Please choose:",
+          buttonLabel: "Choose option",
+          sections: [
+            {
+              title: "Options",
+              rows: rows.map((r) => ({
+                id: r.id,
+                title: r.title,
+                description: r.description || "",
+              })),
+            },
+          ],
         });
       }
 

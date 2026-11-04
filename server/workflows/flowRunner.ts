@@ -100,8 +100,8 @@ export interface SentMessage {
 
 export interface HttpRunResult {
   ok: boolean;
-  /** HTTP/Sheets use `success`/`error`; the AI node adds `buttons`/`handover`. */
-  nextHandle: 'success' | 'error' | 'buttons' | 'handover';
+  /** HTTP/Sheets use `success`/`error`; the AI node adds `buttons`/`list`/`handover`. */
+  nextHandle: 'success' | 'error' | 'buttons' | 'list' | 'handover';
   context: any;
   detail?: Record<string, any>;
 }
@@ -134,8 +134,17 @@ export interface FlowHost {
    * the new context. Optional: a host that omits it stops with
    * `unsupported_node` instead of silently continuing (same contract as
    * `runGoogleSheets`).
+   *
+   * `userMessage` is the human turn that triggered this run — e.g. a clicked
+   * button/list row title. Hosts should prefer it over any message captured when
+   * the host was built, so an AI-owned option click becomes the visitor's turn.
    */
-  runAi?(node: any, nodeId: string, context: any): Promise<HttpRunResult>;
+  runAi?(
+    node: any,
+    nodeId: string,
+    context: any,
+    userMessage?: string
+  ): Promise<HttpRunResult>;
 
   /** Persist context/cursor. `mode` is chosen by the node type (see PersistMode). */
   persist(context: any, cursor: string | null, mode: PersistMode): Promise<void>;
@@ -170,6 +179,12 @@ export interface RunOptions {
   startNodeId: string | null;
   context: any;
   host: FlowHost;
+  /**
+   * The human turn that triggered this run (e.g. a clicked button/list row
+   * title). Forwarded to `host.runAi` so an AI node resumed by an option click
+   * sees the choice as the visitor's message.
+   */
+  userMessage?: string;
 }
 
 export interface RunResult {
@@ -328,6 +343,118 @@ export function resolveButtonTarget(definition: any, buttonId: string): any | nu
   }
 
   return targetEdge;
+}
+
+/** Best-effort title for a declared button/row/card button, by id. */
+export function findButtonTitle(definition: any, buttonId: string): string | null {
+  const nodes: any[] = Array.isArray(definition?.nodes) ? definition.nodes : [];
+
+  for (const node of nodes) {
+    const config = node?.data?.config || {};
+
+    for (const button of Array.isArray(config.buttons) ? config.buttons : []) {
+      if (button?.id === buttonId && typeof button.title === 'string') return button.title;
+    }
+    // AI Agent list rows (`send_list`) are declared under `listRows`.
+    for (const row of Array.isArray(config.listRows) ? config.listRows : []) {
+      if (row?.id === buttonId && typeof row.title === 'string') return row.title;
+    }
+    for (const section of Array.isArray(config.sections) ? config.sections : []) {
+      for (const row of Array.isArray(section?.rows) ? section.rows : []) {
+        if (row?.id === buttonId && typeof row.title === 'string') return row.title;
+      }
+    }
+    for (const card of Array.isArray(config.cards) ? config.cards : []) {
+      for (const button of Array.isArray(card?.buttons) ? card.buttons : []) {
+        if (button?.id === buttonId && typeof button.title === 'string') return button.title;
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Does this node's config declare the option id (buttons / list rows / card buttons)? */
+export function nodeDeclaresOption(node: any, buttonId: string): boolean {
+  const config = node?.data?.config || {};
+
+  if (
+    (Array.isArray(config.buttons) ? config.buttons : []).some((b: any) => b?.id === buttonId)
+  ) {
+    return true;
+  }
+  // AI Agent list rows (`send_list`).
+  if (
+    (Array.isArray(config.listRows) ? config.listRows : []).some((r: any) => r?.id === buttonId)
+  ) {
+    return true;
+  }
+  if (
+    (Array.isArray(config.sections) ? config.sections : []).some((section: any) =>
+      (Array.isArray(section?.rows) ? section.rows : []).some((row: any) => row?.id === buttonId)
+    )
+  ) {
+    return true;
+  }
+  return (Array.isArray(config.cards) ? config.cards : []).some((card: any) =>
+    (Array.isArray(card?.buttons) ? card.buttons : []).some((b: any) => b?.id === buttonId)
+  );
+}
+
+/**
+ * Where a clicked option (button or list row) should resume the flow.
+ *
+ * Phase 2.5: an option declared by an `action.ai_agent` node is consumed by that
+ * node — the click becomes the visitor's next turn, so the AI keeps leading the
+ * conversation. Per-option handles on an AI node are therefore decorative: any
+ * edges drawn from them are ignored. Every other node type keeps the historical
+ * `resolveButtonTarget` behaviour (Tier 1–4 edge resolution).
+ *
+ * `preferredNodeId` (the current cursor) disambiguates when two nodes declare the
+ * same option id: the node that is actually waiting wins.
+ */
+export type ButtonRoute =
+  | { kind: 'ai'; nodeId: string; title: string }
+  | { kind: 'node'; nodeId: string; sourceId: string; sourceHandle?: string };
+
+export function resolveButtonRoute(
+  definition: any,
+  buttonId: string,
+  preferredNodeId?: string
+): ButtonRoute | null {
+  const nodes: any[] = Array.isArray(definition?.nodes) ? definition.nodes : [];
+  const isAi = (node: any) => nodeTypeOf(node) === 'action.ai_agent';
+
+  const aiRoute = (node: any): ButtonRoute => ({
+    kind: 'ai',
+    nodeId: node.id,
+    title: findButtonTitle(definition, buttonId) ?? buttonId,
+  });
+
+  // 1. The node currently waiting on the visitor declares this option → it wins.
+  if (preferredNodeId) {
+    const preferred = nodes.find((n: any) => n?.id === preferredNodeId);
+    if (preferred && isAi(preferred) && nodeDeclaresOption(preferred, buttonId)) {
+      return aiRoute(preferred);
+    }
+  }
+
+  // 2. An AI node owns the option id. This is checked BEFORE edge resolution,
+  //    because edges drawn from AI option handles must not hijack the click.
+  const aiOwners = nodes.filter((n: any) => isAi(n) && nodeDeclaresOption(n, buttonId));
+  if (aiOwners.length > 0) {
+    const owner =
+      (preferredNodeId && aiOwners.find((n: any) => n.id === preferredNodeId)) || aiOwners[0];
+    return aiRoute(owner);
+  }
+
+  // 3. Legacy interactive nodes — unchanged edge resolution.
+  const edge = resolveButtonTarget(definition, buttonId);
+  if (edge && edge.target) {
+    return { kind: 'node', nodeId: edge.target, sourceId: edge.source, sourceHandle: edge.sourceHandle };
+  }
+
+  return null;
 }
 
 /**
@@ -497,7 +624,7 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
           break;
         }
 
-        const aiResult = await host.runAi(node, nodeId, context);
+        const aiResult = await host.runAi(node, nodeId, context, options.userMessage);
         context = aiResult.context;
 
         // Cursor stays on the AI node (same as HTTP / Google Sheets).
@@ -512,11 +639,12 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
           detail: { success: aiResult.ok, ...(aiResult.detail || {}) },
         });
 
-        // `buttons` means the AI node sent interactive buttons and must now wait
-        // for the visitor's click — exactly like a quickReply node. The button
-        // handle's target runs only after resolveButtonTarget routes the click
-        // back here, so do NOT advance to it in this tick.
-        if (aiResult.nextHandle === 'buttons') {
+        // `buttons` / `list` mean the AI node just offered options and must now
+        // wait for the visitor's pick — exactly like a quickReply node. The
+        // cursor stays here; the option handle's target is NOT followed in this
+        // tick because an AI-owned option is consumed by the AI itself
+        // (resolveButtonRoute returns `{ kind: 'ai' }`).
+        if (aiResult.nextHandle === 'buttons' || aiResult.nextHandle === 'list') {
           status = 'awaiting_input';
           cursor = nodeId;
           break;

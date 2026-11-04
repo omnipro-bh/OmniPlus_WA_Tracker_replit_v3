@@ -52,6 +52,12 @@ export const AI_MAX_HISTORY_LIMIT = 50;
 export const AI_MAX_BUTTONS = 3;
 export const AI_BUTTON_ID_RE = /^[a-zA-Z0-9_]{1,20}$/;
 
+/** Phase 2.5 AI list rows (send_list). WhatsApp caps these at 10 rows. */
+export const AI_MAX_LIST_ROWS = 10;
+export const AI_LIST_ROW_ID_MAX = 24;
+export const AI_LIST_ROW_TITLE_MAX = 24;
+export const AI_LIST_ROW_DESCRIPTION_MAX = 72;
+
 /** Phase 2 forced tool-choice values (config.forceToolChoice). */
 export const AI_FORCE_TOOL_CHOICES = ['auto', 'send_buttons', 'handover'] as const;
 
@@ -313,20 +319,88 @@ export function validateWorkflowNodeConfigs(
         }
       }
 
-      // Warn (not error) when a declared button has no outgoing edge yet, so a
-      // customer tap would silently do nothing (resolveButtonTarget Tier 1).
+      // Phase 2.5: AI button handles are DECORATIVE — a tap is consumed by the AI
+      // node itself (resolveButtonRoute → { kind: 'ai' }), so an edge drawn from a
+      // per-button handle is ignored. We therefore report an info warning rather
+      // than an "unconnected button" problem (which used to mislead owners into
+      // wiring a path that made the click skip the AI).
       if (buttons.length > 0) {
-        const nodeEdges = edges.filter((e: any) => e.source === nodeId);
-        for (const button of buttons) {
-          const buttonId = typeof button?.id === 'string' ? button.id.trim() : '';
-          if (!buttonId) continue;
-          const connected = nodeEdges.some((e: any) => e.sourceHandle === buttonId);
-          if (!connected) {
-            addWarning(
-              nodeId,
-              `"${label}" (AI Agent): button "${buttonId}" has no outgoing edge yet — connect it so a tap can route.`
-            );
-          }
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): button handles are decorative — a tap returns to this AI node as the visitor's next message.`
+        );
+      }
+
+      // Phase 2.5: declared list rows (send_list), offered when the AI has 4–10 options.
+      const listRows = Array.isArray(config.listRows) ? config.listRows : [];
+      if (listRows.length > AI_MAX_LIST_ROWS) {
+        addError(
+          nodeId,
+          `"${label}" (AI Agent): at most ${AI_MAX_LIST_ROWS} list rows may be declared.`
+        );
+      } else if (listRows.length > 0 && listRows.length < 4) {
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): lists are meant for 4–10 options; with ${listRows.length} row(s) prefer quick reply buttons.`
+        );
+      }
+
+      const listRowIds = new Set<string>();
+      for (const row of listRows) {
+        const rowId = typeof row?.id === 'string' ? row.id.trim() : '';
+        const rowTitle = typeof row?.title === 'string' ? row.title.trim() : '';
+        const rowDescription = typeof row?.description === 'string' ? row.description.trim() : '';
+
+        if (!rowId) {
+          addError(nodeId, `"${label}" (AI Agent): every list row needs an id.`);
+        } else if (rowId.length > AI_LIST_ROW_ID_MAX) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): list row id "${rowId}" is longer than ${AI_LIST_ROW_ID_MAX} characters.`
+          );
+        } else if (listRowIds.has(rowId)) {
+          addError(nodeId, `"${label}" (AI Agent): duplicate list row id "${rowId}".`);
+        } else {
+          listRowIds.add(rowId);
+        }
+
+        if (!rowTitle) {
+          addError(nodeId, `"${label}" (AI Agent): list row id "${rowId}" is missing a title.`);
+        } else if (rowTitle.length > AI_LIST_ROW_TITLE_MAX) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): list row title "${rowTitle}" is longer than ${AI_LIST_ROW_TITLE_MAX} characters.`
+          );
+        }
+
+        if (rowDescription.length > AI_LIST_ROW_DESCRIPTION_MAX) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): list row description for "${rowId}" is longer than ${AI_LIST_ROW_DESCRIPTION_MAX} characters.`
+          );
+        }
+      }
+      if (listRows.length > 0) {
+        addWarning(
+          nodeId,
+          `"${label}" (AI Agent): list row handles are decorative — a selection returns to this AI node as the visitor's next message.`
+        );
+      }
+
+      // Phase 2.5: the AI answers with text on `success`. Wiring that handle into
+      // an `input.text` node turns every answer into a re-prompt bridge and hides
+      // the reply behind the input's own template.
+      const successEdge = edges.find(
+        (e: any) => e.source === nodeId && (e.sourceHandle === 'success' || e.sourceHandle === `${nodeId}-success`)
+      );
+      if (successEdge?.target) {
+        const successTarget = nodes.find((n: any) => n?.id === successEdge.target);
+        const successType = successTarget?.data?.type || successTarget?.data?.nodeType;
+        if (successType === 'input.text') {
+          addWarning(
+            nodeId,
+            `"${label}" (AI Agent): the success handle points to a Text Input node — consider redirecting it to a Message node (or leaving it unconnected) so the AI's answer is sent directly.`
+          );
         }
       }
 

@@ -2712,6 +2712,34 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
     };
     const regenerateAiDepartmentId = (index: number) => updateAiDepartment(index, 'id', generateId('dept'));
 
+    // Phase 2.5: declared list rows (send_list). Same affordance as buttons, for
+    // 4–10 options; the AI chooses buttons vs list. Stored as `listRows`.
+    const aiListRows = config.listRows || [];
+
+    const addAiListRow = () => {
+      if (aiListRows.length >= 10) {
+        toast({
+          title: 'Maximum rows reached',
+          description: 'AI Agent supports up to 10 list rows',
+          variant: 'destructive',
+        });
+        return;
+      }
+      updateConfig('listRows', [
+        ...aiListRows,
+        { title: '', description: '', id: generateId('row') },
+      ]);
+    };
+    const removeAiListRow = (index: number) => {
+      updateConfig('listRows', aiListRows.filter((_: any, i: number) => i !== index));
+    };
+    const updateAiListRow = (index: number, field: string, value: string) => {
+      const next = [...aiListRows];
+      next[index] = { ...next[index], [field]: value };
+      updateConfig('listRows', next);
+    };
+    const regenerateAiListRowId = (index: number) => updateAiListRow(index, 'id', generateId('row'));
+
     return (
       <div className="space-y-4">
         {/* Provider */}
@@ -2862,8 +2890,9 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              The AI can offer one or more of these as quick replies via the send_buttons tool. Each
-              becomes a separate handle on the node. IDs must be unique and at most 20 characters.
+              The AI can offer one or more of these as quick replies via the send_buttons tool. A tap
+              comes back to this node as the visitor's next message, so the per-button handles are
+              decorative — you don't need to wire them.
             </p>
             {aiButtons.map((button: any, i: number) => (
               <div key={button.id || i} className="p-3 border rounded-md space-y-2">
@@ -2907,6 +2936,78 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             {aiButtons.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">
                 Click "Add Button" to let the AI offer choices
+              </p>
+            )}
+
+            {/* AI List Rows (send_list) — same switch, 4–10 options */}
+            <div className="flex items-center justify-between pt-2">
+              <Label>AI List Rows (max 10)</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addAiListRow}
+                disabled={aiListRows.length >= 10}
+                data-testid="button-ai-list-add"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Row
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The AI decides whether to send buttons (≤3 options) or a list (4–10 options). You
+              configure both sets; the AI chooses based on the question. A selection also returns to
+              this node as the visitor's next message.
+            </p>
+            {aiListRows.map((row: any, i: number) => (
+              <div key={row.id || i} className="p-3 border rounded-md space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Row {i + 1}</Label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeAiListRow(i)}
+                    data-testid={`button-ai-list-remove-${i}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Input
+                  placeholder="Row Title (max 24)"
+                  value={row.title || ''}
+                  onChange={(e) => updateAiListRow(i, 'title', e.target.value)}
+                  maxLength={24}
+                  data-testid={`input-ai-list-${i}-title`}
+                />
+                <Input
+                  placeholder="Description (optional, max 72)"
+                  value={row.description || ''}
+                  onChange={(e) => updateAiListRow(i, 'description', e.target.value)}
+                  maxLength={72}
+                  data-testid={`input-ai-list-${i}-description`}
+                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Row ID"
+                    value={row.id || ''}
+                    onChange={(e) => updateAiListRow(i, 'id', e.target.value)}
+                    maxLength={24}
+                    data-testid={`input-ai-list-${i}-id`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => regenerateAiListRowId(i)}
+                    title="Generate new ID"
+                    data-testid={`button-ai-list-regenerate-${i}-id`}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {aiListRows.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-2">
+                Optional — click "Add Row" to let the AI offer a 4–10 option list
               </p>
             )}
           </div>
