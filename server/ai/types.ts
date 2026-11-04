@@ -119,6 +119,30 @@ export interface LlmClient {
 }
 
 /**
+ * Phase 3 — business-hours schedule for an AI node.
+ *
+ * A single window across the selected days. `startHour`/`endHour` are 0–23 in
+ * `tz`; `endHour` may be less than `startHour` to express a window that crosses
+ * midnight (e.g. 22 → 6). `daysOfWeek` is 0 (Sunday) – 6 (Saturday); an empty
+ * array means every day. Absent schedule ⇒ always active.
+ */
+export interface AiSchedule {
+  startHour: number;
+  endHour: number;
+  daysOfWeek: number[];
+  tz: string;
+}
+
+/**
+ * Phase 3 — daily/monthly call caps for an AI node. Counted per workflow (the
+ * `ai_usage_logs.workflow_id` bucket), declared per node. Absent ⇒ unlimited.
+ */
+export interface UsageLimits {
+  dailyMax?: number;
+  monthlyMax?: number;
+}
+
+/**
  * One node's AI settings, after normalization by the executor.
  * Mirrors the keys read from `node.data.config` by the client config panel.
  */
@@ -134,4 +158,10 @@ export interface AiAgentSettings {
   responseVariable: string;
   /** Force the model to use a specific tool (`auto` lets it decide). */
   forceToolChoice: AiForceToolChoice;
+  /** Phase 3: business-hours schedule (absent = always active). */
+  aiSchedule?: AiSchedule;
+  /** Phase 3: daily/monthly call caps (absent = unlimited). */
+  usageLimits?: UsageLimits;
+  /** Phase 3: max AI turns before forced handover (absent = unlimited). */
+  maxMessagesPerConversation?: number;
 }

@@ -387,6 +387,93 @@ export function validateWorkflowNodeConfigs(
         );
       }
 
+      // Phase 3: business-hours schedule. A single window across the selected days.
+      const aiSchedule = config.aiSchedule;
+      if (aiSchedule !== undefined && aiSchedule !== null) {
+        const scheduleStart = Number(aiSchedule?.startHour);
+        const scheduleEnd = Number(aiSchedule?.endHour);
+        if (!Number.isInteger(scheduleStart) || scheduleStart < 0 || scheduleStart > 23) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): schedule start hour must be a whole number between 0 and 23.`
+          );
+        }
+        if (!Number.isInteger(scheduleEnd) || scheduleEnd < 0 || scheduleEnd > 23) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): schedule end hour must be a whole number between 0 and 23.`
+          );
+        }
+        if (
+          Number.isInteger(scheduleStart) &&
+          Number.isInteger(scheduleEnd) &&
+          scheduleStart === scheduleEnd
+        ) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): schedule start and end hour must be different.`
+          );
+        }
+        const scheduleDays = Array.isArray(aiSchedule?.daysOfWeek) ? aiSchedule.daysOfWeek : [];
+        for (const day of scheduleDays) {
+          if (!Number.isInteger(day) || day < 0 || day > 6) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): schedule days must be whole numbers between 0 (Sunday) and 6 (Saturday).`
+            );
+            break;
+          }
+        }
+      }
+
+      // Phase 3: daily/monthly usage caps (whole numbers ≥ 1).
+      const usageLimits = config.usageLimits;
+      if (usageLimits !== undefined && usageLimits !== null) {
+        const dailyMax = usageLimits?.dailyMax;
+        const monthlyMax = usageLimits?.monthlyMax;
+        if (dailyMax !== undefined && dailyMax !== null && dailyMax !== '') {
+          const daily = Number(dailyMax);
+          if (!Number.isInteger(daily) || daily < 1) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): daily call cap must be a whole number of at least 1.`
+            );
+          }
+        }
+        if (monthlyMax !== undefined && monthlyMax !== null && monthlyMax !== '') {
+          const monthly = Number(monthlyMax);
+          if (!Number.isInteger(monthly) || monthly < 1) {
+            addError(
+              nodeId,
+              `"${label}" (AI Agent): monthly call cap must be a whole number of at least 1.`
+            );
+          }
+        }
+      }
+
+      // Phase 3: per-conversation message cap (whole number ≥ 1). When a cap is set
+      // but no handover departments are declared, the forced handover has no target
+      // and degrades to a hard error — warn so the owner wires an escalation path.
+      const maxMessagesPerConversation = config.maxMessagesPerConversation;
+      if (
+        maxMessagesPerConversation !== undefined &&
+        maxMessagesPerConversation !== null &&
+        maxMessagesPerConversation !== ''
+      ) {
+        const cap = Number(maxMessagesPerConversation);
+        if (!Number.isInteger(cap) || cap < 1) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): max messages per conversation must be a whole number of at least 1.`
+          );
+        } else if (!(Array.isArray(config.handoverDepartments) && config.handoverDepartments.length > 0)) {
+          addWarning(
+            nodeId,
+            `"${label}" (AI Agent): a message cap is set but no handover departments are configured — the conversation will end in an error instead of a handover.`
+          );
+        }
+      }
+
       // Phase 2.5: the AI answers with text on `success`. Wiring that handle into
       // an `input.text` node turns every answer into a re-prompt bridge and hides
       // the reply behind the input's own template.
