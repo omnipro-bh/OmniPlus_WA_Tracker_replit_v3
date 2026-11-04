@@ -297,3 +297,132 @@ test('text-only reply routes success and populates the response variable', async
   assert.equal(result.stateUpdate.ai_response, 'We are open 9 to 5.');
   assert.equal(mock.callCount, 1);
 });
+
+// ── Phase 3: schedule / usage / message-cap enforcement ────────────────────
+
+test('outside schedule routes to error without calling the model', async () => {
+  const mock = new MockLlmClient({ replies: ['You should not see this.'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      aiSchedule: { startHour: 9, endHour: 17, daysOfWeek: [], tz: 'Asia/Bahrain' },
+    },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+      now: new Date('2026-11-04T03:00:00Z').getTime(), // 06:00 Bahrain, before 9
+    }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.nextHandle, 'error');
+  assert.equal(result.reason, 'outside_schedule');
+  assert.equal(result.stateUpdate.ai.n1.reason, 'outside_schedule');
+  assert.equal(mock.callCount, 0);
+});
+
+test('usage block routes to error with the reason and no model call', async () => {
+  const mock = new MockLlmClient({ replies: ['You should not see this.'] });
+
+  const result = await executeAiAgentNode(
+    { ...baseConfig, usageLimits: { dailyMax: 1 } },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+      usageBlock: { reason: 'daily_limit_reached' },
+    }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.nextHandle, 'error');
+  assert.equal(result.reason, 'daily_limit_reached');
+  assert.equal(result.stateUpdate.ai.n1.reason, 'daily_limit_reached');
+  assert.equal(mock.callCount, 0);
+});
+
+test('message cap with departments forces handover without calling the model', async () => {
+  const mock = new MockLlmClient({ replies: ['You should not see this.'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      maxMessagesPerConversation: 2,
+      handoverDepartments: [{ id: 'sales', title: 'Sales' }],
+    },
+    {
+      nodeId: 'n1',
+      context: { ai: { n1: { messageCount: 2 } } },
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.nextHandle, 'handover');
+  assert.equal(result.reason, 'message_cap_reached');
+  assert.deepEqual(result.handover, {
+    department: 'sales',
+    reason: 'message_cap_reached',
+    title: 'Sales',
+  });
+  assert.equal(mock.callCount, 0);
+});
+
+test('message cap without departments routes to error', async () => {
+  const mock = new MockLlmClient({ replies: ['You should not see this.'] });
+
+  const result = await executeAiAgentNode(
+    { ...baseConfig, maxMessagesPerConversation: 2 },
+    {
+      nodeId: 'n1',
+      context: { ai: { n1: { messageCount: 2 } } },
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.nextHandle, 'error');
+  assert.equal(result.reason, 'message_cap_reached');
+  assert.equal(mock.callCount, 0);
+});
+
+test('a successful turn increments the message count', async () => {
+  const mock = new MockLlmClient({ replies: ['Hello there.'] });
+
+  const result = await executeAiAgentNode(
+    { ...baseConfig, maxMessagesPerConversation: 5 },
+    {
+      nodeId: 'n1',
+      context: { ai: { n1: { messageCount: 3 } } },
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.stateUpdate.ai.n1.messageCount, 4);
+  assert.equal(mock.callCount, 1);
+});
+
+test('message count starts at 1 for a fresh conversation', async () => {
+  const mock = new MockLlmClient({ replies: ['First reply.'] });
+
+  const result = await executeAiAgentNode(
+    { ...baseConfig },
+    { nodeId: 'n1', context: {}, userMessage: 'hello', client: mock, channel: 'whatsapp' }
+  );
+
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.stateUpdate.ai.n1.messageCount, 1);
+});

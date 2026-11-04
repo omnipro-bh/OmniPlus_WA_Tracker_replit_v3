@@ -27,6 +27,12 @@ import { buildSystemPrompt } from '../ai/prompt';
 import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry';
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
 import {
+  AI_DEFAULT_TIMEZONE,
+  isMessageCapReached,
+  isUsageExceeded,
+  isWithinSchedule,
+} from '../ai/schedule';
+import {
   TOOL_HANDOVER,
   TOOL_SEND_BUTTONS,
   TOOL_SEND_LIST,
@@ -42,6 +48,7 @@ import {
 import type {
   AiAgentSettings,
   AiForceToolChoice,
+  AiSchedule,
   LlmClient,
   LlmCompletionResult,
   LlmFinishReason,
@@ -50,6 +57,7 @@ import type {
   LlmToolChoice,
   LlmToolDef,
   LlmUsage,
+  UsageLimits,
 } from '../ai/types';
 
 // ── Limits (mirrors shared/workflow-validation.ts) ─────────────────────────
@@ -95,6 +103,12 @@ export interface AiAgentNodeConfig {
   handoverDepartments?: AiDepartmentSlot[];
   /** Phase 2: force the model to use a specific tool (`auto` lets it decide). */
   forceToolChoice?: AiForceToolChoice | string;
+  /** Phase 3: business-hours schedule (absent = always active). */
+  aiSchedule?: AiSchedule;
+  /** Phase 3: daily/monthly call caps (absent = unlimited). */
+  usageLimits?: UsageLimits;
+  /** Phase 3: max AI turns before forced handover (absent = unlimited). */
+  maxMessagesPerConversation?: number | string;
 }
 
 export interface AiAgentExecutionContext {
@@ -111,6 +125,10 @@ export interface AiAgentExecutionContext {
   /** Test endpoint: do not read or write `context.ai`. */
   useHistory?: boolean;
   timeoutMs?: number;
+  /** Test seam: current time in ms (defaults to Date.now()). */
+  now?: number;
+  /** Pre-resolved usage-limit block, computed by the node wrapper. */
+  usageBlock?: { reason: string };
 }
 
 /** The handle the node routes to after a turn. */
@@ -127,6 +145,13 @@ export interface AiAgentExecutionResult {
   latencyMs: number;
   attempts: number;
   error?: string;
+  /**
+   * Phase 3: structured routing reason when the node was blocked or handed over
+   * before calling the model — `'outside_schedule'`, `'daily_limit_reached'`,
+   * `'monthly_limit_reached'`, `'message_cap_reached'`. Persisted to
+   * `context.ai[nodeId].reason` so a downstream `condition` node can branch.
+   */
+  reason?: string;
   /** History after this turn (already trimmed). */
   history: LlmMessage[];
   /** Context after this turn (history + response variable). */
@@ -183,6 +208,45 @@ function normalizeForceToolChoice(value: any): AiForceToolChoice {
   return 'auto';
 }
 
+/** Phase 3: coerce the schedule config, returning `undefined` when unusable. */
+function normalizeSchedule(value: any): AiSchedule | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const startHour = value.startHour;
+  const endHour = value.endHour;
+  if (
+    startHour === undefined || startHour === null || startHour === '' ||
+    endHour === undefined || endHour === null || endHour === ''
+  ) {
+    return undefined;
+  }
+  const daysOfWeek = Array.isArray(value.daysOfWeek)
+    ? value.daysOfWeek.filter((d: any) => Number.isInteger(d) && d >= 0 && d <= 6)
+    : [];
+  const tz = typeof value.tz === 'string' && value.tz.trim() ? value.tz.trim() : AI_DEFAULT_TIMEZONE;
+  return { startHour: Number(startHour), endHour: Number(endHour), daysOfWeek, tz };
+}
+
+/** Phase 3: coerce the usage-limit config, returning `undefined` when unusable. */
+function normalizeUsageLimits(value: any): UsageLimits | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const daily = Number(value.dailyMax);
+  const monthly = Number(value.monthlyMax);
+  const dailyMax = Number.isInteger(daily) && daily >= 1 ? daily : undefined;
+  const monthlyMax = Number.isInteger(monthly) && monthly >= 1 ? monthly : undefined;
+  if (dailyMax === undefined && monthlyMax === undefined) return undefined;
+  return {
+    ...(dailyMax !== undefined ? { dailyMax } : {}),
+    ...(monthlyMax !== undefined ? { monthlyMax } : {}),
+  };
+}
+
+/** Phase 3: coerce the per-conversation message cap (≥ 1, else `undefined`). */
+function normalizeMessageCap(value: any): number | undefined {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) return undefined;
+  return n;
+}
+
 /**
  * Map `forceToolChoice` to the wire `tool_choice`. A forced tool is only applied
  * when that tool was actually declared (an empty enum can't be forced); otherwise
@@ -218,6 +282,9 @@ export function normalizeAiConfig(config: AiAgentNodeConfig | undefined): AiAgen
     ),
     responseVariable: normalizeResponseVariable(config?.responseVariable),
     forceToolChoice: normalizeForceToolChoice(config?.forceToolChoice),
+    aiSchedule: normalizeSchedule(config?.aiSchedule),
+    usageLimits: normalizeUsageLimits(config?.usageLimits),
+    maxMessagesPerConversation: normalizeMessageCap(config?.maxMessagesPerConversation),
   };
 }
 
@@ -234,6 +301,13 @@ export function readHistory(context: Record<string, any>, nodeId: string): LlmMe
         (message.role === 'user' || message.role === 'assistant' || message.role === 'system')
     )
     .map((message: any) => ({ role: message.role, content: message.content }));
+}
+
+/** Phase 3: read the per-conversation message count, defaulting to 0. */
+function readMessageCount(context: Record<string, any>, nodeId: string): number {
+  const raw = context?.ai?.[nodeId]?.messageCount;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -416,7 +490,8 @@ function emptyResult(
   history: LlmMessage[],
   stateUpdate: Record<string, any>,
   nodeId: string,
-  useHistory: boolean
+  useHistory: boolean,
+  reason?: string
 ): AiAgentExecutionResult {
   // Record the failure in the context too: an owner debugging a WhatsApp flow
   // sees why the node took the error handle without reading PM2 logs.
@@ -432,6 +507,7 @@ function emptyResult(
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         latencyMs: 0,
         error,
+        ...(reason ? { reason } : {}),
         updatedAt: new Date().toISOString(),
         history,
       },
@@ -449,6 +525,61 @@ function emptyResult(
     latencyMs: 0,
     attempts: 0,
     error,
+    ...(reason ? { reason } : {}),
+    history,
+    stateUpdate,
+  };
+}
+
+/**
+ * Phase 3 — force handover when the conversation message cap is reached.
+ *
+ * No model call: the escalation is decided by the cap, not the LLM. Uses the
+ * first declared department as the escalation target, and preserves the current
+ * history unchanged (the conversation is leaving the AI loop).
+ */
+function forcedHandoverResult(
+  settings: AiAgentSettings,
+  department: AiDepartmentSlot,
+  history: LlmMessage[],
+  stateUpdate: Record<string, any>,
+  nodeId: string,
+  useHistory: boolean
+): AiAgentExecutionResult {
+  const handover = { department: department.id, reason: 'message_cap_reached', title: department.title };
+
+  if (useHistory) {
+    stateUpdate.ai = {
+      ...(stateUpdate.ai || {}),
+      [nodeId]: {
+        ...(stateUpdate.ai?.[nodeId] || {}),
+        provider: settings.provider,
+        model: settings.model,
+        text: '',
+        finishReason: 'stop',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        latencyMs: 0,
+        attempts: 0,
+        reason: 'message_cap_reached',
+        handover,
+        updatedAt: new Date().toISOString(),
+        history,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    nextHandle: 'handover',
+    provider: settings.provider,
+    model: settings.model,
+    text: '',
+    finishReason: 'stop',
+    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    latencyMs: 0,
+    attempts: 0,
+    reason: 'message_cap_reached',
+    handover,
     history,
     stateUpdate,
   };
@@ -484,11 +615,9 @@ export async function executeAiAgentNode(
     );
   }
 
-  // Resolve {{variables}} in the owner's prompt against the current context.
-  const resolvedPrompt = resolveTemplate(settings.systemPrompt, context);
-
   // Phase 2/2.5: declared slots → tool definitions. A tool is only offered when
-  // the owner declared the matching config section.
+  // the owner declared the matching config section. Normalized up front so the
+  // Phase 3 message-cap handover below can target the first declared department.
   const declaredButtons = normalizeButtonSlots(config.buttons);
   const declaredRows = normalizeListRows(config.listRows);
   const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
@@ -497,6 +626,67 @@ export async function executeAiAgentNode(
     listRows: declaredRows,
     handoverDepartments: declaredDepartments,
   });
+
+  // ── Phase 3: production-safety gates (all run BEFORE any provider work) ───
+  const now = typeof exec.now === 'number' ? exec.now : Date.now();
+
+  // 1. Schedule — outside business hours ⇒ error, no model call.
+  const scheduleDecision = isWithinSchedule(settings.aiSchedule, new Date(now));
+  if (!scheduleDecision.allowed) {
+    return emptyResult(
+      settings,
+      'The AI is outside its configured business hours.',
+      previousHistory,
+      stateUpdate,
+      nodeId,
+      useHistory,
+      'outside_schedule'
+    );
+  }
+
+  // 2. Message cap — force handover (or error) once the cap is reached.
+  const messageCount = useHistory ? readMessageCount(context, nodeId) : 0;
+  if (isMessageCapReached(messageCount, settings.maxMessagesPerConversation)) {
+    if (declaredDepartments.length > 0) {
+      return forcedHandoverResult(
+        settings,
+        declaredDepartments[0],
+        previousHistory,
+        stateUpdate,
+        nodeId,
+        useHistory
+      );
+    }
+    return emptyResult(
+      settings,
+      'This conversation has reached its message limit.',
+      previousHistory,
+      stateUpdate,
+      nodeId,
+      useHistory,
+      'message_cap_reached'
+    );
+  }
+
+  // 3. Usage limit — resolved by the wrapper (needs a DB read); no model call.
+  if (exec.usageBlock) {
+    const human =
+      exec.usageBlock.reason === 'daily_limit_reached'
+        ? 'The AI has reached its daily usage limit.'
+        : 'The AI has reached its monthly usage limit.';
+    return emptyResult(
+      settings,
+      human,
+      previousHistory,
+      stateUpdate,
+      nodeId,
+      useHistory,
+      exec.usageBlock.reason
+    );
+  }
+
+  // Resolve {{variables}} in the owner's prompt against the current context.
+  const resolvedPrompt = resolveTemplate(settings.systemPrompt, context);
 
   // Phase 2.5b — Tool Stripping Guard. If the customer's message is the title of
   // an option we offered moments ago, this turn is a CLICK: remove send_buttons
@@ -736,6 +926,8 @@ export async function executeAiAgentNode(
     usage: totalUsage,
     latencyMs: Date.now() - startedAt,
     attempts: totalAttempts,
+    // Phase 3: a completed turn advances the per-conversation message count.
+    messageCount: messageCount + 1,
     updatedAt: new Date().toISOString(),
   };
   if (buttons) entry.buttons = buttons;
@@ -827,11 +1019,42 @@ export async function executeAiAgentWorkflowNode(
     listRows: rawConfig.listRows,
     handoverDepartments: rawConfig.handoverDepartments,
     forceToolChoice: rawConfig.forceToolChoice,
+    aiSchedule: rawConfig.aiSchedule,
+    usageLimits: rawConfig.usageLimits,
+    maxMessagesPerConversation: rawConfig.maxMessagesPerConversation,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);
   const userMessage =
     incomingMessage?.text?.body || (executionContext.message as any)?.text || '';
+
+  // Phase 3 — usage-limit check (needs a DB read, so it lives in the wrapper).
+  // Fail-open: a metrics query error yields no block, never a dropped reply.
+  let usageBlock: { reason: string } | undefined;
+  if (options.logUsage !== false && options.workflowId != null && userMetadata?.userId) {
+    const limits = normalizeUsageLimits(rawConfig.usageLimits);
+    if (limits && (limits.dailyMax || limits.monthlyMax)) {
+      const { countAiCallsSince, aiUsagePeriodStart } = await import('./ai-usage');
+      if (limits.dailyMax) {
+        const daily = await countAiCallsSince(
+          userMetadata.userId,
+          options.workflowId,
+          aiUsagePeriodStart('day')
+        );
+        if (isUsageExceeded(daily, limits.dailyMax)) usageBlock = { reason: 'daily_limit_reached' };
+      }
+      if (!usageBlock && limits.monthlyMax) {
+        const monthly = await countAiCallsSince(
+          userMetadata.userId,
+          options.workflowId,
+          aiUsagePeriodStart('month')
+        );
+        if (isUsageExceeded(monthly, limits.monthlyMax)) {
+          usageBlock = { reason: 'monthly_limit_reached' };
+        }
+      }
+    }
+  }
 
   const result = await executeAiAgentNode(config, {
     nodeId,
@@ -839,6 +1062,7 @@ export async function executeAiAgentWorkflowNode(
     userMessage,
     channel: options.channel ?? 'whatsapp',
     businessName: options.businessName,
+    usageBlock,
   });
 
   const nextHandle: AiNextHandle = result.nextHandle;
