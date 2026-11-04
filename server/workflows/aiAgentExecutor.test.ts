@@ -347,82 +347,66 @@ test('usage block routes to error with the reason and no model call', async () =
   assert.equal(mock.callCount, 0);
 });
 
-test('message cap with departments forces handover without calling the model', async () => {
+test('per-user daily cap with departments forces handover without calling the model', async () => {
   const mock = new MockLlmClient({ replies: ['You should not see this.'] });
 
   const result = await executeAiAgentNode(
     {
       ...baseConfig,
-      maxMessagesPerConversation: 2,
+      maxAiCallsPerDay: 15,
       handoverDepartments: [{ id: 'sales', title: 'Sales' }],
     },
     {
       nodeId: 'n1',
-      context: { ai: { n1: { messageCount: 2 } } },
+      context: {},
       userMessage: 'hello',
       client: mock,
       channel: 'whatsapp',
+      userDailyBlock: { reason: 'daily_user_cap_reached' },
     }
   );
 
   assert.equal(result.success, true);
   assert.equal(result.nextHandle, 'handover');
-  assert.equal(result.reason, 'message_cap_reached');
+  assert.equal(result.reason, 'daily_user_cap_reached');
   assert.deepEqual(result.handover, {
     department: 'sales',
-    reason: 'message_cap_reached',
+    reason: 'daily_user_cap_reached',
     title: 'Sales',
   });
   assert.equal(mock.callCount, 0);
 });
 
-test('message cap without departments routes to error', async () => {
+test('per-user daily cap without departments routes to error', async () => {
   const mock = new MockLlmClient({ replies: ['You should not see this.'] });
 
   const result = await executeAiAgentNode(
-    { ...baseConfig, maxMessagesPerConversation: 2 },
+    { ...baseConfig, maxAiCallsPerDay: 15 },
     {
       nodeId: 'n1',
-      context: { ai: { n1: { messageCount: 2 } } },
+      context: {},
       userMessage: 'hello',
       client: mock,
       channel: 'whatsapp',
+      userDailyBlock: { reason: 'daily_user_cap_reached' },
     }
   );
 
   assert.equal(result.success, false);
   assert.equal(result.nextHandle, 'error');
-  assert.equal(result.reason, 'message_cap_reached');
+  assert.equal(result.reason, 'daily_user_cap_reached');
   assert.equal(mock.callCount, 0);
 });
 
-test('a successful turn increments the message count', async () => {
+test('a user under the daily cap is processed normally', async () => {
   const mock = new MockLlmClient({ replies: ['Hello there.'] });
 
   const result = await executeAiAgentNode(
-    { ...baseConfig, maxMessagesPerConversation: 5 },
-    {
-      nodeId: 'n1',
-      context: { ai: { n1: { messageCount: 3 } } },
-      userMessage: 'hello',
-      client: mock,
-      channel: 'whatsapp',
-    }
-  );
-
-  assert.equal(result.nextHandle, 'success');
-  assert.equal(result.stateUpdate.ai.n1.messageCount, 4);
-  assert.equal(mock.callCount, 1);
-});
-
-test('message count starts at 1 for a fresh conversation', async () => {
-  const mock = new MockLlmClient({ replies: ['First reply.'] });
-
-  const result = await executeAiAgentNode(
-    { ...baseConfig },
+    { ...baseConfig, maxAiCallsPerDay: 15 },
     { nodeId: 'n1', context: {}, userMessage: 'hello', client: mock, channel: 'whatsapp' }
   );
 
   assert.equal(result.nextHandle, 'success');
-  assert.equal(result.stateUpdate.ai.n1.messageCount, 1);
+  assert.equal(result.reason, undefined);
+  assert.equal(mock.callCount, 1);
 });

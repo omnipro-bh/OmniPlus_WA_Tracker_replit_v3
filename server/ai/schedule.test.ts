@@ -9,7 +9,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  isMessageCapReached,
   isUsageExceeded,
   isWithinSchedule,
 } from './schedule';
@@ -139,18 +138,4 @@ test('usage limit: reached at exactly the cap', () => {
 test('usage limit: string limit is coerced', () => {
   assert.equal(isUsageExceeded(3, '3' as any), true);
   assert.equal(isUsageExceeded(3, 'abc' as any), false);
-});
-
-// ── isMessageCapReached ─────────────────────────────────────────────────────
-
-test('message cap: zero/negative/absent means unlimited', () => {
-  assert.equal(isMessageCapReached(3, 0), false);
-  assert.equal(isMessageCapReached(3, undefined), false);
-  assert.equal(isMessageCapReached(3, null), false);
-});
-
-test('message cap: reached at exactly the cap', () => {
-  assert.equal(isMessageCapReached(1, 2), false);
-  assert.equal(isMessageCapReached(2, 2), true);
-  assert.equal(isMessageCapReached(3, 2), true);
 });

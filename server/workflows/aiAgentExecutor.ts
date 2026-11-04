@@ -28,7 +28,6 @@ import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry'
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
 import {
   AI_DEFAULT_TIMEZONE,
-  isMessageCapReached,
   isUsageExceeded,
   isWithinSchedule,
 } from '../ai/schedule';
@@ -107,8 +106,8 @@ export interface AiAgentNodeConfig {
   aiSchedule?: AiSchedule;
   /** Phase 3: daily/monthly call caps (absent = unlimited). */
   usageLimits?: UsageLimits;
-  /** Phase 3: max AI turns before forced handover (absent = unlimited). */
-  maxMessagesPerConversation?: number | string;
+  /** Phase 3: max AI calls per user per day before forced handover (absent = unlimited). */
+  maxAiCallsPerDay?: number | string;
 }
 
 export interface AiAgentExecutionContext {
@@ -127,8 +126,10 @@ export interface AiAgentExecutionContext {
   timeoutMs?: number;
   /** Test seam: current time in ms (defaults to Date.now()). */
   now?: number;
-  /** Pre-resolved usage-limit block, computed by the node wrapper. */
+  /** Pre-resolved workflow usage-limit block, computed by the node wrapper. */
   usageBlock?: { reason: string };
+  /** Pre-resolved per-user daily cap block, computed by the node wrapper. */
+  userDailyBlock?: { reason: string };
 }
 
 /** The handle the node routes to after a turn. */
@@ -148,7 +149,7 @@ export interface AiAgentExecutionResult {
   /**
    * Phase 3: structured routing reason when the node was blocked or handed over
    * before calling the model — `'outside_schedule'`, `'daily_limit_reached'`,
-   * `'monthly_limit_reached'`, `'message_cap_reached'`. Persisted to
+   * `'monthly_limit_reached'`, `'daily_user_cap_reached'`. Persisted to
    * `context.ai[nodeId].reason` so a downstream `condition` node can branch.
    */
   reason?: string;
@@ -240,8 +241,8 @@ function normalizeUsageLimits(value: any): UsageLimits | undefined {
   };
 }
 
-/** Phase 3: coerce the per-conversation message cap (≥ 1, else `undefined`). */
-function normalizeMessageCap(value: any): number | undefined {
+/** Phase 3: coerce the per-user-per-day cap (≥ 1, else `undefined`). */
+function normalizeDailyUserCap(value: any): number | undefined {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) return undefined;
   return n;
@@ -284,7 +285,7 @@ export function normalizeAiConfig(config: AiAgentNodeConfig | undefined): AiAgen
     forceToolChoice: normalizeForceToolChoice(config?.forceToolChoice),
     aiSchedule: normalizeSchedule(config?.aiSchedule),
     usageLimits: normalizeUsageLimits(config?.usageLimits),
-    maxMessagesPerConversation: normalizeMessageCap(config?.maxMessagesPerConversation),
+    maxAiCallsPerDay: normalizeDailyUserCap(config?.maxAiCallsPerDay),
   };
 }
 
@@ -301,13 +302,6 @@ export function readHistory(context: Record<string, any>, nodeId: string): LlmMe
         (message.role === 'user' || message.role === 'assistant' || message.role === 'system')
     )
     .map((message: any) => ({ role: message.role, content: message.content }));
-}
-
-/** Phase 3: read the per-conversation message count, defaulting to 0. */
-function readMessageCount(context: Record<string, any>, nodeId: string): number {
-  const raw = context?.ai?.[nodeId]?.messageCount;
-  const n = typeof raw === 'number' ? raw : Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -532,7 +526,7 @@ function emptyResult(
 }
 
 /**
- * Phase 3 — force handover when the conversation message cap is reached.
+ * Phase 3 — force handover when the per-user daily cap is reached.
  *
  * No model call: the escalation is decided by the cap, not the LLM. Uses the
  * first declared department as the escalation target, and preserves the current
@@ -541,12 +535,13 @@ function emptyResult(
 function forcedHandoverResult(
   settings: AiAgentSettings,
   department: AiDepartmentSlot,
+  reason: string,
   history: LlmMessage[],
   stateUpdate: Record<string, any>,
   nodeId: string,
   useHistory: boolean
 ): AiAgentExecutionResult {
-  const handover = { department: department.id, reason: 'message_cap_reached', title: department.title };
+  const handover = { department: department.id, reason, title: department.title };
 
   if (useHistory) {
     stateUpdate.ai = {
@@ -560,7 +555,7 @@ function forcedHandoverResult(
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         latencyMs: 0,
         attempts: 0,
-        reason: 'message_cap_reached',
+        reason,
         handover,
         updatedAt: new Date().toISOString(),
         history,
@@ -578,7 +573,7 @@ function forcedHandoverResult(
     usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     latencyMs: 0,
     attempts: 0,
-    reason: 'message_cap_reached',
+    reason,
     handover,
     history,
     stateUpdate,
@@ -617,7 +612,7 @@ export async function executeAiAgentNode(
 
   // Phase 2/2.5: declared slots → tool definitions. A tool is only offered when
   // the owner declared the matching config section. Normalized up front so the
-  // Phase 3 message-cap handover below can target the first declared department.
+  // Phase 3 daily-cap handover below can target the first declared department.
   const declaredButtons = normalizeButtonSlots(config.buttons);
   const declaredRows = normalizeListRows(config.listRows);
   const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
@@ -644,13 +639,13 @@ export async function executeAiAgentNode(
     );
   }
 
-  // 2. Message cap — force handover (or error) once the cap is reached.
-  const messageCount = useHistory ? readMessageCount(context, nodeId) : 0;
-  if (isMessageCapReached(messageCount, settings.maxMessagesPerConversation)) {
+  // 2. Per-user daily cap — force handover (or error) once the cap is reached.
+  if (exec.userDailyBlock) {
     if (declaredDepartments.length > 0) {
       return forcedHandoverResult(
         settings,
         declaredDepartments[0],
+        'daily_user_cap_reached',
         previousHistory,
         stateUpdate,
         nodeId,
@@ -659,12 +654,12 @@ export async function executeAiAgentNode(
     }
     return emptyResult(
       settings,
-      'This conversation has reached its message limit.',
+      'This user has reached the daily AI reply limit.',
       previousHistory,
       stateUpdate,
       nodeId,
       useHistory,
-      'message_cap_reached'
+      'daily_user_cap_reached'
     );
   }
 
@@ -926,8 +921,6 @@ export async function executeAiAgentNode(
     usage: totalUsage,
     latencyMs: Date.now() - startedAt,
     attempts: totalAttempts,
-    // Phase 3: a completed turn advances the per-conversation message count.
-    messageCount: messageCount + 1,
     updatedAt: new Date().toISOString(),
   };
   if (buttons) entry.buttons = buttons;
@@ -1021,7 +1014,7 @@ export async function executeAiAgentWorkflowNode(
     forceToolChoice: rawConfig.forceToolChoice,
     aiSchedule: rawConfig.aiSchedule,
     usageLimits: rawConfig.usageLimits,
-    maxMessagesPerConversation: rawConfig.maxMessagesPerConversation,
+    maxAiCallsPerDay: rawConfig.maxAiCallsPerDay,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);
@@ -1056,6 +1049,21 @@ export async function executeAiAgentWorkflowNode(
     }
   }
 
+  // Phase 3 — per-user daily cap (also a DB read). Fail-open like the above:
+  // a metrics query error yields no block. Counts successful calls only, so a
+  // restart/back-and-forth cannot be gamed by starting a fresh conversation.
+  let userDailyBlock: { reason: string } | undefined;
+  if (options.logUsage !== false && options.workflowId != null && userMetadata?.userId) {
+    const maxPerDay = normalizeDailyUserCap(rawConfig.maxAiCallsPerDay);
+    if (maxPerDay) {
+      const { countUserAiCallsToday } = await import('./ai-usage');
+      const userCalls = await countUserAiCallsToday(userMetadata.userId, options.workflowId);
+      if (isUsageExceeded(userCalls, maxPerDay)) {
+        userDailyBlock = { reason: 'daily_user_cap_reached' };
+      }
+    }
+  }
+
   const result = await executeAiAgentNode(config, {
     nodeId,
     context: executionContext,
@@ -1063,11 +1071,20 @@ export async function executeAiAgentWorkflowNode(
     channel: options.channel ?? 'whatsapp',
     businessName: options.businessName,
     usageBlock,
+    userDailyBlock,
   });
 
   const nextHandle: AiNextHandle = result.nextHandle;
 
-  if (options.logUsage !== false && options.workflowId !== undefined && userMetadata?.userId) {
+  // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
+  // call, so it is not logged — otherwise a forced handover would inflate the
+  // per-user daily "successful calls" count.
+  if (
+    !result.reason &&
+    options.logUsage !== false &&
+    options.workflowId !== undefined &&
+    userMetadata?.userId
+  ) {
     const { logAiUsage } = await import('./ai-usage');
     logAiUsage({
       userId: userMetadata.userId,

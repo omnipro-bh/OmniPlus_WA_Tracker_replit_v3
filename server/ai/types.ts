@@ -162,6 +162,6 @@ export interface AiAgentSettings {
   aiSchedule?: AiSchedule;
   /** Phase 3: daily/monthly call caps (absent = unlimited). */
   usageLimits?: UsageLimits;
-  /** Phase 3: max AI turns before forced handover (absent = unlimited). */
-  maxMessagesPerConversation?: number;
+  /** Phase 3: max AI calls per user per day before forced handover (absent = unlimited). */
+  maxAiCallsPerDay?: number;
 }

@@ -3243,26 +3243,28 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
         <Separator />
 
-        {/* Message Cap (optional) */}
+        {/* Max AI Calls Per User Per Day (optional) */}
         <div>
-          <Label htmlFor="ai-message-cap">Message Cap (optional)</Label>
+          <Label htmlFor="ai-daily-user-cap">Max AI Calls Per User Per Day (optional)</Label>
           <Input
-            id="ai-message-cap"
+            id="ai-daily-user-cap"
             type="number"
             min={1}
             placeholder="Unlimited"
-            value={config.maxMessagesPerConversation ?? ''}
+            value={config.maxAiCallsPerDay ?? ''}
             onChange={(e) =>
               updateConfig(
-                'maxMessagesPerConversation',
+                'maxAiCallsPerDay',
                 e.target.value === '' ? undefined : Number(e.target.value)
               )
             }
-            data-testid="input-ai-message-cap"
+            data-testid="input-ai-daily-user-cap"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Force a handover after this many AI turns in one conversation. Requires handover
-            departments to be configured.
+            Limits how many AI replies each user can receive per day on this workflow. Resets at
+            midnight (Bahrain time). Users who exceed the cap are routed to the handover handle.
+            Prevents abuse (spam) while allowing normal usage. Recommended for most workflows:
+            15–30. Leave empty to disable.
           </p>
         </div>
 

@@ -470,25 +470,25 @@ export function validateWorkflowNodeConfigs(
         }
       }
 
-      // Phase 3: per-conversation message cap (whole number ≥ 1). When a cap is set
+      // Phase 3: per-user-per-day AI call cap (whole number ≥ 1). When a cap is set
       // but no handover departments are declared, the forced handover has no target
       // and degrades to a hard error — warn so the owner wires an escalation path.
-      const maxMessagesPerConversation = config.maxMessagesPerConversation;
+      const maxAiCallsPerDay = config.maxAiCallsPerDay;
       if (
-        maxMessagesPerConversation !== undefined &&
-        maxMessagesPerConversation !== null &&
-        maxMessagesPerConversation !== ''
+        maxAiCallsPerDay !== undefined &&
+        maxAiCallsPerDay !== null &&
+        maxAiCallsPerDay !== ''
       ) {
-        const cap = Number(maxMessagesPerConversation);
+        const cap = Number(maxAiCallsPerDay);
         if (!Number.isInteger(cap) || cap < 1) {
           addError(
             nodeId,
-            `"${label}" (AI Agent): max messages per conversation must be a whole number of at least 1.`
+            `"${label}" (AI Agent): max AI calls per user per day must be a whole number of at least 1.`
           );
         } else if (!(Array.isArray(config.handoverDepartments) && config.handoverDepartments.length > 0)) {
           addWarning(
             nodeId,
-            `"${label}" (AI Agent): a message cap is set but no handover departments are configured — the conversation will end in an error instead of a handover.`
+            `"${label}" (AI Agent): a daily AI call cap is set but no handover departments are configured — users over the cap will hit an error instead of being handed over.`
           );
         }
       }

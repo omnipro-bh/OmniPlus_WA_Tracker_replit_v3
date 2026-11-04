@@ -92,18 +92,12 @@ export function isWithinSchedule(
 }
 
 /**
- * Has a per-workflow call count reached its cap? `limit <= 0` means unlimited.
- * `count` is expected to be `ai_usage_logs` rows for the current period.
+ * Has a call count reached its cap? `limit <= 0` means unlimited. Used for both
+ * the per-workflow usage caps and the per-user-per-day cap; `count` is the
+ * relevant `ai_usage_logs` row count for the current period.
  */
 export function isUsageExceeded(count: number, limit: number | null | undefined): boolean {
   const cap = typeof limit === 'number' && Number.isFinite(limit) ? limit : Number(limit);
   if (!Number.isFinite(cap) || cap <= 0) return false;
   return count >= cap;
-}
-
-/** Has a conversation reached its per-conversation message cap? */
-export function isMessageCapReached(count: number, cap: number | null | undefined): boolean {
-  const max = typeof cap === 'number' && Number.isFinite(cap) ? cap : Number(cap);
-  if (!Number.isFinite(max) || max <= 0) return false;
-  return count >= max;
 }
