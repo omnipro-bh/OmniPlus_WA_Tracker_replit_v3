@@ -512,6 +512,16 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
           detail: { success: aiResult.ok, ...(aiResult.detail || {}) },
         });
 
+        // `buttons` means the AI node sent interactive buttons and must now wait
+        // for the visitor's click — exactly like a quickReply node. The button
+        // handle's target runs only after resolveButtonTarget routes the click
+        // back here, so do NOT advance to it in this tick.
+        if (aiResult.nextHandle === 'buttons') {
+          status = 'awaiting_input';
+          cursor = nodeId;
+          break;
+        }
+
         const nextNodeId = getNextNodeByHandle(nodeId, aiResult.nextHandle, edges);
         if (!nextNodeId) {
           console.log(

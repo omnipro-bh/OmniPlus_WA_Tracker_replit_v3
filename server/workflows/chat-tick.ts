@@ -269,7 +269,7 @@ function stateFromCursor(
   const type = nodeTypeOf(node);
 
   if (type === "input.text") return { status: "awaiting_input", awaiting: { kind: "text" } };
-  if (type && INTERACTIVE_NODE_TYPES.includes(type)) {
+  if (type && (INTERACTIVE_NODE_TYPES.includes(type) || type === "action.ai_agent")) {
     return { status: "awaiting_input", awaiting: { kind: "button" } };
   }
   return { status: "done", awaiting: null };
