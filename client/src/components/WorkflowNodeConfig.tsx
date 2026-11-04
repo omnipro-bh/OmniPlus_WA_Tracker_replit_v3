@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { RESERVED_CONTEXT_KEYS, VARIABLE_NAME_RE, VARIABLE_PATH_RE } from '@shared/workflow-validation';
+import { AI_DEFAULT_SYSTEM_PROMPT } from '@shared/ai-defaults';
 
 // Generate random unique ID
 function generateId(prefix: string = 'btn'): string {
@@ -2784,14 +2785,15 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           <Label htmlFor="ai-system-prompt">System Prompt</Label>
           <Textarea
             id="ai-system-prompt"
-            placeholder="You are the support assistant for ... Answer questions about ... "
+            placeholder={AI_DEFAULT_SYSTEM_PROMPT}
             value={config.systemPrompt || ''}
             onChange={(e) => updateConfig('systemPrompt', e.target.value)}
-            rows={6}
+            rows={8}
             data-testid="textarea-ai-system-prompt"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Business instructions only. Language rules (Arabic in → Arabic out) are added
+            Business instructions only. Tool rules (send_buttons / send_list / handover, "don't
+            re-send a menu after a click") and language rules (Arabic in → Arabic out) are added
             automatically. You can use {`{{variableName}}`} placeholders.
           </p>
         </div>

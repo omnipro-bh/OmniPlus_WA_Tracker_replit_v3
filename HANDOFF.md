@@ -1,5 +1,64 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
+## AI Agent Phase 2.5b — Tool Stripping Guard (2026-11-04)
+
+### Problem
+
+Phase 2.5 routed option clicks back to the AI node correctly, but the AI re-sent the
+same menu: the click arrives as plain text ("See pricing"), which reads exactly like a
+fresh request for options. Prompting alone did not stop it.
+
+**Prompt for guidance, code for enforcement.**
+
+### What this adds
+
+- `server/workflows/aiAgentExecutor.ts`
+  - After a terminal `send_buttons` / `send_list`, the turn writes
+    `context.ai[nodeId].lastSentOptions = { titles: [...], at: Date.now() }`.
+  - `isRecentlySentOption(context, nodeId, userMessage)` matches the incoming
+    message against those titles (case-insensitive, `OPTION_CLICK_TTL_MS = 5 min`).
+  - On a match, `stripOptionTools()` removes `send_buttons` and `send_list` from the
+    request; `handover` stays. The model can only answer in text or escalate. If it
+    hallucinates an option tool anyway, the loop refuses it with a "disabled for this
+    turn" tool result.
+  - A text / handover turn rebuilds the node entry without `lastSentOptions`, so the
+    tools come back on the next, unrelated message. Provider errors preserve it (the
+    guard survives a failed turn).
+  - `buildSystemPrompt` now receives `hasOptionTools` and appends `AI_TOOL_RULES`.
+- `server/ai/prompt.ts`: appends `AI_TOOL_RULES` for any node that declares buttons
+  or list rows — owners do not need to paste it.
+- `shared/ai-defaults.ts` (new): `AI_TOOL_RULES` + `AI_DEFAULT_SYSTEM_PROMPT`, the
+  exact default shown in the node config's System Prompt field:
+
+  ```
+  You are a helpful assistant.
+
+  TOOLS AVAILABLE:
+  - send_buttons: Present 1–3 options as buttons.
+  - send_list: Present 4–10 options as a list.
+  - handover: Hand off to a human agent.
+
+  RULES:
+  1. Use send_buttons or send_list ONLY when asking the user to choose from options.
+  2. If the user CLICKS a button (their message is a button title like "See pricing"), do NOT send buttons again. Answer their question with TEXT.
+  3. Never send buttons for options the user has already chosen.
+  ```
+- `client/src/components/WorkflowNodeConfig.tsx`: System Prompt placeholder is that
+  default text; helper text explains tool + language rules are appended automatically.
+
+### Tests
+
+4 new in `server/workflows/aiAgentExecutor.test.ts` (56 total, all passing):
+send_buttons records `lastSentOptions`; **button click strips send_buttons tool**
+(only `handover` survives the request); a normal message keeps every tool; an expired
+timestamp no longer counts as a click.
+
+### Flow after the fix
+
+AI sends buttons → visitor taps "See pricing" → AI node runs with only `handover`
+available → AI answers with pricing text → flow continues to the next node (e.g. an
+input node) → on the visitor's next message the AI has its option tools again.
+
 ## AI Agent Phase 2 Part 1 — tool loop + send_buttons + handover (0a84d65, 2026-11-03)
 
 ### Status

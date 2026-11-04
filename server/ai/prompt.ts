@@ -8,7 +8,13 @@
  * language as an example.
  *
  * Phase 2 adds tool/button instructions and PII redaction here.
+ *
+ * Phase 2.5: the option-tool rules (`AI_TOOL_RULES`) are appended whenever the
+ * node declares buttons or list rows. They tell the model not to re-send a menu
+ * after a click; the executor's tool-stripping guard enforces it in code.
  */
+
+import { AI_TOOL_RULES } from '@shared/ai-defaults';
 
 /** Always appended after the owner's prompt. Order matters: last wins. */
 export const LANGUAGE_RULES = [
@@ -31,6 +37,12 @@ export interface BuildSystemPromptOptions {
   channel?: 'whatsapp' | 'web_chat';
   /** Extra instructions appended last (Phase 2 tools, handover, etc.). */
   extraRules?: string;
+  /**
+   * Phase 2.5: the node declares buttons / list rows, so append the
+   * send_buttons / send_list / handover rules (and the "don't re-send a menu
+   * after a click" rule).
+   */
+  hasOptionTools?: boolean;
 }
 
 /**
@@ -61,6 +73,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
   );
 
   if (extraRules) sections.push(extraRules);
+  if (options.hasOptionTools) sections.push(AI_TOOL_RULES);
   sections.push(LANGUAGE_RULES);
 
   return sections.join('\n\n');

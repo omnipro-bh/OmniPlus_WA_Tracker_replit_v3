@@ -79,6 +79,134 @@ test('send_list routes to the list handle and stores the rows', async () => {
   assert.equal(mock.callCount, 1);
 });
 
+test('send_buttons records the offered titles for the click guard', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [[{ name: 'send_buttons', arguments: { buttons: ['sales', 'support'] } }]],
+  });
+
+  const result = await run(
+    {
+      ...baseConfig,
+      buttons: [
+        { id: 'sales', title: 'Sales' },
+        { id: 'support', title: 'Support' },
+      ],
+    },
+    mock
+  );
+
+  assert.equal(result.nextHandle, 'buttons');
+  assert.deepEqual(result.stateUpdate.ai.n1.lastSentOptions.titles, ['Sales', 'Support']);
+  assert.equal(typeof result.stateUpdate.ai.n1.lastSentOptions.at, 'number');
+});
+
+test('button click strips send_buttons tool', async () => {
+  const mock = new MockLlmClient({ replies: ['Our plans start at 10 BHD per month.'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      buttons: [{ id: 'btn_pricing', title: 'See pricing' }],
+      listRows: [
+        { id: 'row_1', title: 'Row 1' },
+        { id: 'row_2', title: 'Row 2' },
+        { id: 'row_3', title: 'Row 3' },
+        { id: 'row_4', title: 'Row 4' },
+      ],
+      handoverDepartments: [{ id: 'sales', title: 'Sales' }],
+    },
+    {
+      nodeId: 'n1',
+      context: {
+        ai: {
+          n1: {
+            lastSentOptions: { titles: ['See pricing', 'Talk to sales'], at: Date.now() },
+          },
+        },
+      },
+      userMessage: 'See pricing',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  // The click is answered with text...
+  assert.equal(result.success, true);
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.text, 'Our plans start at 10 BHD per month.');
+
+  // ...because send_buttons / send_list were physically removed from the request
+  // (handover is still available).
+  const sentTools = (mock.requests[0].tools ?? []).map((tool) => tool.function.name);
+  assert.deepEqual(sentTools, ['handover']);
+
+  // Tracking is cleared once the model answers.
+  assert.equal(result.stateUpdate.ai.n1.lastSentOptions, undefined);
+  assert.deepEqual(result.stateUpdate.ai.n1.history.at(-1), {
+    role: 'assistant',
+    content: 'Our plans start at 10 BHD per month.',
+  });
+});
+
+test('a normal message keeps every declared tool', async () => {
+  const mock = new MockLlmClient({ replies: ['Hello! How can I help?'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      buttons: [{ id: 'btn_pricing', title: 'See pricing' }],
+      listRows: [{ id: 'row_1', title: 'Row 1' }],
+      handoverDepartments: [{ id: 'sales', title: 'Sales' }],
+    },
+    {
+      nodeId: 'n1',
+      context: {
+        ai: {
+          n1: { lastSentOptions: { titles: ['See pricing'], at: Date.now() } },
+        },
+      },
+      userMessage: 'Do you deliver on Fridays?',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal(result.nextHandle, 'success');
+  const sentTools = (mock.requests[0].tools ?? []).map((tool) => tool.function.name);
+  assert.deepEqual(sentTools, ['send_buttons', 'send_list', 'handover']);
+});
+
+test('an expired option title no longer counts as a click', async () => {
+  const mock = new MockLlmClient({ replies: ['Sure.'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      buttons: [{ id: 'btn_pricing', title: 'See pricing' }],
+    },
+    {
+      nodeId: 'n1',
+      context: {
+        ai: {
+          n1: {
+            lastSentOptions: {
+              titles: ['See pricing'],
+              at: Date.now() - 6 * 60 * 1000, // older than OPTION_CLICK_TTL_MS
+            },
+          },
+        },
+      },
+      userMessage: 'See pricing',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal(result.nextHandle, 'success');
+  const sentTools = (mock.requests[0].tools ?? []).map((tool) => tool.function.name);
+  assert.deepEqual(sentTools, ['send_buttons']);
+});
+
 test('handover is terminal and routes to the handover handle', async () => {
   const mock = new MockLlmClient({
     toolCalls: [[{ name: 'handover', arguments: { department: 'sales', reason: 'wants a quote' } }]],

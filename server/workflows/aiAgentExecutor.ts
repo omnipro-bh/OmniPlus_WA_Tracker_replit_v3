@@ -68,6 +68,13 @@ export const AI_BUTTON_TEXT_FALLBACK = 'Please choose an option:';
 /** Fallback body text when the model calls `send_list` with no content. */
 export const AI_LIST_TITLE_FALLBACK = 'Please choose:';
 
+/**
+ * Phase 2.5b — how long a just-sent option counts as a click. A tap arrives
+ * seconds later; 5 minutes covers a slow WhatsApp delivery without letting a
+ * stale title disable the option tools much later.
+ */
+export const OPTION_CLICK_TTL_MS = 5 * 60 * 1000;
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AiChannel = 'whatsapp' | 'web_chat' | 'sandbox';
@@ -274,6 +281,60 @@ function normalizeListRows(raw: any): AiListRowSlot[] {
     }));
 }
 
+/** A record of the option titles the AI just offered, written after a send_*. */
+interface LastSentOptions {
+  titles: string[];
+  at: number;
+}
+
+/** Read `context.ai[nodeId].lastSentOptions`, tolerating any malformed shape. */
+function readLastSentOptions(
+  context: Record<string, any>,
+  nodeId: string
+): LastSentOptions | null {
+  const raw = context?.ai?.[nodeId]?.lastSentOptions;
+  if (!raw || !Array.isArray(raw.titles) || typeof raw.at !== 'number') return null;
+
+  const titles = raw.titles.filter(
+    (title: any) => typeof title === 'string' && title.trim().length > 0
+  );
+  if (titles.length === 0) return null;
+
+  return { titles, at: raw.at };
+}
+
+/**
+ * Phase 2.5b — did this turn come from a tap on an option we just sent?
+ *
+ * The customer's message is the option title ("See pricing"), so without a guard
+ * the model reads it as a fresh request for options and re-sends the same menu.
+ * Matching title + a recent send is the reliable signal we have (WhatsApp and
+ * web chat both deliver the label as the message text).
+ */
+export function isRecentlySentOption(
+  context: Record<string, any>,
+  nodeId: string,
+  userMessage: string,
+  now: number = Date.now()
+): boolean {
+  const lastSent = readLastSentOptions(context, nodeId);
+  if (!lastSent) return false;
+  if (now - lastSent.at > OPTION_CLICK_TTL_MS) return false;
+
+  const wanted = userMessage.trim().toLowerCase();
+  if (!wanted) return false;
+
+  return lastSent.titles.some((title) => title.trim().toLowerCase() === wanted);
+}
+
+/** Phase 2.5b — the tools that must not be offered on an option click. */
+export function stripOptionTools(tools: LlmToolDef[]): LlmToolDef[] {
+  return tools.filter(
+    (tool) =>
+      tool.function.name !== TOOL_SEND_BUTTONS && tool.function.name !== TOOL_SEND_LIST
+  );
+}
+
 /** Normalize declared handover departments from raw config. */
 function normalizeDepartmentSlots(raw: any): AiDepartmentSlot[] {
   if (!Array.isArray(raw)) return [];
@@ -426,11 +487,35 @@ export async function executeAiAgentNode(
   // Resolve {{variables}} in the owner's prompt against the current context.
   const resolvedPrompt = resolveTemplate(settings.systemPrompt, context);
 
+  // Phase 2/2.5: declared slots → tool definitions. A tool is only offered when
+  // the owner declared the matching config section.
+  const declaredButtons = normalizeButtonSlots(config.buttons);
+  const declaredRows = normalizeListRows(config.listRows);
+  const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
+  const allTools = buildToolList({
+    buttons: declaredButtons,
+    listRows: declaredRows,
+    handoverDepartments: declaredDepartments,
+  });
+
+  // Phase 2.5b — Tool Stripping Guard. If the customer's message is the title of
+  // an option we offered moments ago, this turn is a CLICK: remove send_buttons
+  // and send_list so the model has to answer in text (or hand over) instead of
+  // re-sending the same menu. The prompt asks for this; the guard guarantees it.
+  const isOptionClick = isRecentlySentOption(context, nodeId, userMessage);
+  const tools = isOptionClick ? stripOptionTools(allTools) : allTools;
+  if (isOptionClick) {
+    console.log(
+      `[AI Executor] "${userMessage}" matches a recently sent option - send_buttons/send_list stripped for this turn.`
+    );
+  }
+
   const messages = buildChatContext({
     systemPrompt: buildSystemPrompt({
       ownerPrompt: resolvedPrompt,
       businessName: exec.businessName,
       channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
+      hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
     }),
     history: previousHistory,
     userMessage,
@@ -446,15 +531,6 @@ export async function executeAiAgentNode(
     console.error(`[AI Executor] ${message}`);
     return emptyResult(settings, message, previousHistory, stateUpdate, nodeId, useHistory);
   }
-
-  const declaredButtons = normalizeButtonSlots(config.buttons);
-  const declaredRows = normalizeListRows(config.listRows);
-  const declaredDepartments = normalizeDepartmentSlots(config.handoverDepartments);
-  const tools = buildToolList({
-    buttons: declaredButtons,
-    listRows: declaredRows,
-    handoverDepartments: declaredDepartments,
-  });
 
   const startedAt = Date.now();
   let totalUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -508,11 +584,15 @@ export async function executeAiAgentNode(
     // terminal; anything else is fed a failure result and the loop continues.
     let terminal = false;
     for (const toolCall of completion.toolCalls) {
-      if (
-        toolCall.name === TOOL_SEND_BUTTONS ||
-        toolCall.name === TOOL_SEND_LIST ||
-        toolCall.name === TOOL_HANDOVER
-      ) {
+      const isOptionTool =
+        toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_SEND_LIST;
+
+      // Defence in depth: the tools were stripped from the request, so a call
+      // here means the model hallucinated one. Skip it and let the retry round
+      // (below) answer with a "disabled for this turn" tool result.
+      if (isOptionTool && isOptionClick) continue;
+
+      if (isOptionTool || toolCall.name === TOOL_HANDOVER) {
         try {
           if (toolCall.name === TOOL_SEND_BUTTONS) {
             const { buttons, buttonText } = executeSendButtons(
@@ -550,11 +630,20 @@ export async function executeAiAgentNode(
       tool_calls: completion.toolCalls,
     });
     for (const toolCall of completion.toolCalls) {
+      const strippedOnClick =
+        isOptionClick &&
+        (toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_SEND_LIST);
+
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
         name: toolCall.name,
-        content: JSON.stringify({ ok: false, error: `Unknown tool "${toolCall.name}"` }),
+        content: JSON.stringify({
+          ok: false,
+          error: strippedOnClick
+            ? 'send_buttons/send_list are disabled for this turn: the customer just selected an option. Answer with text.'
+            : `Unknown tool "${toolCall.name}"`,
+        }),
       });
     }
   }
@@ -655,6 +744,19 @@ export async function executeAiAgentNode(
     entry.listTitle = listTitle;
   }
   if (handover) entry.handover = handover;
+
+  // Phase 2.5b: remember what was just offered so the next message can be
+  // recognised as a click. A text / handover turn builds a fresh entry without
+  // this key, which clears the tracking for the following turn.
+  const sentOptionTitles =
+    toolOutcome?.kind === 'buttons'
+      ? toolOutcome.buttons.map((button) => button.title)
+      : toolOutcome?.kind === 'list'
+        ? toolOutcome.listRows.map((row) => row.title)
+        : null;
+  if (sentOptionTitles && sentOptionTitles.length > 0) {
+    entry.lastSentOptions = { titles: sentOptionTitles, at: Date.now() };
+  }
 
   if (useHistory) {
     stateUpdate.ai = {
