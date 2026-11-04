@@ -397,6 +397,23 @@ async function finishTick(
         updatedAt: new Date(),
       })
       .where(eq(conversationStates.id, conv.id));
+  } else if (result.cursor === null) {
+    // The runner's per-node `host.persist(context, nodeId, 'cursor')` writes the
+    // LAST node it visited as `currentNodeId` before it knows whether a handle
+    // has a target. When the flow finishes with no next node (`cursor === null`,
+    // e.g. an AI `handover`/`error` with no connected edge), that null is not
+    // persisted, so the DB keeps the last node id. `stateFromCursor` then reads
+    // that stale id and (for an AI/interactive node) reports `awaiting` with
+    // `kind: 'button'`, locking the composer on "Choose an option above".
+    // Persist the null cursor so the conversation reads as `done`.
+    await db
+      .update(conversationStates)
+      .set({
+        currentNodeId: null,
+        context: (finalContext ?? {}) as any,
+        updatedAt: new Date(),
+      })
+      .where(eq(conversationStates.id, conv.id));
   }
 
   return chatStateFrom({ definition, result, context: finalContext, bookingEnabled });
