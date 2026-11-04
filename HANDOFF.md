@@ -1,63 +1,58 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## AI Agent Phase 2.5b — Tool Stripping Guard (2026-11-04)
+## AI Agent Phase 2.5 — interactive buttons + lists + loop prevention COMPLETE (b01d764, 2026-11-04)
 
-### Problem
+### Status
 
-Phase 2.5 routed option clicks back to the AI node correctly, but the AI re-sent the
-same menu: the click arrives as plain text ("See pricing"), which reads exactly like a
-fresh request for options. Prompting alone did not stop it.
+- Production HEAD: `b01d764` (last code commit).
+- Phase 2.5 is fully deployed and verified end-to-end:
+  - AI Agent can send buttons (≤3) and lists (4–10).
+  - Clicking a button or list row routes back to AI as a user message.
+  - Guard strips send_buttons/send_list on click to prevent loops.
+  - Text Input prompt with `{{ai_response}}` displays the AI's text answer.
+  - Loop back to AI Agent enables multi-turn conversation.
+  - AI history preserved across turns.
+  - Cursor persistence fix prevents UI lock on dead-end.
 
-**Prompt for guidance, code for enforcement.**
+### What Phase 2.5 delivered (cumulative)
 
-### What this adds
+- `067e792`: send_list tool + resolveButtonRoute (routing fix)
+- `68381ea`: option-click guard (strip tools) + AI_TOOL_RULES
+- `b01d764`: null cursor persistence fix
+- AI Agent now supports complete interactive conversation: user taps buttons/lists → AI receives choice → AI answers text → user types follow-up → loop continues.
 
-- `server/workflows/aiAgentExecutor.ts`
-  - After a terminal `send_buttons` / `send_list`, the turn writes
-    `context.ai[nodeId].lastSentOptions = { titles: [...], at: Date.now() }`.
-  - `isRecentlySentOption(context, nodeId, userMessage)` matches the incoming
-    message against those titles (case-insensitive, `OPTION_CLICK_TTL_MS = 5 min`).
-  - On a match, `stripOptionTools()` removes `send_buttons` and `send_list` from the
-    request; `handover` stays. The model can only answer in text or escalate. If it
-    hallucinates an option tool anyway, the loop refuses it with a "disabled for this
-    turn" tool result.
-  - A text / handover turn rebuilds the node entry without `lastSentOptions`, so the
-    tools come back on the next, unrelated message. Provider errors preserve it (the
-    guard survives a failed turn).
-  - `buildSystemPrompt` now receives `hasOptionTools` and appends `AI_TOOL_RULES`.
-- `server/ai/prompt.ts`: appends `AI_TOOL_RULES` for any node that declares buttons
-  or list rows — owners do not need to paste it.
-- `shared/ai-defaults.ts` (new): `AI_TOOL_RULES` + `AI_DEFAULT_SYSTEM_PROMPT`, the
-  exact default shown in the node config's System Prompt field:
+### Model recommendation (learned in testing)
 
-  ```
-  You are a helpful assistant.
+- **qwen/qwen3.8-27b is the production default** (fast, cheap, reliable with clean prompts).
+- gpt-oss-120b is a reasoning model that burns tokens on internal reasoning (~10x cost, ~3–5x latency). Only use for complex analytical tasks.
+- Reasoning models need maxTokens 1500+; non-reasoning work at 500.
 
-  TOOLS AVAILABLE:
-  - send_buttons: Present 1–3 options as buttons.
-  - send_list: Present 4–10 options as a list.
-  - handover: Hand off to a human agent.
+### Pending polish items (deferred)
 
-  RULES:
-  1. Use send_buttons or send_list ONLY when asking the user to choose from options.
-  2. If the user CLICKS a button (their message is a button title like "See pricing"), do NOT send buttons again. Answer their question with TEXT.
-  3. Never send buttons for options the user has already chosen.
-  ```
-- `client/src/components/WorkflowNodeConfig.tsx`: System Prompt placeholder is that
-  default text; helper text explains tool + language rules are appended automatically.
+1. Handle `finishReason: 'length'` as truncation error (not silent empty success).
+2. Validation warning for reasoning models (need higher max tokens).
+3. UI hint recommending qwen over gpt-oss.
+4. Cost-aware warnings for reasoning models.
 
-### Tests
+These are non-blocking. Can be shipped as a polish batch in a future session.
 
-4 new in `server/workflows/aiAgentExecutor.test.ts` (56 total, all passing):
-send_buttons records `lastSentOptions`; **button click strips send_buttons tool**
-(only `handover` survives the request); a normal message keeps every tool; an expired
-timestamp no longer counts as a click.
+### Phase 3 (next session)
 
-### Flow after the fix
+1. Schedule: AI only active during business hours.
+2. Usage limits: daily/monthly caps per workflow.
+3. Message cap: force handover after N messages.
+4. Optional: PII redaction, cost dashboard.
 
-AI sends buttons → visitor taps "See pricing" → AI node runs with only `handover`
-available → AI answers with pricing text → flow continues to the next node (e.g. an
-input node) → on the visitor's next message the AI has its option tools again.
+Est: 1–2 sessions.
+
+### Remaining follow-ups (broader)
+
+- Drift fix (4 FK renames + 10 DEFAULT alignments).
+- Arabic/RTL marketing version.
+- /contact page.
+- Arabic insurance tenant 401.
+- Supabase credential rotation.
+- Polish items above.
 
 ## AI Agent Phase 2 Part 1 — tool loop + send_buttons + handover (0a84d65, 2026-11-03)
 
