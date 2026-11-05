@@ -589,7 +589,13 @@ export function extractSpreadsheetId(input: any): string {
  */
 export function projectSheetRows(
   rawRows: any[][],
-  options: { filterColumn?: string; filterValue?: string; limit?: number } = {}
+  options: {
+    filterColumn?: string;
+    filterValue?: string;
+    limit?: number;
+    /** Hard cap on returned rows (defaults to `MAX_LOOKUP_ROWS`). The state machine passes a larger value. */
+    maxRows?: number;
+  } = {}
 ): { rows: Record<string, any>[]; error?: string } {
   if (!Array.isArray(rawRows) || rawRows.length === 0) return { rows: [] };
 
@@ -647,8 +653,9 @@ export function projectSheetRows(
     }
   }
 
-  const requested = options.limit && options.limit > 0 ? options.limit : MAX_LOOKUP_ROWS;
-  const max = Math.min(requested, MAX_LOOKUP_ROWS);
+  const cap = options.maxRows && options.maxRows > 0 ? options.maxRows : MAX_LOOKUP_ROWS;
+  const requested = options.limit && options.limit > 0 ? options.limit : cap;
+  const max = Math.min(requested, cap);
   return { rows: rows.slice(0, max) };
 }
 
@@ -659,7 +666,13 @@ export function projectSheetRows(
 export async function lookupSheetRows(
   spreadsheetId: string,
   tabName: string,
-  options: { filterColumn?: string; filterValue?: string; limit?: number } = {}
+  options: {
+    filterColumn?: string;
+    filterValue?: string;
+    limit?: number;
+    /** Hard cap on returned rows (defaults to `MAX_LOOKUP_ROWS`). */
+    maxRows?: number;
+  } = {}
 ): Promise<LookupSheetRowsResult> {
   try {
     const id = extractSpreadsheetId(spreadsheetId);

@@ -64,6 +64,7 @@ import type {
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
+import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -213,6 +214,8 @@ export interface AiAgentExecutionResult {
   toolCalls: AiToolCallTrace[];
   /** Token usage by section (system prompt / tools / history / lookup rows). */
   tokenBreakdown?: AiTokenBreakdown;
+  /** Deterministic sheet state after this turn (Task 5 MVP). */
+  sheetState?: SheetState;
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -243,6 +246,8 @@ export interface AiTrace {
   reason?: string;
   /** Token usage by section, for the Webhook Logs trace. */
   tokenBreakdown: AiTokenBreakdown;
+  /** Deterministic sheet state snapshot (Task 5 MVP), when the machine ran. */
+  sheetState?: SheetState;
 }
 
 export interface AiAgentNodeOptions {
@@ -869,6 +874,73 @@ export async function executeAiAgentNode(
     );
   }
 
+  // ── Phase 4d: deterministic sheet state machine (Task 5 MVP) ──────────────
+  // The engine reads the current step from the sheet and asks its ai_question,
+  // so the model can't improvise. No LLM call is made here; the sheet read is
+  // the whole turn.
+  if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
+    const startedAt = Date.now();
+    const turn = await runSheetStateMachine(settings.googleSheets, context, nodeId, userMessage);
+    const latencyMs = Date.now() - startedAt;
+
+    // Append the exchange to history for a consistent transcript.
+    const history = useHistory
+      ? trimHistory(
+          [
+            ...previousHistory,
+            { role: 'user' as const, content: userMessage },
+            ...(turn.text ? [{ role: 'assistant' as const, content: turn.text }] : []),
+          ],
+          { maxMessages: settings.historyLimit }
+        )
+      : [];
+
+    if (useHistory) {
+      stateUpdate.ai = {
+        ...(stateUpdate.ai || {}),
+        [nodeId]: {
+          ...(stateUpdate.ai?.[nodeId] || {}),
+          provider: settings.provider,
+          model: settings.model,
+          text: turn.error ? '' : turn.text,
+          finishReason: turn.error ? 'error' : 'stop',
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          latencyMs,
+          attempts: 0,
+          ...(turn.error ? { error: turn.error } : {}),
+          sheet: turn.sheet,
+          updatedAt: new Date().toISOString(),
+          history,
+        },
+      };
+      if (!turn.error) stateUpdate[settings.responseVariable] = turn.text;
+      fitContextCeiling(stateUpdate, nodeId);
+    }
+
+    return {
+      success: !turn.error,
+      nextHandle: turn.error ? 'error' : 'success',
+      provider: settings.provider,
+      model: settings.model,
+      text: turn.error ? '' : turn.text,
+      finishReason: turn.error ? 'error' : 'stop',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      latencyMs,
+      attempts: 0,
+      ...(turn.error ? { error: turn.error } : {}),
+      history,
+      stateUpdate,
+      toolCalls: turn.toolCalls,
+      sheetState: turn.sheet,
+      tokenBreakdown: {
+        systemPromptTokens: 0,
+        toolDefinitionsTokens: 0,
+        historyTokens: 0,
+        lookupResultTokens: 0,
+      },
+    };
+  }
+
   // Resolve {{variables}} in the owner's prompt against the current context.
   const resolvedPrompt = resolveTemplate(settings.systemPrompt, context);
 
@@ -1385,6 +1457,7 @@ export async function executeAiAgentWorkflowNode(
       historyTokens: 0,
       lookupResultTokens: 0,
     },
+    ...(result.sheetState ? { sheetState: result.sheetState } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM

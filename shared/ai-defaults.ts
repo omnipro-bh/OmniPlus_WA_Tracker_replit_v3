@@ -82,6 +82,7 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
       { key: 'step_id', label: 'Step ID', column: 'step_id' },
       { key: 'ai_question', label: 'AI question', column: 'ai_question' },
       { key: 'expected_input', label: 'Expected input', column: 'expected_input' },
+      { key: 'slot_name', label: 'Slot name', column: 'slot_name' },
       { key: 'next_step_logic', label: 'Next step logic', column: 'next_step_logic' },
       { key: 'fallback', label: 'Fallback', column: 'fallback' },
       { key: 'message_type', label: 'Message type', column: 'message_type' },
