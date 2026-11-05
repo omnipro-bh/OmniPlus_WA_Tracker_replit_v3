@@ -10701,6 +10701,10 @@ export function registerRoutes(app: Express) {
                     },
                   });
 
+                  // Phase 4b: persist the AI turn trace for the Webhook Logs page.
+                  // (If a flow runs several AI nodes, the last turn wins.)
+                  executionLog.triggerData.aiTrace = aiResult.aiTrace;
+
                   // Phase 2: `send_buttons` → direct WhatsApp interactive button
                   // message (not store-in-context). Handover / success / error keep
                   // Phase 1 behaviour (the executor already writes the context).
@@ -12072,6 +12076,9 @@ export function registerRoutes(app: Express) {
             error: aiResult.result.error,
           },
         });
+
+        // Phase 4b: persist the AI turn trace for the Webhook Logs page.
+        executionLog.triggerData.aiTrace = aiResult.aiTrace;
 
         // Phase 2: `send_buttons` → direct WhatsApp interactive button message.
         if (aiResult.nextHandle === 'buttons') {

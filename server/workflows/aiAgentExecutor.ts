@@ -153,6 +153,14 @@ export interface AiAgentExecutionContext {
 /** The handle the node routes to after a turn. */
 export type AiNextHandle = 'success' | 'buttons' | 'list' | 'handover' | 'error';
 
+/** One tool call the model made this turn, for the execution trace. */
+export interface AiToolCallTrace {
+  name: string;
+  args: Record<string, any>;
+  /** `lookup_sheet` only: rows returned (undefined on error). */
+  rows?: number;
+}
+
 export interface AiAgentExecutionResult {
   success: boolean;
   nextHandle: AiNextHandle;
@@ -185,6 +193,8 @@ export interface AiAgentExecutionResult {
   listTitle?: string;
   /** Populated when the model called `handover`. */
   handover?: { department: string; reason: string; title: string };
+  /** Tool calls the model made this turn (empty when no tools were used). */
+  toolCalls: AiToolCallTrace[];
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -193,6 +203,26 @@ export interface AiAgentNodeExecutionResult {
   nextHandle: AiNextHandle;
   result: AiAgentExecutionResult;
   stateUpdate: any;
+  /** Compact trace for `workflow_executions.trigger_data.aiTrace`. */
+  aiTrace: AiTrace;
+}
+
+/** One AI turn's trace, stored as `trigger_data.aiTrace` for the Webhook Logs. */
+export interface AiTrace {
+  nodeId: string;
+  /** First 500 chars of the user message. */
+  userMessage: string;
+  provider: string;
+  model: string;
+  attempts: number;
+  finishReason: string;
+  elapsedMs: number;
+  tokensIn: number;
+  tokensOut: number;
+  toolCalls: AiToolCallTrace[];
+  nextHandle: AiNextHandle;
+  error?: string;
+  reason?: string;
 }
 
 export interface AiAgentNodeOptions {
@@ -611,6 +641,7 @@ function emptyResult(
     ...(reason ? { reason } : {}),
     history,
     stateUpdate,
+    toolCalls: [],
   };
 }
 
@@ -666,6 +697,7 @@ function forcedHandoverResult(
     handover,
     history,
     stateUpdate,
+    toolCalls: [],
   };
 }
 
@@ -812,6 +844,7 @@ export async function executeAiAgentNode(
   let totalUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
   let totalAttempts = 0;
   let lastCompletion: LlmCompletionResult | null = null;
+  const toolCalls: AiToolCallTrace[] = [];
   let toolOutcome:
     | { kind: 'buttons'; buttons: { id: string; title: string }[]; buttonText: string }
     | {
@@ -893,6 +926,11 @@ export async function executeAiAgentNode(
           }
           const lookup = exec.lookupSheet ?? ((a: LookupSheetArgs) => executeLookupSheetTool(settings, a));
           const outcome = await lookup(args);
+          toolCalls.push({
+            name: toolCall.name,
+            args: toolCall.arguments,
+            rows: outcome.ok ? (outcome.rows?.length ?? 0) : undefined,
+          });
           roundResults.set(
             toolCall.id,
             outcome.ok
@@ -927,6 +965,7 @@ export async function executeAiAgentNode(
           } else {
             toolOutcome = { kind: 'handover', handover: executeHandover(toolCall.arguments, declaredDepartments) };
           }
+          toolCalls.push({ name: toolCall.name, args: toolCall.arguments });
           terminal = true;
         } catch (error: any) {
           toolError = error?.message || 'Invalid tool arguments';
@@ -997,6 +1036,7 @@ export async function executeAiAgentNode(
       error,
       history: previousHistory,
       stateUpdate,
+      toolCalls,
     };
   }
 
@@ -1095,6 +1135,7 @@ export async function executeAiAgentNode(
     ...(buttons ? { buttons, buttonText } : {}),
     ...(listRows ? { listRows, listTitle } : {}),
     ...(handover ? { handover } : {}),
+    toolCalls,
   };
 }
 
@@ -1204,6 +1245,25 @@ export async function executeAiAgentWorkflowNode(
 
   const nextHandle: AiNextHandle = result.nextHandle;
 
+  // Compact execution trace for the Webhook Logs page (stored in
+  // `workflow_executions.trigger_data.aiTrace` by the host). `elapsedMs` reuses
+  // the executor's measured latency (0 for blocked turns, which made no call).
+  const aiTrace: AiTrace = {
+    nodeId,
+    userMessage: userMessage.slice(0, 500),
+    provider: result.provider,
+    model: result.model,
+    attempts: result.attempts,
+    finishReason: result.finishReason,
+    elapsedMs: result.latencyMs,
+    tokensIn: result.usage.promptTokens,
+    tokensOut: result.usage.completionTokens,
+    toolCalls: result.toolCalls,
+    nextHandle,
+    ...(result.error ? { error: result.error } : {}),
+    ...(result.reason ? { reason: result.reason } : {}),
+  };
+
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
   // call, so it is not logged — otherwise a forced handover would inflate the
   // per-user daily "successful calls" count.
@@ -1237,6 +1297,7 @@ export async function executeAiAgentWorkflowNode(
     nextHandle,
     result,
     stateUpdate: result.stateUpdate,
+    aiTrace,
   };
 }
 

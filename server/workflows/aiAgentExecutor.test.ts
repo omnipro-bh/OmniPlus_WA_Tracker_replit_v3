@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MockLlmClient } from '../ai/clients/mock';
-import { executeAiAgentNode } from './aiAgentExecutor';
+import { executeAiAgentNode, executeAiAgentWorkflowNode } from './aiAgentExecutor';
 
 const baseConfig = {
   provider: 'mock' as const,
@@ -547,4 +547,80 @@ test('lookup_sheet tool is only offered when a sheet is configured', async () =>
     { nodeId: 'n1', context: {}, userMessage: 'hi', client: withoutSheet, channel: 'whatsapp' }
   );
   assert.equal((withoutSheet.requests[0] as any).tools, undefined);
+});
+
+// ── Phase 4b: execution trace (tool calls + wrapper aiTrace) ────────────────
+
+test('records tool-call traces, including lookup_sheet row counts', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [
+      [
+        {
+          name: 'lookup_sheet',
+          arguments: { tab: 'Intents', filter_column: 'keywords', filter_value: 'pricing' },
+        },
+      ],
+      null,
+    ],
+    replies: ['Plans start at 10 BHD.'],
+  });
+
+  const result = await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'pricing?',
+      client: mock,
+      channel: 'whatsapp',
+      lookupSheet: async () => ({ ok: true, rows: [{ id: 'pricing' }, { id: 'pricing2' }] }),
+    }
+  );
+
+  assert.equal(result.toolCalls.length, 1);
+  assert.equal(result.toolCalls[0].name, 'lookup_sheet');
+  assert.equal(result.toolCalls[0].rows, 2);
+});
+
+test('a blocked turn carries an empty tool-call trace', async () => {
+  const mock = new MockLlmClient({ replies: ['nope'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      aiSchedule: { startHour: 9, endHour: 17, daysOfWeek: [], tz: 'Asia/Bahrain' },
+    },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+      now: new Date('2026-11-04T03:00:00Z').getTime(),
+    }
+  );
+
+  assert.deepEqual(result.toolCalls, []);
+  assert.equal(mock.callCount, 0);
+});
+
+test('the node wrapper returns a populated aiTrace', async () => {
+  const node = { id: 'n1', data: { config: { provider: 'mock', systemPrompt: 'x' } } };
+
+  const r = await executeAiAgentWorkflowNode(
+    node,
+    { context: {} } as any,
+    { text: { body: 'hello there' } } as any,
+    { phone: '123', userId: 1 },
+    { channel: 'whatsapp', logUsage: false }
+  );
+
+  assert.equal(r.aiTrace.nodeId, 'n1');
+  assert.equal(r.aiTrace.userMessage, 'hello there');
+  assert.equal(r.aiTrace.provider, 'mock');
+  assert.equal(r.aiTrace.nextHandle, 'success');
+  assert.equal(r.aiTrace.finishReason, 'stop');
+  assert.equal(typeof r.aiTrace.elapsedMs, 'number');
+  assert.equal(r.aiTrace.tokensIn, r.aiTrace.tokensIn); // number
+  assert.ok(Array.isArray(r.aiTrace.toolCalls));
 });
