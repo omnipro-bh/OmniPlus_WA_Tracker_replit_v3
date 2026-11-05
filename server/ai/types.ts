@@ -155,6 +155,12 @@ export interface AiGoogleSheetsConfig {
    * Missing entries fall back to `AI_SHEET_TAB_SCHEMA`.
    */
   columns?: Record<string, Record<string, string>>;
+  /**
+   * Header rows captured by the config UI's "Detect Headers" button:
+   * `tabName -> headers`. Lets the prompt know whether a column really exists
+   * (e.g. `start_step`) instead of guessing.
+   */
+  detected?: Record<string, string[]>;
 }
 
 /**

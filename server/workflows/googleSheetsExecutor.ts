@@ -570,6 +570,17 @@ export interface LookupSheetRowsResult {
 }
 
 /**
+ * Accept either a bare spreadsheet ID or a full Google Sheets URL and return the
+ * ID. Owners usually copy the URL from the address bar.
+ */
+export function extractSpreadsheetId(input: any): string {
+  const raw = typeof input === 'string' ? input.trim() : '';
+  if (!raw) return '';
+  const match = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : raw;
+}
+
+/**
  * Pure row shaping: turn a raw `values.get` result (header row + data rows)
  * into objects keyed by header name, apply an optional case-insensitive filter,
  * and cap the result at 20 rows. `filter_column` is matched against the header
@@ -629,12 +640,13 @@ export async function lookupSheetRows(
   options: { filterColumn?: string; filterValue?: string; limit?: number } = {}
 ): Promise<LookupSheetRowsResult> {
   try {
-    if (!spreadsheetId) return { success: false, rows: [], error: 'spreadsheetId is required' };
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) return { success: false, rows: [], error: 'spreadsheetId is required' };
     if (!tabName) return { success: false, rows: [], error: 'tab is required' };
 
     const client = await getSheetsClient();
     // A bare tab name reads the whole sheet (Sheets infers the used range).
-    const res = await client.spreadsheets.values.get({ spreadsheetId, range: tabName });
+    const res = await client.spreadsheets.values.get({ spreadsheetId: id, range: tabName });
     const rawRows: any[][] = res.data.values || [];
 
     const projected = projectSheetRows(rawRows, options);
@@ -643,5 +655,72 @@ export async function lookupSheetRows(
   } catch (error: any) {
     console.error('[AI lookup_sheet] failed:', error);
     return { success: false, rows: [], error: error?.message || 'lookup_sheet failed' };
+  }
+}
+
+export interface SheetHeadersResult {
+  success: boolean;
+  /** Row 1 of the tab, trimmed and empty cells dropped. */
+  headers: string[];
+  /** Data rows below the header (row 1 excluded). */
+  rowCount: number;
+  /** First few rows as objects, for the config panel preview. */
+  sample: Record<string, any>[];
+  error?: string;
+}
+
+/**
+ * Pure header extraction: row 1 → header names (trimmed, blanks dropped),
+ * remaining rows → `rowCount`, plus a small projected sample. Empty/blank
+ * sheets return empty values so the caller can report a clear error.
+ */
+export function headersFromRows(
+  rawRows: any[][],
+  sampleSize = 3
+): { headers: string[]; rowCount: number; sample: Record<string, any>[] } {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const headers = (rows[0] || []).map((h: any) => String(h ?? '').trim()).filter(Boolean);
+  const { rows: projected } = projectSheetRows(rows);
+  const requested = Math.max(1, Math.min(sampleSize, 10));
+  return {
+    headers,
+    rowCount: Math.max(0, rows.length - 1),
+    sample: projected.slice(0, requested),
+  };
+}
+
+/**
+ * Read a tab's header row for the config UI's "Detect Headers" button, so owners
+ * do not have to retype their column names. Read-only, shared service account.
+ */
+export async function fetchSheetHeaders(
+  spreadsheetId: string,
+  tabName: string,
+  sampleSize = 3
+): Promise<SheetHeadersResult> {
+  const empty = { headers: [], rowCount: 0, sample: [] };
+  try {
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) {
+      return { success: false, ...empty, error: 'spreadsheetId is required' };
+    }
+    if (!tabName) return { success: false, ...empty, error: 'tab is required' };
+
+    const client = await getSheetsClient();
+    const res = await client.spreadsheets.values.get({ spreadsheetId: id, range: tabName });
+    const rawRows: any[][] = res.data.values || [];
+
+    if (rawRows.length === 0) {
+      return { success: false, ...empty, error: `Tab "${tabName}" is empty.` };
+    }
+
+    return { success: true, ...headersFromRows(rawRows, sampleSize) };
+  } catch (error: any) {
+    console.error('[AI sheet headers] failed:', error);
+    return {
+      success: false,
+      ...empty,
+      error: error?.message || 'Failed to read the sheet headers',
+    };
   }
 }

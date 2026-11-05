@@ -64,10 +64,33 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
   const intentsTab = tabs.find((t) => /^intents?$/i.test(t)) ?? tabs[0];
   const stepsTab = tabs.find((t) => /step/i.test(t)) ?? tabs[1] ?? tabs[0];
 
+  const idCol = headerFor(intentsTab, 'id');
   const keywordsCol = headerFor(intentsTab, 'keywords');
+  const startStepCol = headerFor(intentsTab, 'start_step');
+  const verificationCol = headerFor(intentsTab, 'verification_question');
   const answerCol = headerFor(intentsTab, 'answer');
+  const messageTypeCol = headerFor(intentsTab, 'message_type');
   const intentIdCol = headerFor(stepsTab, 'intent_id');
+  const stepIdCol = headerFor(stepsTab, 'step_id');
   const questionCol = headerFor(stepsTab, 'ai_question');
+  const fallbackCol = headerFor(stepsTab, 'fallback');
+  const stepMessageTypeCol = headerFor(stepsTab, 'message_type');
+
+  // "Detect Headers" records the real header row, so we only promise a
+  // start_step column when the sheet actually has one. Without a detection we
+  // use wording that works either way.
+  const headersForIntents = sheet.detected?.[intentsTab];
+  const hasStartStep =
+    Array.isArray(headersForIntents) && headersForIntents.length > 0
+      ? headersForIntents.some((h) => String(h).trim().toLowerCase() === startStepCol.toLowerCase())
+      : undefined;
+
+  const startRule =
+    hasStartStep === true
+      ? `3. Begin at the step named in the intent's "${startStepCol}" value (match it to "${stepIdCol}"). If that value is empty, start at the first step.`
+      : hasStartStep === false
+        ? `3. This sheet has no "${startStepCol}" column: start at the first step for the intent (lowest "${stepIdCol}").`
+        : `3. Begin at the step named in the intent's "${startStepCol}" value when it is set (match it to "${stepIdCol}"); if the intent has no start step, start at the first step.`;
 
   return [
     'GOOGLE SHEETS DATA SOURCE:',
@@ -81,11 +104,14 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
     '',
     'RULES:',
     `1. When the customer asks a question, FIRST call lookup_sheet({ tab: "${intentsTab}", filter_column: "${keywordsCol}", filter_value: <keyword from their message> }) to find the matching intent.`,
-    `2. Then call lookup_sheet({ tab: "${stepsTab}", filter_column: "${intentIdCol}", filter_value: <the "${headerFor(intentsTab, 'id')}" of the intent found in step 1> }) to load its steps.`,
-    `3. Follow the step sequence: ask each "${questionCol}" in order, wait for the customer's reply, and verify the input before giving the final answer ("${answerCol}").`,
-    '4. Use verify-before-answer for anything that needs confirmation (identity, account, order details). Never answer such questions from memory.',
-    '5. Answer ONLY from the rows the sheet returned. If no row matches, say you do not have that information and offer to connect a human.',
-    '6. Never invent rows, prices or policies that are not in the sheet.',
+    `2. Then call lookup_sheet({ tab: "${stepsTab}", filter_column: "${intentIdCol}", filter_value: <the "${idCol}" of the intent found in step 1> }) to load its steps.`,
+    startRule,
+    `4. Follow the steps in "${stepIdCol}" order: ask each "${questionCol}", wait for the customer's reply, and check it against "${headerFor(stepsTab, 'expected_input')}" before moving on.`,
+    `5. Use verify-before-answer for anything that needs confirming: ask the intent's "${verificationCol}" when it is present and wait for a valid answer before replying ("${answerCol}"). Never answer account, order or identity questions from memory.`,
+    `6. If the customer's reply does not match what the step expects, use that step's "${fallbackCol}" text and ask again.`,
+    `7. If "${messageTypeCol}" or "${stepMessageTypeCol}" is "buttons" or "list", present the options as buttons or a list; otherwise send plain text.`,
+    `8. Answer ONLY from the rows the sheet returned. If no row matches, say you do not have that information and offer to connect a human.`,
+    `9. Never invent rows, prices or policies that are not in the sheet.`,
   ].join('\n');
 }
 

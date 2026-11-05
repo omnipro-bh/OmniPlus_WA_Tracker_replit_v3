@@ -62,7 +62,7 @@ import type {
   LlmUsage,
   UsageLimits,
 } from '../ai/types';
-import { lookupSheetRows } from './googleSheetsExecutor';
+import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 
 // ── Limits (mirrors shared/workflow-validation.ts) ─────────────────────────
 
@@ -269,7 +269,7 @@ function normalizeDailyUserCap(value: any): number | undefined {
 /** Phase 4: coerce the Google Sheets data source, returning `undefined` when unusable. */
 function normalizeGoogleSheets(value: any): AiGoogleSheetsConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const spreadsheetId = typeof value.spreadsheetId === 'string' ? value.spreadsheetId.trim() : '';
+  const spreadsheetId = extractSpreadsheetId(value.spreadsheetId);
   if (!spreadsheetId) return undefined;
   const tabs = Array.isArray(value.tabs)
     ? value.tabs.map((t: any) => String(t ?? '').trim()).filter(Boolean)
@@ -294,7 +294,26 @@ function normalizeGoogleSheets(value: any): AiGoogleSheetsConfig | undefined {
     if (Object.keys(cleaned).length > 0) columns = cleaned;
   }
 
-  return { spreadsheetId, tabs, ...(columns ? { columns } : {}) };
+  // Header rows captured by "Detect Headers" — lets the prompt know whether a
+  // canonical column (e.g. start_step) really exists in the sheet.
+  let detected: Record<string, string[]> | undefined;
+  if (value.detected && typeof value.detected === 'object') {
+    const cleaned: Record<string, string[]> = {};
+    for (const tab of tabs) {
+      const headers = value.detected[tab];
+      if (!Array.isArray(headers)) continue;
+      const names = headers.map((h: any) => String(h ?? '').trim()).filter(Boolean);
+      if (names.length > 0) cleaned[tab] = names;
+    }
+    if (Object.keys(cleaned).length > 0) detected = cleaned;
+  }
+
+  return {
+    spreadsheetId,
+    tabs,
+    ...(columns ? { columns } : {}),
+    ...(detected ? { detected } : {}),
+  };
 }
 
 /**

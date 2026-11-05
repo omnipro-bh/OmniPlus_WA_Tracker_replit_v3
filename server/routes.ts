@@ -12290,6 +12290,37 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Detect headers for the AI Agent's Google Sheets data source (two-tab model)
+  app.post("/api/workflows/test-sheet-headers", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { spreadsheetId, tab } = req.body || {};
+
+      if (typeof spreadsheetId !== "string" || !spreadsheetId.trim()) {
+        return res.status(400).json({ success: false, error: "spreadsheetId is required" });
+      }
+      if (typeof tab !== "string" || !tab.trim()) {
+        return res.status(400).json({ success: false, error: "tab is required" });
+      }
+
+      const { fetchSheetHeaders } = await import("./workflows/googleSheetsExecutor");
+      const result = await fetchSheetHeaders(spreadsheetId.trim(), tab.trim());
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (error: any) {
+      console.error("Test sheet headers error:", error);
+      res.status(500).json({
+        success: false,
+        headers: [],
+        rowCount: 0,
+        sample: [],
+        error: error.message || "Failed to detect sheet headers",
+      });
+    }
+  });
+
   // Test AI Agent Node
   app.post("/api/workflows/test-ai", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

@@ -63,6 +63,7 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
       { key: 'id', label: 'ID', column: 'id' },
       { key: 'type', label: 'Type', column: 'type' },
       { key: 'keywords', label: 'Keywords', column: 'keywords' },
+      { key: 'start_step', label: 'Start step', column: 'start_step' },
       {
         key: 'verification_question',
         label: 'Verification question',
@@ -87,3 +88,46 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
     ],
   },
 ];
+
+/** Normalize a header for fuzzy matching: lowercase, letters/digits only. */
+function normalizeHeader(value: string): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+export interface SheetHeaderMatch {
+  /** canonical schema key -> actual header in the sheet (matched keys only). */
+  mapping: Record<string, string>;
+  /** Schema keys with no matching header in the sheet. */
+  missing: string[];
+}
+
+/**
+ * Match a sheet's header row to a tab schema, case/space/underscore-insensitively
+ * ("Verification Question" matches `verification_question`). Used by the config
+ * UI's "Detect Headers" button and unit-tested directly.
+ */
+export function matchSheetHeaders(
+  headers: string[],
+  schema: AiSheetTabSchema
+): SheetHeaderMatch {
+  const byNormalized = new Map<string, string>();
+  for (const header of Array.isArray(headers) ? headers : []) {
+    const trimmed = String(header ?? '').trim();
+    if (!trimmed) continue;
+    const key = normalizeHeader(trimmed);
+    if (key && !byNormalized.has(key)) byNormalized.set(key, trimmed);
+  }
+
+  const mapping: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const col of schema.columns) {
+    const hit =
+      byNormalized.get(normalizeHeader(col.key)) ?? byNormalized.get(normalizeHeader(col.column));
+    if (hit) mapping[col.key] = hit;
+    else missing.push(col.key);
+  }
+
+  return { mapping, missing };
+}

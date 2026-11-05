@@ -93,6 +93,41 @@ test('sheet rules tell the model the two-step lookup sequence', () => {
   assert.match(prompt, /tab: "Intents", filter_column: "keywords"/);
   assert.match(prompt, /tab: "Workflow_Steps", filter_column: "intent_id"/);
   assert.match(prompt, /verify-before-answer/);
+  assert.match(prompt, /start_step/);
+  assert.match(prompt, /fallback/);
+});
+
+test('sheet rules use start_step when detection confirms the column exists', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: {
+      spreadsheetId: 'sheet_1',
+      tabs: ['Intents', 'Workflow_Steps'],
+      detected: {
+        Intents: ['id', 'type', 'keywords', 'start_step', 'verification_question', 'answer'],
+        Workflow_Steps: ['intent_id', 'step_id', 'ai_question'],
+      },
+    },
+  });
+
+  assert.match(prompt, /Begin at the step named in the intent's "start_step" value/);
+  assert.ok(!prompt.includes('This sheet has no "start_step" column'));
+});
+
+test('sheet rules fall back to the first step when start_step is absent', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: {
+      spreadsheetId: 'sheet_1',
+      tabs: ['Intents', 'Workflow_Steps'],
+      detected: {
+        Intents: ['id', 'type', 'keywords', 'answer'],
+        Workflow_Steps: ['intent_id', 'step_id', 'ai_question'],
+      },
+    },
+  });
+
+  assert.match(prompt, /no "start_step" column: start at the first step/);
 });
 
 test('sheet column mapping overrides the header names in the prompt', () => {
@@ -110,6 +145,6 @@ test('sheet column mapping overrides the header names in the prompt', () => {
 
   assert.match(prompt, /filter_column: "Keywords_AR"/);
   assert.match(prompt, /filter_column: "Intent"/);
-  assert.match(prompt, /"Question" in order/);
+  assert.match(prompt, /ask each "Question"/);
   assert.ok(!prompt.includes('filter_column: "keywords"'));
 });

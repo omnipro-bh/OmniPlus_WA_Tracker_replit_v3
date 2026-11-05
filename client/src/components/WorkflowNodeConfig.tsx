@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { RESERVED_CONTEXT_KEYS, VARIABLE_NAME_RE, VARIABLE_PATH_RE } from '@shared/workflow-validation';
-import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
+import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA, matchSheetHeaders } from '@shared/ai-defaults';
 
 // Generate random unique ID
 function generateId(prefix: string = 'btn'): string {
@@ -52,6 +52,9 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<any>(null);
   const [aiTestMessage, setAiTestMessage] = useState('Hello! What are your opening hours?');
+
+  // AI Agent Google Sheets data-source header detection (one tab at a time)
+  const [sheetDetectingTab, setSheetDetectingTab] = useState<string | null>(null);
 
   // Fetch active channels for test functionality
   const { data: channels = [] } = useQuery<any[]>({
@@ -2811,6 +2814,75 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       );
     };
 
+    // "Detect Headers": read row 1 of the tab and fill the mapping form for the
+    // owner. Only stores overrides where the sheet header differs from the
+    // canonical default, and records the raw header row so the prompt knows
+    // whether optional columns (start_step) really exist.
+    const detectSheetHeaders = async (tab: string) => {
+      const spreadsheetId = (googleSheets.spreadsheetId || '').trim();
+      if (!spreadsheetId) {
+        toast({
+          title: 'Spreadsheet ID required',
+          description: 'Enter the spreadsheet ID before detecting headers.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setSheetDetectingTab(tab);
+      try {
+        const res = await apiRequest('POST', '/api/workflows/test-sheet-headers', {
+          spreadsheetId,
+          tab,
+        });
+        const result: any = await res.json();
+        if (!res.ok || !result?.success) {
+          toast({
+            title: 'Could not read headers',
+            description: result?.error || 'Check the spreadsheet ID, tab name and sharing.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const schema = schemaForTab(tab);
+        const headers: string[] = Array.isArray(result.headers) ? result.headers : [];
+        const tabMap = { ...(sheetColumns[tab] || {}) };
+        let missing: string[] = [];
+
+        if (schema) {
+          const { mapping, missing: unmatched } = matchSheetHeaders(headers, schema);
+          for (const [key, header] of Object.entries(mapping)) {
+            const fallback = schema.columns.find((c) => c.key === key)?.column ?? key;
+            if (header === fallback) delete tabMap[key];
+            else tabMap[key] = header;
+          }
+          missing = unmatched;
+        }
+
+        updateSheets({
+          columns: { ...sheetColumns, [tab]: tabMap },
+          detected: { ...(googleSheets.detected || {}), [tab]: headers },
+        });
+
+        toast({
+          title: `Detected ${headers.length} column${headers.length === 1 ? '' : 's'}`,
+          description:
+            missing.length > 0
+              ? `Not found in the sheet: ${missing.join(', ')}. Detected: ${headers.join(', ')}.`
+              : `Detected: ${headers.join(', ')} — ${result.rowCount ?? 0} data row(s).`,
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Header detection failed',
+          description: error?.message || 'Unexpected error reading the sheet.',
+          variant: 'destructive',
+        });
+      } finally {
+        setSheetDetectingTab(null);
+      }
+    };
+
     return (
       <div className="space-y-4">
         {/* Provider */}
@@ -3339,14 +3411,18 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           {sheetConnected && (
             <>
               <div>
-                <Label htmlFor="ai-sheets-spreadsheet-id">Spreadsheet ID</Label>
+                <Label htmlFor="ai-sheets-spreadsheet-id">Spreadsheet ID or URL</Label>
                 <Input
                   id="ai-sheets-spreadsheet-id"
-                  placeholder="1AbC… (from the sheet URL)"
+                  placeholder="1AbC… or https://docs.google.com/spreadsheets/d/1AbC…/edit"
                   value={googleSheets.spreadsheetId || ''}
                   onChange={(e) => updateSheets({ spreadsheetId: e.target.value })}
                   data-testid="input-ai-sheets-spreadsheet-id"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Share the sheet with the service account, then click "Detect Headers" on each tab
+                  to fill the column mapping.
+                </p>
               </div>
 
               <div>
@@ -3372,9 +3448,39 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                   {sheetTabs.map((tab) => {
                     const schema = schemaForTab(tab);
                     if (!schema) return null;
+                    const detectedHeaders: string[] = Array.isArray(googleSheets.detected?.[tab])
+                      ? googleSheets.detected[tab]
+                      : [];
+                    const detecting = sheetDetectingTab === tab;
                     return (
                       <div key={tab} className="p-3 border rounded-md space-y-2">
-                        <Label className="text-xs">{tab} columns</Label>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs">{tab} columns</Label>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => detectSheetHeaders(tab)}
+                            disabled={detecting || !googleSheets.spreadsheetId}
+                            data-testid={`button-ai-sheets-detect-${tab}`}
+                          >
+                            {detecting ? (
+                              <>
+                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                Detecting…
+                              </>
+                            ) : (
+                              'Detect Headers'
+                            )}
+                          </Button>
+                        </div>
+                        {detectedHeaders.length > 0 && (
+                          <p
+                            className="text-[11px] text-muted-foreground"
+                            data-testid={`text-ai-sheets-detected-${tab}`}
+                          >
+                            Detected: {detectedHeaders.join(', ')}
+                          </p>
+                        )}
                         <div className="grid grid-cols-2 gap-2">
                           {schema.columns.map((col) => (
                             <div key={col.key}>

@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { projectSheetRows } from './googleSheetsExecutor';
+import { projectSheetRows, headersFromRows, extractSpreadsheetId } from './googleSheetsExecutor';
 
 const RAW = [
   ['id', 'keywords', 'answer'],
@@ -75,4 +75,48 @@ test('projectSheetRows tolerates empty sheets and ragged rows', () => {
   assert.deepEqual(projectSheetRows([['id', 'answer'], ['only_id']]), {
     rows: [{ id: 'only_id', answer: '' }],
   });
+});
+
+// ── Phase 4b: header detection (config UI "Detect Headers") ─────────────────
+
+test('headersFromRows returns the header row, data count and a sample', () => {
+  const result = headersFromRows(RAW, 2);
+
+  assert.deepEqual(result.headers, ['id', 'keywords', 'answer']);
+  assert.equal(result.rowCount, 3);
+  assert.equal(result.sample.length, 2);
+  assert.deepEqual(result.sample[0], {
+    id: 'pricing',
+    keywords: 'pricing, cost',
+    answer: 'Plans start at 10 BHD',
+  });
+});
+
+test('headersFromRows trims headers and drops blanks', () => {
+  const result = headersFromRows([[' id ', '', ' answer '], ['a', 'b', 'c']]);
+
+  assert.deepEqual(result.headers, ['id', 'answer']);
+  assert.equal(result.rowCount, 1);
+});
+
+test('headersFromRows caps the sample size and tolerates an empty sheet', () => {
+  const raw = [
+    ['id', 'answer'],
+    ...Array.from({ length: 30 }, (_, i) => [`id_${i}`, `a_${i}`]),
+  ];
+
+  assert.equal(headersFromRows(raw, 50).sample.length, 10);
+  assert.deepEqual(headersFromRows([]), { headers: [], rowCount: 0, sample: [] });
+});
+
+test('extractSpreadsheetId accepts a bare id or a full sheet URL', () => {
+  const id = '1AbC-2dEf_3GhI';
+  assert.equal(extractSpreadsheetId(id), id);
+  assert.equal(extractSpreadsheetId(`  ${id}  `), id);
+  assert.equal(
+    extractSpreadsheetId(`https://docs.google.com/spreadsheets/d/${id}/edit#gid=0`),
+    id
+  );
+  assert.equal(extractSpreadsheetId(''), '');
+  assert.equal(extractSpreadsheetId(undefined), '');
 });
