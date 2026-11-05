@@ -623,6 +623,10 @@ test('the node wrapper returns a populated aiTrace', async () => {
   assert.equal(typeof r.aiTrace.elapsedMs, 'number');
   assert.equal(r.aiTrace.tokensIn, r.aiTrace.tokensIn); // number
   assert.ok(Array.isArray(r.aiTrace.toolCalls));
+  assert.equal(typeof r.aiTrace.tokenBreakdown.systemPromptTokens, 'number');
+  assert.equal(typeof r.aiTrace.tokenBreakdown.toolDefinitionsTokens, 'number');
+  assert.equal(typeof r.aiTrace.tokenBreakdown.historyTokens, 'number');
+  assert.equal(typeof r.aiTrace.tokenBreakdown.lookupResultTokens, 'number');
 });
 
 // ── Bug fixes: rate-limit detection + lookup row trimming ───────────────────

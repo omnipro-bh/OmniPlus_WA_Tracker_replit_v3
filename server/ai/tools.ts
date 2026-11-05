@@ -70,14 +70,14 @@ export function buildSendButtonsTool(buttons: AiButtonSlot[]): LlmToolDef {
     function: {
       name: TOOL_SEND_BUTTONS,
       description:
-        'Show the customer one or more quick-reply buttons and wait for their choice. Only use ids from the provided list.',
+        'Offer the customer quick-reply buttons to choose from.',
       parameters: {
         type: 'object',
         properties: {
           buttons: {
             type: 'array',
             maxItems: MAX_BUTTONS_PER_MESSAGE,
-            description: 'The button ids to show (1 to 3).',
+            description: 'Button ids to show (1-3).',
             items: {
               type: 'string',
               enum: enumIds,
@@ -103,14 +103,14 @@ export function buildSendListTool(rows: AiListRowSlot[]): LlmToolDef {
     function: {
       name: TOOL_SEND_LIST,
       description:
-        'Show the customer a list of options to pick from and wait for their choice. Prefer this over send_buttons when there are more than 3 options. Only use ids from the provided list.',
+        'Offer the customer a list of options to choose from. Use for 4+ options.',
       parameters: {
         type: 'object',
         properties: {
           rows: {
             type: 'array',
             maxItems: MAX_LIST_ROWS_PER_MESSAGE,
-            description: 'The list row ids to show (1 to 10).',
+            description: 'List row ids to show (4-10).',
             items: {
               type: 'string',
               enum: enumIds,
@@ -136,18 +136,18 @@ export function buildHandoverTool(departments: AiDepartmentSlot[]): LlmToolDef {
     function: {
       name: TOOL_HANDOVER,
       description:
-        'Hand the conversation to a human team (e.g. sales or support). Use when the customer asks for a person or the answer is unavailable.',
+        'Hand the conversation to a human agent.',
       parameters: {
         type: 'object',
         properties: {
           department: {
             type: 'string',
             enum: enumIds,
-            description: 'The department to escalate to.',
+            description: 'Department id.',
           },
           reason: {
             type: 'string',
-            description: 'Why the customer needs a human.',
+            description: 'Reason for handoff.',
           },
         },
         required: ['department'],
@@ -169,28 +169,28 @@ export function buildLookupSheetTool(tabs: string[]): LlmToolDef {
     function: {
       name: TOOL_LOOKUP_SHEET,
       description:
-        `Read rows from a Google Sheet tab. Use it to look up an intent, an answer, or the workflow steps for an intent. Returns up to ${MAX_LOOKUP_ROWS} rows matching an optional filter.`,
+        `Read rows from a Google Sheet tab (intents or workflow steps). Up to ${MAX_LOOKUP_ROWS} rows.`,
       parameters: {
         type: 'object',
         properties: {
           tab: {
             type: 'string',
             enum: names,
-            description: 'The tab to read.',
+            description: 'Tab to read.',
           },
           filter_column: {
             type: 'string',
-            description: 'Column name to filter on (matches the sheet header row, e.g. "keywords" or "intent_id").',
+            description: 'Column to filter on (e.g. "keywords").',
           },
           filter_value: {
             type: 'string',
-            description: 'Value to match in filter_column.',
+            description: 'Value to match.',
           },
           limit: {
             type: 'integer',
             minimum: 1,
             maximum: MAX_LOOKUP_ROWS,
-            description: `Max rows to return (default ${MAX_LOOKUP_ROWS}).`,
+            description: `Max rows (default ${MAX_LOOKUP_ROWS}).`,
           },
         },
         required: ['tab'],

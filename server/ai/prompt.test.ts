@@ -92,9 +92,9 @@ test('sheet rules tell the model the two-step lookup sequence', () => {
 
   assert.match(prompt, /tab: "Intents", filter_column: "keywords"/);
   assert.match(prompt, /tab: "Workflow_Steps", filter_column: "intent_id"/);
-  assert.match(prompt, /verify-before-answer/);
+  assert.match(prompt, /Prefer the row matching MORE words/);
   assert.match(prompt, /start_step/);
-  assert.match(prompt, /fallback/);
+  assert.match(prompt, /verification_question/);
 });
 
 test('sheet rules use start_step when detection confirms the column exists', () => {
@@ -110,8 +110,8 @@ test('sheet rules use start_step when detection confirms the column exists', () 
     },
   });
 
-  assert.match(prompt, /Begin at the step named in the intent's "start_step" value/);
-  assert.ok(!prompt.includes('This sheet has no "start_step" column'));
+  assert.match(prompt, /start at "start_step" if set, else the first step/);
+  assert.ok(!prompt.includes('no "start_step" column'));
 });
 
 test('sheet rules fall back to the first step when start_step is absent', () => {
@@ -127,7 +127,7 @@ test('sheet rules fall back to the first step when start_step is absent', () => 
     },
   });
 
-  assert.match(prompt, /no "start_step" column: start at the first step/);
+  assert.match(prompt, /no "start_step" column/);
 });
 
 test('sheet column mapping overrides the header names in the prompt', () => {
@@ -145,6 +145,6 @@ test('sheet column mapping overrides the header names in the prompt', () => {
 
   assert.match(prompt, /filter_column: "Keywords_AR"/);
   assert.match(prompt, /filter_column: "Intent"/);
-  assert.match(prompt, /ask each "Question"/);
+  assert.match(prompt, /each "Question"/);
   assert.ok(!prompt.includes('filter_column: "keywords"'));
 });

@@ -22,7 +22,7 @@
 import { resolveTemplate } from './httpExecutor';
 import { MAX_CONTEXT_BYTES } from './flowControl';
 import { VARIABLE_NAME_RE, RESERVED_CONTEXT_KEYS } from '@shared/workflow-validation';
-import { buildChatContext, historyBytes, trimHistory } from '../ai/contextBuilder';
+import { buildChatContext, historyBytes, trimHistory, approxTokens } from '../ai/contextBuilder';
 import { buildSystemPrompt } from '../ai/prompt';
 import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry';
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
@@ -169,6 +169,14 @@ export interface AiToolCallTrace {
   rows?: number;
 }
 
+/** Approximate token usage by section, for the trace (never for billing). */
+export interface AiTokenBreakdown {
+  systemPromptTokens: number;
+  toolDefinitionsTokens: number;
+  historyTokens: number;
+  lookupResultTokens: number;
+}
+
 export interface AiAgentExecutionResult {
   success: boolean;
   nextHandle: AiNextHandle;
@@ -203,6 +211,8 @@ export interface AiAgentExecutionResult {
   handover?: { department: string; reason: string; title: string };
   /** Tool calls the model made this turn (empty when no tools were used). */
   toolCalls: AiToolCallTrace[];
+  /** Token usage by section (system prompt / tools / history / lookup rows). */
+  tokenBreakdown?: AiTokenBreakdown;
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -231,6 +241,8 @@ export interface AiTrace {
   nextHandle: AiNextHandle;
   error?: string;
   reason?: string;
+  /** Token usage by section, for the Webhook Logs trace. */
+  tokenBreakdown: AiTokenBreakdown;
 }
 
 export interface AiAgentNodeOptions {
@@ -872,18 +884,29 @@ export async function executeAiAgentNode(
     );
   }
 
+  const systemPrompt = buildSystemPrompt({
+    ownerPrompt: resolvedPrompt,
+    businessName: exec.businessName,
+    channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
+    hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
+    googleSheets: settings.googleSheets,
+  });
+
   const messages = buildChatContext({
-    systemPrompt: buildSystemPrompt({
-      ownerPrompt: resolvedPrompt,
-      businessName: exec.businessName,
-      channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
-      hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
-      googleSheets: settings.googleSheets,
-    }),
+    systemPrompt,
     history: previousHistory,
     userMessage,
     historyLimit: settings.historyLimit,
   });
+
+  // Task 4: approximate token usage by section, so the trace shows where the
+  // budget goes (lookup rows are added as the loop runs, below).
+  const tokenBreakdown: AiTokenBreakdown = {
+    systemPromptTokens: approxTokens(systemPrompt),
+    toolDefinitionsTokens: tools.reduce((sum, t) => sum + approxTokens(JSON.stringify(t)), 0),
+    historyTokens: previousHistory.reduce((sum, m) => sum + approxTokens(m.content), 0),
+    lookupResultTokens: 0,
+  };
 
   let client: LlmClient;
   try {
@@ -986,6 +1009,9 @@ export async function executeAiAgentNode(
             args: toolCall.arguments,
             rows: outcome.ok ? (outcome.rows?.length ?? 0) : undefined,
           });
+          if (outcome.ok && outcome.rows?.length) {
+            tokenBreakdown.lookupResultTokens += approxTokens(JSON.stringify(outcome.rows));
+          }
           roundResults.set(
             toolCall.id,
             outcome.ok
@@ -1104,6 +1130,7 @@ export async function executeAiAgentNode(
       history: previousHistory,
       stateUpdate,
       toolCalls,
+      tokenBreakdown,
     };
   }
 
@@ -1203,6 +1230,7 @@ export async function executeAiAgentNode(
     ...(listRows ? { listRows, listTitle } : {}),
     ...(handover ? { handover } : {}),
     toolCalls,
+    tokenBreakdown,
   };
 }
 
@@ -1329,6 +1357,12 @@ export async function executeAiAgentWorkflowNode(
     nextHandle,
     ...(result.error ? { error: result.error } : {}),
     ...(result.reason ? { reason: result.reason } : {}),
+    tokenBreakdown: result.tokenBreakdown ?? {
+      systemPromptTokens: 0,
+      toolDefinitionsTokens: 0,
+      historyTokens: 0,
+      lookupResultTokens: 0,
+    },
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
