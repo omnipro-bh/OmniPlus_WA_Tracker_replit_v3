@@ -23,7 +23,7 @@ import { resolveTemplate } from './httpExecutor';
 import { MAX_CONTEXT_BYTES } from './flowControl';
 import { VARIABLE_NAME_RE, RESERVED_CONTEXT_KEYS } from '@shared/workflow-validation';
 import { buildChatContext, historyBytes, trimHistory, approxTokens } from '../ai/contextBuilder';
-import { buildSystemPrompt } from '../ai/prompt';
+import { buildSystemPrompt, buildSlotExtractionPrompt, extractJsonObject } from '../ai/prompt';
 import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry';
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
 import {
@@ -60,11 +60,12 @@ import type {
   LlmToolChoice,
   LlmToolDef,
   LlmUsage,
+  SlotExtractionResult,
   UsageLimits,
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
-import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState } from './sheetStateMachine';
+import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState, type SlotExtractor } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -216,6 +217,12 @@ export interface AiAgentExecutionResult {
   tokenBreakdown?: AiTokenBreakdown;
   /** Deterministic sheet state after this turn (Task 5 MVP). */
   sheetState?: SheetState;
+  /** Slots the LLM extracted on turn 1 (Task 5b), when extraction ran. */
+  extractedSlots?: Record<string, any>;
+  /** The LLM's confidence for the turn-1 extraction. */
+  extractionConfidence?: number;
+  /** Step ids skipped on turn 1 because their slots were already filled. */
+  skippedSteps?: string[];
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -248,6 +255,12 @@ export interface AiTrace {
   tokenBreakdown: AiTokenBreakdown;
   /** Deterministic sheet state snapshot (Task 5 MVP), when the machine ran. */
   sheetState?: SheetState;
+  /** Slots the LLM extracted on turn 1 (Task 5b). */
+  extractedSlots?: Record<string, any>;
+  /** The LLM's confidence for the turn-1 extraction. */
+  extractionConfidence?: number;
+  /** Step ids skipped on turn 1 because their slots were already filled. */
+  skippedSteps?: string[];
 }
 
 export interface AiAgentNodeOptions {
@@ -876,11 +889,47 @@ export async function executeAiAgentNode(
 
   // ── Phase 4d: deterministic sheet state machine (Task 5 MVP) ──────────────
   // The engine reads the current step from the sheet and asks its ai_question,
-  // so the model can't improvise. No LLM call is made here; the sheet read is
-  // the whole turn.
+  // so the model can't improvise. On turn 1 it may make ONE LLM call to extract
+  // upfront slots; otherwise the sheet read is the whole turn.
   if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
     const startedAt = Date.now();
-    const turn = await runSheetStateMachine(settings.googleSheets, context, nodeId, userMessage);
+
+    // Resolve the LLM client for turn-1 extraction; a missing key just disables
+    // extraction (the machine still works sequentially).
+    let client: LlmClient | undefined;
+    try {
+      client = exec.client ?? getLlmClient(settings.provider);
+    } catch {
+      client = undefined;
+    }
+
+    const extractionUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const extract: SlotExtractor | undefined = client
+      ? async (message, slotNames) => {
+          const prompt = buildSlotExtractionPrompt(slotNames, message);
+          try {
+            const completion = await client!.complete({
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0,
+              maxTokens: 300,
+            });
+            extractionUsage.promptTokens += completion.usage.promptTokens;
+            extractionUsage.completionTokens += completion.usage.completionTokens;
+            extractionUsage.totalTokens += completion.usage.totalTokens;
+            if (!completion.ok) return { slots: {}, confidence: 0 };
+            const parsed = extractJsonObject(completion.text);
+            if (!parsed || typeof parsed !== 'object') return { slots: {}, confidence: 0 };
+            return {
+              slots: parsed.slots && typeof parsed.slots === 'object' ? parsed.slots : {},
+              confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
+            };
+          } catch {
+            return { slots: {}, confidence: 0 };
+          }
+        }
+      : undefined;
+
+    const turn = await runSheetStateMachine(settings.googleSheets, context, nodeId, userMessage, undefined, extract);
     const latencyMs = Date.now() - startedAt;
 
     // Append the exchange to history for a consistent transcript.
@@ -904,7 +953,7 @@ export async function executeAiAgentNode(
           model: settings.model,
           text: turn.error ? '' : turn.text,
           finishReason: turn.error ? 'error' : 'stop',
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          usage: extractionUsage,
           latencyMs,
           attempts: 0,
           ...(turn.error ? { error: turn.error } : {}),
@@ -924,7 +973,7 @@ export async function executeAiAgentNode(
       model: settings.model,
       text: turn.error ? '' : turn.text,
       finishReason: turn.error ? 'error' : 'stop',
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      usage: extractionUsage,
       latencyMs,
       attempts: 0,
       ...(turn.error ? { error: turn.error } : {}),
@@ -932,6 +981,11 @@ export async function executeAiAgentNode(
       stateUpdate,
       toolCalls: turn.toolCalls,
       sheetState: turn.sheet,
+      ...(turn.extractedSlots ? { extractedSlots: turn.extractedSlots } : {}),
+      ...(turn.extractionConfidence !== undefined
+        ? { extractionConfidence: turn.extractionConfidence }
+        : {}),
+      ...(turn.skippedSteps ? { skippedSteps: turn.skippedSteps } : {}),
       tokenBreakdown: {
         systemPromptTokens: 0,
         toolDefinitionsTokens: 0,
@@ -1458,6 +1512,11 @@ export async function executeAiAgentWorkflowNode(
       lookupResultTokens: 0,
     },
     ...(result.sheetState ? { sheetState: result.sheetState } : {}),
+    ...(result.extractedSlots ? { extractedSlots: result.extractedSlots } : {}),
+    ...(result.extractionConfidence !== undefined
+      ? { extractionConfidence: result.extractionConfidence }
+      : {}),
+    ...(result.skippedSteps ? { skippedSteps: result.skippedSteps } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM

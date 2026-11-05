@@ -13,6 +13,7 @@ import {
   runSheetStateMachine,
   substituteSlots,
   type RowReader,
+  type SlotExtractor,
 } from './sheetStateMachine';
 
 // ── pure helpers ────────────────────────────────────────────────────────────
@@ -187,4 +188,68 @@ test('no intent match returns a friendly fallback', async () => {
 
   assert.match(turn.text, /could not find an answer/i);
   assert.equal(turn.sheet.intentId, null);
+});
+
+// ── Task 5b: turn-1 LLM slot extraction ─────────────────────────────────────
+
+test('turn-1 extraction with high confidence skips filled steps', async () => {
+  const extract: SlotExtractor = async () => ({ slots: { service: 'ENT' }, confidence: 0.9 });
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+
+  assert.equal(turn.sheet.stepId, 'Step_2'); // Step_1 (service) filled → skip
+  assert.equal(turn.text, 'When would you like it?');
+  assert.deepEqual(turn.sheet.slots, { service: 'ENT' });
+  assert.deepEqual(turn.skippedSteps, ['Step_1']);
+  assert.deepEqual(turn.extractedSlots, { service: 'ENT' });
+  assert.equal(turn.extractionConfidence, 0.9);
+});
+
+test('turn-1 extraction with all slots filled completes immediately', async () => {
+  const extract: SlotExtractor = async () => ({
+    slots: { service: 'ENT', datetime: '6 PM today' },
+    confidence: 0.95,
+  });
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT at 6pm today', reader, extract);
+
+  assert.equal(turn.text, 'Your ENT appointment is booked for 6 PM today.');
+  assert.equal(turn.sheet.intentId, null); // completed → reset
+  assert.equal(turn.sheet.stepId, null);
+});
+
+test('turn-1 extraction with low confidence falls back to sequential', async () => {
+  const extract: SlotExtractor = async () => ({ slots: { service: 'ENT' }, confidence: 0.5 });
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+
+  assert.equal(turn.sheet.stepId, 'Step_1'); // sequential start
+  assert.equal(turn.text, 'Which service do you need?');
+  assert.deepEqual(turn.sheet.slots, {}); // nothing merged
+});
+
+test('turn-1 extraction that throws falls back to sequential', async () => {
+  const extract: SlotExtractor = async () => {
+    throw new Error('boom');
+  };
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+
+  assert.equal(turn.sheet.stepId, 'Step_1');
+  assert.equal(turn.text, 'Which service do you need?');
+});
+
+test('ai_question {slot} placeholders are substituted on subsequent turns', async () => {
+  const steps = [
+    { intent_id: '1', step_id: 'Step_1', ai_question: 'Which service?', slot_name: 'service', next_step_logic: '→ Step_2' },
+    { intent_id: '1', step_id: 'Step_2', ai_question: 'You chose {service}. Which branch?', slot_name: 'branch', next_step_logic: '→ done' },
+  ];
+  const reader2: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Done' }];
+    return steps.filter((s) => s.intent_id === filter?.value);
+  };
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'ENT', reader2);
+
+  assert.equal(turn.text, 'You chose ENT. Which branch?');
 });

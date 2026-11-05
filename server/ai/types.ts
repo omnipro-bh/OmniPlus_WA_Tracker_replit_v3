@@ -142,6 +142,12 @@ export interface UsageLimits {
   monthlyMax?: number;
 }
 
+/** Result of the turn-1 LLM slot extraction (Task 5b). */
+export interface SlotExtractionResult {
+  slots: Record<string, any>;
+  confidence: number;
+}
+
 /**
  * Phase 4 — Google Sheets data source for an AI node. The `lookup_sheet` tool
  * reads whole tabs from this spreadsheet. Absent ⇒ no `lookup_sheet` tool.

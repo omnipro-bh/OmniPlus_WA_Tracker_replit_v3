@@ -17,7 +17,7 @@
 
 import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
-import type { AiGoogleSheetsConfig } from '../ai/types';
+import type { AiGoogleSheetsConfig, SlotExtractionResult } from '../ai/types';
 
 export interface SheetState {
   intentId: string | null;
@@ -25,12 +25,15 @@ export interface SheetState {
   slots: Record<string, any>;
 }
 
-const EMPTY_STATE: SheetState = { intentId: null, stepId: null, slots: {} };
+/** A fresh empty state — never reuse a shared object (slots must not leak across turns). */
+function freshState(): SheetState {
+  return { intentId: null, stepId: null, slots: {} };
+}
 
 /** Read the persisted sheet state, tolerating any malformed shape. */
 export function readSheetState(context: Record<string, any>, nodeId: string): SheetState {
   const raw = context?.ai?.[nodeId]?.sheet;
-  if (!raw || typeof raw !== 'object') return { ...EMPTY_STATE };
+  if (!raw || typeof raw !== 'object') return freshState();
   return {
     intentId: raw.intentId ?? null,
     stepId: raw.stepId ?? null,
@@ -55,6 +58,12 @@ export interface SheetTurn {
   toolCalls: SheetLookupCall[];
   /** Set when a sheet read failed — the executor maps this to `error`. */
   error?: string;
+  /** Slots the LLM extracted on turn 1 (Task 5b), when extraction ran. */
+  extractedSlots?: Record<string, any>;
+  /** The LLM's confidence for the turn-1 extraction. */
+  extractionConfidence?: number;
+  /** Step ids skipped on turn 1 because their slots were already filled. */
+  skippedSteps?: string[];
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };
@@ -159,6 +168,19 @@ export type RowReader = (
   filter?: { column?: string; value?: string }
 ) => Promise<Record<string, any>[]>;
 
+/**
+ * Injected LLM slot extractor (test seam). The executor wires this to a real
+ * `LlmClient`; tests inject a deterministic stub. On any failure it must return
+ * `{ slots: {}, confidence: 0 }` so the machine falls back to sequential.
+ */
+export type SlotExtractor = (
+  userMessage: string,
+  slotNames: string[]
+) => Promise<SlotExtractionResult>;
+
+/** Confidence threshold above which extracted slots are trusted (Task 5b). */
+export const EXTRACTION_CONFIDENCE_THRESHOLD = 0.8;
+
 /** Find a step row by its `step_id`. */
 function findStep(
   steps: Record<string, any>[],
@@ -187,7 +209,8 @@ export async function runSheetStateMachine(
   context: Record<string, any>,
   nodeId: string,
   userMessage: string,
-  reader?: RowReader
+  reader?: RowReader,
+  extract?: SlotExtractor
 ): Promise<SheetTurn> {
   const readRows = reader ?? defaultReadRows;
   const state = readSheetState(context, nodeId);
@@ -241,7 +264,7 @@ export async function runSheetStateMachine(
       const answer = String(intent[answerHeader] ?? '').trim();
       return {
         text: answer || 'I have found the answer but it is empty.',
-        sheet: { ...EMPTY_STATE },
+        sheet: freshState(),
         toolCalls,
       };
     }
@@ -250,9 +273,66 @@ export async function runSheetStateMachine(
       ? startStep
       : String((firstStep(steps, stepIdHeader)?.[stepIdHeader] ?? '')).trim();
 
-    const current = findStep(steps, stepIdHeader, state.stepId!) ?? firstStep(steps, stepIdHeader);
-    const question = String(current?.[questionHeader] ?? '').trim();
-    return { text: question, sheet: state, toolCalls };
+    // ── Task 5b: turn-1 LLM extraction → skip already-filled steps ──────────
+    const slotNames = steps
+      .map((s) => String(s[slotHeader] ?? '').trim())
+      .filter(Boolean);
+    const hasSlot = (name: string) =>
+      name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
+
+    let extracted: SlotExtractionResult | null = null;
+    if (extract && slotNames.length > 0) {
+      try {
+        const result = await extract(userMessage, slotNames);
+        if (result && typeof result.confidence === 'number') extracted = result;
+      } catch {
+        extracted = null;
+      }
+    }
+
+    if (
+      extracted &&
+      extracted.confidence >= EXTRACTION_CONFIDENCE_THRESHOLD &&
+      extracted.slots &&
+      typeof extracted.slots === 'object'
+    ) {
+      for (const [key, value] of Object.entries(extracted.slots)) {
+        if (value !== undefined && value !== null && value !== '') state.slots[key] = value;
+      }
+    }
+
+    // The first step whose slot is still empty is where we start.
+    const firstUnfilled = steps.find((s) => !hasSlot(String(s[slotHeader] ?? '').trim()));
+    const skippedSteps = steps
+      .filter((s) => hasSlot(String(s[slotHeader] ?? '').trim()))
+      .map((s) => String(s[stepIdHeader] ?? '').trim());
+
+    if (!firstUnfilled) {
+      // Every slot is already filled → complete immediately.
+      const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+      if (extracted) {
+        result.extractedSlots = extracted.slots;
+        result.extractionConfidence = extracted.confidence;
+        result.skippedSteps = skippedSteps;
+      }
+      return result;
+    }
+
+    state.stepId = String(firstUnfilled[stepIdHeader] ?? '').trim();
+    const current = findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled;
+    const question = substituteSlots(String(current?.[questionHeader] ?? '').trim(), state.slots);
+    return {
+      text: question,
+      sheet: state,
+      toolCalls,
+      ...(extracted
+        ? {
+            extractedSlots: extracted.slots,
+            extractionConfidence: extracted.confidence,
+            skippedSteps,
+          }
+        : {}),
+    };
   }
 
   // ── Turn 2+: advance or complete ───────────────────────────────────────────
@@ -288,7 +368,7 @@ export async function runSheetStateMachine(
   }
 
   state.stepId = transition.stepId;
-  const question = String(nextStep[questionHeader] ?? '').trim();
+  const question = substituteSlots(String(nextStep[questionHeader] ?? '').trim(), state.slots);
   return {
     text: question || String(nextStep[fallbackHeader] ?? '').trim(),
     sheet: state,
@@ -315,5 +395,5 @@ async function complete(
   const intent = intents[0];
   const answer = String(intent?.[answerHeader] ?? '').trim();
   const text = substituteSlots(answer, state.slots) || 'Done — is there anything else I can help with?';
-  return { text, sheet: { ...EMPTY_STATE }, toolCalls };
+  return { text, sheet: freshState(), toolCalls };
 }

@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LANGUAGE_RULES, buildSystemPrompt } from './prompt';
+import { LANGUAGE_RULES, buildSystemPrompt, buildSlotExtractionPrompt, extractJsonObject } from './prompt';
 
 test('system prompt carries the language rules', () => {
   const prompt = buildSystemPrompt({ ownerPrompt: 'Answer questions about delivery.' });
@@ -147,4 +147,28 @@ test('sheet column mapping overrides the header names in the prompt', () => {
   assert.match(prompt, /filter_column: "Intent"/);
   assert.match(prompt, /each "Question"/);
   assert.ok(!prompt.includes('filter_column: "keywords"'));
+});
+
+// ── Task 5b: slot extraction prompt + JSON parser ───────────────────────────
+
+test('buildSlotExtractionPrompt lists every slot name and the message', () => {
+  const p = buildSlotExtractionPrompt(['department', 'branch'], 'book ENT at Manama');
+
+  assert.match(p, /department/);
+  assert.match(p, /branch/);
+  assert.match(p, /book ENT at Manama/);
+  assert.match(p, /STRICT JSON/);
+});
+
+test('extractJsonObject parses clean, fenced and prose-wrapped JSON', () => {
+  assert.deepEqual(extractJsonObject('{"a": 1}'), { a: 1 });
+  assert.deepEqual(extractJsonObject('```json\n{"a": 1}\n```'), { a: 1 });
+  assert.deepEqual(extractJsonObject('the result is {"a": 1} done'), { a: 1 });
+});
+
+test('extractJsonObject returns null for invalid or absent JSON', () => {
+  assert.equal(extractJsonObject('no json here'), null);
+  assert.equal(extractJsonObject('{invalid}'), null);
+  assert.equal(extractJsonObject(''), null);
+  assert.equal(extractJsonObject(undefined as any), null);
 });

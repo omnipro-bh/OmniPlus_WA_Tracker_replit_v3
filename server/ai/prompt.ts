@@ -96,6 +96,44 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
 }
 
 /**
+ * Task 5b: build the turn-1 slot-extraction prompt. Asks the LLM to pull the
+ * listed slot names out of the customer's message and return strict JSON.
+ */
+export function buildSlotExtractionPrompt(slots: string[], userMessage: string): string {
+  const fields = (Array.isArray(slots) ? slots : []).map((s) => String(s).trim()).filter(Boolean);
+  return [
+    'Extract the following fields from the customer message. Output STRICT JSON only — no markdown, no prose.',
+    '',
+    `Fields: ${fields.join(', ')}`,
+    '',
+    `Customer message: "${userMessage}"`,
+    '',
+    'Return only a JSON object:',
+    '{"slots": {"<field>": "<value>", ...}, "confidence": 0.9, "missing": ["<fields not found>"]}',
+    'Only include fields the customer actually provided. "confidence" is your certainty from 0 to 1.',
+  ].join('\n');
+}
+
+/**
+ * Tolerant JSON-object extractor: strips code fences, slices from the first `{`
+ * to the last `}`, and parses. Returns `null` on any failure so callers can fall
+ * back gracefully.
+ */
+export function extractJsonObject(text: string): any | null {
+  if (typeof text !== 'string') return null;
+  let s = text.trim();
+  s = s.replace(/```(?:json)?/gi, '');
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(s.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build the full system prompt: identity + owner instructions + language rules.
  * Always returns a usable prompt, even when the owner left the field empty.
  */
