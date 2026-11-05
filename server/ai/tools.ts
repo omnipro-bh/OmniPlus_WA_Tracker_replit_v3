@@ -55,7 +55,7 @@ export const MAX_BUTTONS_PER_MESSAGE = 3;
 export const MAX_LIST_ROWS_PER_MESSAGE = 10;
 
 /** Max rows a single `lookup_sheet` call returns (keeps the context bounded). */
-export const MAX_LOOKUP_ROWS = 20;
+export const MAX_LOOKUP_ROWS = 5;
 
 /**
  * Build the `send_buttons` tool, enum-constrained to the declared slots.
@@ -169,7 +169,7 @@ export function buildLookupSheetTool(tabs: string[]): LlmToolDef {
     function: {
       name: TOOL_LOOKUP_SHEET,
       description:
-        'Read rows from a Google Sheet tab. Use it to look up an intent, an answer, or the workflow steps for an intent. Returns up to 20 rows matching an optional filter.',
+        `Read rows from a Google Sheet tab. Use it to look up an intent, an answer, or the workflow steps for an intent. Returns up to ${MAX_LOOKUP_ROWS} rows matching an optional filter.`,
       parameters: {
         type: 'object',
         properties: {

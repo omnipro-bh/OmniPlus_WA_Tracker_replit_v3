@@ -104,6 +104,7 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
     '',
     'RULES:',
     `1. When the customer asks a question, FIRST call lookup_sheet({ tab: "${intentsTab}", filter_column: "${keywordsCol}", filter_value: <keyword from their message> }) to find the matching intent.`,
+    `1b. When you receive multiple intent candidates, prefer the one where MORE of the customer's specific words match the "${keywordsCol}" column — e.g. if they mention "dental", prefer a row whose keywords include "dental" over one that only matched on "appointment".`,
     `2. Then call lookup_sheet({ tab: "${stepsTab}", filter_column: "${intentIdCol}", filter_value: <the "${idCol}" of the intent found in step 1> }) to load its steps.`,
     startRule,
     `4. Follow the steps in "${stepIdCol}" order: ask each "${questionCol}", wait for the customer's reply, and check it against "${headerFor(stepsTab, 'expected_input')}" before moving on.`,

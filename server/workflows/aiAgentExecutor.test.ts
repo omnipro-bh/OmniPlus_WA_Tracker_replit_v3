@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MockLlmClient } from '../ai/clients/mock';
-import { executeAiAgentNode, executeAiAgentWorkflowNode } from './aiAgentExecutor';
+import { executeAiAgentNode, executeAiAgentWorkflowNode, trimLookupRows } from './aiAgentExecutor';
 
 const baseConfig = {
   provider: 'mock' as const,
@@ -623,4 +623,70 @@ test('the node wrapper returns a populated aiTrace', async () => {
   assert.equal(typeof r.aiTrace.elapsedMs, 'number');
   assert.equal(r.aiTrace.tokensIn, r.aiTrace.tokensIn); // number
   assert.ok(Array.isArray(r.aiTrace.toolCalls));
+});
+
+// ── Bug fixes: rate-limit detection + lookup row trimming ───────────────────
+
+test('provider rate limit surfaces a friendly error with reason rate_limit', async () => {
+  const mock = new MockLlmClient({ failWith: 'Rate limit reached for model qwen (429)' });
+
+  const result = await run({ ...baseConfig }, mock);
+
+  assert.equal(result.success, false);
+  assert.equal(result.nextHandle, 'error');
+  assert.equal(result.reason, 'rate_limit');
+  assert.match(result.error ?? '', /try again in a minute/i);
+});
+
+test('trimLookupRows keeps only the columns the AI needs for an intent', () => {
+  const rows = [
+    {
+      id: 'dental',
+      type: 'faq',
+      keywords: 'dental, teeth',
+      start_step: 's1',
+      verification_question: 'q',
+      answer: 'The answer',
+      media: 'img',
+      priority: 1,
+      message_type: 'text',
+    },
+  ];
+
+  const out = trimLookupRows('Intents', rows, { spreadsheetId: 's', tabs: ['Intents'] });
+
+  assert.deepEqual(Object.keys(out[0]).sort(), [
+    'id',
+    'keywords',
+    'start_step',
+    'type',
+    'verification_question',
+  ]);
+});
+
+test('trimLookupRows keeps only the columns the AI needs for a step', () => {
+  const rows = [
+    {
+      intent_id: 'dental',
+      step_id: '1',
+      ai_question: 'What is your name?',
+      expected_input: 'text',
+      next_step_logic: 'continue',
+      fallback: 'Sorry, try again',
+      message_type: 'text',
+    },
+  ];
+
+  const out = trimLookupRows('Workflow_Steps', rows, {
+    spreadsheetId: 's',
+    tabs: ['Intents', 'Workflow_Steps'],
+  });
+
+  assert.deepEqual(Object.keys(out[0]).sort(), [
+    'ai_question',
+    'expected_input',
+    'intent_id',
+    'next_step_logic',
+    'step_id',
+  ]);
 });

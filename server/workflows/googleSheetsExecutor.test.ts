@@ -59,15 +59,50 @@ test('projectSheetRows reports an unknown filter column instead of returning eve
   assert.match(String(error), /not found/i);
 });
 
-test('projectSheetRows caps the result at 20 rows even when asked for more', () => {
+test('projectSheetRows caps the result at MAX_LOOKUP_ROWS even when asked for more', () => {
   const header = ['id', 'keywords'];
   const data = Array.from({ length: 50 }, (_, i) => [`id_${i}`, `kw_${i}`]);
 
   const { rows } = projectSheetRows([header, ...data], { limit: 100 });
-  assert.equal(rows.length, 20);
+  assert.equal(rows.length, 5);
 
-  const smaller = projectSheetRows([header, ...data], { limit: 5 });
-  assert.equal(smaller.rows.length, 5);
+  const smaller = projectSheetRows([header, ...data], { limit: 3 });
+  assert.equal(smaller.rows.length, 3);
+});
+
+test('projectSheetRows matches multi-word filters by ANY word, ranked by match count', () => {
+  const raw = [
+    ['id', 'keywords'],
+    ['dental', 'dental, dentist, teeth'],
+    ['booking', 'appointment, booking, schedule'],
+    ['general', 'help, support'],
+  ];
+
+  // "dental appointment" -> both "dental" and "appointment" match a row.
+  const { rows } = projectSheetRows(raw, {
+    filterColumn: 'keywords',
+    filterValue: 'dental appointment',
+  });
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].id, 'dental'); // dental sorts first (specific word)
+  assert.equal(rows[1].id, 'booking');
+});
+
+test('projectSheetRows ranks rows that match MORE words above single-word matches', () => {
+  const raw = [
+    ['id', 'keywords'],
+    ['a', 'dental'],
+    ['b', 'dental appointment'],
+    ['c', 'appointment'],
+  ];
+
+  const { rows } = projectSheetRows(raw, {
+    filterColumn: 'keywords',
+    filterValue: 'dental appointment',
+  });
+
+  assert.deepEqual(rows.map((r) => r.id), ['b', 'a', 'c']);
 });
 
 test('projectSheetRows tolerates empty sheets and ragged rows', () => {

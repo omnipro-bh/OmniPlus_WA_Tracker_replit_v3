@@ -133,15 +133,15 @@ test('parseHandoverArgs validates shape', () => {
 
 // ── Phase 4: lookup_sheet ───────────────────────────────────────────────────
 
-test('buildLookupSheetTool enum-constrains tabs and caps rows at 20', () => {
+test('buildLookupSheetTool enum-constrains tabs and caps rows at MAX_LOOKUP_ROWS', () => {
   const tool = buildLookupSheetTool(['Intents', 'Workflow_Steps']);
   const schema: any = tool.function.parameters;
 
   assert.equal(tool.function.name, 'lookup_sheet');
-  assert.equal(MAX_LOOKUP_ROWS, 20);
+  assert.equal(MAX_LOOKUP_ROWS, 5);
   assert.deepEqual(schema.properties.tab.enum, ['Intents', 'Workflow_Steps']);
   assert.deepEqual(schema.required, ['tab']);
-  assert.equal(schema.properties.limit.maximum, 20);
+  assert.equal(schema.properties.limit.maximum, 5);
   assert.equal(schema.properties.limit.minimum, 1);
 });
 
@@ -174,7 +174,7 @@ test('parseLookupSheetArgs validates the tab, filter and limit', () => {
   );
   assert.throws(() => parseLookupSheetArgs({}), ToolArgumentError);
   assert.throws(() => parseLookupSheetArgs({ tab: '  ' }), ToolArgumentError);
-  assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 21 }), ToolArgumentError);
+  assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 6 }), ToolArgumentError);
   assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 0 }), ToolArgumentError);
   assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 'abc' }), ToolArgumentError);
 });

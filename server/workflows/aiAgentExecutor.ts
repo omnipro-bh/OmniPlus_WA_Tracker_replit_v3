@@ -63,6 +63,14 @@ import type {
   UsageLimits,
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
+import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
+
+const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
+
+/** A provider error is a transient rate limit, not a crash. */
+function isRateLimitError(error: string): boolean {
+  return typeof error === 'string' && RATE_LIMIT_RE.test(error);
+}
 
 // ── Limits (mirrors shared/workflow-validation.ts) ─────────────────────────
 
@@ -577,6 +585,51 @@ function executeHandover(
   return { department, reason, title: slot.title };
 }
 
+/**
+ * Columns the AI needs to *pick* an intent / step. Trimmed out of the tool
+ * result to keep the token budget down (answer / media / fallback are only
+ * fetched when the AI already knows which row it wants).
+ */
+const LOOKUP_TRIM_COLUMNS: { intents: string[]; steps: string[] } = {
+  intents: ['id', 'type', 'keywords', 'start_step', 'verification_question'],
+  steps: ['intent_id', 'step_id', 'ai_question', 'expected_input', 'next_step_logic'],
+};
+
+/**
+ * Drop every column except the ones in the allowlist. Rows are keyed by the
+ * sheet's *actual* header, so the allowlist is resolved through the owner's
+ * column mapping (falling back to the canonical header, and finally the raw
+ * canonical key).
+ */
+export function trimLookupRows(
+  tab: string,
+  rows: Record<string, any>[],
+  sheet?: AiGoogleSheetsConfig
+): Record<string, any>[] {
+  const isSteps = /step/i.test(tab);
+  const keys = isSteps ? LOOKUP_TRIM_COLUMNS.steps : LOOKUP_TRIM_COLUMNS.intents;
+  const schema = AI_SHEET_TAB_SCHEMA.find((t) =>
+    isSteps ? /step/i.test(t.tab) : /^intents?$/i.test(t.tab)
+  );
+
+  const allowed = new Set<string>();
+  for (const key of keys) {
+    allowed.add(key);
+    const override = sheet?.columns?.[tab]?.[key];
+    if (override) allowed.add(override);
+    const def = schema?.columns.find((c) => c.key === key)?.column;
+    if (def) allowed.add(def);
+  }
+
+  return rows.map((row) => {
+    const out: Record<string, any> = {};
+    for (const [header, value] of Object.entries(row)) {
+      if (allowed.has(header)) out[header] = value;
+    }
+    return out;
+  });
+}
+
 /** Execute `lookup_sheet`: read rows from the configured Google Sheets tab. */
 async function executeLookupSheetTool(
   settings: AiAgentSettings,
@@ -594,7 +647,9 @@ async function executeLookupSheetTool(
     filterValue: args.filterValue,
     limit: args.limit,
   });
-  return result.success ? { ok: true, rows: result.rows } : { ok: false, error: result.error };
+  return result.success
+    ? { ok: true, rows: trimLookupRows(args.tab, result.rows, sheet) }
+    : { ok: false, error: result.error };
 }
 
 function emptyResult(
@@ -1003,7 +1058,17 @@ export async function executeAiAgentNode(
 
   // ── Error paths ─────────────────────────────────────────────────────────
   if (!completion || toolError || !completion.ok) {
-    const error = toolError || completion?.error || 'AI provider failed';
+    let error = toolError || completion?.error || 'AI provider failed';
+    // Bug 2C: a provider rate limit (HTTP 429) is a transient, owner-actionable
+    // condition, not a crash. Surface a friendly message + `reason: 'rate_limit'`
+    // instead of the raw provider error, so the trace is debuggable and the owner
+    // can wire a dedicated handle.
+    let reason: string | undefined;
+    if (isRateLimitError(error)) {
+      reason = 'rate_limit';
+      error = 'I am getting a lot of requests right now. Please try again in a minute.';
+    }
+
     const entry: Record<string, any> = {
       provider: settings.provider,
       model: settings.model,
@@ -1013,6 +1078,7 @@ export async function executeAiAgentNode(
       latencyMs: Date.now() - startedAt,
       attempts: totalAttempts,
       error,
+      ...(reason ? { reason } : {}),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1034,6 +1100,7 @@ export async function executeAiAgentNode(
       latencyMs: Date.now() - startedAt,
       attempts: totalAttempts,
       error,
+      ...(reason ? { reason } : {}),
       history: previousHistory,
       stateUpdate,
       toolCalls,

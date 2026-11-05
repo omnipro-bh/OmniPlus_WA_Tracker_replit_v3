@@ -617,16 +617,38 @@ export function projectSheetRows(
     }
     const filterValue = options.filterValue;
     if (filterValue !== undefined && filterValue !== '') {
-      const needle = String(filterValue).toLowerCase();
-      rows = rows.filter((obj) => {
-        const cell = obj[actualHeader];
-        return cell !== undefined && cell !== null && String(cell).toLowerCase().includes(needle);
-      });
+      const raw = String(filterValue).trim();
+      const tokens = raw.split(/\s+/).filter(Boolean);
+
+      if (tokens.length <= 1) {
+        // Single token: the original case-insensitive substring match.
+        const needle = raw.toLowerCase();
+        rows = rows.filter((obj) => {
+          const cell = obj[actualHeader];
+          return cell !== undefined && cell !== null && String(cell).toLowerCase().includes(needle);
+        });
+      } else {
+        // Multi-word phrase ("dental appointment"): match ANY word (≥3 chars) and
+        // rank rows by how many of the words they contain, so the most specific
+        // match ("dental") sorts above a generic one ("appointment").
+        const words = tokens.map((t) => t.toLowerCase()).filter((w) => w.length >= 3);
+        const needles = words.length > 0 ? words : [raw.toLowerCase()];
+        const scored = rows.map((obj) => {
+          const cell = obj[actualHeader];
+          const text = cell !== undefined && cell !== null ? String(cell).toLowerCase() : '';
+          const matches = needles.filter((w) => text.includes(w)).length;
+          return { obj, matches };
+        });
+        rows = scored
+          .filter((s) => s.matches > 0)
+          .sort((a, b) => b.matches - a.matches)
+          .map((s) => s.obj);
+      }
     }
   }
 
   const requested = options.limit && options.limit > 0 ? options.limit : MAX_LOOKUP_ROWS;
-  const max = Math.min(requested, 20);
+  const max = Math.min(requested, MAX_LOOKUP_ROWS);
   return { rows: rows.slice(0, max) };
 }
 
@@ -680,12 +702,18 @@ export function headersFromRows(
 ): { headers: string[]; rowCount: number; sample: Record<string, any>[] } {
   const rows = Array.isArray(rawRows) ? rawRows : [];
   const headers = (rows[0] || []).map((h: any) => String(h ?? '').trim()).filter(Boolean);
-  const { rows: projected } = projectSheetRows(rows);
   const requested = Math.max(1, Math.min(sampleSize, 10));
+  const sample = rows.slice(1, 1 + requested).map((row) => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => {
+      if (h) obj[h] = row[i] ?? '';
+    });
+    return obj;
+  });
   return {
     headers,
     rowCount: Math.max(0, rows.length - 1),
-    sample: projected.slice(0, requested),
+    sample,
   };
 }
 
