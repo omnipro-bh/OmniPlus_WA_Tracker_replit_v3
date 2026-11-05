@@ -493,6 +493,40 @@ export function validateWorkflowNodeConfigs(
         }
       }
 
+      // Phase 4: Google Sheets data source for the `lookup_sheet` tool. The tool
+      // is only offered when a spreadsheet id and at least one tab are set, so a
+      // half-filled section silently disables it — surface that as an error.
+      const sheetConfig = config.googleSheets;
+      if (sheetConfig && typeof sheetConfig === 'object') {
+        const spreadsheetId =
+          typeof sheetConfig.spreadsheetId === 'string' ? sheetConfig.spreadsheetId.trim() : '';
+        const tabs = Array.isArray(sheetConfig.tabs)
+          ? sheetConfig.tabs.map((t: any) => String(t ?? '').trim()).filter(Boolean)
+          : [];
+        const touched = spreadsheetId !== '' || tabs.length > 0;
+        if (touched && !spreadsheetId) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): a Google Sheets data source needs a spreadsheet ID.`
+          );
+        } else if (spreadsheetId && tabs.length === 0) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): a Google Sheets data source needs at least one tab name.`
+          );
+        } else if (new Set(tabs).size !== tabs.length) {
+          addError(
+            nodeId,
+            `"${label}" (AI Agent): Google Sheets tab names must be unique.`
+          );
+        } else if (spreadsheetId && tabs.length === 1) {
+          addWarning(
+            nodeId,
+            `"${label}" (AI Agent): only one Google Sheets tab is declared — the two-tab workflow expects an Intents tab and a Workflow_Steps tab, otherwise the AI can only read one of them.`
+          );
+        }
+      }
+
       // Phase 2.5: the AI answers with text on `success`. Wiring that handle into
       // an `input.text` node turns every answer into a re-prompt bridge and hides
       // the reply behind the input's own template.

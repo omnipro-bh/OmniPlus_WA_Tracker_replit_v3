@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { RESERVED_CONTEXT_KEYS, VARIABLE_NAME_RE, VARIABLE_PATH_RE } from '@shared/workflow-validation';
-import { AI_DEFAULT_SYSTEM_PROMPT } from '@shared/ai-defaults';
+import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 
 // Generate random unique ID
 function generateId(prefix: string = 'btn'): string {
@@ -2764,6 +2764,53 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       updateConfig('usageLimits', next);
     };
 
+    // Phase 4: Google Sheets data source (two-tab model).
+    const googleSheets = config.googleSheets || {};
+    const sheetTabs: string[] = Array.isArray(googleSheets.tabs) ? googleSheets.tabs : [];
+    const sheetColumns: Record<string, Record<string, string>> = googleSheets.columns || {};
+    const sheetConnected = Boolean(googleSheets.spreadsheetId || sheetTabs.length > 0);
+
+    const updateSheets = (patch: Record<string, any>) => {
+      updateConfig('googleSheets', { ...googleSheets, ...patch });
+    };
+    const connectSheet = () => {
+      updateConfig('googleSheets', {
+        spreadsheetId: '',
+        tabs: AI_SHEET_TAB_SCHEMA.map((t) => t.tab),
+        columns: {},
+      });
+    };
+    const disconnectSheet = () => {
+      updateConfig('googleSheets', undefined);
+    };
+    const updateSheetTabs = (raw: string) => {
+      updateSheets({
+        tabs: raw
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      });
+    };
+    const updateSheetColumn = (tab: string, key: string, header: string) => {
+      const tabMap = { ...(sheetColumns[tab] || {}) };
+      const trimmed = header.trim();
+      if (trimmed) tabMap[key] = trimmed;
+      else delete tabMap[key];
+      updateSheets({ columns: { ...sheetColumns, [tab]: tabMap } });
+    };
+    // Match a tab name to the canonical schema (exact, then by keyword) so the
+    // mapping editor shows the right columns for custom tab names.
+    const schemaForTab = (tab: string) => {
+      const lower = tab.toLowerCase();
+      return (
+        AI_SHEET_TAB_SCHEMA.find((s) => s.tab.toLowerCase() === lower) ||
+        AI_SHEET_TAB_SCHEMA.find((s) => s.tab.toLowerCase().includes('step') && lower.includes('step')) ||
+        AI_SHEET_TAB_SCHEMA.find(
+          (s) => s.tab.toLowerCase().includes('intent') && lower.includes('intent')
+        )
+      );
+    };
+
     return (
       <div className="space-y-4">
         {/* Provider */}
@@ -3266,6 +3313,94 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
             Prevents abuse (spam) while allowing normal usage. Recommended for most workflows:
             15–30. Leave empty to disable.
           </p>
+        </div>
+
+        <Separator />
+
+        {/* Google Sheets Data Source (optional) */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Google Sheets Data Source (optional)</Label>
+            <Button
+              size="sm"
+              variant={sheetConnected ? 'ghost' : 'outline'}
+              onClick={sheetConnected ? disconnectSheet : connectSheet}
+              data-testid="button-ai-sheets-toggle"
+            >
+              {sheetConnected ? 'Remove' : 'Connect Sheet'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Lets the AI look up rows with the lookup_sheet tool. Use one spreadsheet with an
+            Intents tab and a Workflow_Steps tab; the AI finds the intent, loads its steps, then
+            answers.
+          </p>
+
+          {sheetConnected && (
+            <>
+              <div>
+                <Label htmlFor="ai-sheets-spreadsheet-id">Spreadsheet ID</Label>
+                <Input
+                  id="ai-sheets-spreadsheet-id"
+                  placeholder="1AbC… (from the sheet URL)"
+                  value={googleSheets.spreadsheetId || ''}
+                  onChange={(e) => updateSheets({ spreadsheetId: e.target.value })}
+                  data-testid="input-ai-sheets-spreadsheet-id"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="ai-sheets-tabs">Tab names (comma-separated)</Label>
+                <Input
+                  id="ai-sheets-tabs"
+                  placeholder="Intents, Workflow_Steps"
+                  value={sheetTabs.join(', ')}
+                  onChange={(e) => updateSheetTabs(e.target.value)}
+                  data-testid="input-ai-sheets-tabs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  These are the only tabs the AI may read. Matches the tab names in the sheet.
+                </p>
+              </div>
+
+              {sheetTabs.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Column mapping — the header name in your sheet for each field. Leave empty to
+                    use the default.
+                  </p>
+                  {sheetTabs.map((tab) => {
+                    const schema = schemaForTab(tab);
+                    if (!schema) return null;
+                    return (
+                      <div key={tab} className="p-3 border rounded-md space-y-2">
+                        <Label className="text-xs">{tab} columns</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {schema.columns.map((col) => (
+                            <div key={col.key}>
+                              <Label
+                                htmlFor={`ai-sheets-col-${tab}-${col.key}`}
+                                className="text-[11px] text-muted-foreground"
+                              >
+                                {col.label}
+                              </Label>
+                              <Input
+                                id={`ai-sheets-col-${tab}-${col.key}`}
+                                placeholder={col.column}
+                                value={sheetColumns[tab]?.[col.key] || ''}
+                                onChange={(e) => updateSheetColumn(tab, col.key, e.target.value)}
+                                data-testid={`input-ai-sheets-col-${tab}-${col.key}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <Separator />

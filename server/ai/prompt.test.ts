@@ -68,3 +68,48 @@ test('prompt is stable for the same input', () => {
 
   assert.equal(a, b);
 });
+
+// ── Phase 4: Google Sheets lookup guidance ──────────────────────────────────
+
+test('sheet rules are added only when a data source is configured', () => {
+  const withoutSheets = buildSystemPrompt({ ownerPrompt: 'x' });
+  assert.ok(!withoutSheets.includes('GOOGLE SHEETS DATA SOURCE'));
+
+  const withSheets = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: { spreadsheetId: 'sheet_1', tabs: ['Intents', 'Workflow_Steps'] },
+  });
+  assert.match(withSheets, /GOOGLE SHEETS DATA SOURCE/);
+  assert.match(withSheets, /lookup_sheet/);
+  assert.ok(withSheets.indexOf('GOOGLE SHEETS DATA SOURCE') < withSheets.indexOf('LANGUAGE RULES'));
+});
+
+test('sheet rules tell the model the two-step lookup sequence', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: { spreadsheetId: 'sheet_1', tabs: ['Intents', 'Workflow_Steps'] },
+  });
+
+  assert.match(prompt, /tab: "Intents", filter_column: "keywords"/);
+  assert.match(prompt, /tab: "Workflow_Steps", filter_column: "intent_id"/);
+  assert.match(prompt, /verify-before-answer/);
+});
+
+test('sheet column mapping overrides the header names in the prompt', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: {
+      spreadsheetId: 'sheet_1',
+      tabs: ['Intents', 'Workflow_Steps'],
+      columns: {
+        Intents: { keywords: 'Keywords_AR', answer: 'Reply_Text' },
+        Workflow_Steps: { intent_id: 'Intent', ai_question: 'Question' },
+      },
+    },
+  });
+
+  assert.match(prompt, /filter_column: "Keywords_AR"/);
+  assert.match(prompt, /filter_column: "Intent"/);
+  assert.match(prompt, /"Question" in order/);
+  assert.ok(!prompt.includes('filter_column: "keywords"'));
+});

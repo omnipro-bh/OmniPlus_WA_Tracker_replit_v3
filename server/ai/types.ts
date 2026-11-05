@@ -143,6 +143,21 @@ export interface UsageLimits {
 }
 
 /**
+ * Phase 4 — Google Sheets data source for an AI node. The `lookup_sheet` tool
+ * reads whole tabs from this spreadsheet. Absent ⇒ no `lookup_sheet` tool.
+ */
+export interface AiGoogleSheetsConfig {
+  spreadsheetId: string;
+  /** Tab names (e.g. "Intents", "Workflow_Steps") — also the tool's `tab` enum. */
+  tabs: string[];
+  /**
+   * Optional per-tab header overrides: `tabName -> canonicalColumn -> header`.
+   * Missing entries fall back to `AI_SHEET_TAB_SCHEMA`.
+   */
+  columns?: Record<string, Record<string, string>>;
+}
+
+/**
  * One node's AI settings, after normalization by the executor.
  * Mirrors the keys read from `node.data.config` by the client config panel.
  */
@@ -164,4 +179,6 @@ export interface AiAgentSettings {
   usageLimits?: UsageLimits;
   /** Phase 3: max AI calls per user per day before forced handover (absent = unlimited). */
   maxAiCallsPerDay?: number;
+  /** Phase 4: Google Sheets data source (absent = no `lookup_sheet` tool). */
+  googleSheets?: AiGoogleSheetsConfig;
 }

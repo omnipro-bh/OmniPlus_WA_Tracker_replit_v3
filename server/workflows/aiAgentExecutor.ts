@@ -33,20 +33,24 @@ import {
 } from '../ai/schedule';
 import {
   TOOL_HANDOVER,
+  TOOL_LOOKUP_SHEET,
   TOOL_SEND_BUTTONS,
   TOOL_SEND_LIST,
   ToolArgumentError,
   buildToolList,
   parseHandoverArgs,
+  parseLookupSheetArgs,
   parseSendButtonsArgs,
   parseSendListArgs,
   type AiButtonSlot,
   type AiDepartmentSlot,
   type AiListRowSlot,
+  type LookupSheetArgs,
 } from '../ai/tools';
 import type {
   AiAgentSettings,
   AiForceToolChoice,
+  AiGoogleSheetsConfig,
   AiSchedule,
   LlmClient,
   LlmCompletionResult,
@@ -58,6 +62,7 @@ import type {
   LlmUsage,
   UsageLimits,
 } from '../ai/types';
+import { lookupSheetRows } from './googleSheetsExecutor';
 
 // ── Limits (mirrors shared/workflow-validation.ts) ─────────────────────────
 
@@ -68,8 +73,12 @@ export const AI_DEFAULT_TEMPERATURE = 0.7;
 export const AI_MAX_TOKENS = 8192;
 export const AI_MAX_HISTORY_LIMIT = 50;
 
-/** Phase 2: max tool-calling rounds before the node gives up (prevents loops). */
-export const AI_MAX_TOOL_ROUNDS = 3;
+/**
+ * Phase 2: max tool-calling rounds before the node gives up (prevents loops).
+ * Phase 4 raised it from 3 to 4: the sheet workflow is Intents → Workflow_Steps
+ * → answer, i.e. two non-terminal lookups plus a final text turn.
+ */
+export const AI_MAX_TOOL_ROUNDS = 4;
 /** Fallback body text when the model calls `send_buttons` with no content. */
 export const AI_BUTTON_TEXT_FALLBACK = 'Please choose an option:';
 /** Fallback body text when the model calls `send_list` with no content. */
@@ -108,6 +117,8 @@ export interface AiAgentNodeConfig {
   usageLimits?: UsageLimits;
   /** Phase 3: max AI calls per user per day before forced handover (absent = unlimited). */
   maxAiCallsPerDay?: number | string;
+  /** Phase 4: Google Sheets data source (absent = no `lookup_sheet` tool). */
+  googleSheets?: AiGoogleSheetsConfig;
 }
 
 export interface AiAgentExecutionContext {
@@ -130,6 +141,13 @@ export interface AiAgentExecutionContext {
   usageBlock?: { reason: string };
   /** Pre-resolved per-user daily cap block, computed by the node wrapper. */
   userDailyBlock?: { reason: string };
+  /**
+   * Test seam: bypass the real Google Sheets read for `lookup_sheet`. Returns
+   * the same shape the executor serializes into the tool result.
+   */
+  lookupSheet?: (
+    args: LookupSheetArgs
+  ) => Promise<{ ok: boolean; rows?: Record<string, any>[]; error?: string }>;
 }
 
 /** The handle the node routes to after a turn. */
@@ -248,6 +266,37 @@ function normalizeDailyUserCap(value: any): number | undefined {
   return n;
 }
 
+/** Phase 4: coerce the Google Sheets data source, returning `undefined` when unusable. */
+function normalizeGoogleSheets(value: any): AiGoogleSheetsConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const spreadsheetId = typeof value.spreadsheetId === 'string' ? value.spreadsheetId.trim() : '';
+  if (!spreadsheetId) return undefined;
+  const tabs = Array.isArray(value.tabs)
+    ? value.tabs.map((t: any) => String(t ?? '').trim()).filter(Boolean)
+    : [];
+  if (tabs.length === 0) return undefined;
+
+  // Optional header overrides: { tabName: { canonicalKey: header } }. Skip
+  // empty strings so a cleared field falls back to the schema default.
+  let columns: Record<string, Record<string, string>> | undefined;
+  if (value.columns && typeof value.columns === 'object') {
+    const cleaned: Record<string, Record<string, string>> = {};
+    for (const tab of tabs) {
+      const map = value.columns[tab];
+      if (!map || typeof map !== 'object') continue;
+      const entries: Record<string, string> = {};
+      for (const [key, header] of Object.entries(map)) {
+        const name = typeof header === 'string' ? header.trim() : '';
+        if (name) entries[key] = name;
+      }
+      if (Object.keys(entries).length > 0) cleaned[tab] = entries;
+    }
+    if (Object.keys(cleaned).length > 0) columns = cleaned;
+  }
+
+  return { spreadsheetId, tabs, ...(columns ? { columns } : {}) };
+}
+
 /**
  * Map `forceToolChoice` to the wire `tool_choice`. A forced tool is only applied
  * when that tool was actually declared (an empty enum can't be forced); otherwise
@@ -286,6 +335,7 @@ export function normalizeAiConfig(config: AiAgentNodeConfig | undefined): AiAgen
     aiSchedule: normalizeSchedule(config?.aiSchedule),
     usageLimits: normalizeUsageLimits(config?.usageLimits),
     maxAiCallsPerDay: normalizeDailyUserCap(config?.maxAiCallsPerDay),
+    googleSheets: normalizeGoogleSheets(config?.googleSheets),
   };
 }
 
@@ -478,6 +528,26 @@ function executeHandover(
   return { department, reason, title: slot.title };
 }
 
+/** Execute `lookup_sheet`: read rows from the configured Google Sheets tab. */
+async function executeLookupSheetTool(
+  settings: AiAgentSettings,
+  args: LookupSheetArgs
+): Promise<{ ok: boolean; rows?: Record<string, any>[]; error?: string }> {
+  const sheet = settings.googleSheets;
+  if (!sheet?.spreadsheetId) {
+    return { ok: false, error: 'No Google Sheets data source configured.' };
+  }
+  if (!sheet.tabs.includes(args.tab)) {
+    return { ok: false, error: `lookup_sheet: "${args.tab}" is not a declared tab.` };
+  }
+  const result = await lookupSheetRows(sheet.spreadsheetId, args.tab, {
+    filterColumn: args.filterColumn,
+    filterValue: args.filterValue,
+    limit: args.limit,
+  });
+  return result.success ? { ok: true, rows: result.rows } : { ok: false, error: result.error };
+}
+
 function emptyResult(
   settings: AiAgentSettings,
   error: string,
@@ -620,6 +690,7 @@ export async function executeAiAgentNode(
     buttons: declaredButtons,
     listRows: declaredRows,
     handoverDepartments: declaredDepartments,
+    sheetTabs: settings.googleSheets?.tabs || [],
   });
 
   // ── Phase 3: production-safety gates (all run BEFORE any provider work) ───
@@ -701,6 +772,7 @@ export async function executeAiAgentNode(
       businessName: exec.businessName,
       channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
       hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
+      googleSheets: settings.googleSheets,
     }),
     history: previousHistory,
     userMessage,
@@ -765,17 +837,57 @@ export async function executeAiAgentNode(
     // Plain text answer → done.
     if (completion.toolCalls.length === 0) break;
 
-    // Execute the first recognized (terminal) tool call. Both Phase 2 tools are
-    // terminal; anything else is fed a failure result and the loop continues.
+    // Execute this round's tool calls. `lookup_sheet` is NON-terminal: its rows
+    // go back to the model as a tool result so it can answer from them (or look
+    // up the next tab). The Phase 2 tools are terminal: the first valid one ends
+    // the node.
+    const roundResults = new Map<string, Record<string, any>>();
     let terminal = false;
+
     for (const toolCall of completion.toolCalls) {
       const isOptionTool =
         toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_SEND_LIST;
 
       // Defence in depth: the tools were stripped from the request, so a call
-      // here means the model hallucinated one. Skip it and let the retry round
-      // (below) answer with a "disabled for this turn" tool result.
-      if (isOptionTool && isOptionClick) continue;
+      // here means the model hallucinated one. Record a "disabled" result and
+      // let the retry round answer with text.
+      if (isOptionTool && isOptionClick) {
+        roundResults.set(toolCall.id, {
+          ok: false,
+          error:
+            'send_buttons/send_list are disabled for this turn: the customer just selected an option. Answer with text.',
+        });
+        continue;
+      }
+
+      // Phase 4: Google Sheets lookup — run it, feed the rows back, keep going.
+      if (toolCall.name === TOOL_LOOKUP_SHEET) {
+        try {
+          const args = parseLookupSheetArgs(toolCall.arguments);
+          const declaredTabs = settings.googleSheets?.tabs ?? [];
+          if (!declaredTabs.includes(args.tab)) {
+            roundResults.set(toolCall.id, {
+              ok: false,
+              error: `lookup_sheet: "${args.tab}" is not a declared tab.`,
+            });
+            continue;
+          }
+          const lookup = exec.lookupSheet ?? ((a: LookupSheetArgs) => executeLookupSheetTool(settings, a));
+          const outcome = await lookup(args);
+          roundResults.set(
+            toolCall.id,
+            outcome.ok
+              ? { ok: true, tab: args.tab, rows: outcome.rows ?? [] }
+              : { ok: false, tab: args.tab, error: outcome.error || 'lookup_sheet failed' }
+          );
+        } catch (error: any) {
+          roundResults.set(toolCall.id, {
+            ok: false,
+            error: error?.message || 'Invalid lookup_sheet arguments',
+          });
+        }
+        continue;
+      }
 
       if (isOptionTool || toolCall.name === TOOL_HANDOVER) {
         try {
@@ -815,20 +927,16 @@ export async function executeAiAgentNode(
       tool_calls: completion.toolCalls,
     });
     for (const toolCall of completion.toolCalls) {
-      const strippedOnClick =
-        isOptionClick &&
-        (toolCall.name === TOOL_SEND_BUTTONS || toolCall.name === TOOL_SEND_LIST);
-
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
         name: toolCall.name,
-        content: JSON.stringify({
-          ok: false,
-          error: strippedOnClick
-            ? 'send_buttons/send_list are disabled for this turn: the customer just selected an option. Answer with text.'
-            : `Unknown tool "${toolCall.name}"`,
-        }),
+        content: JSON.stringify(
+          roundResults.get(toolCall.id) ?? {
+            ok: false,
+            error: `Unknown tool "${toolCall.name}"`,
+          }
+        ),
       });
     }
   }
@@ -1015,6 +1123,7 @@ export async function executeAiAgentWorkflowNode(
     aiSchedule: rawConfig.aiSchedule,
     usageLimits: rawConfig.usageLimits,
     maxAiCallsPerDay: rawConfig.maxAiCallsPerDay,
+    googleSheets: rawConfig.googleSheets,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);

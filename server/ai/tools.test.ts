@@ -9,12 +9,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  MAX_LOOKUP_ROWS,
   ToolArgumentError,
   buildHandoverTool,
+  buildLookupSheetTool,
   buildSendButtonsTool,
   buildSendListTool,
   buildToolList,
   parseHandoverArgs,
+  parseLookupSheetArgs,
   parseSendButtonsArgs,
   parseSendListArgs,
 } from './tools';
@@ -126,4 +129,52 @@ test('parseHandoverArgs validates shape', () => {
     reason: '',
   });
   assert.throws(() => parseHandoverArgs({}), ToolArgumentError);
+});
+
+// ── Phase 4: lookup_sheet ───────────────────────────────────────────────────
+
+test('buildLookupSheetTool enum-constrains tabs and caps rows at 20', () => {
+  const tool = buildLookupSheetTool(['Intents', 'Workflow_Steps']);
+  const schema: any = tool.function.parameters;
+
+  assert.equal(tool.function.name, 'lookup_sheet');
+  assert.equal(MAX_LOOKUP_ROWS, 20);
+  assert.deepEqual(schema.properties.tab.enum, ['Intents', 'Workflow_Steps']);
+  assert.deepEqual(schema.required, ['tab']);
+  assert.equal(schema.properties.limit.maximum, 20);
+  assert.equal(schema.properties.limit.minimum, 1);
+});
+
+test('buildToolList offers lookup_sheet only when a tab is declared', () => {
+  const names = (config: any) => buildToolList(config).map((t) => t.function.name);
+
+  assert.deepEqual(names({ sheetTabs: ['Intents'] }), ['lookup_sheet']);
+  assert.deepEqual(names({ sheetTabs: [] }), []);
+  assert.deepEqual(
+    names({ buttons: [{ id: 'b1', title: 'B1' }], sheetTabs: ['Intents', 'Workflow_Steps'] }),
+    ['send_buttons', 'lookup_sheet']
+  );
+});
+
+test('parseLookupSheetArgs validates the tab, filter and limit', () => {
+  assert.deepEqual(parseLookupSheetArgs({ tab: 'Intents' }), {
+    tab: 'Intents',
+    filterColumn: undefined,
+    filterValue: undefined,
+    limit: undefined,
+  });
+  assert.deepEqual(
+    parseLookupSheetArgs({
+      tab: 'Intents',
+      filter_column: ' keywords ',
+      filter_value: 'pricing',
+      limit: 5,
+    }),
+    { tab: 'Intents', filterColumn: 'keywords', filterValue: 'pricing', limit: 5 }
+  );
+  assert.throws(() => parseLookupSheetArgs({}), ToolArgumentError);
+  assert.throws(() => parseLookupSheetArgs({ tab: '  ' }), ToolArgumentError);
+  assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 21 }), ToolArgumentError);
+  assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 0 }), ToolArgumentError);
+  assert.throws(() => parseLookupSheetArgs({ tab: 'Intents', limit: 'abc' }), ToolArgumentError);
 });

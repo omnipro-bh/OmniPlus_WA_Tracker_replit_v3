@@ -14,7 +14,8 @@
  * after a click; the executor's tool-stripping guard enforces it in code.
  */
 
-import { AI_TOOL_RULES } from '@shared/ai-defaults';
+import { AI_SHEET_TAB_SCHEMA, AI_TOOL_RULES } from '@shared/ai-defaults';
+import type { AiGoogleSheetsConfig } from './types';
 
 /** Always appended after the owner's prompt. Order matters: last wins. */
 export const LANGUAGE_RULES = [
@@ -43,6 +44,49 @@ export interface BuildSystemPromptOptions {
    * after a click" rule).
    */
   hasOptionTools?: boolean;
+  /** Phase 4: Google Sheets data source — enables the `lookup_sheet` guidance. */
+  googleSheets?: AiGoogleSheetsConfig;
+}
+
+/**
+ * Phase 4: the two-tab lookup instructions. Column names come from the owner's
+ * mapping so the model filters on the real header row.
+ */
+export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
+  const headerFor = (tab: string, key: string): string => {
+    const override = sheet.columns?.[tab]?.[key];
+    if (typeof override === 'string' && override.trim()) return override.trim();
+    const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === tab);
+    return schema?.columns.find((c) => c.key === key)?.column ?? key;
+  };
+
+  const tabs = sheet.tabs.length > 0 ? sheet.tabs : AI_SHEET_TAB_SCHEMA.map((t) => t.tab);
+  const intentsTab = tabs.find((t) => /^intents?$/i.test(t)) ?? tabs[0];
+  const stepsTab = tabs.find((t) => /step/i.test(t)) ?? tabs[1] ?? tabs[0];
+
+  const keywordsCol = headerFor(intentsTab, 'keywords');
+  const answerCol = headerFor(intentsTab, 'answer');
+  const intentIdCol = headerFor(stepsTab, 'intent_id');
+  const questionCol = headerFor(stepsTab, 'ai_question');
+
+  return [
+    'GOOGLE SHEETS DATA SOURCE:',
+    `You have a Google Sheet with these tabs: ${tabs.map((t) => `"${t}"`).join(', ')}.`,
+    `- "${intentsTab}" columns: ${AI_SHEET_TAB_SCHEMA[0].columns
+      .map((c) => headerFor(intentsTab, c.key))
+      .join(', ')}.`,
+    `- "${stepsTab}" columns: ${AI_SHEET_TAB_SCHEMA[1].columns
+      .map((c) => headerFor(stepsTab, c.key))
+      .join(', ')}.`,
+    '',
+    'RULES:',
+    `1. When the customer asks a question, FIRST call lookup_sheet({ tab: "${intentsTab}", filter_column: "${keywordsCol}", filter_value: <keyword from their message> }) to find the matching intent.`,
+    `2. Then call lookup_sheet({ tab: "${stepsTab}", filter_column: "${intentIdCol}", filter_value: <the "${headerFor(intentsTab, 'id')}" of the intent found in step 1> }) to load its steps.`,
+    `3. Follow the step sequence: ask each "${questionCol}" in order, wait for the customer's reply, and verify the input before giving the final answer ("${answerCol}").`,
+    '4. Use verify-before-answer for anything that needs confirmation (identity, account, order details). Never answer such questions from memory.',
+    '5. Answer ONLY from the rows the sheet returned. If no row matches, say you do not have that information and offer to connect a human.',
+    '6. Never invent rows, prices or policies that are not in the sheet.',
+  ].join('\n');
 }
 
 /**
@@ -74,6 +118,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
   if (extraRules) sections.push(extraRules);
   if (options.hasOptionTools) sections.push(AI_TOOL_RULES);
+  if (options.googleSheets?.spreadsheetId && options.googleSheets.tabs.length > 0) {
+    sections.push(buildSheetRules(options.googleSheets));
+  }
   sections.push(LANGUAGE_RULES);
 
   return sections.join('\n\n');

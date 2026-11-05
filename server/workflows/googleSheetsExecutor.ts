@@ -23,6 +23,7 @@
 import { sheets, type sheets_v4 } from '@googleapis/sheets';
 import { GoogleAuth } from 'google-auth-library';
 import { resolveTemplate } from './httpExecutor';
+import { MAX_LOOKUP_ROWS } from '../ai/tools';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -558,4 +559,89 @@ export async function executeGoogleSheetsWorkflowNode(
     result,
     stateUpdate: contextUpdate,
   };
+}
+
+// ── AI Agent `lookup_sheet` data source (Phase 4) ───────────────────────────
+
+export interface LookupSheetRowsResult {
+  success: boolean;
+  rows: Record<string, any>[];
+  error?: string;
+}
+
+/**
+ * Pure row shaping: turn a raw `values.get` result (header row + data rows)
+ * into objects keyed by header name, apply an optional case-insensitive filter,
+ * and cap the result at 20 rows. `filter_column` is matched against the header
+ * row (case-insensitive); `filter_value` uses a case-insensitive substring match
+ * so a "keywords" cell like "pricing, cost" matches "pricing".
+ */
+export function projectSheetRows(
+  rawRows: any[][],
+  options: { filterColumn?: string; filterValue?: string; limit?: number } = {}
+): { rows: Record<string, any>[]; error?: string } {
+  if (!Array.isArray(rawRows) || rawRows.length === 0) return { rows: [] };
+
+  const header = rawRows[0].map((h: any) => String(h ?? '').trim());
+  const dataRows = rawRows.slice(1);
+
+  const headerByName = new Map<string, string>(); // lowercase -> actual header
+  header.forEach((h, i) => {
+    if (h && !headerByName.has(h.toLowerCase())) headerByName.set(h.toLowerCase(), h);
+  });
+
+  let rows = dataRows.map((row) => {
+    const obj: Record<string, any> = {};
+    header.forEach((h, i) => {
+      if (h) obj[h] = row[i] ?? '';
+    });
+    return obj;
+  });
+
+  const filterColumn = options.filterColumn?.trim();
+  if (filterColumn) {
+    const actualHeader = headerByName.get(filterColumn.toLowerCase());
+    if (!actualHeader) {
+      return { rows: [], error: `Column "${filterColumn}" not found in the tab header` };
+    }
+    const filterValue = options.filterValue;
+    if (filterValue !== undefined && filterValue !== '') {
+      const needle = String(filterValue).toLowerCase();
+      rows = rows.filter((obj) => {
+        const cell = obj[actualHeader];
+        return cell !== undefined && cell !== null && String(cell).toLowerCase().includes(needle);
+      });
+    }
+  }
+
+  const requested = options.limit && options.limit > 0 ? options.limit : MAX_LOOKUP_ROWS;
+  const max = Math.min(requested, 20);
+  return { rows: rows.slice(0, max) };
+}
+
+/**
+ * Read a whole tab as objects, optionally filtered. Used by the AI Agent's
+ * `lookup_sheet` tool. Read-only, uses the shared service account.
+ */
+export async function lookupSheetRows(
+  spreadsheetId: string,
+  tabName: string,
+  options: { filterColumn?: string; filterValue?: string; limit?: number } = {}
+): Promise<LookupSheetRowsResult> {
+  try {
+    if (!spreadsheetId) return { success: false, rows: [], error: 'spreadsheetId is required' };
+    if (!tabName) return { success: false, rows: [], error: 'tab is required' };
+
+    const client = await getSheetsClient();
+    // A bare tab name reads the whole sheet (Sheets infers the used range).
+    const res = await client.spreadsheets.values.get({ spreadsheetId, range: tabName });
+    const rawRows: any[][] = res.data.values || [];
+
+    const projected = projectSheetRows(rawRows, options);
+    if (projected.error) return { success: false, rows: [], error: projected.error };
+    return { success: true, rows: projected.rows };
+  } catch (error: any) {
+    console.error('[AI lookup_sheet] failed:', error);
+    return { success: false, rows: [], error: error?.message || 'lookup_sheet failed' };
+  }
 }

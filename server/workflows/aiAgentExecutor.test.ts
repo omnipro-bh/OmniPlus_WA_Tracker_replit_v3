@@ -238,9 +238,10 @@ test('handover is terminal and routes to the handover handle', async () => {
   assert.equal(mock.callCount, 1); // terminal — no second model round
 });
 
-test('stops after 3 tool rounds when the model never answers', async () => {
+test('stops after 4 tool rounds when the model never answers', async () => {
   const mock = new MockLlmClient({
     toolCalls: [
+      [{ name: 'loop_forever' }],
       [{ name: 'loop_forever' }],
       [{ name: 'loop_forever' }],
       [{ name: 'loop_forever' }],
@@ -253,7 +254,7 @@ test('stops after 3 tool rounds when the model never answers', async () => {
   assert.equal(result.success, false);
   assert.equal(result.nextHandle, 'error');
   assert.match(result.error ?? '', /did not produce a final answer/);
-  assert.equal(mock.callCount, 3); // capped, the 4th scripted turn is never used
+  assert.equal(mock.callCount, 4); // capped, the 5th scripted turn is never used
 });
 
 test('rejects an undeclared button id with the error handle', async () => {
@@ -409,4 +410,141 @@ test('a user under the daily cap is processed normally', async () => {
   assert.equal(result.nextHandle, 'success');
   assert.equal(result.reason, undefined);
   assert.equal(mock.callCount, 1);
+});
+
+// ── Phase 4: Google Sheets `lookup_sheet` data source ───────────────────────
+
+const sheetConfig = {
+  googleSheets: { spreadsheetId: 'sheet_123', tabs: ['Intents', 'Workflow_Steps'] },
+};
+
+test('lookup_sheet is non-terminal: rows go back to the model, then it answers', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [
+      [
+        {
+          name: 'lookup_sheet',
+          arguments: { tab: 'Intents', filter_column: 'keywords', filter_value: 'pricing' },
+        },
+      ],
+      null,
+    ],
+    replies: ['Our plans start at 10 BHD per month.'],
+  });
+
+  const lookups: any[] = [];
+  const result = await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'how much is pricing?',
+      client: mock,
+      channel: 'whatsapp',
+      lookupSheet: async (args) => {
+        lookups.push(args);
+        return { ok: true, rows: [{ id: 'pricing', answer: '10 BHD per month' }] };
+      },
+    }
+  );
+
+  // The lookup did NOT end the node; the model answered on the next round.
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.text, 'Our plans start at 10 BHD per month.');
+  assert.equal(mock.callCount, 2);
+  assert.equal(lookups.length, 1);
+  assert.deepEqual(lookups[0], {
+    tab: 'Intents',
+    filterColumn: 'keywords',
+    filterValue: 'pricing',
+    limit: undefined,
+  });
+
+  // The second request carries the rows back as a `tool` message.
+  const followUp = mock.requests[1].messages;
+  const toolMessage: any = followUp.find((m: any) => m.role === 'tool');
+  assert.ok(toolMessage, 'expected a tool result message in the follow-up request');
+  assert.equal(toolMessage.name, 'lookup_sheet');
+  assert.match(toolMessage.content, /10 BHD per month/);
+});
+
+test('lookup_sheet supports the two-tab sequence Intents → Workflow_Steps → answer', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [
+      [{ name: 'lookup_sheet', arguments: { tab: 'Intents', filter_column: 'keywords', filter_value: 'refund' } }],
+      [{ name: 'lookup_sheet', arguments: { tab: 'Workflow_Steps', filter_column: 'intent_id', filter_value: 'refund' } }],
+      null,
+    ],
+    replies: ['Your refund will be processed within 5 days.'],
+  });
+
+  const lookups: any[] = [];
+  const result = await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'I want a refund',
+      client: mock,
+      channel: 'whatsapp',
+      lookupSheet: async (args) => {
+        lookups.push(args.tab);
+        return args.tab === 'Intents'
+          ? { ok: true, rows: [{ id: 'refund', answer: 'Refund in 5 days' }] }
+          : { ok: true, rows: [{ intent_id: 'refund', step_id: '1', ai_question: 'Order number?' }] };
+      },
+    }
+  );
+
+  assert.deepEqual(lookups, ['Intents', 'Workflow_Steps']);
+  assert.equal(mock.callCount, 3);
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.text, 'Your refund will be processed within 5 days.');
+});
+
+test('lookup_sheet rejects an undeclared tab without failing the node', async () => {
+  const mock = new MockLlmClient({
+    toolCalls: [[{ name: 'lookup_sheet', arguments: { tab: 'Secret_Data' } }], null],
+    replies: ['Sorry, I do not have that information.'],
+  });
+
+  let seamCalls = 0;
+  const result = await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'hello',
+      client: mock,
+      channel: 'whatsapp',
+      lookupSheet: async () => {
+        seamCalls += 1;
+        return { ok: true, rows: [] };
+      },
+    }
+  );
+
+  assert.equal(seamCalls, 0, 'an undeclared tab must never reach the sheet');
+  assert.equal(result.nextHandle, 'success');
+  assert.equal(result.text, 'Sorry, I do not have that information.');
+
+  const toolMessage: any = mock.requests[1].messages.find((m: any) => m.role === 'tool');
+  assert.match(toolMessage.content, /not a declared tab/);
+});
+
+test('lookup_sheet tool is only offered when a sheet is configured', async () => {
+  const withSheet = new MockLlmClient({ replies: ['ok'] });
+  await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    { nodeId: 'n1', context: {}, userMessage: 'hi', client: withSheet, channel: 'whatsapp' }
+  );
+  const offered = (withSheet.requests[0] as any).tools.map((t: any) => t.function.name);
+  assert.deepEqual(offered, ['lookup_sheet']);
+
+  const withoutSheet = new MockLlmClient({ replies: ['ok'] });
+  await executeAiAgentNode(
+    { ...baseConfig },
+    { nodeId: 'n1', context: {}, userMessage: 'hi', client: withoutSheet, channel: 'whatsapp' }
+  );
+  assert.equal((withoutSheet.requests[0] as any).tools, undefined);
 });

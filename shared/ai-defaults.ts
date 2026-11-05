@@ -31,3 +31,59 @@ export const AI_TOOL_RULES = [
 export const AI_DEFAULT_SYSTEM_PROMPT = ['You are a helpful assistant.', '', AI_TOOL_RULES].join(
   '\n'
 );
+
+/**
+ * Phase 4 — canonical two-tab Google Sheets schema used by the AI Agent's
+ * `lookup_sheet` tool.
+ *
+ * The owner keeps one spreadsheet with an `Intents` tab and a `Workflow_Steps`
+ * tab. `column` is the expected header name; the config UI lets the owner
+ * override it when their sheet uses different headers (the mapping is injected
+ * into the system prompt so the model filters on the real header).
+ */
+export interface AiSheetColumn {
+  /** Canonical key used internally and in the prompt. */
+  key: string;
+  /** Owner-facing label in the config UI. */
+  label: string;
+  /** Header name expected in the sheet unless overridden. */
+  column: string;
+}
+
+export interface AiSheetTabSchema {
+  /** Default tab name; also the default `tab` value in `lookup_sheet`. */
+  tab: string;
+  columns: AiSheetColumn[];
+}
+
+export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
+  {
+    tab: 'Intents',
+    columns: [
+      { key: 'id', label: 'ID', column: 'id' },
+      { key: 'type', label: 'Type', column: 'type' },
+      { key: 'keywords', label: 'Keywords', column: 'keywords' },
+      {
+        key: 'verification_question',
+        label: 'Verification question',
+        column: 'verification_question',
+      },
+      { key: 'answer', label: 'Answer', column: 'answer' },
+      { key: 'media', label: 'Media', column: 'media' },
+      { key: 'priority', label: 'Priority', column: 'priority' },
+      { key: 'message_type', label: 'Message type', column: 'message_type' },
+    ],
+  },
+  {
+    tab: 'Workflow_Steps',
+    columns: [
+      { key: 'intent_id', label: 'Intent ID', column: 'intent_id' },
+      { key: 'step_id', label: 'Step ID', column: 'step_id' },
+      { key: 'ai_question', label: 'AI question', column: 'ai_question' },
+      { key: 'expected_input', label: 'Expected input', column: 'expected_input' },
+      { key: 'next_step_logic', label: 'Next step logic', column: 'next_step_logic' },
+      { key: 'fallback', label: 'Fallback', column: 'fallback' },
+      { key: 'message_type', label: 'Message type', column: 'message_type' },
+    ],
+  },
+];
