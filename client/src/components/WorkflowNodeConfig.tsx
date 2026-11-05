@@ -311,15 +311,7 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
     try {
       const res = await apiRequest('POST', '/api/workflows/test-ai', {
-        config: {
-          provider: config.provider || 'deepseek',
-          model: config.model,
-          systemPrompt: config.systemPrompt,
-          temperature: config.temperature,
-          maxTokens: config.maxTokens,
-          historyLimit: config.historyLimit,
-          responseVariable: config.responseVariable,
-        },
+        config, // full node config so tools (buttons/list/handover/lookup_sheet) are available
         testContext: {},
         message: aiTestMessage,
       });
@@ -3579,6 +3571,15 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
                     <div className="text-sm p-3 bg-muted rounded border whitespace-pre-wrap">
                       {aiTestResult.text}
                     </div>
+                  </div>
+                )}
+
+                {aiTestResult.toolCalls && aiTestResult.toolCalls.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Tool Calls</Label>
+                    <pre className="text-xs p-3 bg-muted rounded border overflow-x-auto">
+                      {JSON.stringify(aiTestResult.toolCalls, null, 2)}
+                    </pre>
                   </div>
                 )}
 

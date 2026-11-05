@@ -12341,8 +12341,18 @@ export function registerRoutes(app: Express) {
       const userMessage =
         typeof message === "string" && message.trim() ? message.trim() : "Hello!";
 
+      // Test mode ignores production-safety enforcement (schedule / usage / per-user
+      // caps live in the wrapper or the executor's gates), but keeps every tool the
+      // real node would offer — buttons, list, handover and `lookup_sheet`.
+      const testConfig = {
+        ...config,
+        aiSchedule: undefined,
+        usageLimits: undefined,
+        maxAiCallsPerDay: undefined,
+      };
+
       const { executeAiAgentNode } = await import("./workflows/aiAgentExecutor");
-      const result = await executeAiAgentNode(config, {
+      const result = await executeAiAgentNode(testConfig, {
         nodeId: "test",
         context: testContext || {},
         userMessage,
@@ -12359,7 +12369,10 @@ export function registerRoutes(app: Express) {
         usage: result.usage,
         latencyMs: result.latencyMs,
         attempts: result.attempts,
+        nextHandle: result.nextHandle,
+        toolCalls: result.toolCalls,
         error: result.error,
+        reason: result.reason,
       });
     } catch (error: any) {
       console.error("Test AI Agent error:", error);

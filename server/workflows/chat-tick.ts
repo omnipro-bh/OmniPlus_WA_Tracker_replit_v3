@@ -57,6 +57,7 @@ import {
   type RunResult,
 } from "./flowRunner";
 import { buildChatHost, toPublicMessage, type PublicMessage } from "./chat-host";
+import type { AiTrace } from "./aiAgentExecutor";
 import { bookingAwaitingFromContext } from "./booking-engine";
 import {
   attachChatBooking,
@@ -436,15 +437,15 @@ function buildHostForTick(args: {
   previousCursor: string | null;
   lastVisitorText?: string;
   bookingEnabled: boolean;
-}): { host: ReturnType<typeof buildChatHost>["host"]; messages: PublicMessage[]; booking: ChatBookingSession | null } {
-  const { host, messages } = buildChatHost({
+}): { host: ReturnType<typeof buildChatHost>["host"]; messages: PublicMessage[]; booking: ChatBookingSession | null; aiTrace: () => AiTrace | null } {
+  const { host, messages, aiTrace } = buildChatHost({
     session: args.session,
     linkUserId: args.linkUserId,
     conversationStateId: args.conversationStateId,
     lastVisitorText: args.lastVisitorText,
   });
 
-  if (!args.bookingEnabled) return { host, messages, booking: null };
+  if (!args.bookingEnabled) return { host, messages, booking: null, aiTrace };
 
   const booking: ChatBookingSession = {
     session: args.session,
@@ -454,7 +455,7 @@ function buildHostForTick(args: {
     messages,
   };
   attachChatBooking(host, booking);
-  return { host, messages, booking };
+  return { host, messages, booking, aiTrace };
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +467,7 @@ async function logExecution(input: {
   sessionKey: string;
   messageType: "text" | "button_reply";
   errorMessage?: string | null;
+  aiTrace?: AiTrace | null;
 }): Promise<void> {
   try {
     await db.insert(workflowExecutions).values({
@@ -473,7 +475,10 @@ async function logExecution(input: {
       phone: input.sessionKey,
       channel: "web_chat",
       messageType: input.messageType,
-      triggerData: { channel: "web_chat" },
+      triggerData: {
+        channel: "web_chat",
+        ...(input.aiTrace ? { aiTrace: input.aiTrace } : {}),
+      },
       responsesSent: [],
       status: input.errorMessage ? "ERROR" : "SUCCESS",
       errorMessage: input.errorMessage ?? null,
@@ -577,7 +582,7 @@ export async function bootstrapSession(
   }
 
   const bookingEnabled = workflow.webChatBookingEnabled === true;
-  const { host, messages, booking } = buildHostForTick({
+  const { host, messages, booking, aiTrace } = buildHostForTick({
     session,
     workflow,
     linkUserId: link.userId,
@@ -642,7 +647,7 @@ async function answerBookingStep(args: {
     clientMsgId: input.clientMsgId,
   });
 
-  const { host, messages, booking } = buildHostForTick({
+  const { host, messages, booking, aiTrace } = buildHostForTick({
     session,
     workflow,
     linkUserId: link.userId,
@@ -676,6 +681,7 @@ async function answerBookingStep(args: {
       sessionKey: session.sessionKey,
       messageType,
       errorMessage: result.error?.message ?? null,
+      aiTrace: aiTrace(),
     });
 
     return {
@@ -689,6 +695,7 @@ async function answerBookingStep(args: {
     workflowId: session.workflowId,
     sessionKey: session.sessionKey,
     messageType,
+    aiTrace: aiTrace(),
   });
 
   // Still waiting on the next step (or the step cleared the state).
@@ -799,7 +806,7 @@ export async function handleChatMessage(
         clientMsgId: input.clientMsgId,
       });
 
-      const { host, messages, booking } = buildHostForTick({
+      const { host, messages, booking, aiTrace } = buildHostForTick({
         session,
         workflow,
         linkUserId: link.userId,
@@ -822,6 +829,7 @@ export async function handleChatMessage(
         sessionKey: session.sessionKey,
         messageType: input.type === "text" ? "text" : "button_reply",
         errorMessage: result.error?.message ?? null,
+        aiTrace: aiTrace(),
       });
 
       return {
@@ -902,7 +910,7 @@ export async function handleChatMessage(
         };
       }
 
-      const { host, messages, booking } = buildHostForTick({
+      const { host, messages, booking, aiTrace } = buildHostForTick({
         session,
         workflow,
         linkUserId: link.userId,
@@ -924,6 +932,7 @@ export async function handleChatMessage(
         sessionKey: session.sessionKey,
         messageType: "text",
         errorMessage: result.error?.message ?? null,
+        aiTrace: aiTrace(),
       });
 
       return {
@@ -956,7 +965,7 @@ export async function handleChatMessage(
       clientMsgId: input.clientMsgId,
     });
 
-    const { host, messages, booking } = buildHostForTick({
+    const { host, messages, booking, aiTrace } = buildHostForTick({
       session,
       workflow,
       linkUserId: link.userId,
@@ -979,6 +988,7 @@ export async function handleChatMessage(
       sessionKey: session.sessionKey,
       messageType: "button_reply",
       errorMessage: result.error?.message ?? null,
+      aiTrace: aiTrace(),
     });
 
     return {
@@ -1060,7 +1070,7 @@ export async function restartChatSession(
     }
 
     const bookingEnabled = workflow.webChatBookingEnabled === true;
-    const { host, messages, booking } = buildHostForTick({
+    const { host, messages, booking, aiTrace } = buildHostForTick({
       session,
       workflow,
       linkUserId: link.userId,

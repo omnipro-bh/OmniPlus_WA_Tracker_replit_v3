@@ -36,7 +36,7 @@ import type { WebChatMessage, WebChatSession } from "@shared/schema";
 import { storage } from "../storage";
 import { executeHttpNode } from "./httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
-import { executeAiAgentWorkflowNode } from "./aiAgentExecutor";
+import { executeAiAgentWorkflowNode, type AiTrace } from "./aiAgentExecutor";
 import type { FlowHost, TraceEntry } from "./flowRunner";
 import {
   buildSandboxMessage,
@@ -226,6 +226,8 @@ export interface ChatHostBundle {
   messages: PublicMessage[];
   /** The raw rows inserted during this tick (for workflow_executions mirroring if ever needed). */
   inserted: WebChatMessage[];
+  /** Latest AI turn trace (read after `runFlow` returns); null if no AI node ran. */
+  aiTrace: () => AiTrace | null;
 }
 
 export function buildChatHost(opts: {
@@ -242,6 +244,8 @@ export function buildChatHost(opts: {
   const messages: PublicMessage[] = [];
   const inserted: WebChatMessage[] = [];
   const sessionKey = opts.session.sessionKey;
+  // Latest AI turn trace, set by `runAi` and read after `runFlow` returns.
+  let latestAiTrace: AiTrace | null = null;
 
   // Persist a normalized bubble as a `web_chat_messages` row and expose it in the
   // tick's `messages` list. Shared by `sendMessage` and the AI `send_buttons` path.
@@ -332,6 +336,9 @@ export function buildChatHost(opts: {
         { phone: sessionKey, userId: opts.linkUserId },
         { channel: "web_chat", workflowId: opts.session.workflowId }
       );
+
+      // Phase 4b: remember the trace so the tick's execution log can persist it.
+      latestAiTrace = aiResult.aiTrace;
 
       // Phase 2: `send_buttons` → a persisted button bubble in the transcript.
       // Handover / success / error keep Phase 1 behaviour.
@@ -457,5 +464,5 @@ export function buildChatHost(opts: {
     // attaches it from `chat-booking` only when the workflow flag is on.
   };
 
-  return { host, messages, inserted };
+  return { host, messages, inserted, aiTrace: () => latestAiTrace };
 }
