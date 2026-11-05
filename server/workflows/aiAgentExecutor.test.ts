@@ -660,6 +660,7 @@ test('trimLookupRows keeps only the columns the AI needs for an intent', () => {
   const out = trimLookupRows('Intents', rows, { spreadsheetId: 's', tabs: ['Intents'] });
 
   assert.deepEqual(Object.keys(out[0]).sort(), [
+    'answer',
     'id',
     'keywords',
     'start_step',
@@ -689,7 +690,9 @@ test('trimLookupRows keeps only the columns the AI needs for a step', () => {
   assert.deepEqual(Object.keys(out[0]).sort(), [
     'ai_question',
     'expected_input',
+    'fallback',
     'intent_id',
+    'message_type',
     'next_step_logic',
     'step_id',
   ]);

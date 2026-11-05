@@ -603,8 +603,8 @@ function executeHandover(
  * fetched when the AI already knows which row it wants).
  */
 const LOOKUP_TRIM_COLUMNS: { intents: string[]; steps: string[] } = {
-  intents: ['id', 'type', 'keywords', 'start_step', 'verification_question'],
-  steps: ['intent_id', 'step_id', 'ai_question', 'expected_input', 'next_step_logic'],
+  intents: ['id', 'type', 'keywords', 'start_step', 'verification_question', 'answer'],
+  steps: ['intent_id', 'step_id', 'ai_question', 'expected_input', 'next_step_logic', 'fallback', 'message_type'],
 };
 
 /**
