@@ -942,14 +942,36 @@ export async function executeAiAgentNode(
   };
   if (tools.length > 0) {
     requestBase.tools = tools;
-    requestBase.toolChoice = resolveToolChoice(settings.forceToolChoice, tools);
     requestBase.parallelToolCalls = false;
   }
+
+  // Phase 4c: on the FIRST turn (no conversation history yet) of a sheet-backed
+  // node, force the model to read the sheet before it can answer. The model
+  // otherwise tends to answer from its own knowledge ("auto" lets it skip the
+  // tool entirely). Only the first completion call is forced; subsequent rounds
+  // fall back to the owner's `forceToolChoice` (default `auto`) so the model can
+  // then load Workflow_Steps, send buttons, or answer.
+  const defaultToolChoice =
+    tools.length > 0 ? resolveToolChoice(settings.forceToolChoice, tools) : undefined;
+  const forceLookupFirstRound = Boolean(
+    settings.googleSheets &&
+      tools.some((tool) => tool.function.name === TOOL_LOOKUP_SHEET) &&
+      previousHistory.length === 0
+  );
 
   // Tool loop: model → (tool) → model → … up to `AI_MAX_TOOL_ROUNDS` rounds.
   // With no tools configured this is exactly one `complete()` call (Phase 1).
   for (let round = 0; round < AI_MAX_TOOL_ROUNDS; round++) {
-    const completion = await client.complete({ messages, ...requestBase });
+    const toolChoice: LlmToolChoice | undefined =
+      round === 0 && forceLookupFirstRound
+        ? { type: 'function', function: { name: TOOL_LOOKUP_SHEET } }
+        : defaultToolChoice;
+
+    const completion = await client.complete({
+      messages,
+      ...requestBase,
+      ...(toolChoice ? { toolChoice } : {}),
+    });
     lastCompletion = completion;
 
     totalUsage = {

@@ -549,6 +549,59 @@ test('lookup_sheet tool is only offered when a sheet is configured', async () =>
   assert.equal((withoutSheet.requests[0] as any).tools, undefined);
 });
 
+// ── Phase 4c: force first-turn lookup_sheet ─────────────────────────────────
+
+test('first turn with a sheet configured forces the lookup_sheet tool choice', async () => {
+  const mock = new MockLlmClient({ replies: ['ok'] });
+
+  await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    { nodeId: 'n1', context: {}, userMessage: 'dental appointment', client: mock, channel: 'whatsapp' }
+  );
+
+  assert.deepEqual((mock.requests[0] as any).toolChoice, {
+    type: 'function',
+    function: { name: 'lookup_sheet' },
+  });
+});
+
+test('non-first turn does not force lookup_sheet (falls back to auto)', async () => {
+  const mock = new MockLlmClient({ replies: ['ok'] });
+
+  await executeAiAgentNode(
+    { ...baseConfig, ...sheetConfig },
+    {
+      nodeId: 'n1',
+      context: {
+        ai: {
+          n1: {
+            history: [
+              { role: 'user', content: 'hi' },
+              { role: 'assistant', content: 'hello' },
+            ],
+          },
+        },
+      },
+      userMessage: 'dental appointment',
+      client: mock,
+      channel: 'whatsapp',
+    }
+  );
+
+  assert.equal((mock.requests[0] as any).toolChoice, 'auto');
+});
+
+test('no sheet configured: no forced lookup on the first turn', async () => {
+  const mock = new MockLlmClient({ replies: ['ok'] });
+
+  await executeAiAgentNode(
+    { ...baseConfig },
+    { nodeId: 'n1', context: {}, userMessage: 'hi', client: mock, channel: 'whatsapp' }
+  );
+
+  assert.equal((mock.requests[0] as any).toolChoice, undefined);
+});
+
 // ── Phase 4b: execution trace (tool calls + wrapper aiTrace) ────────────────
 
 test('records tool-call traces, including lookup_sheet row counts', async () => {
