@@ -670,6 +670,8 @@ test('the node wrapper returns a populated aiTrace', async () => {
 
   assert.equal(r.aiTrace.nodeId, 'n1');
   assert.equal(r.aiTrace.userMessage, 'hello there');
+  assert.equal(r.aiTrace.text, r.result.text); // the sent reply
+  assert.ok((r.aiTrace.text ?? '').length > 0);
   assert.equal(r.aiTrace.provider, 'mock');
   assert.equal(r.aiTrace.nextHandle, 'success');
   assert.equal(r.aiTrace.finishReason, 'stop');

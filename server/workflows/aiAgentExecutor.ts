@@ -240,6 +240,8 @@ export interface AiTrace {
   nodeId: string;
   /** First 500 chars of the user message. */
   userMessage: string;
+  /** The reply that was sent (final answer, step question, or fallback). */
+  text?: string;
   provider: string;
   model: string;
   attempts: number;
@@ -1494,6 +1496,7 @@ export async function executeAiAgentWorkflowNode(
   const aiTrace: AiTrace = {
     nodeId,
     userMessage: userMessage.slice(0, 500),
+    ...(result.text ? { text: result.text } : {}),
     provider: result.provider,
     model: result.model,
     attempts: result.attempts,
