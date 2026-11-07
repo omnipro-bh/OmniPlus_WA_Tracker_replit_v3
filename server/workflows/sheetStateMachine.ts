@@ -17,7 +17,8 @@
 
 import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
-import type { AiGoogleSheetsConfig, SlotExtractionResult } from '../ai/types';
+import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
+import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
 
 export interface SheetState {
   intentId: string | null;
@@ -64,6 +65,10 @@ export interface SheetTurn {
   extractionConfidence?: number;
   /** Step ids skipped on turn 1 because their slots were already filled. */
   skippedSteps?: string[];
+  /** Total LLM attempts (initial + retries) used for slot extraction this turn. */
+  slotExtractionAttempts?: number;
+  /** Whether the fallback path was triggered (invalid slot → re-ask). */
+  fallbackUsed?: boolean;
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };
@@ -92,26 +97,76 @@ export function substituteSlots(template: string, slots: Record<string, any>): s
   });
 }
 
-export interface SlotExtraction {
-  value: any;
-  valid: boolean;
-}
+export type SlotExtractResult =
+  | { ok: true; value: string; attempts: number }
+  | { ok: false; reason: string; attempts: number };
 
 /**
- * Extract a slot value from the user's message (Task 5 MVP).
- *
- * MVP returns the raw trimmed message as the value and always marks it valid —
- * structured extraction and `expected_input` validation (and LLM-based parsing
- * like "I live in Riffa" → "Riffa") are follow-up work. Keeping this as a named
- * async helper preserves the seam for that future upgrade.
+ * Extract a single slot value from the customer's message via the LLM, validated
+ * against `expected_input` ('text' → any non-empty string; 'list'/'buttons' →
+ * must match an allowed option, case-insensitive). Returns `ok: false` (no retry)
+ * when the LLM could not extract a valid value, so the caller uses the fallback.
  */
 export async function extractSlot(
+  client: LlmClient,
+  slotName: string,
+  expectedInput: string,
   userMessage: string,
-  _slotName: string,
-  _expectedInput: any,
-  _slots: Record<string, any>
-): Promise<SlotExtraction> {
-  return { value: userMessage.trim(), valid: true };
+  options?: string[]
+): Promise<SlotExtractResult> {
+  const type = (expectedInput || 'text').toLowerCase();
+  const allowed = options && options.length > 0 ? options.map((o) => o.toLowerCase()) : undefined;
+
+  const prompt = [
+    `Extract the value for slot "${slotName}" from the customer's message.`,
+    `Slot type: ${type}`,
+    ...(allowed ? [`Allowed values: ${allowed.join(', ')}`] : []),
+    '',
+    `Customer message: "${userMessage}"`,
+    '',
+    'Return strict JSON: {"value": "<extracted value>", "valid": true|false, "reason": "<why invalid>"}',
+    '',
+    `Rules: For type "text": any non-empty string is valid. For type "list"/"buttons": the value MUST match one of the allowed values (case-insensitive). If you cannot extract or the value is invalid, set "valid": false and explain in "reason".`,
+  ].join('\n');
+
+  // The JSON shape is validated by llmJson (which retries malformed output). The
+  // "valid" flag is a business-level result, so the validator returns `ok: true`
+  // for any well-formed object and we handle "valid: false" below (no retry).
+  const result = await llmJson<{ value: any; valid: boolean; reason?: string }>(
+    client,
+    prompt,
+    (obj) => {
+      if (typeof obj.valid !== 'boolean') return { ok: false, reason: 'missing "valid" boolean' };
+      return { ok: true, value: { value: obj.value, valid: obj.valid, reason: obj.reason } };
+    },
+    { maxRetries: 2 }
+  );
+
+  if (!result.ok) return { ok: false, reason: result.error, attempts: result.attempts };
+
+  const { value, valid, reason } = result.value;
+  if (!valid) {
+    return {
+      ok: false,
+      reason: (typeof reason === 'string' && reason.trim()) || 'invalid value',
+      attempts: result.attempts,
+    };
+  }
+
+  const extracted = typeof value === 'string' ? value.trim() : '';
+  if (!extracted) return { ok: false, reason: 'empty value', attempts: result.attempts };
+  if (allowed && !allowed.includes(extracted.toLowerCase())) {
+    return { ok: false, reason: `value "${extracted}" not in allowed values`, attempts: result.attempts };
+  }
+
+  return { ok: true, value: extracted, attempts: result.attempts };
+}
+
+/** Parse a comma-separated `options` cell into a trimmed string array. */
+export function parseOptions(value: any): string[] | undefined {
+  if (typeof value !== 'string') return undefined;
+  const opts = value.split(',').map((s) => s.trim()).filter(Boolean);
+  return opts.length > 0 ? opts : undefined;
 }
 
 /** Resolve the actual header for a canonical key, honoring the owner's mapping. */
@@ -169,14 +224,19 @@ export type RowReader = (
 ) => Promise<Record<string, any>[]>;
 
 /**
- * Injected LLM slot extractor (test seam). The executor wires this to a real
- * `LlmClient`; tests inject a deterministic stub. On any failure it must return
- * `{ slots: {}, confidence: 0 }` so the machine falls back to sequential.
+ * Validate the turn-1 slot-extraction JSON. Malformed output is rejected so
+ * `llmJson` retries; a valid `{ slots, confidence }` object passes through.
  */
-export type SlotExtractor = (
-  userMessage: string,
-  slotNames: string[]
-) => Promise<SlotExtractionResult>;
+function validateSlotExtraction(
+  obj: any
+): { ok: true; value: SlotExtractionResult } | { ok: false; reason: string } {
+  if (!obj || typeof obj !== 'object') return { ok: false, reason: 'not an object' };
+  if (!obj.slots || typeof obj.slots !== 'object') return { ok: false, reason: 'missing "slots" object' };
+  if (typeof obj.confidence !== 'number' || obj.confidence < 0 || obj.confidence > 1) {
+    return { ok: false, reason: 'missing/invalid "confidence" number' };
+  }
+  return { ok: true, value: { slots: obj.slots, confidence: obj.confidence } };
+}
 
 /** Confidence threshold above which extracted slots are trusted (Task 5b). */
 export const EXTRACTION_CONFIDENCE_THRESHOLD = 0.8;
@@ -210,7 +270,7 @@ export async function runSheetStateMachine(
   nodeId: string,
   userMessage: string,
   reader?: RowReader,
-  extract?: SlotExtractor
+  client?: LlmClient
 ): Promise<SheetTurn> {
   const readRows = reader ?? defaultReadRows;
   const state = readSheetState(context, nodeId);
@@ -228,8 +288,11 @@ export async function runSheetStateMachine(
   const nextHeader = headerFor(sheet, stepsTab, 'next_step_logic');
   const fallbackHeader = headerFor(sheet, stepsTab, 'fallback');
   const expectedHeader = headerFor(sheet, stepsTab, 'expected_input');
+  const optionsHeader = headerFor(sheet, stepsTab, 'options');
 
   const toolCalls: SheetLookupCall[] = [];
+  let slotExtractionAttempts = 0;
+  let fallbackUsed = false;
 
   // ── Turn 1: resolve the intent ─────────────────────────────────────────────
   if (!state.intentId) {
@@ -281,13 +344,15 @@ export async function runSheetStateMachine(
       name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
 
     let extracted: SlotExtractionResult | null = null;
-    if (extract && slotNames.length > 0) {
-      try {
-        const result = await extract(userMessage, slotNames);
-        if (result && typeof result.confidence === 'number') extracted = result;
-      } catch {
-        extracted = null;
-      }
+    if (client && slotNames.length > 0) {
+      const result = await llmJson<SlotExtractionResult>(
+        client,
+        buildSlotExtractionPrompt(slotNames, userMessage),
+        validateSlotExtraction,
+        { maxRetries: 1 }
+      );
+      slotExtractionAttempts += result.attempts;
+      if (result.ok) extracted = result.value;
     }
 
     if (
@@ -310,6 +375,8 @@ export async function runSheetStateMachine(
     if (!firstUnfilled) {
       // Every slot is already filled → complete immediately.
       const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+      result.slotExtractionAttempts = slotExtractionAttempts;
+      result.fallbackUsed = fallbackUsed;
       if (extracted) {
         result.extractedSlots = extracted.slots;
         result.extractionConfidence = extracted.confidence;
@@ -325,6 +392,8 @@ export async function runSheetStateMachine(
       text: question,
       sheet: state,
       toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
       ...(extracted
         ? {
             extractedSlots: extracted.slots,
@@ -346,25 +415,65 @@ export async function runSheetStateMachine(
   const current = findStep(steps, stepIdHeader, state.stepId ?? '');
   if (!current) {
     // Current step vanished (sheet edited) — complete gracefully.
-    return complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    result.slotExtractionAttempts = slotExtractionAttempts;
+    result.fallbackUsed = fallbackUsed;
+    return result;
   }
 
-  // Capture the slot (raw text for the MVP; validation comes later).
+  // Capture the slot via the LLM (structured + validated); raw text when no client.
   const slotName = String(current[slotHeader] ?? '').trim();
   if (slotName) {
-    const extracted = await extractSlot(userMessage, slotName, current[expectedHeader], state.slots);
-    if (extracted.valid) state.slots[slotName] = extracted.value;
+    let captured = false;
+    if (client) {
+      const options = parseOptions(current[optionsHeader]);
+      const extracted = await extractSlot(
+        client,
+        slotName,
+        String(current[expectedHeader] ?? 'text').trim(),
+        userMessage,
+        options
+      );
+      slotExtractionAttempts += extracted.attempts;
+      if (extracted.ok) {
+        state.slots[slotName] = extracted.value;
+        captured = true;
+      }
+    } else {
+      state.slots[slotName] = userMessage.trim();
+      captured = true;
+    }
+
+    if (!captured) {
+      // Invalid slot → fallback, re-ask the same question (don't advance).
+      fallbackUsed = true;
+      const fallback = String(current[fallbackHeader] ?? '').trim();
+      const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
+      return {
+        text: fallback || question,
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
   }
 
   const transition = parseNextStepLogic(current[nextHeader]);
   if (transition.kind === 'done') {
-    return complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    result.slotExtractionAttempts = slotExtractionAttempts;
+    result.fallbackUsed = fallbackUsed;
+    return result;
   }
 
   const nextStep = findStep(steps, stepIdHeader, transition.stepId);
   if (!nextStep) {
     // Referenced step missing — complete gracefully.
-    return complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    result.slotExtractionAttempts = slotExtractionAttempts;
+    result.fallbackUsed = fallbackUsed;
+    return result;
   }
 
   state.stepId = transition.stepId;
@@ -373,6 +482,8 @@ export async function runSheetStateMachine(
     text: question || String(nextStep[fallbackHeader] ?? '').trim(),
     sheet: state,
     toolCalls,
+    slotExtractionAttempts,
+    fallbackUsed,
   };
 }
 

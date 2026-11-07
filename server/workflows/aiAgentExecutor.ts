@@ -23,7 +23,7 @@ import { resolveTemplate } from './httpExecutor';
 import { MAX_CONTEXT_BYTES } from './flowControl';
 import { VARIABLE_NAME_RE, RESERVED_CONTEXT_KEYS } from '@shared/workflow-validation';
 import { buildChatContext, historyBytes, trimHistory, approxTokens } from '../ai/contextBuilder';
-import { buildSystemPrompt, buildSlotExtractionPrompt, extractJsonObject } from '../ai/prompt';
+import { buildSystemPrompt } from '../ai/prompt';
 import { getLlmClient, normalizeProviderId, resolveModel } from '../ai/registry';
 import { DEFAULT_TIMEOUT_MS } from '../ai/clients/openaiCompatible';
 import {
@@ -60,12 +60,11 @@ import type {
   LlmToolChoice,
   LlmToolDef,
   LlmUsage,
-  SlotExtractionResult,
   UsageLimits,
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
-import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState, type SlotExtractor } from './sheetStateMachine';
+import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -223,6 +222,10 @@ export interface AiAgentExecutionResult {
   extractionConfidence?: number;
   /** Step ids skipped on turn 1 because their slots were already filled. */
   skippedSteps?: string[];
+  /** Total LLM attempts (initial + retries) used for slot extraction this turn. */
+  slotExtractionAttempts?: number;
+  /** Whether the fallback path was triggered (invalid slot → re-ask). */
+  fallbackUsed?: boolean;
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -263,6 +266,10 @@ export interface AiTrace {
   extractionConfidence?: number;
   /** Step ids skipped on turn 1 because their slots were already filled. */
   skippedSteps?: string[];
+  /** Total LLM attempts (initial + retries) used for slot extraction this turn. */
+  slotExtractionAttempts?: number;
+  /** Whether the fallback path was triggered (invalid slot → re-ask). */
+  fallbackUsed?: boolean;
 }
 
 export interface AiAgentNodeOptions {
@@ -624,7 +631,7 @@ function executeHandover(
  */
 const LOOKUP_TRIM_COLUMNS: { intents: string[]; steps: string[] } = {
   intents: ['id', 'type', 'keywords', 'start_step', 'verification_question', 'answer'],
-  steps: ['intent_id', 'step_id', 'ai_question', 'expected_input', 'next_step_logic', 'fallback', 'message_type'],
+  steps: ['intent_id', 'step_id', 'ai_question', 'expected_input', 'slot_name', 'options', 'next_step_logic', 'fallback', 'message_type'],
 };
 
 /**
@@ -896,8 +903,8 @@ export async function executeAiAgentNode(
   if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
     const startedAt = Date.now();
 
-    // Resolve the LLM client for turn-1 extraction; a missing key just disables
-    // extraction (the machine still works sequentially).
+    // Resolve the LLM client; a missing key just disables extraction (the machine
+    // still works sequentially). Wrap it to tally the extraction LLM usage.
     let client: LlmClient | undefined;
     try {
       client = exec.client ?? getLlmClient(settings.provider);
@@ -906,32 +913,28 @@ export async function executeAiAgentNode(
     }
 
     const extractionUsage: LlmUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    const extract: SlotExtractor | undefined = client
-      ? async (message, slotNames) => {
-          const prompt = buildSlotExtractionPrompt(slotNames, message);
-          try {
-            const completion = await client!.complete({
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0,
-              maxTokens: 300,
-            });
-            extractionUsage.promptTokens += completion.usage.promptTokens;
-            extractionUsage.completionTokens += completion.usage.completionTokens;
-            extractionUsage.totalTokens += completion.usage.totalTokens;
-            if (!completion.ok) return { slots: {}, confidence: 0 };
-            const parsed = extractJsonObject(completion.text);
-            if (!parsed || typeof parsed !== 'object') return { slots: {}, confidence: 0 };
-            return {
-              slots: parsed.slots && typeof parsed.slots === 'object' ? parsed.slots : {},
-              confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
-            };
-          } catch {
-            return { slots: {}, confidence: 0 };
-          }
+    const trackedClient: LlmClient | undefined = client
+      ? {
+          id: client.id,
+          defaultModel: client.defaultModel,
+          complete: async (req) => {
+            const res = await client!.complete(req);
+            extractionUsage.promptTokens += res.usage.promptTokens;
+            extractionUsage.completionTokens += res.usage.completionTokens;
+            extractionUsage.totalTokens += res.usage.totalTokens;
+            return res;
+          },
         }
       : undefined;
 
-    const turn = await runSheetStateMachine(settings.googleSheets, context, nodeId, userMessage, undefined, extract);
+    const turn = await runSheetStateMachine(
+      settings.googleSheets,
+      context,
+      nodeId,
+      userMessage,
+      undefined,
+      trackedClient
+    );
     const latencyMs = Date.now() - startedAt;
 
     // Append the exchange to history for a consistent transcript.
@@ -988,6 +991,10 @@ export async function executeAiAgentNode(
         ? { extractionConfidence: turn.extractionConfidence }
         : {}),
       ...(turn.skippedSteps ? { skippedSteps: turn.skippedSteps } : {}),
+      ...(turn.slotExtractionAttempts !== undefined
+        ? { slotExtractionAttempts: turn.slotExtractionAttempts }
+        : {}),
+      ...(turn.fallbackUsed !== undefined ? { fallbackUsed: turn.fallbackUsed } : {}),
       tokenBreakdown: {
         systemPromptTokens: 0,
         toolDefinitionsTokens: 0,
@@ -1520,6 +1527,10 @@ export async function executeAiAgentWorkflowNode(
       ? { extractionConfidence: result.extractionConfidence }
       : {}),
     ...(result.skippedSteps ? { skippedSteps: result.skippedSteps } : {}),
+    ...(result.slotExtractionAttempts !== undefined
+      ? { slotExtractionAttempts: result.slotExtractionAttempts }
+      : {}),
+    ...(result.fallbackUsed !== undefined ? { fallbackUsed: result.fallbackUsed } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM

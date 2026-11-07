@@ -15,7 +15,7 @@
  */
 
 import { AI_SHEET_TAB_SCHEMA, AI_TOOL_RULES } from '@shared/ai-defaults';
-import type { AiGoogleSheetsConfig } from './types';
+import type { AiGoogleSheetsConfig, LlmClient, LlmCompletionResult } from './types';
 
 /** Always appended after the owner's prompt. Order matters: last wins. */
 export const LANGUAGE_RULES = [
@@ -131,6 +131,65 @@ export function extractJsonObject(text: string): any | null {
   } catch {
     return null;
   }
+}
+
+export type LlmJsonResult<T> =
+  | { ok: true; value: T; attempts: number }
+  | { ok: false; error: string; attempts: number };
+
+/**
+ * Ask the LLM for strict JSON and validate it, retrying with a corrective prompt
+ * on malformed/invalid output. The validator returns `{ ok: false, reason }` to
+ * trigger a retry (bad JSON or missing fields); a business-level "invalid value"
+ * should instead be encoded as `{ ok: true, value: ... }` and handled by the
+ * caller so it is NOT retried.
+ */
+export async function llmJson<T>(
+  client: LlmClient,
+  prompt: string,
+  validate: (obj: any) => { ok: true; value: T } | { ok: false; reason: string },
+  options: { maxRetries?: number; temperature?: number; maxTokens?: number } = {}
+): Promise<LlmJsonResult<T>> {
+  const maxRetries = options.maxRetries ?? 2;
+  const temperature = options.temperature ?? 0;
+  const maxTokens = options.maxTokens ?? 300;
+  let lastReason = 'not valid JSON';
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const message =
+      attempt === 0
+        ? prompt
+        : `${prompt}\n\nYour previous response was invalid: ${lastReason}. Return valid JSON only.`;
+
+    let completion: LlmCompletionResult;
+    try {
+      completion = await client.complete({
+        messages: [{ role: 'user', content: message }],
+        temperature,
+        maxTokens,
+      });
+    } catch (error: any) {
+      lastReason = error?.message || 'provider error';
+      continue;
+    }
+
+    if (!completion.ok) {
+      lastReason = completion.error || 'provider error';
+      continue;
+    }
+
+    const obj = extractJsonObject(completion.text);
+    if (obj === null) {
+      lastReason = 'not valid JSON';
+      continue;
+    }
+
+    const result = validate(obj);
+    if (result.ok) return { ok: true, value: result.value, attempts: attempt + 1 };
+    lastReason = result.reason;
+  }
+
+  return { ok: false, error: `Extraction failed after ${maxRetries + 1} attempts`, attempts: maxRetries + 1 };
 }
 
 /**

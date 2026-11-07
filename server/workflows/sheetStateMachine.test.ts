@@ -1,5 +1,6 @@
 /**
- * Phase 4d — deterministic sheet state machine tests (Task 5 MVP).
+ * Phase 4d — deterministic sheet state machine tests (Task 5 MVP) and the
+ * Phase 4d-2 structured slot extraction (llmJson + validated extractSlot).
  */
 
 import test from 'node:test';
@@ -9,12 +10,59 @@ import {
   extractSlot,
   isSheetStateMachineEnabled,
   parseNextStepLogic,
+  parseOptions,
   readSheetState,
   runSheetStateMachine,
   substituteSlots,
   type RowReader,
-  type SlotExtractor,
 } from './sheetStateMachine';
+import type { LlmClient, LlmCompletionRequest, LlmCompletionResult } from '../ai/types';
+
+// ── test LLM client ─────────────────────────────────────────────────────────
+
+/**
+ * Scripted LlmClient: returns the queued response texts in order and repeats the
+ * last one once the queue is exhausted. Records the number of calls.
+ */
+function stubClient(responses: (string | 'error')[]): LlmClient & { calls: number } {
+  let index = 0;
+  const client = {
+    id: 'mock' as const,
+    defaultModel: 'test-model',
+    calls: 0,
+    async complete(_request: LlmCompletionRequest): Promise<LlmCompletionResult> {
+      client.calls++;
+      const scripted = responses[Math.min(index, responses.length - 1)] ?? '{}';
+      index++;
+      if (scripted === 'error') {
+        return {
+          ok: false,
+          text: '',
+          provider: 'mock',
+          model: client.defaultModel,
+          finishReason: 'error',
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          latencyMs: 0,
+          attempts: 1,
+          toolCalls: [],
+          error: 'boom',
+        };
+      }
+      return {
+        ok: true,
+        text: scripted,
+        provider: 'mock',
+        model: client.defaultModel,
+        finishReason: 'stop',
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        latencyMs: 0,
+        attempts: 1,
+        toolCalls: [],
+      };
+    },
+  };
+  return client;
+}
 
 // ── pure helpers ────────────────────────────────────────────────────────────
 
@@ -50,9 +98,59 @@ test('readSheetState tolerates a missing or malformed sheet object', () => {
   );
 });
 
-test('extractSlot returns the raw trimmed message for the MVP', async () => {
-  const out = await extractSlot('  riffa  ', 'location', 'text', {});
-  assert.deepEqual(out, { value: 'riffa', valid: true });
+test('parseOptions splits a comma-separated cell', () => {
+  assert.deepEqual(parseOptions('Manama, Muharraq , Hidd'), ['Manama', 'Muharraq', 'Hidd']);
+  assert.equal(parseOptions('  '), undefined);
+  assert.equal(parseOptions(undefined), undefined);
+});
+
+// ── extractSlot: structured + validated ─────────────────────────────────────
+
+test('extractSlot returns a valid text value from strict JSON', async () => {
+  const client = stubClient(['{"value": "  riffa  ", "valid": true}']);
+  const out = await extractSlot(client, 'location', 'text', 'I live in Riffa');
+
+  assert.deepEqual(out, { ok: true, value: 'riffa', attempts: 1 });
+});
+
+test('extractSlot rejects an invalid list value without retrying', async () => {
+  const client = stubClient(['{"value": "Saar", "valid": false, "reason": "not an allowed branch"}']);
+  const out = await extractSlot(client, 'branch', 'list', 'Saar', ['Manama', 'Hidd']);
+
+  assert.equal(out.ok, false);
+  assert.equal(out.attempts, 1); // business-level invalid → no retry
+  if (!out.ok) assert.match(out.reason, /not an allowed branch/);
+});
+
+test('extractSlot rejects a "valid" value that is not in the allowed list', async () => {
+  const client = stubClient(['{"value": "Saar", "valid": true}']);
+  const out = await extractSlot(client, 'branch', 'list', 'Saar', ['Manama', 'Hidd']);
+
+  assert.equal(out.ok, false);
+});
+
+test('extractSlot rejects an empty text value', async () => {
+  const client = stubClient(['{"value": "   ", "valid": true}']);
+  const out = await extractSlot(client, 'name', 'text', '   ');
+
+  assert.equal(out.ok, false);
+});
+
+test('extractSlot retries malformed JSON and succeeds', async () => {
+  const client = stubClient(['not json at all', '{"value": "Manama", "valid": true}']);
+  const out = await extractSlot(client, 'branch', 'list', 'Manama', ['Manama', 'Hidd']);
+
+  assert.deepEqual(out, { ok: true, value: 'Manama', attempts: 2 });
+  assert.equal(client.calls, 2);
+});
+
+test('extractSlot gives up after retries are exhausted', async () => {
+  const client = stubClient(['nope']);
+  const out = await extractSlot(client, 'branch', 'text', 'x');
+
+  assert.equal(out.ok, false);
+  assert.equal(out.attempts, 3); // initial + 2 retries
+  assert.equal(client.calls, 3);
 });
 
 test('isSheetStateMachineEnabled requires a detected slot_name column', () => {
@@ -193,9 +291,9 @@ test('no intent match returns a friendly fallback', async () => {
 // ── Task 5b: turn-1 LLM slot extraction ─────────────────────────────────────
 
 test('turn-1 extraction with high confidence skips filled steps', async () => {
-  const extract: SlotExtractor = async () => ({ slots: { service: 'ENT' }, confidence: 0.9 });
+  const client = stubClient(['{"slots": {"service": "ENT"}, "confidence": 0.9}']);
 
-  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, client);
 
   assert.equal(turn.sheet.stepId, 'Step_2'); // Step_1 (service) filled → skip
   assert.equal(turn.text, 'When would you like it?');
@@ -203,15 +301,15 @@ test('turn-1 extraction with high confidence skips filled steps', async () => {
   assert.deepEqual(turn.skippedSteps, ['Step_1']);
   assert.deepEqual(turn.extractedSlots, { service: 'ENT' });
   assert.equal(turn.extractionConfidence, 0.9);
+  assert.equal(turn.slotExtractionAttempts, 1);
 });
 
 test('turn-1 extraction with all slots filled completes immediately', async () => {
-  const extract: SlotExtractor = async () => ({
-    slots: { service: 'ENT', datetime: '6 PM today' },
-    confidence: 0.95,
-  });
+  const client = stubClient([
+    '{"slots": {"service": "ENT", "datetime": "6 PM today"}, "confidence": 0.95}',
+  ]);
 
-  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT at 6pm today', reader, extract);
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT at 6pm today', reader, client);
 
   assert.equal(turn.text, 'Your ENT appointment is booked for 6 PM today.');
   assert.equal(turn.sheet.intentId, null); // completed → reset
@@ -219,24 +317,34 @@ test('turn-1 extraction with all slots filled completes immediately', async () =
 });
 
 test('turn-1 extraction with low confidence falls back to sequential', async () => {
-  const extract: SlotExtractor = async () => ({ slots: { service: 'ENT' }, confidence: 0.5 });
+  const client = stubClient(['{"slots": {"service": "ENT"}, "confidence": 0.5}']);
 
-  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, client);
 
   assert.equal(turn.sheet.stepId, 'Step_1'); // sequential start
   assert.equal(turn.text, 'Which service do you need?');
   assert.deepEqual(turn.sheet.slots, {}); // nothing merged
 });
 
-test('turn-1 extraction that throws falls back to sequential', async () => {
-  const extract: SlotExtractor = async () => {
-    throw new Error('boom');
-  };
+test('turn-1 extraction that errors falls back to sequential after retrying', async () => {
+  const client = stubClient(['error']);
 
-  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, extract);
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, client);
 
   assert.equal(turn.sheet.stepId, 'Step_1');
   assert.equal(turn.text, 'Which service do you need?');
+  assert.equal(client.calls, 2); // initial + 1 retry (turn-1 uses maxRetries: 1)
+  assert.equal(turn.slotExtractionAttempts, 2);
+});
+
+test('turn-1 extraction retries malformed JSON and then merges', async () => {
+  const client = stubClient(['oops', '{"slots": {"service": "ENT"}, "confidence": 0.9}']);
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book ENT', reader, client);
+
+  assert.equal(turn.sheet.stepId, 'Step_2');
+  assert.deepEqual(turn.sheet.slots, { service: 'ENT' });
+  assert.equal(turn.slotExtractionAttempts, 2);
 });
 
 test('ai_question {slot} placeholders are substituted on subsequent turns', async () => {
@@ -252,4 +360,100 @@ test('ai_question {slot} placeholders are substituted on subsequent turns', asyn
   const turn = await runSheetStateMachine(sheet, context, 'n1', 'ENT', reader2);
 
   assert.equal(turn.text, 'You chose ENT. Which branch?');
+});
+
+// ── Phase 4d-2: structured turn-2+ extraction + fallback ───────────────────
+
+test('turn 2+ uses the LLM to normalise the slot value', async () => {
+  const client = stubClient(['{"value": "Riffa", "valid": true}']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  // "I live in riffa" → the LLM extracts the clean value "Riffa".
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'I live in riffa', reader, client);
+
+  assert.equal(turn.sheet.slots.service, 'Riffa');
+  assert.equal(turn.sheet.stepId, 'Step_2');
+  assert.equal(turn.slotExtractionAttempts, 1);
+  assert.equal(turn.fallbackUsed, false);
+});
+
+test('turn 2+ invalid extraction uses the fallback and re-asks the same step', async () => {
+  const listReader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') return INTENTS;
+    return [
+      {
+        intent_id: '1',
+        step_id: 'Step_1',
+        ai_question: 'Which branch?',
+        expected_input: 'list',
+        slot_name: 'branch',
+        options: 'Manama, Hidd',
+        next_step_logic: '→ done',
+        fallback: 'Sorry, please pick Manama or Hidd.',
+      },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+  const client = stubClient(['{"value": "Saar", "valid": false, "reason": "unknown branch"}']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'Saar', listReader, client);
+
+  assert.equal(turn.text, 'Sorry, please pick Manama or Hidd.');
+  assert.equal(turn.sheet.stepId, 'Step_1'); // did NOT advance
+  assert.deepEqual(turn.sheet.slots, {}); // nothing captured
+  assert.equal(turn.fallbackUsed, true);
+});
+
+test('turn 2+ valid list option is accepted case-insensitively', async () => {
+  const listReader: RowReader = async (_s, tab) => {
+    if (tab === 'Intents') return INTENTS;
+    return [
+      {
+        intent_id: '1',
+        step_id: 'Step_1',
+        ai_question: 'Which branch?',
+        expected_input: 'list',
+        slot_name: 'branch',
+        options: 'Manama, Hidd',
+        next_step_logic: '→ Step_2',
+      },
+      {
+        intent_id: '1',
+        step_id: 'Step_2',
+        ai_question: 'Your name?',
+        expected_input: 'text',
+        slot_name: 'name',
+        next_step_logic: '→ done',
+      },
+    ];
+  };
+  const client = stubClient(['{"value": "manama", "valid": true}']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'manama', listReader, client);
+
+  assert.equal(turn.sheet.slots.branch, 'manama');
+  assert.equal(turn.sheet.stepId, 'Step_2');
+  assert.equal(turn.text, 'Your name?');
+});
+
+test('turn 2+ extraction failure after retries triggers the fallback', async () => {
+  const client = stubClient(['garbage']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'cleaning', reader, client);
+
+  assert.equal(turn.text, 'Please choose a service.');
+  assert.equal(turn.sheet.stepId, 'Step_1');
+  assert.equal(turn.fallbackUsed, true);
+  assert.equal(turn.slotExtractionAttempts, 3); // initial + 2 retries
+});
+
+test('turn 2+ without a client keeps the raw-text capture (backward compatible)', async () => {
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', '  cleaning  ', reader);
+
+  assert.equal(turn.sheet.slots.service, 'cleaning');
+  assert.equal(turn.sheet.stepId, 'Step_2');
 });

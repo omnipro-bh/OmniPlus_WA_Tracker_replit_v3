@@ -8,7 +8,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LANGUAGE_RULES, buildSystemPrompt, buildSlotExtractionPrompt, extractJsonObject } from './prompt';
+import {
+  LANGUAGE_RULES,
+  buildSystemPrompt,
+  buildSlotExtractionPrompt,
+  extractJsonObject,
+  llmJson,
+} from './prompt';
+import type { LlmClient, LlmCompletionRequest, LlmCompletionResult } from './types';
+
+/** Scripted LlmClient returning the queued texts in order (repeats the last). */
+function stubClient(responses: (string | 'error')[]): LlmClient & { calls: number } {
+  let index = 0;
+  const client = {
+    id: 'mock' as const,
+    defaultModel: 'test-model',
+    calls: 0,
+    async complete(_request: LlmCompletionRequest): Promise<LlmCompletionResult> {
+      client.calls++;
+      const scripted = responses[Math.min(index, responses.length - 1)] ?? '{}';
+      index++;
+      if (scripted === 'error') {
+        return {
+          ok: false,
+          text: '',
+          provider: 'mock',
+          model: client.defaultModel,
+          finishReason: 'error',
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          latencyMs: 0,
+          attempts: 1,
+          toolCalls: [],
+          error: 'boom',
+        };
+      }
+      return {
+        ok: true,
+        text: scripted,
+        provider: 'mock',
+        model: client.defaultModel,
+        finishReason: 'stop',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        latencyMs: 0,
+        attempts: 1,
+        toolCalls: [],
+      };
+    },
+  };
+  return client;
+}
 
 test('system prompt carries the language rules', () => {
   const prompt = buildSystemPrompt({ ownerPrompt: 'Answer questions about delivery.' });
@@ -171,4 +219,50 @@ test('extractJsonObject returns null for invalid or absent JSON', () => {
   assert.equal(extractJsonObject('{invalid}'), null);
   assert.equal(extractJsonObject(''), null);
   assert.equal(extractJsonObject(undefined as any), null);
+});
+
+// ── Phase 4d-2: llmJson (strict JSON + validation + retries) ────────────────
+
+const validateGreeting = (obj: any) =>
+  typeof obj?.greeting === 'string' && obj.greeting.trim()
+    ? { ok: true as const, value: obj.greeting as string }
+    : { ok: false as const, reason: 'missing greeting' };
+
+test('llmJson returns a validated value on the first attempt', async () => {
+  const client = stubClient(['{"greeting": "hello"}']);
+  const out = await llmJson(client, 'say hello as JSON', validateGreeting);
+
+  assert.deepEqual(out, { ok: true, value: 'hello', attempts: 1 });
+});
+
+test('llmJson retries after invalid JSON and then succeeds', async () => {
+  const client = stubClient(['nope', '{"greeting": "hi"}']);
+  const out = await llmJson(client, 'say hello as JSON', validateGreeting);
+
+  assert.deepEqual(out, { ok: true, value: 'hi', attempts: 2 });
+});
+
+test('llmJson retries when validation fails and then succeeds', async () => {
+  const client = stubClient(['{"other": 1}', '{"greeting": "hey"}']);
+  const out = await llmJson(client, 'say hello as JSON', validateGreeting);
+
+  assert.deepEqual(out, { ok: true, value: 'hey', attempts: 2 });
+});
+
+test('llmJson returns an error after retries are exhausted', async () => {
+  const client = stubClient(['{"other": 1}']);
+  const out = await llmJson(client, 'say hello as JSON', validateGreeting, { maxRetries: 1 });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.attempts, 2);
+  if (!out.ok) assert.match(out.error, /Extraction failed after 2 attempts/);
+  assert.equal(client.calls, 2);
+});
+
+test('llmJson retries provider errors and reports failure', async () => {
+  const client = stubClient(['error']);
+  const out = await llmJson(client, 'say hello as JSON', validateGreeting, { maxRetries: 0 });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.attempts, 1);
 });
