@@ -1,58 +1,69 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## AI Agent Phase 2.5 — interactive buttons + lists + loop prevention COMPLETE (b01d764, 2026-11-04)
+## AI Agent Phase 4d-2 increment 1 — structured extraction COMPLETE (6548c55, 2026-11-07)
 
 ### Status
 
-- Production HEAD: `b01d764` (last code commit).
-- Phase 2.5 is fully deployed and verified end-to-end:
-  - AI Agent can send buttons (≤3) and lists (4–10).
-  - Clicking a button or list row routes back to AI as a user message.
-  - Guard strips send_buttons/send_list on click to prevent loops.
-  - Text Input prompt with `{{ai_response}}` displays the AI's text answer.
-  - Loop back to AI Agent enables multi-turn conversation.
-  - AI history preserved across turns.
-  - Cursor persistence fix prevents UI lock on dead-end.
+- Production HEAD: `6548c55`.
+- Structured slot extraction (`llmJson` + `extractSlot`) is live and verified end-to-end.
+- Turn 1: LLM extracts multiple slots from one message (0.95 confidence).
+- Skip-ahead: Steps with filled slots are skipped correctly.
+- Turn 2+: LLM validates slot values against `expected_input` + `options`.
+- Invalid input: fallback fires, flow does NOT advance.
+- Malformed LLM responses: retried up to 2 times with a corrective prompt.
+- `aiTrace` shows: `extractedSlots`, `skippedSteps`, `extractionConfidence`, `slotExtractionAttempts`, `fallbackUsed`.
 
-### What Phase 2.5 delivered (cumulative)
+### Verified behaviors
 
-- `067e792`: send_list tool + resolveButtonRoute (routing fix)
-- `68381ea`: option-click guard (strip tools) + AI_TOOL_RULES
-- `b01d764`: null cursor persistence fix
-- AI Agent now supports complete interactive conversation: user taps buttons/lists → AI receives choice → AI answers text → user types follow-up → loop continues.
+- Valid multi-slot message: "dental + Dr. Ahmed" → skips to Step_3 ✅
+- Invalid input: "Dental" as specialist → fallback fires, stays at Step_2 ✅
+- Clean first attempt: `slotExtractionAttempts` = 1 ✅
+- High confidence: 0.95 ✅
 
-### Model recommendation (learned in testing)
+### What this enables (the "AI within business rules" behavior)
 
-- **qwen/qwen3.8-27b is the production default** (fast, cheap, reliable with clean prompts).
-- gpt-oss-120b is a reasoning model that burns tokens on internal reasoning (~10x cost, ~3–5x latency). Only use for complex analytical tasks.
-- Reasoning models need maxTokens 1500+; non-reasoning work at 500.
+- Natural language understanding: "I want to book ENT at Manama at 6 PM today" → extracts all 4 slots, skips 4 steps.
+- Validation: "banana" as location → LLM rejects → fallback re-asks.
+- Case-insensitive matching: "dental" → "Dental" (normalized).
+- Owner control: add an `options` column to gate list/button inputs.
 
-### Pending polish items (deferred)
+### Disk hygiene (from earlier today)
 
-1. Handle `finishReason: 'length'` as truncation error (not silent empty success).
-2. Validation warning for reasoning models (need higher max tokens).
-3. UI hint recommending qwen over gpt-oss.
-4. Cost-aware warnings for reasoning models.
+- Backup exclusions working (6.5 MB vs 350 MB per backup — 98% reduction).
+- `pm2-logrotate` installed (100 MB cap, 5 retain, compress).
+- Weekly cron for old backups.
+- Disk: 7.5 GB / 50 GB (16%).
 
-These are non-blocking. Can be shipped as a polish batch in a future session.
+### Remaining in Phase 4d-2
 
-### Phase 3 (next session)
+- Step isolation (`StepContext` — LLM sees only the current step's context).
+- RAG (per-step knowledge injection from a Policies tab).
+- Kill the free-form fallback for sheet nodes.
 
-1. Schedule: AI only active during business hours.
-2. Usage limits: daily/monthly caps per workflow.
-3. Message cap: force handover after N messages.
-4. Optional: PII redaction, cost dashboard.
+### Remaining in Phase 4d-3
 
-Est: 1–2 sessions.
+- Approval steps (pause + notify manager for high-value actions).
+- Conditional branching (if dept == ENT → different steps).
 
-### Remaining follow-ups (broader)
+### AI Agent — COMPLETE ARC (current state)
 
-- Drift fix (4 FK renames + 10 DEFAULT alignments).
-- Arabic/RTL marketing version.
-- /contact page.
-- Arabic insurance tenant 401.
-- Supabase credential rotation.
-- Polish items above.
+- Phase 1: chat (Qwen/DeepSeek/Groq)
+- Phase 2: buttons/handover
+- Phase 2.5: lists/routing/guards
+- Phase 3: schedule/usage limits/message cap
+- AI + Sheets: deterministic state machine + LLM slot extraction
+- Phase 4d-1: multi-slot extraction (skip-ahead)
+- Phase 4d-2 increment 1: validated structured extraction + fallback
+
+### Next session — user's choice
+
+1. Phase 4d-2 increment 2: `StepContext` isolation + RAG (~1–2 sessions)
+2. Phase 4d-3: approval steps + conditional branching (~2 sessions)
+3. Ship current state to a real customer and iterate based on usage (~0 sessions)
+
+### One sheet improvement (user action, optional)
+
+- Update Step_2's fallback to list available options: "Please pick a specialist. We have Dr. Ahmed, Dr. Rahman, Dr. Fatima, or General."
 
 ## AI Agent Phase 2 Part 1 — tool loop + send_buttons + handover (0a84d65, 2026-11-03)
 
