@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage, type CalendarSlot, type CalendarBooking, BLOCKING_BOOKING_STATUSES, BookingSlotUnavailableError, occupiedWindowForDate, type OccupiedWindowSource } from "./storage";
 import { db } from "./db";
-import { eq, and, inArray, desc, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, desc, asc, gte, sql } from "drizzle-orm";
 import { workflows, conversationStates, workflowExecutions, firstMessageFlags, users, messages, jobs, termsDocuments, sentMessages, CUSTOM_FIELDS_DEFAULT_LIMIT, CUSTOM_FIELDS_MAX_LIMIT } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { hashPassword, comparePassword, generateToken, requireAuth, requireAdmin, signShareSession, requireShareSession, signChatSession, verifyChatSession, requireChatSession, clearChatSessionCookie, chatSessionCookieOptions, CHAT_SESSION_COOKIE, type AuthRequest, type ShareRequest, type ChatRequest } from "./auth";
@@ -38,6 +38,7 @@ import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecut
 import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
 import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { loadAiStudioConfig } from "./ai/studioConfig";
+import { computeKpis } from "./ai/kpi";
 import { AI_STUDIO_INSTRUCTIONS_KEY, AI_STUDIO_PERSONA_KEY } from "@shared/ai-defaults";
 import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonRoute, runFlow, type FlowHost } from "./workflows/flowRunner";
@@ -7958,6 +7959,57 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Sync AI Studio sheet headers error:", error);
       res.status(500).json({ error: "Failed to sync sheet headers" });
+    }
+  });
+
+  // AI Studio — KPI aggregations over a workflow's AI traces.
+  app.get("/api/ai-studio/kpis", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(String(req.query.workflowId ?? ""));
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "workflowId is required" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      // `days` > 0 limits the window; 0 / absent / invalid means all time.
+      const daysRaw = parseInt(String(req.query.days ?? "30"), 10);
+      const days = Number.isInteger(daysRaw) && daysRaw > 0 ? daysRaw : 0;
+
+      const conditions = [
+        eq(workflowExecutions.workflowId, workflowId),
+        // Only rows that actually ran an AI node (and therefore carry a trace).
+        sql`${workflowExecutions.triggerData} ? 'aiTrace'`,
+      ];
+      if (days > 0) {
+        conditions.push(gte(workflowExecutions.executedAt, sql`now() - interval '${days} days'`));
+      }
+
+      const rows = await db
+        .select({
+          phone: workflowExecutions.phone,
+          executedAt: workflowExecutions.executedAt,
+          triggerData: workflowExecutions.triggerData,
+        })
+        .from(workflowExecutions)
+        .where(and(...conditions))
+        .orderBy(asc(workflowExecutions.executedAt));
+
+      const metrics = computeKpis(
+        rows.map((r) => ({
+          phone: r.phone,
+          executedAt: r.executedAt,
+          aiTrace: (r.triggerData as any)?.aiTrace ?? null,
+        }))
+      );
+
+      res.json(metrics);
+    } catch (error: any) {
+      console.error("Get AI Studio KPIs error:", error);
+      res.status(500).json({ error: "Failed to compute KPIs" });
     }
   });
 

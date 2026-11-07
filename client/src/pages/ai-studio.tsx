@@ -21,6 +21,7 @@ import type { Workflow } from "@shared/schema";
 import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
 import { KnowledgeTab, ScenariosTab } from "@/components/ai-studio-sheets";
 import { LiveChatTab } from "@/components/ai-studio-live-chat";
+import { KpisTab } from "@/components/ai-studio-kpis";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -139,6 +140,7 @@ export default function AIStudio() {
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
           <TabsTrigger value="live-chat">Live Chat</TabsTrigger>
+          <TabsTrigger value="kpis">KPIs</TabsTrigger>
         </TabsList>
 
         {/* ── Traces (functional) ─────────────────────────────────────── */}
@@ -344,6 +346,11 @@ export default function AIStudio() {
         {/* ── Live Chat & Trace Viewer (functional) ───────────────────── */}
         <TabsContent value="live-chat" forceMount>
           <LiveChatTab workflow={selectedWorkflow} active={activeTab === "live-chat"} />
+        </TabsContent>
+
+        {/* ── KPIs (functional) ───────────────────────────────────────── */}
+        <TabsContent value="kpis">
+          <KpisTab workflowId={effectiveWorkflowId} />
         </TabsContent>
       </Tabs>
     </div>
