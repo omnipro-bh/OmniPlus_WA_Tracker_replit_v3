@@ -15,6 +15,7 @@
  */
 
 import { AI_SHEET_TAB_SCHEMA, AI_TOOL_RULES } from '@shared/ai-defaults';
+import type { AiStudioPersona } from '@shared/ai-defaults';
 import { normalizeInputType, normalizeOptions } from '../workflows/slotValidation';
 import type { AiGoogleSheetsConfig, LlmClient, LlmCompletionResult } from './types';
 
@@ -35,6 +36,11 @@ export interface BuildSystemPromptOptions {
   ownerPrompt?: string;
   /** Optional workflow/business name used as context. */
   businessName?: string;
+  /**
+   * Increment B — global AI Studio persona. When any field is set, it becomes the
+   * assistant's identity (overriding the businessName-derived identity).
+   */
+  persona?: AiStudioPersona | null;
   /** Where the conversation happens — influences tone/length guidance. */
   channel?: 'whatsapp' | 'web_chat';
   /** Extra instructions appended last (Phase 2 tools, handover, etc.). */
@@ -220,6 +226,28 @@ export async function llmJson<T>(
 }
 
 /**
+ * Build the assistant's identity line. A global AI Studio persona (any field set)
+ * wins over the business-name default, matching the Increment B prompt shape:
+ * `You are {alias}, a {positionTitle}. About the business: {shortDescription}.`
+ */
+function buildIdentity(persona: AiStudioPersona | null | undefined, businessName: string): string {
+  const alias = (persona?.alias ?? '').trim();
+  const title = (persona?.title ?? '').trim();
+  const description = (persona?.description ?? '').trim();
+
+  if (alias || title || description) {
+    let identity = alias ? `You are ${alias}` : 'You are a customer support assistant';
+    if (title) identity += `, a ${title}`;
+    identity += description ? `. About the business: ${description}` : '.';
+    return identity;
+  }
+
+  return businessName
+    ? `You are the customer support assistant for ${businessName}.`
+    : 'You are a customer support assistant.';
+}
+
+/**
  * Build the full system prompt: identity + owner instructions + language rules.
  * Always returns a usable prompt, even when the owner left the field empty.
  */
@@ -229,9 +257,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
   const channel = options.channel ?? 'whatsapp';
   const extraRules = (options.extraRules ?? '').trim();
 
-  const identity = businessName
-    ? `You are the customer support assistant for ${businessName}.`
-    : 'You are a customer support assistant.';
+  const identity = buildIdentity(options.persona, businessName);
 
   const channelLine =
     channel === 'web_chat'

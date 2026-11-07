@@ -37,6 +37,8 @@ import crypto from "crypto";
 import { executeHttpNode, getNextNodeByHandle } from "./workflows/httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecutor";
 import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
+import { loadAiStudioConfig } from "./ai/studioConfig";
+import { AI_STUDIO_INSTRUCTIONS_KEY, AI_STUDIO_PERSONA_KEY } from "@shared/ai-defaults";
 import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonRoute, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
@@ -7785,6 +7787,47 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Get AI traces error:", error);
       res.status(500).json({ error: "Failed to fetch AI traces" });
+    }
+  });
+
+  // AI Studio — global config (Instructions + Persona), stored in `settings`.
+  // Written once, applied to every AI node by the executor.
+  app.get("/api/ai-studio/config", requireAuth, async (_req: AuthRequest, res: Response) => {
+    try {
+      const config = await loadAiStudioConfig();
+      res.json(config);
+    } catch (error: any) {
+      console.error("Get AI Studio config error:", error);
+      res.status(500).json({ error: "Failed to fetch AI Studio config" });
+    }
+  });
+
+  app.put("/api/ai-studio/config", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { instructions, persona } = req.body ?? {};
+
+      if (instructions !== undefined && typeof instructions !== "string") {
+        return res.status(400).json({ error: "instructions must be a string" });
+      }
+
+      const cleanPersona = {
+        alias: typeof persona?.alias === "string" ? persona.alias.trim() : "",
+        title: typeof persona?.title === "string" ? persona.title.trim() : "",
+        description: typeof persona?.description === "string" ? persona.description.trim() : "",
+      };
+
+      if (instructions !== undefined) {
+        await storage.setSetting(AI_STUDIO_INSTRUCTIONS_KEY, instructions);
+      }
+      if (persona !== undefined) {
+        await storage.setSetting(AI_STUDIO_PERSONA_KEY, JSON.stringify(cleanPersona));
+      }
+
+      const config = await loadAiStudioConfig();
+      res.json(config);
+    } catch (error: any) {
+      console.error("Update AI Studio config error:", error);
+      res.status(500).json({ error: "Failed to update AI Studio config" });
     }
   });
 

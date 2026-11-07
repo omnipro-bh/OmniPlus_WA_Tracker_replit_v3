@@ -33,6 +33,38 @@ export const AI_DEFAULT_SYSTEM_PROMPT = ['You are a helpful assistant.', '', AI_
 );
 
 /**
+ * AI Studio (Increment B) — global owner-level config, persisted in the `settings`
+ * key/value table. Written once, applied to every AI node (per-node overrides are
+ * a future layer).
+ */
+export const AI_STUDIO_INSTRUCTIONS_KEY = 'ai_studio_instructions';
+export const AI_STUDIO_PERSONA_KEY = 'ai_studio_persona';
+
+/** Persona injected at the top of the system prompt as the assistant's identity. */
+export interface AiStudioPersona {
+  alias: string;
+  title: string;
+  description: string;
+}
+
+/** The full AI Studio config surfaced by `/api/ai-studio/config`. */
+export interface AiStudioConfig {
+  instructions: string;
+  persona: AiStudioPersona;
+}
+
+export const EMPTY_AI_STUDIO_PERSONA: AiStudioPersona = {
+  alias: '',
+  title: '',
+  description: '',
+};
+
+export const DEFAULT_AI_STUDIO_CONFIG: AiStudioConfig = {
+  instructions: '',
+  persona: EMPTY_AI_STUDIO_PERSONA,
+};
+
+/**
  * Phase 4 — canonical two-tab Google Sheets schema used by the AI Agent's
  * `lookup_sheet` tool.
  *

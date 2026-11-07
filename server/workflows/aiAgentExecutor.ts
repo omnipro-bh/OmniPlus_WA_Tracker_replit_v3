@@ -63,7 +63,9 @@ import type {
   UsageLimits,
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
-import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
+import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
+import type { AiStudioConfig } from '@shared/ai-defaults';
+import { loadAiStudioConfig } from '../ai/studioConfig';
 import { isSheetStateMachineEnabled, runSheetStateMachine, type RejectedSlot, type SheetState } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
@@ -150,6 +152,12 @@ export interface AiAgentExecutionContext {
   usageBlock?: { reason: string };
   /** Pre-resolved per-user daily cap block, computed by the node wrapper. */
   userDailyBlock?: { reason: string };
+  /**
+   * Increment B — global AI Studio config (instructions + persona), resolved by
+   * the node wrapper. When instructions are non-empty they become the base system
+   * prompt; the persona becomes the assistant's identity. Absent in ad-hoc tests.
+   */
+  studioConfig?: AiStudioConfig | null;
   /**
    * Test seam: bypass the real Google Sheets read for `lookup_sheet`. Returns
    * the same shape the executor serializes into the tool result.
@@ -1014,8 +1022,18 @@ export async function executeAiAgentNode(
     };
   }
 
-  // Resolve {{variables}} in the owner's prompt against the current context.
-  const resolvedPrompt = resolveTemplate(settings.systemPrompt, context);
+  // Resolve the owner instructions. Increment B precedence:
+  //   1. global AI Studio instructions (written once, applies to every node)
+  //   2. this node's own systemPrompt (legacy per-node behaviour)
+  //   3. AI_DEFAULT_SYSTEM_PROMPT (the shared fallback)
+  // {{variables}} are resolved against the current context regardless of source.
+  const studio = exec.studioConfig ?? null;
+  const baseInstructions = studio?.instructions?.trim()
+    ? studio.instructions
+    : settings.systemPrompt?.trim()
+      ? settings.systemPrompt
+      : AI_DEFAULT_SYSTEM_PROMPT;
+  const resolvedPrompt = resolveTemplate(baseInstructions, context);
 
   // Phase 2.5b — Tool Stripping Guard. If the customer's message is the title of
   // an option we offered moments ago, this turn is a CLICK: remove send_buttons
@@ -1032,6 +1050,7 @@ export async function executeAiAgentNode(
   const systemPrompt = buildSystemPrompt({
     ownerPrompt: resolvedPrompt,
     businessName: exec.businessName,
+    persona: studio?.persona,
     channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
     hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
     googleSheets: settings.googleSheets,
@@ -1495,6 +1514,13 @@ export async function executeAiAgentWorkflowNode(
     }
   }
 
+  // Increment B — global AI Studio config (instructions + persona). Read only for
+  // real hosts; the sandbox stays DB-free (logUsage === false) and uses defaults.
+  let studioConfig: AiStudioConfig | null = null;
+  if (options.logUsage !== false) {
+    studioConfig = await loadAiStudioConfig();
+  }
+
   const result = await executeAiAgentNode(config, {
     nodeId,
     context: executionContext,
@@ -1503,6 +1529,7 @@ export async function executeAiAgentWorkflowNode(
     businessName: options.businessName,
     usageBlock,
     userDailyBlock,
+    studioConfig,
   });
 
   const nextHandle: AiNextHandle = result.nextHandle;

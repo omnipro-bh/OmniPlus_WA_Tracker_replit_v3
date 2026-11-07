@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -13,10 +16,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
 import type { Workflow } from "@shared/schema";
 import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
-import { queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+
+interface AiStudioPersona {
+  alias: string;
+  title: string;
+  description: string;
+}
+
+interface AiStudioConfig {
+  instructions: string;
+  persona: AiStudioPersona;
+}
 
 function ComingSoon({ title, description }: { title: string; description: string }) {
   return (
@@ -51,6 +66,49 @@ export default function AIStudio() {
   });
 
   const selectedTrace = traces.find((t) => t.id === selectedTraceId) ?? traces[0] ?? null;
+
+  // ── Global AI Studio config (Instructions + Persona) ────────────────
+  const { toast } = useToast();
+  const { data: studioConfig } = useQuery<AiStudioConfig>({
+    queryKey: ["/api/ai-studio/config"],
+  });
+
+  const [instructions, setInstructions] = useState("");
+  const [persona, setPersona] = useState<AiStudioPersona>({
+    alias: "",
+    title: "",
+    description: "",
+  });
+
+  useEffect(() => {
+    if (studioConfig) {
+      setInstructions(studioConfig.instructions ?? "");
+      setPersona(studioConfig.persona ?? { alias: "", title: "", description: "" });
+    }
+  }, [studioConfig]);
+
+  const saveConfig = useMutation({
+    mutationFn: async (payload: Partial<AiStudioConfig>) => {
+      await apiRequest("PUT", "/api/ai-studio/config", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-studio/config"] });
+      toast({ title: "Saved", description: "AI Studio config updated." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Save failed",
+        description: error?.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const personaDirty = Boolean(studioConfig) && (
+    persona.alias !== (studioConfig?.persona?.alias ?? "") ||
+    persona.title !== (studioConfig?.persona?.title ?? "") ||
+    persona.description !== (studioConfig?.persona?.description ?? "")
+  );
 
   return (
     <div className="space-y-6">
@@ -183,18 +241,104 @@ export default function AIStudio() {
           )}
         </TabsContent>
 
-        {/* ── Placeholders ─────────────────────────────────────────────── */}
+        {/* ── Instructions (functional) ───────────────────────────────── */}
         <TabsContent value="instructions">
-          <ComingSoon
-            title="Instructions"
-            description="The system prompt for your AI Agent, persisted to the database."
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle>Instructions</CardTitle>
+              <CardDescription>
+                The system prompt applied to every AI node. Leave blank to fall back
+                to the default prompt.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                placeholder="You are a helpful assistant…"
+                rows={14}
+                className="min-h-[280px] resize-y font-mono text-sm"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {instructions.length} characters
+                </span>
+                <Button
+                  onClick={() => saveConfig.mutate({ instructions })}
+                  disabled={saveConfig.isPending}
+                >
+                  {saveConfig.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save Instructions
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
+
+        {/* ── Persona (functional) ────────────────────────────────────── */}
         <TabsContent value="persona">
-          <ComingSoon
-            title="Persona"
-            description="Alias, position title, and a short description for your AI Agent."
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle>Persona</CardTitle>
+              <CardDescription>
+                How your AI Agent introduces itself. Injected as the assistant's
+                identity at the top of the system prompt.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="persona-alias">Alias</Label>
+                  <Input
+                    id="persona-alias"
+                    value={persona.alias}
+                    onChange={(e) => setPersona({ ...persona, alias: e.target.value })}
+                    placeholder="Joy"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="persona-title">Position Title</Label>
+                  <Input
+                    id="persona-title"
+                    value={persona.title}
+                    onChange={(e) => setPersona({ ...persona, title: e.target.value })}
+                    placeholder="Live Chat Agent"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="persona-description">Short Description</Label>
+                <Textarea
+                  id="persona-description"
+                  value={persona.description}
+                  onChange={(e) => setPersona({ ...persona, description: e.target.value })}
+                  placeholder="About the business…"
+                  rows={4}
+                  className="resize-y"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {personaDirty ? "Unsaved changes" : "Saved"}
+                </span>
+                <Button
+                  onClick={() => saveConfig.mutate({ persona })}
+                  disabled={saveConfig.isPending}
+                >
+                  {saveConfig.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save Persona
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="knowledge">
           <ComingSoon
