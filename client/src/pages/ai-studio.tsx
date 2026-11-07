@@ -20,6 +20,7 @@ import { Loader2, RefreshCw, Save } from "lucide-react";
 import type { Workflow } from "@shared/schema";
 import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
 import { KnowledgeTab, ScenariosTab } from "@/components/ai-studio-sheets";
+import { LiveChatTab } from "@/components/ai-studio-live-chat";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -43,8 +44,10 @@ export default function AIStudio() {
 
   const [workflowId, setWorkflowId] = useState<string>("");
   const [selectedTraceId, setSelectedTraceId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState("traces");
 
   const effectiveWorkflowId = workflowId || (workflows[0]?.id ? String(workflows[0].id) : "");
+  const selectedWorkflow = workflows.find((w) => String(w.id) === effectiveWorkflowId);
 
   const { data: traces = [], isLoading: tracesLoading } = useQuery<AiTraceRow[]>({
     queryKey: [`/api/workflows/${effectiveWorkflowId}/ai-traces`],
@@ -128,13 +131,14 @@ export default function AIStudio() {
         </div>
       </div>
 
-      <Tabs defaultValue="traces">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="traces">Traces</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="persona">Persona</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
+          <TabsTrigger value="live-chat">Live Chat</TabsTrigger>
         </TabsList>
 
         {/* ── Traces (functional) ─────────────────────────────────────── */}
@@ -335,6 +339,11 @@ export default function AIStudio() {
         {/* ── Scenarios (functional) ──────────────────────────────────── */}
         <TabsContent value="scenarios">
           <ScenariosTab workflowId={effectiveWorkflowId} />
+        </TabsContent>
+
+        {/* ── Live Chat & Trace Viewer (functional) ───────────────────── */}
+        <TabsContent value="live-chat" forceMount>
+          <LiveChatTab workflow={selectedWorkflow} active={activeTab === "live-chat"} />
         </TabsContent>
       </Tabs>
     </div>

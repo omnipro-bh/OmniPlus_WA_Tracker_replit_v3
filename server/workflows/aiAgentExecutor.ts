@@ -1514,12 +1514,11 @@ export async function executeAiAgentWorkflowNode(
     }
   }
 
-  // Increment B — global AI Studio config (instructions + persona). Read only for
-  // real hosts; the sandbox stays DB-free (logUsage === false) and uses defaults.
-  let studioConfig: AiStudioConfig | null = null;
-  if (options.logUsage !== false) {
-    studioConfig = await loadAiStudioConfig();
-  }
+  // Increment B — global AI Studio config (instructions + persona). Loaded for
+  // every host, including the sandbox, so the Live Chat test reflects the owner's
+  // configured Instructions/Persona. `loadAiStudioConfig` is fail-open (returns
+  // empty defaults), so a DB-less sandbox/test never drops a reply.
+  const studioConfig: AiStudioConfig | null = await loadAiStudioConfig();
 
   const result = await executeAiAgentNode(config, {
     nodeId,

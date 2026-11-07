@@ -118,6 +118,8 @@ export interface SandboxTickResponse {
   trace: TraceEntry[];
   steps: number;
   error: { message: string; nodeId: string | null } | null;
+  /** Increment D — AI traces produced this tick (optional; absent for non-AI ticks). */
+  aiTraces?: Record<string, any>[];
 }
 
 // --- error + transport ---

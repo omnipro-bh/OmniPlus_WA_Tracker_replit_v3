@@ -30,7 +30,7 @@ import { z } from "zod";
 import { enforceContextCeiling, getNextNodeBySingleEdge, MAX_CAPTURE_LENGTH } from "./flowControl";
 import { executeHttpNode } from "./httpNodeExecutor";
 import { executeGoogleSheetsWorkflowNode } from "./googleSheetsExecutor";
-import { executeAiAgentWorkflowNode } from "./aiAgentExecutor";
+import { executeAiAgentWorkflowNode, type AiTrace } from "./aiAgentExecutor";
 import { resolveTemplate } from "./httpExecutor";
 import {
   FLOW_STEP_LIMITS,
@@ -142,6 +142,11 @@ export interface SandboxTickResponse {
   trace: TraceEntry[];
   steps: number;
   error: { message: string; nodeId: string | null } | null;
+  /**
+   * Increment D — AI traces produced this tick (one per `action.ai_agent` node
+   * that ran). Absent for non-AI ticks (booking / invalid text / null start).
+   */
+  aiTraces?: AiTrace[];
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +312,11 @@ export interface SandboxHostBundle {
   /** Exposed so the endpoint can prepend the invalid-text re-prompt bubble. */
   messages: SandboxMessage[];
   /**
+   * AI traces captured by `runAi` this request (Increment D), for the AI Studio
+   * Live Chat trace panel.
+   */
+  aiTraces: AiTrace[];
+  /**
    * Mock-booking trace entries produced by `handleBookingNode` during this
    * request. Drain before assembling the response (4A-2d).
    */
@@ -326,6 +336,7 @@ export function buildSandboxHost(opts: {
 }): SandboxHostBundle {
   const messages: SandboxMessage[] = [];
   const bookingTrace: MockBookingTraceEntry[] = [];
+  const aiTraces: AiTrace[] = [];
   const edges = Array.isArray(opts.definition?.edges) ? (opts.definition!.edges as any[]) : [];
   const aiMode = opts.aiMode ?? "mock";
 
@@ -440,6 +451,9 @@ export function buildSandboxHost(opts: {
         { channel: "sandbox", logUsage: false }
       );
 
+      // Increment D: surface the AI turn's trace for the Live Chat trace panel.
+      if (aiResult.aiTrace) aiTraces.push(aiResult.aiTrace);
+
       // Phase 2: `send_buttons` → a button bubble in the panel (same projection
       // the web chat transcript uses). Handover / success / error keep Phase 1.
       if (aiResult.nextHandle === "buttons") {
@@ -524,6 +538,7 @@ export function buildSandboxHost(opts: {
   return {
     host,
     messages,
+    aiTraces,
     drainBookingTrace: () => {
       const drained = [...bookingTrace];
       bookingTrace.length = 0;
@@ -633,7 +648,8 @@ export function assembleSandboxResponse(
   result: RunResult,
   definition: { nodes: any[]; edges: any[] },
   messages: SandboxMessage[],
-  extraTrace: MockBookingTraceEntry[] = []
+  extraTrace: MockBookingTraceEntry[] = [],
+  aiTraces: AiTrace[] = []
 ): SandboxTickResponse {
   // Mock-booking trace entries have no runner sequence number — append and
   // renumber them after `result.trace` (4A-2d).
@@ -689,5 +705,6 @@ export function assembleSandboxResponse(
     trace,
     steps: result.steps,
     error: result.error ?? null,
+    aiTraces: [...aiTraces],
   };
 }

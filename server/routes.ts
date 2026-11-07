@@ -7525,7 +7525,7 @@ export function registerRoutes(app: Express) {
         edges: Array.isArray(body.definitionJson?.edges) ? body.definitionJson.edges : [],
       };
 
-      const { host, messages, drainBookingTrace } = buildSandboxHost({
+      const { host, messages, aiTraces, drainBookingTrace } = buildSandboxHost({
         httpMode: body.httpMode,
         aiMode: body.aiMode,
         userId: effectiveUserId,
@@ -7552,12 +7552,13 @@ export function registerRoutes(app: Express) {
             trace: [],
             steps: 0,
             error: null,
+            aiTraces: [],
           });
         }
 
         const result = await runFlow({ definition, startNodeId, context: body.context, host });
         return res.json(
-          assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+          assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
         );
       }
 
@@ -7590,7 +7591,7 @@ export function registerRoutes(app: Express) {
               assembleSandboxResponse(result, definition, messages, [
                 ...bookingTick.trace,
                 ...drainBookingTrace(),
-              ])
+              ], aiTraces)
             );
           }
           return res.json(bookingTick.response);
@@ -7609,7 +7610,7 @@ export function registerRoutes(app: Express) {
           userMessage: route.kind === "ai" ? route.title : undefined,
         });
         return res.json(
-          assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+          assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
         );
       }
 
@@ -7636,7 +7637,7 @@ export function registerRoutes(app: Express) {
             assembleSandboxResponse(result, definition, messages, [
               ...textBookingTick.trace,
               ...drainBookingTrace(),
-            ])
+            ], aiTraces)
           );
         }
         return res.json(textBookingTick.response);
@@ -7679,6 +7680,7 @@ export function registerRoutes(app: Express) {
           trace: [],
           steps: 0,
           error: null,
+          aiTraces: [],
         });
       }
 
@@ -7689,7 +7691,7 @@ export function registerRoutes(app: Express) {
         host,
       });
       return res.json(
-        assembleSandboxResponse(result, definition, messages, drainBookingTrace())
+        assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
       );
     } catch (error: any) {
       console.error("Sandbox tick error:", error);
