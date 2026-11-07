@@ -19,6 +19,7 @@ import {
   Calendar,
   ChevronDown,
   Tag,
+  Sparkles,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -112,6 +113,12 @@ export function AppSidebar() {
       title: "Workflows",
       url: "/workflows",
       icon: GitBranch,
+      pageKey: "workflows",
+    },
+    {
+      title: "AI Studio",
+      url: "/ai-studio",
+      icon: Sparkles,
       pageKey: "workflows",
     },
     {

@@ -25,6 +25,7 @@ import Channels from "@/pages/channels";
 import Send from "@/pages/send";
 import Templates from "@/pages/templates";
 import Workflows from "@/pages/workflows";
+import AIStudio from "@/pages/ai-studio";
 import CaptureList from "@/pages/capture-list";
 import BookingScheduler from "@/pages/booking-scheduler";
 import BookingCalendar from "@/pages/booking-calendar";
@@ -97,6 +98,13 @@ function Router() {
         <DashboardLayout fullWidth>
           <ProtectedRoute requiredKey="workflows">
             <Workflows />
+          </ProtectedRoute>
+        </DashboardLayout>
+      </Route>
+      <Route path="/ai-studio">
+        <DashboardLayout fullWidth>
+          <ProtectedRoute requiredKey="workflows">
+            <AIStudio />
           </ProtectedRoute>
         </DashboardLayout>
       </Route>

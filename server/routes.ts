@@ -7735,6 +7735,59 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // AI Studio — Trace Viewer: AI traces for a workflow's executions.
+  // Only rows whose trigger_data carries an `aiTrace` are returned.
+  app.get("/api/workflows/:id/ai-traces", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflowId = parseInt(req.params.id);
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "Invalid workflow id" });
+      }
+
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const rows = await db
+        .select({
+          id: workflowExecutions.id,
+          executedAt: workflowExecutions.executedAt,
+          channel: workflowExecutions.channel,
+          phone: workflowExecutions.phone,
+          messageType: workflowExecutions.messageType,
+          status: workflowExecutions.status,
+          triggerData: workflowExecutions.triggerData,
+        })
+        .from(workflowExecutions)
+        .where(eq(workflowExecutions.workflowId, workflowId))
+        .orderBy(desc(workflowExecutions.executedAt))
+        .limit(200);
+
+      const traces = rows
+        .map((row) => {
+          const triggerData = (row.triggerData ?? {}) as Record<string, any>;
+          const aiTrace = triggerData.aiTrace ?? null;
+          return {
+            id: row.id,
+            executedAt: row.executedAt,
+            channel: row.channel,
+            phone: row.phone,
+            messageType: row.messageType,
+            status: row.status,
+            aiTrace,
+          };
+        })
+        .filter((row) => row.aiTrace !== null);
+
+      res.json(traces);
+    } catch (error: any) {
+      console.error("Get AI traces error:", error);
+      res.status(500).json({ error: "Failed to fetch AI traces" });
+    }
+  });
+
   // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
