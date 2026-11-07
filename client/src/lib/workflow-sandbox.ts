@@ -54,6 +54,10 @@ export interface SandboxTickParams {
   /** AI Agent nodes: 'mock' (default) never calls a provider. */
   aiMode?: "mock" | "live";
   maxSteps?: number;
+  /** Increment E — stable session key for KPI persistence. */
+  sessionId?: string;
+  /** Increment E — persist the AI trace so the KPI tab can read it. */
+  saveExecution?: boolean;
 }
 
 // --- response ---
@@ -142,7 +146,7 @@ function parseRetryAfter(res: Response): number | undefined {
 }
 
 export async function tick(params: SandboxTickParams): Promise<SandboxTickResponse> {
-  const { workflowId, definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps } =
+  const { workflowId, definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps, sessionId, saveExecution } =
     params;
 
   const controller = new AbortController();
@@ -155,7 +159,7 @@ export async function tick(params: SandboxTickParams): Promise<SandboxTickRespon
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       signal: controller.signal,
-      body: JSON.stringify({ definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps }),
+      body: JSON.stringify({ definitionJson, entryNodeId, cursor, context, input, httpMode, aiMode, maxSteps, sessionId, saveExecution }),
     });
   } catch (e) {
     clearTimeout(timeoutId);

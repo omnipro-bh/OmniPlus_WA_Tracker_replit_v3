@@ -7535,6 +7535,31 @@ export function registerRoutes(app: Express) {
         definition,
       });
 
+      // Increment E — optionally persist this tick's AI trace to
+      // `workflow_executions` so the KPI tab can read Live Chat conversations.
+      const sessionKey = body.saveExecution
+        ? `sandbox_${String(body.sessionId || "anon").replace(/[^a-zA-Z0-9_-]/g, "")}`
+        : null;
+      const messageType = body.input.type === "button" ? "button_reply" : "text";
+      const persistAiTrace = async () => {
+        if (!sessionKey) return;
+        const trace = aiTraces.length > 0 ? aiTraces[aiTraces.length - 1] : null;
+        if (!trace) return;
+        try {
+          await db.insert(workflowExecutions).values({
+            workflowId,
+            phone: sessionKey,
+            channel: "sandbox",
+            messageType,
+            triggerData: { channel: "sandbox", aiTrace: trace },
+            responsesSent: [],
+            status: "SUCCESS",
+          });
+        } catch (error: any) {
+          console.error("[Sandbox] persist execution failed:", error?.message || error);
+        }
+      };
+
       // ── start ──────────────────────────────────────────────────────────
       if (body.input.type === "start") {
         const startNodeId = resolveSandboxStartNode(definition, body.entryNodeId);
@@ -7558,6 +7583,7 @@ export function registerRoutes(app: Express) {
         }
 
         const result = await runFlow({ definition, startNodeId, context: body.context, host });
+        await persistAiTrace();
         return res.json(
           assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
         );
@@ -7588,6 +7614,7 @@ export function registerRoutes(app: Express) {
               context: bookingTick.context,
               host,
             });
+            await persistAiTrace();
             return res.json(
               assembleSandboxResponse(result, definition, messages, [
                 ...bookingTick.trace,
@@ -7610,6 +7637,7 @@ export function registerRoutes(app: Express) {
           host,
           userMessage: route.kind === "ai" ? route.title : undefined,
         });
+        await persistAiTrace();
         return res.json(
           assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
         );
@@ -7634,6 +7662,7 @@ export function registerRoutes(app: Express) {
             context: textBookingTick.context,
             host,
           });
+          await persistAiTrace();
           return res.json(
             assembleSandboxResponse(result, definition, messages, [
               ...textBookingTick.trace,
@@ -7691,6 +7720,7 @@ export function registerRoutes(app: Express) {
         context: capture.nextContext,
         host,
       });
+      await persistAiTrace();
       return res.json(
         assembleSandboxResponse(result, definition, messages, drainBookingTrace(), aiTraces)
       );

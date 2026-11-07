@@ -34,6 +34,10 @@ type ChatItem =
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function newSessionId(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
 let traceSeq = 0;
 function toTraceRow(aiTrace: Record<string, any>): AiTraceRow {
   return {
@@ -154,6 +158,7 @@ export function LiveChatTab({
   const busyRef = useRef(false);
   const idRef = useRef(0);
   const startedForRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string>(newSessionId());
 
   const nextId = () => `c${idRef.current++}`;
 
@@ -173,6 +178,8 @@ export function LiveChatTab({
         input,
         httpMode: "mock",
         aiMode,
+        sessionId: sessionIdRef.current,
+        saveExecution: true,
       });
 
       sessionRef.current.cursor = res.cursor;
@@ -207,6 +214,7 @@ export function LiveChatTab({
 
   const resetAndStart = () => {
     sessionRef.current = { cursor: null, context: {} };
+    sessionIdRef.current = newSessionId();
     setChat([]);
     setTraces([]);
     setAwaiting(null);

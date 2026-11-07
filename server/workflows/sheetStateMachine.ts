@@ -186,21 +186,26 @@ export async function generateConversationalFallback(
   _fallbackString: string,
   allowedOptions?: string[]
 ): Promise<string> {
+  // The mock provider has no real model — its "reply" is an echo of the prompt,
+  // which must never leak to the customer. Skip it so mock mode and unit tests
+  // keep the static sheet fallback. Every real provider (Groq, DeepSeek, …) runs.
+  if (client.id === 'mock') return '';
+
   const optionsLine = allowedOptions && allowedOptions.length > 0
     ? allowedOptions.join(', ')
     : 'Any text';
   const prompt = [
-    `You are a helpful AI assistant. You are trying to collect the "${slotName}" from the customer.`,
+    `You are a helpful AI assistant collecting the "${slotName}" from the customer.`,
     '',
-    `The question you just asked was: "${currentQuestion}"`,
+    `The question you asked was: "${currentQuestion}"`,
     `The valid options are: ${optionsLine}`,
     `The customer replied: "${userMessage}"`,
     '',
-    'Instructions:',
-    '1. First, acknowledge what the customer said. If they asked a question, answer it if you can. If they provided a valid alternative (like "Anyone"), acknowledge it.',
-    '2. Then, gently guide them back to the current step.',
-    '3. If they provided an invalid option, list the valid options.',
-    '4. Keep it brief and natural.',
+    `The customer's reply is NOT one of the valid options. Do exactly this:`,
+    '1. Acknowledge what the customer said (e.g. "I see you are looking for a dentist").',
+    '2. Briefly explain it is not a valid option, then list the valid options.',
+    '3. Ask them to choose one of the valid options.',
+    '4. Keep it brief, natural and conversational.',
     '5. Reply in the same language as the customer.',
     '',
     'Return ONLY the text you would say to the customer. Do not use JSON.',
@@ -527,9 +532,10 @@ export async function runSheetStateMachine(
 
       // Increment E — conversational fallback: give the LLM a chance to respond
       // naturally (acknowledge + guide back) before defaulting to the static
-      // sheet fallback. Mock clients skip this so tests/sandbox stay deterministic.
+      // sheet fallback. Real providers (Groq, DeepSeek, …) always run here; the
+      // mock provider short-circuits inside `generateConversationalFallback`.
       let text = fallback || question;
-      if (client && client.id !== 'mock') {
+      if (client) {
         const generated = await generateConversationalFallback(
           client,
           slotName,

@@ -72,6 +72,13 @@ export interface SandboxTickRequest {
   /** AI Agent nodes: 'mock' (default, $0) or 'live' (real provider call). */
   aiMode: "mock" | "live";
   maxSteps?: number;
+  /**
+   * Increment E — stable per-conversation key used as `workflow_executions.phone`
+   * when `saveExecution` is set (so the KPI tab can group a Live Chat session).
+   */
+  sessionId?: string;
+  /** Increment E — persist this tick's AI trace to `workflow_executions`. */
+  saveExecution?: boolean;
 }
 
 export type SandboxBubbleType =
@@ -173,6 +180,9 @@ export const sandboxTickSchema = z.object({
   // AI Agent previews spend $0 unless the caller explicitly opts into 'live'.
   aiMode: z.enum(["mock", "live"]).optional().default("mock"),
   maxSteps: z.number().int().min(1).max(50).optional(),
+  // Increment E — KPI persistence (Live Chat): stable session key + opt-in save.
+  sessionId: z.string().optional(),
+  saveExecution: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------

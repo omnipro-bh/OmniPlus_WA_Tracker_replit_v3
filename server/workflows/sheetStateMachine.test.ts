@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import {
   extractSlot,
+  generateConversationalFallback,
   isSheetStateMachineEnabled,
   parseNextStepLogic,
   readSheetState,
@@ -630,4 +631,54 @@ test('turn 2+ without a client still rejects an out-of-list value', async () => 
   assert.equal(turn.fallbackUsed, true);
   assert.equal(turn.sheet.stepId, 'Step_1');
   assert.deepEqual(turn.sheet.slots, {});
+});
+
+// ── Increment E: conversational fallback (mock vs real provider) ─────────────
+
+test('generateConversationalFallback skips the mock client (no model call, no echo)', async () => {
+  const client = stubClient(['whatever']);
+  const out = await generateConversationalFallback(
+    client,
+    'department',
+    'dentist',
+    'Which department do you need?',
+    'Please pick a department.',
+    ['Dental', 'ENT']
+  );
+
+  assert.equal(out, '');
+  assert.equal(client.calls, 0); // the mock never made a call
+});
+
+test('generateConversationalFallback returns the model text for a real provider', async () => {
+  const real: LlmClient = {
+    id: 'groq',
+    defaultModel: 'test-model',
+    async complete(_req: LlmCompletionRequest): Promise<LlmCompletionResult> {
+      return {
+        ok: true,
+        text: 'I see you are looking for a dentist. Our departments are Dental and ENT — which would you like?',
+        provider: 'groq',
+        model: 'test-model',
+        finishReason: 'stop',
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        latencyMs: 1,
+        attempts: 1,
+        toolCalls: [],
+      };
+    },
+  };
+
+  const out = await generateConversationalFallback(
+    real,
+    'department',
+    'dentist',
+    'Which department do you need?',
+    '',
+    ['Dental', 'ENT']
+  );
+
+  assert.match(out, /dentist/i);
+  assert.match(out, /Dental/);
+  assert.match(out, /ENT/);
 });
