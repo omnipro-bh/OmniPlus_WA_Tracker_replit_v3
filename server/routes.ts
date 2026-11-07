@@ -8015,7 +8015,7 @@ export function registerRoutes(app: Express) {
         sql`${workflowExecutions.triggerData} ? 'aiTrace'`,
       ];
       if (days > 0) {
-        conditions.push(gte(workflowExecutions.executedAt, sql`now() - interval '${days} days'`));
+        conditions.push(gte(workflowExecutions.executedAt, sql`now() - ${days} * interval '1 day'`));
       }
 
       const rows = await db
