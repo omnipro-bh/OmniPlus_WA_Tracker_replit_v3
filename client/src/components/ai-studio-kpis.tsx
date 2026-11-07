@@ -1,13 +1,23 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  BarChart3,
   Loader2,
   MessageSquareX,
   ShieldCheck,
   TrendingDown,
   Users,
 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -27,6 +37,11 @@ interface KpiReasonCount {
   count: number;
 }
 
+interface KpiTimePoint {
+  date: string;
+  conversations: number;
+}
+
 interface KpiMetrics {
   totalConversations: number;
   totalAiTurns: number;
@@ -34,7 +49,18 @@ interface KpiMetrics {
   fallbackRate: number;
   dropOffSteps: KpiStepCount[];
   topRejectedInputs: KpiReasonCount[];
+  slotDistribution: Record<string, Record<string, number>>;
+  stepFunnel: KpiStepCount[];
+  timeSeries: KpiTimePoint[];
 }
+
+const tooltipStyle = {
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: 8,
+  color: "hsl(var(--foreground))",
+  fontSize: 12,
+};
 
 function pct(rate: number): string {
   return `${(rate * 100).toFixed(0)}%`;
@@ -72,6 +98,26 @@ function StatCard({
   );
 }
 
+/** Horizontal bar chart shared by the funnel and slot-distribution views. */
+function HBarChart({ data }: { data: Array<{ name: string; count: number }> }) {
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(120, data.length * 32)}>
+      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
+        <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+        <YAxis
+          type="category"
+          dataKey="name"
+          width={110}
+          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+        />
+        <Tooltip cursor={{ fill: "hsl(var(--muted))" }} contentStyle={tooltipStyle} />
+        <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function KpisTab({ workflowId }: { workflowId: string }) {
   const [days, setDays] = useState<number>(30);
 
@@ -79,6 +125,12 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
     queryKey: [`/api/ai-studio/kpis?workflowId=${workflowId}&days=${days}`],
     enabled: Boolean(workflowId),
   });
+
+  const slotNames = useMemo(() => Object.keys(metrics?.slotDistribution ?? {}), [metrics]);
+  const [selectedSlot, setSelectedSlot] = useState<string>("");
+
+  // Keep the selected slot valid when the data changes.
+  const effectiveSlot = slotNames.includes(selectedSlot) ? selectedSlot : (slotNames[0] ?? "");
 
   if (isLoading) {
     return (
@@ -108,6 +160,15 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
   const fallbackTone =
     metrics.fallbackRate <= 0.15 ? "green" : metrics.fallbackRate <= 0.3 ? "amber" : "red";
 
+  const funnelData = metrics.stepFunnel.map((s) => ({ name: s.stepId, count: s.count }));
+  const slotData = effectiveSlot
+    ? Object.entries(metrics.slotDistribution[effectiveSlot] ?? {}).map(([value, count]) => ({
+        name: value,
+        count,
+      }))
+    : [];
+  const timeData = metrics.timeSeries.map((t) => ({ name: t.date, count: t.conversations }));
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -122,18 +183,67 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
         <StatCard icon={MessageSquareX} label="Total AI Turns" value={String(metrics.totalAiTurns)} tone="default" />
       </div>
 
-      {/* Middle + bottom rows */}
+      {/* Funnel */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            Step Funnel
+          </CardTitle>
+          <CardDescription>How many conversations reached each step.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {funnelData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No step data recorded.</p>
+          ) : (
+            <HBarChart data={funnelData} />
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Drop-off steps */}
+        {/* Slot distribution */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              Slot Distribution
+            </CardTitle>
+            <CardDescription>Which values customers chose, per slot.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {slotNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No slots recorded.</p>
+            ) : (
+              <>
+                <Select value={effectiveSlot} onValueChange={setSelectedSlot}>
+                  <SelectTrigger className="w-full max-w-xs">
+                    <SelectValue placeholder="Select a slot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slotNames.map((slot) => (
+                      <SelectItem key={slot} value={slot}>
+                        {slot}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <HBarChart data={slotData} />
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Drop-off + rejected inputs */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <MessageSquareX className="h-4 w-4 text-muted-foreground" />
               Drop-off Steps
             </CardTitle>
             <CardDescription>Where conversations end without completing.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {metrics.dropOffSteps.length === 0 ? (
               <p className="text-sm text-muted-foreground">No drop-offs recorded.</p>
             ) : (
@@ -146,34 +256,51 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
 
-        {/* Top rejected inputs */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-              Top Rejected Inputs
-            </CardTitle>
-            <CardDescription>What users typed that failed validation.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {metrics.topRejectedInputs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No rejections recorded.</p>
-            ) : (
-              <ul className="space-y-2">
-                {metrics.topRejectedInputs.map((r) => (
-                  <li key={r.reason} className="flex items-start justify-between gap-3 text-sm">
-                    <span className="break-words text-muted-foreground">{r.reason}</span>
-                    <span className="shrink-0 font-medium">{r.count}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="border-t pt-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                Top Rejected Inputs
+              </div>
+              {metrics.topRejectedInputs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No rejections recorded.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {metrics.topRejectedInputs.map((r) => (
+                    <li key={r.reason} className="flex items-start justify-between gap-3 text-sm">
+                      <span className="break-words text-muted-foreground">{r.reason}</span>
+                      <span className="shrink-0 font-medium">{r.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Time series */}
+      {timeData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              Conversations per Day
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={timeData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip cursor={{ fill: "hsl(var(--muted))" }} contentStyle={tooltipStyle} />
+                <Bar dataKey="count" name="Conversations" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

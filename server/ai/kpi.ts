@@ -50,6 +50,12 @@ export interface KpiReasonCount {
   count: number;
 }
 
+export interface KpiTimePoint {
+  /** YYYY-MM-DD (UTC). */
+  date: string;
+  conversations: number;
+}
+
 export interface KpiMetrics {
   totalConversations: number;
   totalAiTurns: number;
@@ -59,10 +65,27 @@ export interface KpiMetrics {
   fallbackRate: number;
   dropOffSteps: KpiStepCount[];
   topRejectedInputs: KpiReasonCount[];
+  /** slot name → value → count of conversations that chose that value. */
+  slotDistribution: Record<string, Record<string, number>>;
+  /** Number of distinct conversations that reached each step (ordered Step_1 → N). */
+  stepFunnel: KpiStepCount[];
+  /** Conversations per day (days with activity only). */
+  timeSeries: KpiTimePoint[];
 }
 
 function timestampOf(v: string | Date): number {
   return v instanceof Date ? v.getTime() : new Date(v).getTime();
+}
+
+function dayKey(v: string | Date): string {
+  const d = v instanceof Date ? v : new Date(v);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Numeric sort key for a `Step_N` id (non-numeric ids sort last). */
+function stepOrder(stepId: string): number {
+  const n = Number(String(stepId).replace(/\D/g, ""));
+  return Number.isNaN(n) ? Infinity : n;
 }
 
 function bump(map: Map<string, number>, key: string): void {
@@ -105,6 +128,9 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
   let fallbackTurns = 0;
   const dropOff = new Map<string, number>();
   const reasons = new Map<string, number>();
+  const slotValues = new Map<string, Map<string, number>>();
+  const stepReach = new Map<string, Set<string>>();
+  const dayPhones = new Map<string, Set<string>>();
 
   for (const row of list) {
     const trace = row.aiTrace;
@@ -122,6 +148,7 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
   }
 
   for (const rowsForPhone of Array.from(byPhone.values())) {
+    const phone = rowsForPhone[0]?.phone;
     const sorted = [...rowsForPhone].sort(
       (a, b) => timestampOf(a.executedAt) - timestampOf(b.executedAt)
     );
@@ -134,7 +161,72 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
     if (!completed && last?.aiTrace?.sheetState?.stepId) {
       bump(dropOff, last.aiTrace.sheetState.stepId);
     }
+
+    // Per-conversation accumulation (only for conversations with a phone).
+    if (!phone) continue;
+
+    // Slots are cumulative across a conversation, so merge every turn's snapshot;
+    // the last non-empty value wins. This survives the reset to `{}` on completion.
+    const mergedSlots = new Map<string, unknown>();
+    const reachedSteps = new Set<string>();
+    const activeDays = new Set<string>();
+    for (const r of sorted) {
+      const slots = r.aiTrace?.sheetState?.slots ?? {};
+      for (const [name, value] of Object.entries(slots)) {
+        if (value !== undefined && value !== null && value !== "") mergedSlots.set(name, value);
+      }
+      const stepId = r.aiTrace?.sheetState?.stepId;
+      if (stepId) reachedSteps.add(stepId);
+      activeDays.add(dayKey(r.executedAt));
+    }
+
+    for (const [name, value] of Array.from(mergedSlots)) {
+      let byValue = slotValues.get(name);
+      if (!byValue) {
+        byValue = new Map();
+        slotValues.set(name, byValue);
+      }
+      bump(byValue, String(value));
+    }
+
+    for (const stepId of Array.from(reachedSteps)) {
+      let phones = stepReach.get(stepId);
+      if (!phones) {
+        phones = new Set();
+        stepReach.set(stepId, phones);
+      }
+      phones.add(phone);
+    }
+
+    for (const day of Array.from(activeDays)) {
+      let phones = dayPhones.get(day);
+      if (!phones) {
+        phones = new Set();
+        dayPhones.set(day, phones);
+      }
+      phones.add(phone);
+    }
   }
+
+  // slot name → value → count, values sorted by count descending.
+  const slotDistribution: Record<string, Record<string, number>> = {};
+  for (const [slot, byValue] of Array.from(slotValues.entries())) {
+    const inner: Record<string, number> = {};
+    for (const [value, count] of Array.from(byValue.entries()).sort((a, b) => b[1] - a[1])) {
+      inner[value] = count;
+    }
+    slotDistribution[slot] = inner;
+  }
+
+  // Step funnel ordered Step_1 → Step_N.
+  const stepFunnel: KpiStepCount[] = Array.from(stepReach.entries())
+    .map(([stepId, phones]) => ({ stepId, count: phones.size }))
+    .sort((a, b) => stepOrder(a.stepId) - stepOrder(b.stepId));
+
+  // Conversations per day, ascending.
+  const timeSeries: KpiTimePoint[] = Array.from(dayPhones.entries())
+    .map(([date, phones]) => ({ date, conversations: phones.size }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     totalConversations,
@@ -146,5 +238,8 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
       count,
     })),
     topRejectedInputs: topN(reasons, 5).map(([reason, count]) => ({ reason, count })),
+    slotDistribution,
+    stepFunnel,
+    timeSeries,
   };
 }

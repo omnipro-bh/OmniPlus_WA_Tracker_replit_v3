@@ -344,7 +344,7 @@ export default function AIStudio() {
         </TabsContent>
 
         {/* ── Live Chat & Trace Viewer (functional) ───────────────────── */}
-        <TabsContent value="live-chat" forceMount>
+        <TabsContent value="live-chat">
           <LiveChatTab workflow={selectedWorkflow} active={activeTab === "live-chat"} />
         </TabsContent>
 

@@ -9,8 +9,8 @@ const row = (phone: string, executedAt: string, aiTrace: KpiAiTrace | null): Kpi
 });
 
 const completed = (): KpiAiTrace => ({ sheetState: { intentId: null, stepId: null, slots: {} } });
-const midFlow = (stepId: string, intentId = "1"): KpiAiTrace => ({
-  sheetState: { intentId, stepId, slots: {} },
+const midFlow = (stepId: string, intentId = "1", slots: Record<string, any> = {}): KpiAiTrace => ({
+  sheetState: { intentId, stepId, slots },
 });
 
 test("empty input yields all-zero metrics", () => {
@@ -21,6 +21,9 @@ test("empty input yields all-zero metrics", () => {
     fallbackRate: 0,
     dropOffSteps: [],
     topRejectedInputs: [],
+    slotDistribution: {},
+    stepFunnel: [],
+    timeSeries: [],
   });
 });
 
@@ -133,4 +136,76 @@ test("rows with a null aiTrace are ignored", () => {
   const m = computeKpis(rows);
   assert.equal(m.totalAiTurns, 2); // still counted as a turn
   assert.equal(m.containmentRate, 1); // the last turn (completed) determines containment
+});
+
+test("slotDistribution counts final values per slot across conversations", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { department: "Dental" })),
+    row("a", "2026-11-01T10:01:00Z", completed()),
+    row("b", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { department: "ENT" })),
+    row("b", "2026-11-01T10:01:00Z", completed()),
+    row("c", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { department: "Dental" })),
+  ];
+  const m = computeKpis(rows);
+  assert.deepEqual(m.slotDistribution, { department: { Dental: 2, ENT: 1 } });
+});
+
+test("slotDistribution survives the completion reset (slots are merged across turns)", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { department: "Dental" })),
+    row("a", "2026-11-01T10:01:00Z", completed()), // completing turn resets slots to {}
+  ];
+  const m = computeKpis(rows);
+  assert.deepEqual(m.slotDistribution, { department: { Dental: 1 } });
+});
+
+test("slotDistribution sorts values by count descending", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { branch: "Manama" })),
+    row("b", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { branch: "Hidd" })),
+    row("c", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { branch: "Manama" })),
+    row("d", "2026-11-01T10:00:00Z", midFlow("Step_1", "1", { branch: "Manama" })),
+  ];
+  assert.deepEqual(computeKpis(rows).slotDistribution, {
+    branch: { Manama: 3, Hidd: 1 },
+  });
+});
+
+test("stepFunnel counts distinct conversations that reached each step, ordered", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_1")),
+    row("a", "2026-11-01T10:01:00Z", midFlow("Step_2")),
+    row("a", "2026-11-01T10:02:00Z", midFlow("Step_3")),
+    row("b", "2026-11-01T10:00:00Z", midFlow("Step_1")),
+  ];
+  assert.deepEqual(computeKpis(rows).stepFunnel, [
+    { stepId: "Step_1", count: 2 },
+    { stepId: "Step_2", count: 1 },
+    { stepId: "Step_3", count: 1 },
+  ]);
+});
+
+test("stepFunnel orders steps numerically (Step_10 after Step_2)", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_10")),
+    row("b", "2026-11-01T10:00:00Z", midFlow("Step_2")),
+    row("c", "2026-11-01T10:00:00Z", midFlow("Step_1")),
+  ];
+  assert.deepEqual(
+    computeKpis(rows).stepFunnel.map((s) => s.stepId),
+    ["Step_1", "Step_2", "Step_10"]
+  );
+});
+
+test("timeSeries counts distinct conversations per day, ascending", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", midFlow("Step_1")),
+    row("a", "2026-11-01T10:01:00Z", midFlow("Step_2")), // same phone, same day
+    row("b", "2026-11-01T11:00:00Z", midFlow("Step_1")),
+    row("c", "2026-11-02T10:00:00Z", midFlow("Step_1")),
+  ];
+  assert.deepEqual(computeKpis(rows).timeSeries, [
+    { date: "2026-11-01", conversations: 2 },
+    { date: "2026-11-02", conversations: 1 },
+  ]);
 });
