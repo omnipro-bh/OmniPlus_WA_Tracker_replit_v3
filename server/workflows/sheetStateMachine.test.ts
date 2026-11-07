@@ -456,6 +456,46 @@ test('turn 2+ ignores the model saying "valid": false when a value is present', 
   assert.equal(turn.fallbackUsed, false);
 });
 
+test('turn 2+ uses the raw message when the extractor returns nothing', async () => {
+  const client = stubClient(['{"value": null}']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'ok', reader, client);
+
+  // The model returning "" must not suppress the customer's answer to the
+  // question we just asked; code validation accepts any non-empty text.
+  assert.equal(turn.sheet.slots.service, 'ok');
+  assert.equal(turn.sheet.stepId, 'Step_2');
+  assert.equal(turn.fallbackUsed, false);
+});
+
+test('turn 2+ raw-message fallback still rejects an out-of-list value', async () => {
+  const listReader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') return INTENTS;
+    return [
+      {
+        intent_id: '1',
+        step_id: 'Step_1',
+        ai_question: 'Which branch?',
+        expected_input: 'list',
+        slot_name: 'branch',
+        options: 'Manama, Hidd',
+        next_step_logic: '→ done',
+        fallback: 'Sorry, please pick Manama or Hidd.',
+      },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+  const client = stubClient(['{"value": null}']);
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'banana', listReader, client);
+
+  assert.equal(turn.fallbackUsed, true);
+  assert.equal(turn.sheet.stepId, 'Step_1');
+  assert.deepEqual(turn.sheet.slots, {});
+  assert.match(turn.fallbackReason ?? '', /not one of/); // the real reason, not "empty value"
+});
+
 test('turn 2+ rejects an out-of-list value and records the reason', async () => {
   const listReader: RowReader = async (_s, tab, filter) => {
     if (tab === 'Intents') return INTENTS;

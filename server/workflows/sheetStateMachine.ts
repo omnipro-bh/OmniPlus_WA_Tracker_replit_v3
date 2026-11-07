@@ -451,8 +451,15 @@ export async function runSheetStateMachine(
         options,
       });
       slotExtractionAttempts += extracted.attempts;
-      if (extracted.ok) candidate = extracted.value;
-      else fallbackReason = extracted.error;
+      if (extracted.ok) {
+        // The extractor must never suppress the answer to the question we just
+        // asked: if it returned nothing, the raw message is the candidate and
+        // code validation decides (identical to the no-client path). Otherwise a
+        // model that "helpfully" returns "" would re-trap the customer.
+        candidate = extracted.value || userMessage.trim();
+      } else {
+        fallbackReason = extracted.error;
+      }
     }
 
     const validation = fallbackReason ? null : validateSlotValue(candidate, expectedInput, options);
