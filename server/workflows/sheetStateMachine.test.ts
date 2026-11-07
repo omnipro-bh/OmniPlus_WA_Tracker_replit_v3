@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  collectLookupFedSlots,
   extractSlot,
   generateConversationalFallback,
   isSheetStateMachineEnabled,
@@ -749,4 +750,40 @@ test('lookup failure advances to alternate_step and records fallback', async () 
   assert.equal(t2.text, 'No availability. Try another time?');
   assert.equal(t2.sheet.stepId, 'Step_3');
   assert.equal(t2.fallbackUsed, true); // the lookup failed
+});
+
+test('collectLookupFedSlots extracts slot names referenced in lookup_filter', () => {
+  const steps = [
+    { step_id: 'Step_2', lookup_filter: 'specialist={specialist} AND branch={location}' },
+    { step_id: 'Step_3', lookup_filter: 'doctor={doctor}' },
+  ];
+  const slots = collectLookupFedSlots(steps, 'lookup_filter');
+  assert.deepEqual(Array.from(slots).sort(), ['doctor', 'location', 'specialist']);
+});
+
+test('a slot referenced in a lookup_filter accepts any non-empty string', async () => {
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [
+        { id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Your {specialist} appointment is available at {available_times}.' },
+      ];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return [{ specialist: 'Dr. Bindiya Sajan', available_times: '5 PM' }];
+    }
+    return [
+      { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which specialist?', expected_input: 'list', options: 'Dr. Ahmed, Dr. Ali', slot_name: 'specialist', next_step_logic: '→ Step_2' },
+      { intent_id: '1', step_id: 'Step_2', step_type: 'lookup', lookup_source: 'Doctors_Schedule', lookup_filter: 'specialist={specialist}', lookup_extract: 'available_times', slot_name: 'available_times', next_step_logic: '→ done' },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+  const t2 = await runSheetStateMachine(sheet, context, 'n1', 'Dr. Bindiya Sajan', reader);
+
+  // "Dr. Bindiya Sajan" is not in the hardcoded options list, but because
+  // `specialist` feeds a lookup_filter it is accepted as free text, the schedule
+  // lookup matches, and the flow completes.
+  assert.equal(t2.text, 'Your Dr. Bindiya Sajan appointment is available at 5 PM.');
+  assert.equal(t2.sheet.intentId, null); // completed
+  assert.equal(t2.fallbackUsed, false);
 });

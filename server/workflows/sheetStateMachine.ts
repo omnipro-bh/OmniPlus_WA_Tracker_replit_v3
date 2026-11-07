@@ -129,6 +129,25 @@ export function parseLookupFilter(filter: string): LookupFilterClause[] {
     });
 }
 
+/**
+ * The set of slot names referenced by `{slot}` placeholders in any step's
+ * `lookup_filter`. A slot that feeds a lookup is validated as free text — the
+ * schedule lookup, not a hardcoded `options` list, decides whether it is valid.
+ */
+export function collectLookupFedSlots(
+  steps: Record<string, any>[],
+  lookupFilterHeader: string
+): Set<string> {
+  const slots = new Set<string>();
+  for (const step of Array.isArray(steps) ? steps : []) {
+    const filter = String(step[lookupFilterHeader] ?? '');
+    const matches = filter.match(/\{(\w+)\}/g);
+    if (!matches) continue;
+    for (const m of matches) slots.add(m.slice(1, -1));
+  }
+  return slots;
+}
+
 /** Extraction hint only — `options` never gates validity here. */
 export interface SlotExtractHint {
   type?: string;
@@ -504,13 +523,17 @@ export async function runSheetStateMachine(
     // ── Task 5b: turn-1 LLM extraction → skip already-filled steps ──────────
     // The LLM returns raw strings only. validateSlotValue decides what is kept,
     // so an out-of-list value is dropped (never stored) instead of trusted.
+    // A slot that feeds a `lookup_filter` is treated as free text: the schedule
+    // lookup — not a hardcoded `options` list — decides whether it is valid.
+    const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
     const slotMeta = new Map<string, { type: string; options?: string[] }>();
     for (const step of steps) {
       const name = String(step[slotHeader] ?? '').trim();
       if (name && !slotMeta.has(name)) {
+        const isLookupFed = lookupFedSlots.has(name);
         slotMeta.set(name, {
-          type: String(step[expectedHeader] ?? 'text').trim(),
-          options: parseOptions(step[optionsHeader]),
+          type: isLookupFed ? 'text' : String(step[expectedHeader] ?? 'text').trim(),
+          options: isLookupFed ? undefined : parseOptions(step[optionsHeader]),
         });
       }
     }
@@ -616,10 +639,13 @@ export async function runSheetStateMachine(
 
   // LLM extracts the raw value; CODE decides whether it is acceptable. Without a
   // client the raw message is the candidate — validation is identical either way.
+  // A slot that feeds a `lookup_filter` is free text: the schedule lookup decides.
   const slotName = String(current[slotHeader] ?? '').trim();
   if (slotName) {
-    const expectedInput = String(current[expectedHeader] ?? 'text').trim();
-    const options = parseOptions(current[optionsHeader]);
+    const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
+    const isLookupFed = lookupFedSlots.has(slotName);
+    const expectedInput = isLookupFed ? 'text' : String(current[expectedHeader] ?? 'text').trim();
+    const options = isLookupFed ? undefined : parseOptions(current[optionsHeader]);
 
     let candidate = userMessage.trim();
     let fallbackReason: string | undefined;
