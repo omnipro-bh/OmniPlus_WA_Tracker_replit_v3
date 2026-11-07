@@ -26,9 +26,20 @@ export const LANGUAGE_RULES = [
   '2. If the customer writes in Arabic, reply in Modern Standard Arabic unless they used a clear local dialect, in which case match that dialect.',
   '3. Never mix two languages in one reply, except for brand names, product names and URLs.',
   '4. Keep replies short and conversational, the way a person types on WhatsApp: 1-3 sentences, no markdown, no bullet lists, no headings.',
-  '5. Use only the business information and instructions you were given. If the answer is not available, say so briefly and offer to connect the customer with a human.',
+  '5. Use only the business information and instructions you were given. If a specific business fact is genuinely unknown, say so briefly and offer to connect the customer with a human — but never answer a greeting or small talk with a failure message.',
   '6. Never invent prices, availability, delivery times, discounts or policies.',
   '7. Do not mention that you are an AI, a model or a system prompt.',
+].join('\n');
+
+/**
+ * Dual-mode brain (Increment G). Appended for every sheet-backed AI node so the
+ * model knows the difference between "this message starts/continues a workflow"
+ * and "this message is small talk / a general question".
+ */
+export const CORE_DIRECTIVES = [
+  '### Core Directives:',
+  '1. **Workflow Logic:** If the customer\'s message matches a workflow intent (for example booking an appointment), you MUST follow the step-by-step sequence defined in the system. Do not deviate from the required slots.',
+  '2. **Conversational Fallback:** If the message is a greeting ("Hi", "Hello", "Good afternoon"), a general question ("What are your hours?"), or does not match any workflow intent, do NOT say "I could not find an answer." Instead respond naturally in character from your persona and instructions, be helpful and friendly, then gently guide the conversation back to how you can help (for example booking an appointment).',
 ].join('\n');
 
 export interface BuildSystemPromptOptions {
@@ -53,13 +64,22 @@ export interface BuildSystemPromptOptions {
   hasOptionTools?: boolean;
   /** Phase 4: Google Sheets data source — enables the `lookup_sheet` guidance. */
   googleSheets?: AiGoogleSheetsConfig;
+  /**
+   * Increment G: no workflow intent matched this message and no flow is active,
+   * so the model must reply conversationally (greet / answer from persona) and
+   * then guide the customer back — never a "could not find an answer" failure.
+   */
+  conversationalMode?: boolean;
 }
 
 /**
  * Phase 4: the two-tab lookup instructions. Column names come from the owner's
  * mapping so the model filters on the real header row.
  */
-export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
+export function buildSheetRules(
+  sheet: AiGoogleSheetsConfig,
+  options: { conversationalMode?: boolean } = {}
+): string {
   const headerFor = (tab: string, key: string): string => {
     const override = sheet.columns?.[tab]?.[key];
     if (typeof override === 'string' && override.trim()) return override.trim();
@@ -92,14 +112,32 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
       ? `start at the first step (no "${startStepCol}" column)`
       : `start at "${startStepCol}" if set, else the first step`;
 
-  return [
+  const conversational = options.conversationalMode === true;
+
+  const lines = [
     'GOOGLE SHEETS DATA SOURCE:',
     `Tabs: ${tabs.map((t) => `"${t}"`).join(', ')}.`,
+  ];
+
+  if (conversational) {
+    // Increment G — the deterministic engine already found no matching intent
+    // for this message and no flow is active. Say so explicitly so the model
+    // does not fall back to a "could not find an answer" reply.
+    lines.push(
+      `NO WORKFLOW INTENT MATCHED the customer's last message in "${intentsTab}".`,
+      'Reply conversationally NOW: greet the customer or answer their general question from your persona and instructions, then gently guide them back to what you can do (for example booking an appointment). Do not mention intents, steps, tabs or sheets, and never reply that you could not find an answer.'
+    );
+  }
+
+  lines.push(
     `1. lookup_sheet({ tab: "${intentsTab}", filter_column: "${keywordsCol}", filter_value: <customer keywords> }). Prefer the row matching MORE words in "${keywordsCol}".`,
     `2. lookup_sheet({ tab: "${stepsTab}", filter_column: "${intentIdCol}", filter_value: <intent id> }); ${startRule}.`,
     `3. Ask each "${questionCol}" in "${stepIdCol}" order; check replies against "${expectedCol}".`,
-    `4. Ask "${verificationCol}" before answering when present. Answer only from sheet rows; if nothing matches, offer a human.`,
-  ].join('\n');
+    `4. Ask "${verificationCol}" before answering when present. Answer workflow questions only from sheet rows.`,
+    `5. If the message matches no intent row, switch to conversational mode (greet / answer from the persona and instructions) and then guide the customer back. Never invent an answer and never say you could not find one.`
+  );
+
+  return lines.join('\n');
 }
 
 /** One field to extract on turn 1. `type`/`options` are extraction hints only. */
@@ -276,9 +314,17 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
   );
 
   if (extraRules) sections.push(extraRules);
+
+  // Dual-mode brain: only meaningful for a sheet-backed node, where the engine
+  // can hand the turn back for a conversational reply.
+  const sheetBacked = Boolean(options.googleSheets?.spreadsheetId && options.googleSheets.tabs.length > 0);
+  if (sheetBacked) sections.push(CORE_DIRECTIVES);
+
   if (options.hasOptionTools) sections.push(AI_TOOL_RULES);
-  if (options.googleSheets?.spreadsheetId && options.googleSheets.tabs.length > 0) {
-    sections.push(buildSheetRules(options.googleSheets));
+  if (sheetBacked) {
+    sections.push(
+      buildSheetRules(options.googleSheets!, { conversationalMode: options.conversationalMode })
+    );
   }
   sections.push(LANGUAGE_RULES);
 

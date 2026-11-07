@@ -288,12 +288,15 @@ test('slot_name maps the user message into the captured slot', async () => {
   assert.equal(turn.sheet.stepId, 'Step_2');
 });
 
-test('no intent match returns a friendly fallback', async () => {
+test('no intent match hands the turn back for a conversational reply', async () => {
   const emptyReader: RowReader = async () => [];
   const turn = await runSheetStateMachine(sheet, {}, 'n1', 'gibberish', emptyReader);
 
-  assert.match(turn.text, /could not find an answer/i);
+  // Increment G: no static failure text — the executor answers with the LLM.
+  assert.equal(turn.conversational, true);
+  assert.equal(turn.text, '');
   assert.equal(turn.sheet.intentId, null);
+  assert.equal(turn.sheet.stepId, null);
 });
 
 // ── Task 5b: turn-1 LLM slot extraction ─────────────────────────────────────

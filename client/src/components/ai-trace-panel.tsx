@@ -45,6 +45,8 @@ interface AiTraceShape {
   fallbackUsed?: boolean;
   fallbackReason?: string;
   rejectedSlots?: Array<{ slot: string; value: string; reason: string }>;
+  /** Increment G — answered conversationally (no workflow intent matched). */
+  conversational?: boolean;
 }
 
 function Metric({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
@@ -80,6 +82,11 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">AI Turn</CardTitle>
             <div className="flex items-center gap-2">
+              {ai?.conversational && (
+                <Badge variant="secondary" title="No workflow intent matched — answered conversationally">
+                  Conversational
+                </Badge>
+              )}
               <Badge variant="outline" className="capitalize">
                 {trace.channel === "web_chat" ? "Web Chat" : trace.channel}
               </Badge>
@@ -89,11 +96,11 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
           <div className="grid grid-cols-2 gap-2 pt-1 text-sm sm:grid-cols-3">
             <div>
               <div className="text-xs text-muted-foreground">Intent ID</div>
-              <div className="font-mono">{intentId ?? "—"}</div>
+              <div className="font-mono">{intentId ?? "none"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Step ID</div>
-              <div className="font-mono">{stepId ?? "—"}</div>
+              <div className="font-mono">{stepId ?? "none"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Timestamp</div>

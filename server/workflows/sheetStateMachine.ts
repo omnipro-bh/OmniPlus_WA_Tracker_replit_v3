@@ -78,6 +78,12 @@ export interface SheetTurn {
   fallbackReason?: string;
   /** Turn-1 values the LLM extracted but code dropped (trace only). */
   rejectedSlots?: RejectedSlot[];
+  /**
+   * Increment G — no intent matched the message and no flow is active. The
+   * executor must NOT send `text`; it should answer conversationally with the
+   * LLM (persona + instructions) instead of a "could not find an answer" reply.
+   */
+  conversational?: boolean;
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };
@@ -489,10 +495,14 @@ export async function runSheetStateMachine(
     });
 
     if (intents.length === 0) {
+      // Increment G — dual-mode brain. No intent matched and no flow is active:
+      // hand the turn back to the executor so it can reply conversationally
+      // (greeting / general question) instead of a static failure message.
       return {
-        text: 'I could not find an answer for that. Would you like to talk to a human?',
+        text: '',
         sheet: state,
         toolCalls,
+        conversational: true,
       };
     }
 

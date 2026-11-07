@@ -66,7 +66,7 @@ import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import type { AiStudioConfig } from '@shared/ai-defaults';
 import { loadAiStudioConfig } from '../ai/studioConfig';
-import { isSheetStateMachineEnabled, runSheetStateMachine, type RejectedSlot, type SheetState } from './sheetStateMachine';
+import { isSheetStateMachineEnabled, runSheetStateMachine, type RejectedSlot, type SheetLookupCall, type SheetState } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -165,6 +165,11 @@ export interface AiAgentExecutionContext {
   lookupSheet?: (
     args: LookupSheetArgs
   ) => Promise<{ ok: boolean; rows?: Record<string, any>[]; error?: string }>;
+  /**
+   * Test seam: bypass the real Google Sheets read for the deterministic sheet
+   * state machine (used by unit tests to simulate an empty Intents tab).
+   */
+  sheetReader?: import('./sheetStateMachine').RowReader;
 }
 
 /** The handle the node routes to after a turn. */
@@ -238,6 +243,11 @@ export interface AiAgentExecutionResult {
   fallbackReason?: string;
   /** Turn-1 values the LLM extracted but code validation dropped (trace only). */
   rejectedSlots?: RejectedSlot[];
+  /**
+   * Increment G — the turn was answered conversationally because no workflow
+   * intent matched (no active flow). Trace-only signal.
+   */
+  conversational?: boolean;
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -286,6 +296,11 @@ export interface AiTrace {
   fallbackReason?: string;
   /** Turn-1 values the LLM extracted but code validation dropped (trace only). */
   rejectedSlots?: RejectedSlot[];
+  /**
+   * Increment G — the turn was answered conversationally because no workflow
+   * intent matched (no active flow). Trace-only signal.
+   */
+  conversational?: boolean;
 }
 
 export interface AiAgentNodeOptions {
@@ -916,6 +931,14 @@ export async function executeAiAgentNode(
   // The engine reads the current step from the sheet and asks its ai_question,
   // so the model can't improvise. On turn 1 it may make ONE LLM call to extract
   // upfront slots; otherwise the sheet read is the whole turn.
+  //
+  // Increment G — dual-mode brain: when no intent matches (and no flow is
+  // active) the engine returns `conversational: true` instead of a static
+  // failure. We then fall through to the normal LLM path below, which answers
+  // from the persona + instructions (and carries the sheet lookups in the trace).
+  let conversationalMode = false;
+  let conversationalSheet: { sheet: SheetState; toolCalls: SheetLookupCall[] } | null = null;
+
   if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
     const startedAt = Date.now();
 
@@ -948,78 +971,88 @@ export async function executeAiAgentNode(
       context,
       nodeId,
       userMessage,
-      undefined,
+      exec.sheetReader,
       trackedClient
     );
     const latencyMs = Date.now() - startedAt;
 
-    // Append the exchange to history for a consistent transcript.
-    const history = useHistory
-      ? trimHistory(
-          [
-            ...previousHistory,
-            { role: 'user' as const, content: userMessage },
-            ...(turn.text ? [{ role: 'assistant' as const, content: turn.text }] : []),
-          ],
-          { maxMessages: settings.historyLimit }
-        )
-      : [];
+    if (turn.conversational) {
+      // Increment G — no intent matched and no flow is active. Keep the sheet
+      // lookups for the trace, then fall through to the conversational LLM path.
+      conversationalMode = true;
+      conversationalSheet = { sheet: turn.sheet, toolCalls: turn.toolCalls };
+      console.log(
+        `[AI Executor] No workflow intent matched "${userMessage.slice(0, 80)}" - replying conversationally.`
+      );
+    } else {
+      // Append the exchange to history for a consistent transcript.
+      const history = useHistory
+        ? trimHistory(
+            [
+              ...previousHistory,
+              { role: 'user' as const, content: userMessage },
+              ...(turn.text ? [{ role: 'assistant' as const, content: turn.text }] : []),
+            ],
+            { maxMessages: settings.historyLimit }
+          )
+        : [];
 
-    if (useHistory) {
-      stateUpdate.ai = {
-        ...(stateUpdate.ai || {}),
-        [nodeId]: {
-          ...(stateUpdate.ai?.[nodeId] || {}),
-          provider: settings.provider,
-          model: settings.model,
-          text: turn.error ? '' : turn.text,
-          finishReason: turn.error ? 'error' : 'stop',
-          usage: extractionUsage,
-          latencyMs,
-          attempts: 0,
-          ...(turn.error ? { error: turn.error } : {}),
-          sheet: turn.sheet,
-          updatedAt: new Date().toISOString(),
-          history,
+      if (useHistory) {
+        stateUpdate.ai = {
+          ...(stateUpdate.ai || {}),
+          [nodeId]: {
+            ...(stateUpdate.ai?.[nodeId] || {}),
+            provider: settings.provider,
+            model: settings.model,
+            text: turn.error ? '' : turn.text,
+            finishReason: turn.error ? 'error' : 'stop',
+            usage: extractionUsage,
+            latencyMs,
+            attempts: 0,
+            ...(turn.error ? { error: turn.error } : {}),
+            sheet: turn.sheet,
+            updatedAt: new Date().toISOString(),
+            history,
+          },
+        };
+        if (!turn.error) stateUpdate[settings.responseVariable] = turn.text;
+        fitContextCeiling(stateUpdate, nodeId);
+      }
+
+      return {
+        success: !turn.error,
+        nextHandle: turn.error ? 'error' : 'success',
+        provider: settings.provider,
+        model: settings.model,
+        text: turn.error ? '' : turn.text,
+        finishReason: turn.error ? 'error' : 'stop',
+        usage: extractionUsage,
+        latencyMs,
+        attempts: 0,
+        ...(turn.error ? { error: turn.error } : {}),
+        history,
+        stateUpdate,
+        toolCalls: turn.toolCalls,
+        sheetState: turn.sheet,
+        ...(turn.extractedSlots ? { extractedSlots: turn.extractedSlots } : {}),
+        ...(turn.extractionConfidence !== undefined
+          ? { extractionConfidence: turn.extractionConfidence }
+          : {}),
+        ...(turn.skippedSteps ? { skippedSteps: turn.skippedSteps } : {}),
+        ...(turn.slotExtractionAttempts !== undefined
+          ? { slotExtractionAttempts: turn.slotExtractionAttempts }
+          : {}),
+        ...(turn.fallbackUsed !== undefined ? { fallbackUsed: turn.fallbackUsed } : {}),
+        ...(turn.fallbackReason ? { fallbackReason: turn.fallbackReason } : {}),
+        ...(turn.rejectedSlots ? { rejectedSlots: turn.rejectedSlots } : {}),
+        tokenBreakdown: {
+          systemPromptTokens: 0,
+          toolDefinitionsTokens: 0,
+          historyTokens: 0,
+          lookupResultTokens: 0,
         },
       };
-      if (!turn.error) stateUpdate[settings.responseVariable] = turn.text;
-      fitContextCeiling(stateUpdate, nodeId);
     }
-
-    return {
-      success: !turn.error,
-      nextHandle: turn.error ? 'error' : 'success',
-      provider: settings.provider,
-      model: settings.model,
-      text: turn.error ? '' : turn.text,
-      finishReason: turn.error ? 'error' : 'stop',
-      usage: extractionUsage,
-      latencyMs,
-      attempts: 0,
-      ...(turn.error ? { error: turn.error } : {}),
-      history,
-      stateUpdate,
-      toolCalls: turn.toolCalls,
-      sheetState: turn.sheet,
-      ...(turn.extractedSlots ? { extractedSlots: turn.extractedSlots } : {}),
-      ...(turn.extractionConfidence !== undefined
-        ? { extractionConfidence: turn.extractionConfidence }
-        : {}),
-      ...(turn.skippedSteps ? { skippedSteps: turn.skippedSteps } : {}),
-      ...(turn.slotExtractionAttempts !== undefined
-        ? { slotExtractionAttempts: turn.slotExtractionAttempts }
-        : {}),
-      ...(turn.fallbackUsed !== undefined ? { fallbackUsed: turn.fallbackUsed } : {}),
-      ...(turn.fallbackReason ? { fallbackReason: turn.fallbackReason } : {}),
-      ...(turn.rejectedSlots ? { rejectedSlots: turn.rejectedSlots } : {}),
-      tokenBreakdown: {
-        systemPromptTokens: 0,
-        toolDefinitionsTokens: 0,
-        historyTokens: 0,
-        lookupResultTokens: 0,
-      },
-    };
   }
 
   // Resolve the owner instructions. Increment B precedence:
@@ -1054,6 +1087,7 @@ export async function executeAiAgentNode(
     channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
     hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
     googleSheets: settings.googleSheets,
+    conversationalMode,
   });
 
   const messages = buildChatContext({
@@ -1118,7 +1152,8 @@ export async function executeAiAgentNode(
   const defaultToolChoice =
     tools.length > 0 ? resolveToolChoice(settings.forceToolChoice, tools) : undefined;
   const forceLookupFirstRound = Boolean(
-    settings.googleSheets &&
+    !conversationalMode &&
+      settings.googleSheets &&
       tools.some((tool) => tool.function.name === TOOL_LOOKUP_SHEET) &&
       previousHistory.length === 0
   );
@@ -1400,6 +1435,12 @@ export async function executeAiAgentNode(
     fitContextCeiling(stateUpdate, nodeId);
   }
 
+  // Increment G — a conversational turn keeps the engine's sheet lookups and a
+  // null intent/step snapshot so the trace shows "no intent" plus real tokens.
+  const tracedToolCalls: AiToolCallTrace[] = conversationalSheet
+    ? [...conversationalSheet.toolCalls, ...toolCalls]
+    : toolCalls;
+
   return {
     success: true,
     nextHandle,
@@ -1415,7 +1456,9 @@ export async function executeAiAgentNode(
     ...(buttons ? { buttons, buttonText } : {}),
     ...(listRows ? { listRows, listTitle } : {}),
     ...(handover ? { handover } : {}),
-    toolCalls,
+    ...(conversationalMode ? { conversational: true } : {}),
+    ...(conversationalSheet ? { sheetState: conversationalSheet.sheet } : {}),
+    toolCalls: tracedToolCalls,
     tokenBreakdown,
   };
 }
@@ -1569,6 +1612,7 @@ export async function executeAiAgentWorkflowNode(
     ...(result.fallbackUsed !== undefined ? { fallbackUsed: result.fallbackUsed } : {}),
     ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
     ...(result.rejectedSlots ? { rejectedSlots: result.rejectedSlots } : {}),
+    ...(result.conversational ? { conversational: true } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM

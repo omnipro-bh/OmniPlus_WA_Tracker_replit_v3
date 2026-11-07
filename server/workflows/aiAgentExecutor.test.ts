@@ -418,6 +418,89 @@ const sheetConfig = {
   googleSheets: { spreadsheetId: 'sheet_123', tabs: ['Intents', 'Workflow_Steps'] },
 };
 
+// ── Increment G: dual-mode brain ────────────────────────────────────────────
+
+test('no intent match answers conversationally with the persona (never a failure text)', async () => {
+  const mock = new MockLlmClient({
+    replies: ["Hello! I'm Nour from Smile Clinic — how can I help you today?"],
+  });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      googleSheets: {
+        spreadsheetId: 'sheet_123',
+        tabs: ['Intents', 'Workflow_Steps'],
+        // `detected` enables the deterministic state machine (it needs slot_name).
+        detected: { Workflow_Steps: ['intent_id', 'step_id', 'slot_name'] },
+      },
+    },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'Hi there',
+      client: mock,
+      channel: 'whatsapp',
+      studioConfig: {
+        instructions: 'We are a dental clinic in Manama.',
+        persona: { alias: 'Nour', title: 'front-desk assistant', description: 'Smile Clinic, Manama' },
+      },
+      // The Intents tab is empty → no intent matches.
+      sheetReader: async () => [],
+    }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.conversational, true);
+  assert.equal(result.sheetState?.intentId, null);
+  assert.equal(result.sheetState?.stepId, null);
+  assert.equal(result.text, "Hello! I'm Nour from Smile Clinic — how can I help you today?");
+  assert.ok(result.usage.promptTokens > 0, 'tokensIn must be recorded');
+  assert.ok(result.usage.completionTokens > 0, 'tokensOut must be recorded');
+  assert.equal(mock.callCount, 1);
+
+  const system = mock.requests[0].messages[0].content;
+  assert.match(system, /You are Nour, a front-desk assistant/);
+  assert.match(system, /NO WORKFLOW INTENT MATCHED/);
+  assert.match(system, /Conversational Fallback/);
+});
+
+test('a matched intent still runs the deterministic workflow (no conversational mode)', async () => {
+  const mock = new MockLlmClient({ replies: ['unused'] });
+
+  const result = await executeAiAgentNode(
+    {
+      ...baseConfig,
+      googleSheets: {
+        spreadsheetId: 'sheet_123',
+        tabs: ['Intents', 'Workflow_Steps'],
+        detected: { Workflow_Steps: ['intent_id', 'step_id', 'slot_name'] },
+      },
+    },
+    {
+      nodeId: 'n1',
+      context: {},
+      userMessage: 'I want to book',
+      client: mock,
+      channel: 'whatsapp',
+      // Intents row + its first step.
+      sheetReader: async (_sheet, tab) => {
+        if (tab === 'Intents') {
+          return [{ id: 'booking', keywords: 'book, appointment', start_step: 'Step_1' }];
+        }
+        return [
+          { intent_id: 'booking', step_id: 'Step_1', ai_question: 'Which branch?', slot_name: 'branch' },
+        ];
+      },
+    }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.conversational, undefined);
+  assert.equal(result.sheetState?.intentId, 'booking');
+  assert.equal(result.text, 'Which branch?');
+});
+
 test('lookup_sheet is non-terminal: rows go back to the model, then it answers', async () => {
   const mock = new MockLlmClient({
     toolCalls: [

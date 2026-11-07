@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  CORE_DIRECTIVES,
   LANGUAGE_RULES,
   buildSystemPrompt,
   buildSlotExtractionPrompt,
@@ -195,6 +196,46 @@ test('sheet column mapping overrides the header names in the prompt', () => {
   assert.match(prompt, /filter_column: "Intent"/);
   assert.match(prompt, /each "Question"/);
   assert.ok(!prompt.includes('filter_column: "keywords"'));
+});
+
+// ── Increment G: dual-mode brain ────────────────────────────────────────────
+
+test('sheet-backed prompts carry the dual-mode core directives', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: { spreadsheetId: 'sheet_1', tabs: ['Intents', 'Workflow_Steps'] },
+  });
+
+  assert.ok(prompt.includes(CORE_DIRECTIVES));
+  assert.match(prompt, /Workflow Logic/);
+  assert.match(prompt, /Conversational Fallback/);
+  assert.match(prompt, /do NOT say "I could not find an answer\."/);
+});
+
+test('core directives are not added for a plain (non-sheet) node', () => {
+  const prompt = buildSystemPrompt({ ownerPrompt: 'x' });
+  assert.ok(!prompt.includes('### Core Directives:'));
+});
+
+test('conversational mode tells the model to answer instead of failing', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: { spreadsheetId: 'sheet_1', tabs: ['Intents', 'Workflow_Steps'] },
+    conversationalMode: true,
+  });
+
+  assert.match(prompt, /NO WORKFLOW INTENT MATCHED/);
+  assert.match(prompt, /never reply that you could not find an answer/);
+  // The workflow rule no longer tells the model to "offer a human" on a miss.
+  assert.ok(!/if nothing matches, offer a human/i.test(prompt));
+});
+
+test('workflow mode does not claim that no intent matched', () => {
+  const prompt = buildSystemPrompt({
+    ownerPrompt: 'x',
+    googleSheets: { spreadsheetId: 'sheet_1', tabs: ['Intents', 'Workflow_Steps'] },
+  });
+  assert.ok(!prompt.includes('NO WORKFLOW INTENT MATCHED'));
 });
 
 // ── Task 5b: slot extraction prompt + JSON parser ───────────────────────────
