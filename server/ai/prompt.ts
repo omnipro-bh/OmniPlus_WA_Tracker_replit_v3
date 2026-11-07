@@ -142,8 +142,11 @@ export function buildSlotExtractionPrompt(
     `Customer message: "${userMessage}"`,
     '',
     'Return only a JSON object:',
-    '{"slots": {"<field>": "<the customer\'s own words, or \\"\\" if absent>"}}',
-    'Copy the customer\'s words. Do not judge, validate, correct or explain. Omit fields the customer did not mention.',
+    '{"slots": {"<field>": "<value>"}}',
+    'Rules:',
+    '- For each field, return the customer\'s own words.',
+    '- If a field lists allowed options and the customer\'s input is a synonym, abbreviation, or typo of one of those options (e.g. "dentist" → "Dental", "adliya" → "Manama"), return the EXACT string from the allowed options list.',
+    '- Omit fields the customer did not mention. Do not explain.',
   ].join('\n');
 }
 

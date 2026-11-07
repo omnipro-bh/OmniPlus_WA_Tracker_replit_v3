@@ -212,12 +212,12 @@ test('buildSlotExtractionPrompt lists every field and the message', () => {
   assert.match(p, /STRICT JSON/);
 });
 
-test('buildSlotExtractionPrompt never judges values (no "invalid" wording)', () => {
+test('buildSlotExtractionPrompt never injects "invalid"/"valid" wording', () => {
   const p = buildSlotExtractionPrompt([{ name: 'datetime', type: 'text' }], 'today at 6 PM');
 
   assert.ok(!/invalid/i.test(p));
   assert.ok(!/"valid"/.test(p)); // no validity field in the JSON contract
-  assert.match(p, /Do not judge/);
+  assert.match(p, /Do not explain/);
 });
 
 test('buildSlotExtractionPrompt hides placeholders and text-slot choices', () => {

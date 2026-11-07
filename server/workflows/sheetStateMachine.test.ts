@@ -10,6 +10,7 @@ import {
   extractSlot,
   generateConversationalFallback,
   isSheetStateMachineEnabled,
+  parseLookupFilter,
   parseNextStepLogic,
   readSheetState,
   runSheetStateMachine,
@@ -681,4 +682,71 @@ test('generateConversationalFallback returns the model text for a real provider'
   assert.match(out, /dentist/i);
   assert.match(out, /Dental/);
   assert.match(out, /ENT/);
+});
+
+// ── Phase 4d-2: dynamic lookups ─────────────────────────────────────────────
+
+test('parseLookupFilter splits AND clauses into column=value', () => {
+  assert.deepEqual(parseLookupFilter('branch={location} AND doctor={specialist}'), [
+    { column: 'branch', value: '{location}' },
+    { column: 'doctor', value: '{specialist}' },
+  ]);
+  assert.deepEqual(parseLookupFilter(''), []);
+  assert.deepEqual(parseLookupFilter('doctor=Dr. Ahmed'), [{ column: 'doctor', value: 'Dr. Ahmed' }]);
+  assert.deepEqual(parseLookupFilter('  branch=Riffa  and doctor=Dr. A '), [
+    { column: 'branch', value: 'Riffa' },
+    { column: 'doctor', value: 'Dr. A' },
+  ]);
+});
+
+test('lookup step runs silently, stores the extracted value, and completes', async () => {
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [
+        { id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Your {specialist} appointment is available at {available_times}.' },
+      ];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return [{ specialist: 'Dr. Ahmed', available_times: '5 PM' }];
+    }
+    return [
+      { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which specialist?', slot_name: 'specialist', next_step_logic: '→ Step_2' },
+      { intent_id: '1', step_id: 'Step_2', step_type: 'lookup', lookup_source: 'Doctors_Schedule', lookup_filter: 'specialist={specialist}', lookup_extract: 'available_times', slot_name: 'available_times', next_step_logic: '→ done' },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  // Turn 1 asks the first step.
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'book a doctor', reader);
+  assert.equal(t1.text, 'Which specialist?');
+  assert.equal(t1.sheet.stepId, 'Step_1');
+
+  // Turn 2 captures the specialist, runs the lookup silently, and completes.
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+  const t2 = await runSheetStateMachine(sheet, context, 'n1', 'Dr. Ahmed', reader);
+  assert.equal(t2.text, 'Your Dr. Ahmed appointment is available at 5 PM.');
+  assert.equal(t2.sheet.intentId, null); // completed → reset
+  assert.equal(t2.fallbackUsed, false);
+});
+
+test('lookup failure advances to alternate_step and records fallback', async () => {
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Done' }];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return []; // no matching rows
+    }
+    return [
+      { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which specialist?', slot_name: 'specialist', next_step_logic: '→ Step_2' },
+      { intent_id: '1', step_id: 'Step_2', step_type: 'lookup', lookup_source: 'Doctors_Schedule', lookup_filter: 'specialist={specialist}', lookup_extract: 'available_times', slot_name: 'available_times', next_step_logic: '→ done', alternate_step: '→ Step_3' },
+      { intent_id: '1', step_id: 'Step_3', step_type: 'ask', ai_question: 'No availability. Try another time?', slot_name: 'fallback_time', next_step_logic: '→ done' },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+  const t2 = await runSheetStateMachine(sheet, context, 'n1', 'Dr. Ahmed', reader);
+
+  assert.equal(t2.text, 'No availability. Try another time?');
+  assert.equal(t2.sheet.stepId, 'Step_3');
+  assert.equal(t2.fallbackUsed, true); // the lookup failed
 });

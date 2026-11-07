@@ -57,7 +57,18 @@ test('matchSheetHeaders reports unmatched schema keys for a steps tab', () => {
     ai_question: 'AI Question',
     fallback: 'Fallback',
   });
-  assert.deepEqual(missing, ['expected_input', 'slot_name', 'options', 'next_step_logic', 'message_type']);
+  assert.deepEqual(missing, [
+    'step_type',
+    'expected_input',
+    'slot_name',
+    'options',
+    'lookup_source',
+    'lookup_filter',
+    'lookup_extract',
+    'alternate_step',
+    'next_step_logic',
+    'message_type',
+  ]);
 });
 
 test('matchSheetHeaders tolerates blank headers and an empty sheet', () => {

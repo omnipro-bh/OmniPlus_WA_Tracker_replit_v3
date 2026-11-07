@@ -112,13 +112,27 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
     columns: [
       { key: 'intent_id', label: 'Intent ID', column: 'intent_id' },
       { key: 'step_id', label: 'Step ID', column: 'step_id' },
+      { key: 'step_type', label: 'Step type (ask|lookup)', column: 'step_type' },
       { key: 'ai_question', label: 'AI question', column: 'ai_question' },
       { key: 'expected_input', label: 'Expected input', column: 'expected_input' },
       { key: 'slot_name', label: 'Slot name', column: 'slot_name' },
       { key: 'options', label: 'Options (comma-separated)', column: 'options' },
+      { key: 'lookup_source', label: 'Lookup source tab', column: 'lookup_source' },
+      { key: 'lookup_filter', label: 'Lookup filter', column: 'lookup_filter' },
+      { key: 'lookup_extract', label: 'Lookup extract column', column: 'lookup_extract' },
+      { key: 'alternate_step', label: 'Alternate step (no match)', column: 'alternate_step' },
       { key: 'next_step_logic', label: 'Next step logic', column: 'next_step_logic' },
       { key: 'fallback', label: 'Fallback', column: 'fallback' },
       { key: 'message_type', label: 'Message type', column: 'message_type' },
+    ],
+  },
+  {
+    tab: 'Doctors_Schedule',
+    columns: [
+      { key: 'doctor', label: 'Doctor', column: 'doctor' },
+      { key: 'branch', label: 'Branch', column: 'branch' },
+      { key: 'day', label: 'Day', column: 'day' },
+      { key: 'available_times', label: 'Available times', column: 'available_times' },
     ],
   },
 ];

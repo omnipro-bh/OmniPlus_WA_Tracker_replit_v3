@@ -106,6 +106,29 @@ export function substituteSlots(template: string, slots: Record<string, any>): s
   });
 }
 
+/** One `column=value` clause parsed from a `lookup_filter` string. */
+export interface LookupFilterClause {
+  column: string;
+  value: string;
+}
+
+/**
+ * Parse a `lookup_filter` string ("branch={location} AND doctor={specialist}")
+ * into AND clauses. Each clause is `column=value`; the value is taken verbatim
+ * after the first `=`. Clauses without `=` match against an empty value.
+ */
+export function parseLookupFilter(filter: string): LookupFilterClause[] {
+  return String(filter ?? '')
+    .split(/\s+AND\s+/i)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const eq = part.indexOf('=');
+      if (eq === -1) return { column: part, value: '' };
+      return { column: part.slice(0, eq).trim(), value: part.slice(eq + 1).trim() };
+    });
+}
+
 /** Extraction hint only — `options` never gates validity here. */
 export interface SlotExtractHint {
   type?: string;
@@ -120,8 +143,10 @@ export type SlotExtractResult =
  * Extract a single slot's RAW value from the customer's message via the LLM.
  *
  * Phase 4d-2 increment 2: the model no longer returns `valid`/`reason`. It is a
- * probabilistic component, so it must not own business rules — it copies the
- * customer's words and `validateSlotValue` decides. `ok: false` here means only
+ * probabilistic component, so it must not own business rules — `validateSlotValue`
+ * still decides. For list/buttons slots the prompt asks the model to map synonyms
+ * and typos to the exact canonical option (fuzzy match), so code validation
+ * receives a canonical value it can accept; `ok: false` here means only
  * "transport/format failed" (the caller falls back).
  */
 export async function extractSlot(
@@ -137,13 +162,17 @@ export async function extractSlot(
   const prompt = [
     `Extract the value for slot "${slotName}" from the customer's message.`,
     ...(listLike && choices.length > 0
-      ? [`If the message names one of these choices, return that choice as written: ${choices.join(', ')}.`]
+      ? [
+          `Allowed options: ${choices.join(', ')}.`,
+          `If the customer's input is a synonym, abbreviation, or contains a typo of one of these options (e.g. "dentist" → "Dental", "adliya" → "Manama"), return the EXACT string from the allowed options list.`,
+          `If the input does not clearly match any option, return the customer's own words unchanged.`,
+        ]
       : []),
     '',
     `Customer message: "${userMessage}"`,
     '',
-    'Return strict JSON: {"value": "<the customer\'s own words for this slot, or \\"\\" if absent>"}',
-    'Copy the customer\'s words. Do not judge, correct, translate or reformat. Do not explain.',
+    'Return strict JSON: {"value": "<the canonical option, or the customer\'s own words if none match, or \\"\\" if absent>"}',
+    'Do not explain. Do not add commentary.',
   ].join('\n');
 
   // llmJson is a SHAPE gate (valid JSON, string value) with corrective retries.
@@ -266,7 +295,7 @@ async function defaultReadRows(
   const result = await lookupSheetRows(sheet.spreadsheetId, tab, {
     filterColumn: filter?.column,
     filterValue: filter?.value,
-    maxRows: 200, // steps/intents tables are small; read fully for the machine
+    maxRows: 1000, // intents/steps are small; lookup tabs (e.g. a schedule) can be larger
   });
   return result.rows ?? [];
 }
@@ -339,16 +368,96 @@ export async function runSheetStateMachine(
   const answerHeader = headerFor(sheet, intentsTab, 'answer');
   const intentIdHeader = headerFor(sheet, stepsTab, 'intent_id');
   const stepIdHeader = headerFor(sheet, stepsTab, 'step_id');
+  const stepTypeHeader = headerFor(sheet, stepsTab, 'step_type');
   const questionHeader = headerFor(sheet, stepsTab, 'ai_question');
   const slotHeader = headerFor(sheet, stepsTab, 'slot_name');
+  const optionsHeader = headerFor(sheet, stepsTab, 'options');
+  const lookupSourceHeader = headerFor(sheet, stepsTab, 'lookup_source');
+  const lookupFilterHeader = headerFor(sheet, stepsTab, 'lookup_filter');
+  const lookupExtractHeader = headerFor(sheet, stepsTab, 'lookup_extract');
+  const alternateStepHeader = headerFor(sheet, stepsTab, 'alternate_step');
   const nextHeader = headerFor(sheet, stepsTab, 'next_step_logic');
   const fallbackHeader = headerFor(sheet, stepsTab, 'fallback');
   const expectedHeader = headerFor(sheet, stepsTab, 'expected_input');
-  const optionsHeader = headerFor(sheet, stepsTab, 'options');
 
   const toolCalls: SheetLookupCall[] = [];
   let slotExtractionAttempts = 0;
   let fallbackUsed = false;
+
+  /**
+   * Phase 4d-2 — advance from `startStep` through any consecutive `lookup` steps
+   * and return the next thing to do: ask a question, or complete the flow.
+   *
+   * A `lookup` step runs SILENTLY (no question): it reads `lookup_source`,
+   * resolves `lookup_filter` against the current slots, and stores the first
+   * matching row's `lookup_extract` column into `slot_name`. On a match it follows
+   * `next_step_logic`; on no-match it follows `alternate_step` (or completes if
+   * empty). `fallbackUsed` is set on a lookup failure.
+   */
+  const resolveNextAsk = async (
+    startStep: Record<string, any> | undefined
+  ): Promise<{ kind: 'ask'; text: string } | { kind: 'done' }> => {
+    let step = startStep;
+    let guard = 0;
+    while (step && guard++ < 100) {
+      const stepType = String(step[stepTypeHeader] ?? '').trim().toLowerCase();
+
+      if (stepType === 'lookup') {
+        const source = String(step[lookupSourceHeader] ?? '').trim();
+        const filterRaw = substituteSlots(String(step[lookupFilterHeader] ?? '').trim(), state.slots);
+        const extractCol = String(step[lookupExtractHeader] ?? '').trim();
+        const slotName = String(step[slotHeader] ?? '').trim();
+
+        let matched = false;
+        if (source) {
+          const rows = await readRows(sheet, source);
+          toolCalls.push({
+            name: 'lookup_sheet',
+            args: { tab: source, filter: filterRaw },
+            rows: rows.length,
+          });
+          const clauses = parseLookupFilter(filterRaw);
+          const hits = rows.filter((row) =>
+            clauses.every((c) => {
+              const cell = row[c.column];
+              return cell !== undefined && cell !== null &&
+                String(cell).trim().toLowerCase() === c.value.toLowerCase();
+            })
+          );
+          if (hits.length > 0) {
+            matched = true;
+            if (slotName && extractCol) {
+              const value = hits[0][extractCol];
+              if (value !== undefined && value !== null && value !== '') {
+                state.slots[slotName] = value;
+              }
+            }
+          }
+        }
+
+        if (!matched) {
+          fallbackUsed = true;
+        }
+
+        const transition = matched
+          ? parseNextStepLogic(step[nextHeader])
+          : (String(step[alternateStepHeader] ?? '').trim()
+              ? parseNextStepLogic(step[alternateStepHeader])
+              : { kind: 'done' as const });
+
+        if (transition.kind === 'done') return { kind: 'done' };
+        step = findStep(steps, stepIdHeader, transition.stepId);
+        if (!step) return { kind: 'done' };
+        continue;
+      }
+
+      // ask step (or missing step_type → default ask)
+      state.stepId = String(step[stepIdHeader] ?? '').trim();
+      const question = substituteSlots(String(step[questionHeader] ?? '').trim(), state.slots);
+      return { kind: 'ask', text: question || String(step[fallbackHeader] ?? '').trim() };
+    }
+    return { kind: 'done' };
+  };
 
   // ── Turn 1: resolve the intent ─────────────────────────────────────────────
   if (!state.intentId) {
@@ -458,10 +567,21 @@ export async function runSheetStateMachine(
     }
 
     state.stepId = String(firstUnfilled[stepIdHeader] ?? '').trim();
-    const current = findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled;
-    const question = substituteSlots(String(current?.[questionHeader] ?? '').trim(), state.slots);
+    const resolved = await resolveNextAsk(findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled);
+    if (resolved.kind === 'done') {
+      const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+      result.slotExtractionAttempts = slotExtractionAttempts;
+      result.fallbackUsed = fallbackUsed;
+      if (extracted) {
+        result.extractedSlots = extracted.slots;
+        result.extractionConfidence = extracted.confidence;
+        result.skippedSteps = skippedSteps;
+      }
+      if (rejectedSlots.length > 0) result.rejectedSlots = rejectedSlots;
+      return result;
+    }
     return {
-      text: question,
+      text: resolved.text,
       sheet: state,
       toolCalls,
       slotExtractionAttempts,
@@ -561,26 +681,16 @@ export async function runSheetStateMachine(
   }
 
   const transition = parseNextStepLogic(current[nextHeader]);
-  if (transition.kind === 'done') {
+  const nextStep = transition.kind === 'done' ? undefined : findStep(steps, stepIdHeader, transition.stepId);
+  const resolved = await resolveNextAsk(nextStep);
+  if (resolved.kind === 'done') {
     const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
     result.slotExtractionAttempts = slotExtractionAttempts;
     result.fallbackUsed = fallbackUsed;
     return result;
   }
-
-  const nextStep = findStep(steps, stepIdHeader, transition.stepId);
-  if (!nextStep) {
-    // Referenced step missing — complete gracefully.
-    const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
-    result.slotExtractionAttempts = slotExtractionAttempts;
-    result.fallbackUsed = fallbackUsed;
-    return result;
-  }
-
-  state.stepId = transition.stepId;
-  const question = substituteSlots(String(nextStep[questionHeader] ?? '').trim(), state.slots);
   return {
-    text: question || String(nextStep[fallbackHeader] ?? '').trim(),
+    text: resolved.text,
     sheet: state,
     toolCalls,
     slotExtractionAttempts,
