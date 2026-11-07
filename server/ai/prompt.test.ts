@@ -199,13 +199,35 @@ test('sheet column mapping overrides the header names in the prompt', () => {
 
 // ── Task 5b: slot extraction prompt + JSON parser ───────────────────────────
 
-test('buildSlotExtractionPrompt lists every slot name and the message', () => {
-  const p = buildSlotExtractionPrompt(['department', 'branch'], 'book ENT at Manama');
+test('buildSlotExtractionPrompt lists every field and the message', () => {
+  const p = buildSlotExtractionPrompt(
+    [{ name: 'department', type: 'list', options: ['Dental', 'General'] }, { name: 'datetime', type: 'text' }],
+    'book ENT at Manama'
+  );
 
   assert.match(p, /department/);
-  assert.match(p, /branch/);
+  assert.match(p, /datetime/);
+  assert.match(p, /one of: Dental, General/);
   assert.match(p, /book ENT at Manama/);
   assert.match(p, /STRICT JSON/);
+});
+
+test('buildSlotExtractionPrompt never judges values (no "invalid" wording)', () => {
+  const p = buildSlotExtractionPrompt([{ name: 'datetime', type: 'text' }], 'today at 6 PM');
+
+  assert.ok(!/invalid/i.test(p));
+  assert.ok(!/"valid"/.test(p)); // no validity field in the JSON contract
+  assert.match(p, /Do not judge/);
+});
+
+test('buildSlotExtractionPrompt hides placeholders and text-slot choices', () => {
+  const p = buildSlotExtractionPrompt(
+    [{ name: 'datetime', type: 'text', options: ['(leave empty)'] }],
+    'today at 6 PM'
+  );
+
+  assert.ok(!p.includes('(leave empty)'));
+  assert.ok(!p.includes('one of:'));
 });
 
 test('extractJsonObject parses clean, fenced and prose-wrapped JSON', () => {
