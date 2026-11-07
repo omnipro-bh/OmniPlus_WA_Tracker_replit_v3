@@ -7831,6 +7831,134 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // AI Studio — Knowledge & Scenarios: read-only views over the AI node's
+  // connected Google Sheets. Reads only; no writes except the header sync below.
+
+  // Find the first AI node and its googleSheets config in a workflow definition.
+  function findAiSheetsConfig(workflow: any): { aiNodeId: string | null; googleSheets: any | null } {
+    const definition = (workflow?.definitionJson ?? {}) as any;
+    const nodes = Array.isArray(definition.nodes) ? definition.nodes : [];
+    const aiNode = nodes.find(
+      (n: any) => (n?.data?.type || n?.data?.nodeType) === "action.ai_agent"
+    );
+    if (!aiNode) return { aiNodeId: null, googleSheets: null };
+    const config = aiNode?.data?.config ?? {};
+    return { aiNodeId: aiNode?.id ?? null, googleSheets: config.googleSheets ?? null };
+  }
+
+  app.get("/api/ai-studio/sheets", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(String(req.query.workflowId ?? ""));
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "workflowId is required" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      const { aiNodeId, googleSheets } = findAiSheetsConfig(workflow);
+      res.json({ workflowId, aiNodeId, googleSheets });
+    } catch (error: any) {
+      console.error("Get AI Studio sheets error:", error);
+      res.status(500).json({ error: "Failed to fetch AI Studio sheets" });
+    }
+  });
+
+  app.get("/api/ai-studio/sheets/:tab/rows", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(String(req.query.workflowId ?? ""));
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "workflowId is required" });
+      }
+      const tab = String(req.params.tab ?? "").trim();
+      if (!tab) {
+        return res.status(400).json({ error: "tab is required" });
+      }
+
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      const { googleSheets } = findAiSheetsConfig(workflow);
+      if (!googleSheets?.spreadsheetId) {
+        return res.status(400).json({ error: "No Google Sheets connected to this workflow's AI node" });
+      }
+
+      const { lookupSheetRows } = await import("./workflows/googleSheetsExecutor");
+      const result = await lookupSheetRows(googleSheets.spreadsheetId, tab, { maxRows: 200 });
+      if (!result.success) {
+        return res.status(400).json({ error: result.error || "Failed to read the sheet tab" });
+      }
+      res.json({ tab, rows: result.rows });
+    } catch (error: any) {
+      console.error("Get AI Studio sheet rows error:", error);
+      res.status(500).json({ error: "Failed to read the sheet tab" });
+    }
+  });
+
+  app.post("/api/ai-studio/sheets/sync", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(String(req.body?.workflowId ?? req.query.workflowId ?? ""));
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "workflowId is required" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const definition = (workflow.definitionJson ?? {}) as any;
+      const nodes = Array.isArray(definition.nodes) ? definition.nodes : [];
+      const aiIndex = nodes.findIndex(
+        (n: any) => (n?.data?.type || n?.data?.nodeType) === "action.ai_agent"
+      );
+      if (aiIndex === -1) {
+        return res.status(400).json({ error: "This workflow has no AI Agent node" });
+      }
+
+      const config = nodes[aiIndex]?.data?.config ?? {};
+      const googleSheets = config.googleSheets ?? {};
+      if (!googleSheets?.spreadsheetId) {
+        return res.status(400).json({ error: "No Google Sheets connected to this workflow's AI node" });
+      }
+
+      const tabs: string[] = Array.isArray(googleSheets.tabs) && googleSheets.tabs.length > 0
+        ? googleSheets.tabs
+        : ["Intents", "Workflow_Steps"];
+
+      const { fetchSheetHeaders } = await import("./workflows/googleSheetsExecutor");
+      const detected: Record<string, string[]> = { ...(googleSheets.detected ?? {}) };
+      const results: Record<string, { headers: string[]; rowCount: number; error?: string }> = {};
+
+      for (const tab of tabs) {
+        const res = await fetchSheetHeaders(googleSheets.spreadsheetId, tab);
+        results[tab] = { headers: res.headers, rowCount: res.rowCount, ...(res.error ? { error: res.error } : {}) };
+        if (res.success) detected[tab] = res.headers;
+      }
+
+      // Persist the refreshed `detected` headers back into the workflow definition.
+      nodes[aiIndex] = {
+        ...nodes[aiIndex],
+        data: {
+          ...(nodes[aiIndex]?.data ?? {}),
+          config: {
+            ...config,
+            googleSheets: { ...googleSheets, detected },
+          },
+        },
+      };
+      await storage.updateWorkflow(workflowId, { definitionJson: { ...definition, nodes } });
+
+      res.json({ detected, results });
+    } catch (error: any) {
+      console.error("Sync AI Studio sheet headers error:", error);
+      res.status(500).json({ error: "Failed to sync sheet headers" });
+    }
+  });
+
   // Get all jobs for current user
   app.get("/api/jobs", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

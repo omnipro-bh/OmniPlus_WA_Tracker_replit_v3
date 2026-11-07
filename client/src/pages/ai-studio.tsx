@@ -16,9 +16,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Save } from "lucide-react";
 import type { Workflow } from "@shared/schema";
 import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
+import { KnowledgeTab, ScenariosTab } from "@/components/ai-studio-sheets";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,24 +34,9 @@ interface AiStudioConfig {
   persona: AiStudioPersona;
 }
 
-function ComingSoon({ title, description }: { title: string; description: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-2 rounded-md bg-muted/50 p-4 text-sm text-muted-foreground">
-          <Sparkles className="h-4 w-4" />
-          Coming soon.
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function AIStudio() {
+  const { toast } = useToast();
+
   const { data: workflows = [], isLoading: workflowsLoading } = useQuery<Workflow[]>({
     queryKey: ["/api/workflows"],
   });
@@ -68,7 +54,6 @@ export default function AIStudio() {
   const selectedTrace = traces.find((t) => t.id === selectedTraceId) ?? traces[0] ?? null;
 
   // ── Global AI Studio config (Instructions + Persona) ────────────────
-  const { toast } = useToast();
   const { data: studioConfig } = useQuery<AiStudioConfig>({
     queryKey: ["/api/ai-studio/config"],
   });
@@ -104,17 +89,43 @@ export default function AIStudio() {
     },
   });
 
-  const personaDirty = Boolean(studioConfig) && (
-    persona.alias !== (studioConfig?.persona?.alias ?? "") ||
-    persona.title !== (studioConfig?.persona?.title ?? "") ||
-    persona.description !== (studioConfig?.persona?.description ?? "")
-  );
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">AI Studio</h1>
-        <p className="text-muted-foreground">Control panel for your AI Agent.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">AI Studio</h1>
+          <p className="text-muted-foreground">Control panel for your AI Agent.</p>
+        </div>
+
+        <div className="w-full max-w-xs">
+          <label className="mb-1 block text-sm font-medium text-muted-foreground">
+            Workflow
+          </label>
+          {workflowsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading workflows…
+            </div>
+          ) : (
+            <Select
+              value={effectiveWorkflowId}
+              onValueChange={(v) => {
+                setWorkflowId(v);
+                setSelectedTraceId(null);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a workflow" />
+              </SelectTrigger>
+              <SelectContent>
+                {workflows.map((w) => (
+                  <SelectItem key={w.id} value={String(w.id)}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="traces">
@@ -128,36 +139,7 @@ export default function AIStudio() {
 
         {/* ── Traces (functional) ─────────────────────────────────────── */}
         <TabsContent value="traces" className="space-y-4">
-          <div className="flex items-end justify-between gap-4">
-            <div className="w-full max-w-xs">
-              <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                Workflow
-              </label>
-              {workflowsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading workflows…
-                </div>
-              ) : (
-                <Select
-                  value={effectiveWorkflowId}
-                  onValueChange={(v) => {
-                    setWorkflowId(v);
-                    setSelectedTraceId(null);
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a workflow" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workflows.map((w) => (
-                      <SelectItem key={w.id} value={String(w.id)}>
-                        {w.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
+          <div className="flex justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -323,7 +305,11 @@ export default function AIStudio() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
-                  {personaDirty ? "Unsaved changes" : "Saved"}
+                  {persona.alias !== (studioConfig?.persona?.alias ?? "") ||
+                  persona.title !== (studioConfig?.persona?.title ?? "") ||
+                  persona.description !== (studioConfig?.persona?.description ?? "")
+                    ? "Unsaved changes"
+                    : "Saved"}
                 </span>
                 <Button
                   onClick={() => saveConfig.mutate({ persona })}
@@ -340,17 +326,15 @@ export default function AIStudio() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ── Knowledge (functional) ──────────────────────────────────── */}
         <TabsContent value="knowledge">
-          <ComingSoon
-            title="Knowledge"
-            description="A read-only view of your connected Google Sheets (Intents, Workflow_Steps)."
-          />
+          <KnowledgeTab workflowId={effectiveWorkflowId} />
         </TabsContent>
+
+        {/* ── Scenarios (functional) ──────────────────────────────────── */}
         <TabsContent value="scenarios">
-          <ComingSoon
-            title="Scenarios"
-            description="A visual list of intents and their workflow steps."
-          />
+          <ScenariosTab workflowId={effectiveWorkflowId} />
         </TabsContent>
       </Tabs>
     </div>
