@@ -30,7 +30,17 @@
 
 ## Backup (run before each deploy)
 
-ssh watracker 'tar -czf /root/omniplus-pre-deploy-$(date +%F-%H%M).tar.gz -C /opt --exclude=omniplus/node_modules --exclude=omniplus/uploads omniplus && ls -lh /root/omniplus-pre-deploy-*.tar.gz | tail -2'
+```bash
+ssh watracker 'tar -czf /root/omniplus-pre-deploy-$(date +%F-%H%M).tar.gz -C /opt \
+  --exclude=omniplus/node_modules \
+  --exclude=omniplus/uploads \
+  --exclude=omniplus/.git \
+  --exclude=omniplus/attached_assets \
+  omniplus && \
+  ls -t /root/omniplus-pre-deploy-*.tar.gz | tail -n +6 | xargs -r rm -v'
+```
+
+Retention: keeps only the 5 most recent pre-deploy backups (each now ~5–10 MB, excluding `.git` and `attached_assets`). A weekly cron (`0 4 * * *`) also prunes any pre-deploy backup older than 14 days as a belt-and-suspenders measure.
 
 ## Important Paths
 
