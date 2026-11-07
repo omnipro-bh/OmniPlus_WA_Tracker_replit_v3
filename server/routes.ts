@@ -39,7 +39,7 @@ import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecuto
 import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { loadAiStudioConfig } from "./ai/studioConfig";
 import { computeKpis } from "./ai/kpi";
-import { AI_STUDIO_INSTRUCTIONS_KEY, AI_STUDIO_PERSONA_KEY } from "@shared/ai-defaults";
+import { AI_STUDIO_INSTRUCTIONS_KEY, AI_STUDIO_PERSONA_KEY, AI_SHEET_TAB_SCHEMA } from "@shared/ai-defaults";
 import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonRoute, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
@@ -7989,6 +7989,68 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("Sync AI Studio sheet headers error:", error);
       res.status(500).json({ error: "Failed to sync sheet headers" });
+    }
+  });
+
+  // AI Studio — Scenario Builder: overwrite the Workflow_Steps tab with edited steps.
+  app.post("/api/ai-studio/scenarios/:workflowId/steps", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const workflowId = parseInt(String(req.params.workflowId ?? ""));
+      if (!Number.isInteger(workflowId)) {
+        return res.status(400).json({ error: "workflowId is required" });
+      }
+      const effectiveUserId = getEffectiveUserId(req);
+      const workflow = await storage.getWorkflow(workflowId);
+      if (!workflow || workflow.userId !== effectiveUserId) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+
+      const { googleSheets } = findAiSheetsConfig(workflow);
+      if (!googleSheets?.spreadsheetId) {
+        return res.status(400).json({ error: "No Google Sheets connected to this workflow's AI node" });
+      }
+
+      const steps = Array.isArray(req.body?.steps) ? req.body.steps : null;
+      if (!steps) {
+        return res.status(400).json({ error: "steps must be an array" });
+      }
+
+      const tabs: string[] = Array.isArray(googleSheets.tabs) && googleSheets.tabs.length > 0
+        ? googleSheets.tabs
+        : ["Intents", "Workflow_Steps"];
+      const stepsTab = tabs.find((t) => /step/i.test(t)) ?? "Workflow_Steps";
+
+      const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === "Workflow_Steps");
+      if (!schema) {
+        return res.status(500).json({ error: "Workflow_Steps schema missing" });
+      }
+
+      // Resolve the actual header for a canonical key (owner override → canonical).
+      const headerFor = (key: string): string => {
+        const override = googleSheets.columns?.[stepsTab]?.[key];
+        if (typeof override === "string" && override.trim()) return override.trim();
+        const col = schema.columns.find((c) => c.key === key);
+        return col?.column ?? key;
+      };
+
+      const headerRow = schema.columns.map((c) => headerFor(c.key));
+      const dataRows = steps.map((step: any) =>
+        schema.columns.map((c) => {
+          const v = step?.[c.key];
+          return v === undefined || v === null ? '' : String(v);
+        })
+      );
+
+      const { overwriteSheetTab } = await import("./workflows/googleSheetsExecutor");
+      const result = await overwriteSheetTab(googleSheets.spreadsheetId, stepsTab, [headerRow, ...dataRows]);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error || "Failed to write the Workflow_Steps tab" });
+      }
+
+      res.json({ success: true, count: steps.length, updatedRows: result.updatedRows });
+    } catch (error: any) {
+      console.error("Write AI Studio steps error:", error);
+      res.status(500).json({ error: "Failed to write the Workflow_Steps tab" });
     }
   });
 

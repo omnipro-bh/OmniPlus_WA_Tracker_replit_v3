@@ -414,6 +414,7 @@ export async function runSheetStateMachine(
    * empty). `fallbackUsed` is set on a lookup failure.
    */
   const resolveNextAsk = async (
+    steps: Record<string, any>[],
     startStep: Record<string, any> | undefined
   ): Promise<{ kind: 'ask'; text: string } | { kind: 'done' }> => {
     let step = startStep;
@@ -590,7 +591,7 @@ export async function runSheetStateMachine(
     }
 
     state.stepId = String(firstUnfilled[stepIdHeader] ?? '').trim();
-    const resolved = await resolveNextAsk(findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled);
+    const resolved = await resolveNextAsk(steps, findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled);
     if (resolved.kind === 'done') {
       const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
       result.slotExtractionAttempts = slotExtractionAttempts;
@@ -708,7 +709,7 @@ export async function runSheetStateMachine(
 
   const transition = parseNextStepLogic(current[nextHeader]);
   const nextStep = transition.kind === 'done' ? undefined : findStep(steps, stepIdHeader, transition.stepId);
-  const resolved = await resolveNextAsk(nextStep);
+  const resolved = await resolveNextAsk(steps, nextStep);
   if (resolved.kind === 'done') {
     const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
     result.slotExtractionAttempts = slotExtractionAttempts;

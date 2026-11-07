@@ -765,3 +765,40 @@ export async function fetchSheetHeaders(
     };
   }
 }
+
+export interface OverwriteSheetResult {
+  success: boolean;
+  updatedRows?: number;
+  error?: string;
+}
+
+/**
+ * Overwrite a whole tab: clear it, then write the provided rows (first row is
+ * expected to be the header). Used by the AI Studio Scenario Builder to persist
+ * edited `Workflow_Steps` back to Google Sheets.
+ */
+export async function overwriteSheetTab(
+  spreadsheetId: string,
+  tabName: string,
+  rows: any[][]
+): Promise<OverwriteSheetResult> {
+  try {
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) return { success: false, error: 'spreadsheetId is required' };
+    if (!tabName) return { success: false, error: 'tab is required' };
+    if (!Array.isArray(rows)) return { success: false, error: 'rows must be an array' };
+
+    const client = await getSheetsClient();
+    await client.spreadsheets.values.clear({ spreadsheetId: id, range: tabName });
+    const res = await client.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: tabName,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rows },
+    });
+    return { success: true, updatedRows: res.data.updatedRows ?? rows.length };
+  } catch (error: any) {
+    console.error('[AI overwrite sheet tab] failed:', error);
+    return { success: false, error: error?.message || 'Failed to write the sheet tab' };
+  }
+}

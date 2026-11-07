@@ -787,3 +787,52 @@ test('a slot referenced in a lookup_filter accepts any non-empty string', async 
   assert.equal(t2.sheet.intentId, null); // completed
   assert.equal(t2.fallbackUsed, false);
 });
+
+test('turn-1 extraction of department, specialist and location skips to datetime', async () => {
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Done' }];
+    }
+    return [
+      { intent_id: '1', step_id: 'Step_1', ai_question: 'Which department?', slot_name: 'department', next_step_logic: '→ Step_2' },
+      { intent_id: '1', step_id: 'Step_2', ai_question: 'Which specialist?', slot_name: 'specialist', next_step_logic: '→ Step_3' },
+      { intent_id: '1', step_id: 'Step_3', ai_question: 'Which location?', slot_name: 'location', next_step_logic: '→ Step_4' },
+      { intent_id: '1', step_id: 'Step_4', ai_question: 'When would you like it?', slot_name: 'datetime', next_step_logic: '→ done' },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const client = stubClient([
+    '{"slots": {"department": "Dental", "specialist": "Dr. X", "location": "Manama"}}',
+  ]);
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'Dental with Dr. X at Manama', reader, client);
+
+  assert.equal(turn.text, 'When would you like it?');
+  assert.equal(turn.sheet.stepId, 'Step_4');
+  assert.deepEqual(turn.sheet.slots, { department: 'Dental', specialist: 'Dr. X', location: 'Manama' });
+  assert.deepEqual(turn.skippedSteps, ['Step_1', 'Step_2', 'Step_3']);
+});
+
+test('turn-1 skip-ahead runs an intermediate lookup then asks the remaining step', async () => {
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked with {specialist} at {available_times}.' }];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return [{ specialist: 'Dr. X', available_times: '5 PM' }];
+    }
+    return [
+      { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which specialist?', slot_name: 'specialist', next_step_logic: '→ Step_2' },
+      { intent_id: '1', step_id: 'Step_2', step_type: 'lookup', lookup_source: 'Doctors_Schedule', lookup_filter: 'specialist={specialist}', lookup_extract: 'available_times', slot_name: 'available_times', next_step_logic: '→ Step_3' },
+      { intent_id: '1', step_id: 'Step_3', step_type: 'ask', ai_question: 'When?', slot_name: 'datetime', next_step_logic: '→ done' },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const client = stubClient(['{"slots": {"specialist": "Dr. X"}}']);
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book Dr. X', reader, client);
+
+  // specialist filled on turn 1 → skip Step_1, run the Step_2 lookup silently, ask Step_3.
+  assert.equal(turn.text, 'When?');
+  assert.equal(turn.sheet.stepId, 'Step_3');
+  assert.deepEqual(turn.sheet.slots, { specialist: 'Dr. X', available_times: '5 PM' });
+});
