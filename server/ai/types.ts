@@ -142,10 +142,14 @@ export interface UsageLimits {
   monthlyMax?: number;
 }
 
-/** Result of the turn-1 LLM slot extraction (Task 5b). */
+/**
+ * Result of the turn-1 LLM slot extraction (Task 5b). Values are RAW: code
+ * validation (`slotValidation.ts`) decides what is stored.
+ */
 export interface SlotExtractionResult {
   slots: Record<string, any>;
-  confidence: number;
+  /** @deprecated Trace signal only — never a gate (Phase 4d-2 increment 2). */
+  confidence?: number;
 }
 
 /**

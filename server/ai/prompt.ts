@@ -15,6 +15,7 @@
  */
 
 import { AI_SHEET_TAB_SCHEMA, AI_TOOL_RULES } from '@shared/ai-defaults';
+import { normalizeInputType, normalizeOptions } from '../workflows/slotValidation';
 import type { AiGoogleSheetsConfig, LlmClient, LlmCompletionResult } from './types';
 
 /** Always appended after the owner's prompt. Order matters: last wins. */
@@ -95,22 +96,48 @@ export function buildSheetRules(sheet: AiGoogleSheetsConfig): string {
   ].join('\n');
 }
 
+/** One field to extract on turn 1. `type`/`options` are extraction hints only. */
+export interface SlotExtractionField {
+  name: string;
+  /** Step's `expected_input`; used to decide whether choices are worth listing. */
+  type?: string;
+  /** Step's `options` cell. NEVER a validity gate — see slotValidation.ts. */
+  options?: string[];
+}
+
 /**
- * Task 5b: build the turn-1 slot-extraction prompt. Asks the LLM to pull the
- * listed slot names out of the customer's message and return strict JSON.
+ * Task 5b: build the turn-1 slot-extraction prompt. The model only copies the
+ * customer's own words into strict JSON; code decides what is acceptable. List
+ * choices are included as extraction hints so "I need dental" yields "Dental",
+ * but the model is told not to judge the value.
  */
-export function buildSlotExtractionPrompt(slots: string[], userMessage: string): string {
-  const fields = (Array.isArray(slots) ? slots : []).map((s) => String(s).trim()).filter(Boolean);
+export function buildSlotExtractionPrompt(
+  fields: SlotExtractionField[],
+  userMessage: string
+): string {
+  const lines = (Array.isArray(fields) ? fields : [])
+    .filter((field) => field && String(field.name).trim())
+    .map((field) => {
+      const name = String(field.name).trim();
+      const type = normalizeInputType(field.type);
+      const choices = normalizeOptions(field.options);
+      const hint = (type === 'list' || type === 'buttons') && choices.length > 0
+        ? ` (one of: ${choices.join(', ')})`
+        : '';
+      return `- ${name}${hint}`;
+    });
+
   return [
     'Extract the following fields from the customer message. Output STRICT JSON only — no markdown, no prose.',
     '',
-    `Fields: ${fields.join(', ')}`,
+    'Fields:',
+    ...lines,
     '',
     `Customer message: "${userMessage}"`,
     '',
     'Return only a JSON object:',
-    '{"slots": {"<field>": "<value>", ...}, "confidence": 0.9, "missing": ["<fields not found>"]}',
-    'Only include fields the customer actually provided. "confidence" is your certainty from 0 to 1.',
+    '{"slots": {"<field>": "<the customer\'s own words, or \\"\\" if absent>"}}',
+    'Copy the customer\'s words. Do not judge, validate, correct or explain. Omit fields the customer did not mention.',
   ].join('\n');
 }
 

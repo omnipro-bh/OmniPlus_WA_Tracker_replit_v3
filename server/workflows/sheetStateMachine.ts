@@ -5,7 +5,8 @@
  * knowledge once the trimmed `history` drops the early turns. This module fixes
  * that: the ENGINE reads the current step from the sheet every turn, asks its
  * `ai_question`, and advances via `next_step_logic`. The LLM is narrowed to (at
- * most) slot extraction.
+ * most) extracting raw slot values — it never decides whether a value is valid;
+ * `slotValidation.ts` does, deterministically.
  *
  * State is persisted in `context.ai[nodeId].sheet`:
  *   { intentId, stepId, slots: { slotName: value } }
@@ -19,6 +20,10 @@ import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
 import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
+import { normalizeInputType, normalizeOptions, parseOptions, validateSlotValue } from './slotValidation';
+import type { RejectedSlot } from './slotValidation';
+
+export type { RejectedSlot } from './slotValidation';
 
 export interface SheetState {
   intentId: string | null;
@@ -69,6 +74,10 @@ export interface SheetTurn {
   slotExtractionAttempts?: number;
   /** Whether the fallback path was triggered (invalid slot → re-ask). */
   fallbackUsed?: boolean;
+  /** Why the slot was rejected (trace only — never sent to the customer). */
+  fallbackReason?: string;
+  /** Turn-1 values the LLM extracted but code dropped (trace only). */
+  rejectedSlots?: RejectedSlot[];
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };
@@ -97,76 +106,63 @@ export function substituteSlots(template: string, slots: Record<string, any>): s
   });
 }
 
+/** Extraction hint only — `options` never gates validity here. */
+export interface SlotExtractHint {
+  type?: string;
+  options?: string[];
+}
+
 export type SlotExtractResult =
   | { ok: true; value: string; attempts: number }
-  | { ok: false; reason: string; attempts: number };
+  | { ok: false; error: string; attempts: number };
 
 /**
- * Extract a single slot value from the customer's message via the LLM, validated
- * against `expected_input` ('text' → any non-empty string; 'list'/'buttons' →
- * must match an allowed option, case-insensitive). Returns `ok: false` (no retry)
- * when the LLM could not extract a valid value, so the caller uses the fallback.
+ * Extract a single slot's RAW value from the customer's message via the LLM.
+ *
+ * Phase 4d-2 increment 2: the model no longer returns `valid`/`reason`. It is a
+ * probabilistic component, so it must not own business rules — it copies the
+ * customer's words and `validateSlotValue` decides. `ok: false` here means only
+ * "transport/format failed" (the caller falls back).
  */
 export async function extractSlot(
   client: LlmClient,
   slotName: string,
-  expectedInput: string,
   userMessage: string,
-  options?: string[]
+  hint: SlotExtractHint = {}
 ): Promise<SlotExtractResult> {
-  const type = (expectedInput || 'text').toLowerCase();
-  const allowed = options && options.length > 0 ? options.map((o) => o.toLowerCase()) : undefined;
+  const type = normalizeInputType(hint.type);
+  const choices = normalizeOptions(hint.options);
+  const listLike = type === 'list' || type === 'buttons';
 
   const prompt = [
     `Extract the value for slot "${slotName}" from the customer's message.`,
-    `Slot type: ${type}`,
-    ...(allowed ? [`Allowed values: ${allowed.join(', ')}`] : []),
+    ...(listLike && choices.length > 0
+      ? [`If the message names one of these choices, return that choice as written: ${choices.join(', ')}.`]
+      : []),
     '',
     `Customer message: "${userMessage}"`,
     '',
-    'Return strict JSON: {"value": "<extracted value>", "valid": true|false, "reason": "<why invalid>"}',
-    '',
-    `Rules: For type "text": any non-empty string is valid. For type "list"/"buttons": the value MUST match one of the allowed values (case-insensitive). If you cannot extract or the value is invalid, set "valid": false and explain in "reason".`,
+    'Return strict JSON: {"value": "<the customer\'s own words for this slot, or \\"\\" if absent>"}',
+    'Copy the customer\'s words. Do not judge, correct, translate or reformat. Do not explain.',
   ].join('\n');
 
-  // The JSON shape is validated by llmJson (which retries malformed output). The
-  // "valid" flag is a business-level result, so the validator returns `ok: true`
-  // for any well-formed object and we handle "valid: false" below (no retry).
-  const result = await llmJson<{ value: any; valid: boolean; reason?: string }>(
+  // llmJson is a SHAPE gate (valid JSON, string value) with corrective retries.
+  // A null/absent value is a legitimate "nothing to extract" — never retried.
+  const result = await llmJson<{ value: string }>(
     client,
     prompt,
     (obj) => {
-      if (typeof obj.valid !== 'boolean') return { ok: false, reason: 'missing "valid" boolean' };
-      return { ok: true, value: { value: obj.value, valid: obj.valid, reason: obj.reason } };
+      if (!obj || typeof obj !== 'object') return { ok: false, reason: 'not an object' };
+      if (typeof obj.value === 'string') return { ok: true, value: { value: obj.value } };
+      if (obj.value === null || obj.value === undefined) return { ok: true, value: { value: '' } };
+      return { ok: false, reason: 'missing string "value"' };
     },
     { maxRetries: 2 }
   );
 
-  if (!result.ok) return { ok: false, reason: result.error, attempts: result.attempts };
-
-  const { value, valid, reason } = result.value;
-  if (!valid) {
-    return {
-      ok: false,
-      reason: (typeof reason === 'string' && reason.trim()) || 'invalid value',
-      attempts: result.attempts,
-    };
-  }
-
-  const extracted = typeof value === 'string' ? value.trim() : '';
-  if (!extracted) return { ok: false, reason: 'empty value', attempts: result.attempts };
-  if (allowed && !allowed.includes(extracted.toLowerCase())) {
-    return { ok: false, reason: `value "${extracted}" not in allowed values`, attempts: result.attempts };
-  }
-
-  return { ok: true, value: extracted, attempts: result.attempts };
-}
-
-/** Parse a comma-separated `options` cell into a trimmed string array. */
-export function parseOptions(value: any): string[] | undefined {
-  if (typeof value !== 'string') return undefined;
-  const opts = value.split(',').map((s) => s.trim()).filter(Boolean);
-  return opts.length > 0 ? opts : undefined;
+  return result.ok
+    ? { ok: true, value: result.value.value.trim(), attempts: result.attempts }
+    : { ok: false, error: result.error, attempts: result.attempts };
 }
 
 /** Resolve the actual header for a canonical key, honoring the owner's mapping. */
@@ -224,22 +220,23 @@ export type RowReader = (
 ) => Promise<Record<string, any>[]>;
 
 /**
- * Validate the turn-1 slot-extraction JSON. Malformed output is rejected so
- * `llmJson` retries; a valid `{ slots, confidence }` object passes through.
+ * Validate the turn-1 slot-extraction JSON SHAPE. Malformed output is rejected
+ * so `llmJson` retries; values themselves are checked by `validateSlotValue`.
+ * `confidence` is optional and deprecated — it is a trace signal, not a gate.
  */
 function validateSlotExtraction(
   obj: any
 ): { ok: true; value: SlotExtractionResult } | { ok: false; reason: string } {
   if (!obj || typeof obj !== 'object') return { ok: false, reason: 'not an object' };
-  if (!obj.slots || typeof obj.slots !== 'object') return { ok: false, reason: 'missing "slots" object' };
-  if (typeof obj.confidence !== 'number' || obj.confidence < 0 || obj.confidence > 1) {
-    return { ok: false, reason: 'missing/invalid "confidence" number' };
+  if (!obj.slots || typeof obj.slots !== 'object' || Array.isArray(obj.slots)) {
+    return { ok: false, reason: 'missing "slots" object' };
   }
-  return { ok: true, value: { slots: obj.slots, confidence: obj.confidence } };
+  const confidence =
+    typeof obj.confidence === 'number' && obj.confidence >= 0 && obj.confidence <= 1
+      ? obj.confidence
+      : undefined;
+  return { ok: true, value: { slots: obj.slots, confidence } };
 }
-
-/** Confidence threshold above which extracted slots are trusted (Task 5b). */
-export const EXTRACTION_CONFIDENCE_THRESHOLD = 0.8;
 
 /** Find a step row by its `step_id`. */
 function findStep(
@@ -337,17 +334,30 @@ export async function runSheetStateMachine(
       : String((firstStep(steps, stepIdHeader)?.[stepIdHeader] ?? '')).trim();
 
     // ── Task 5b: turn-1 LLM extraction → skip already-filled steps ──────────
-    const slotNames = steps
-      .map((s) => String(s[slotHeader] ?? '').trim())
-      .filter(Boolean);
+    // The LLM returns raw strings only. validateSlotValue decides what is kept,
+    // so an out-of-list value is dropped (never stored) instead of trusted.
+    const slotMeta = new Map<string, { type: string; options?: string[] }>();
+    for (const step of steps) {
+      const name = String(step[slotHeader] ?? '').trim();
+      if (name && !slotMeta.has(name)) {
+        slotMeta.set(name, {
+          type: String(step[expectedHeader] ?? 'text').trim(),
+          options: parseOptions(step[optionsHeader]),
+        });
+      }
+    }
     const hasSlot = (name: string) =>
       name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
 
     let extracted: SlotExtractionResult | null = null;
-    if (client && slotNames.length > 0) {
+    const rejectedSlots: RejectedSlot[] = [];
+    if (client && slotMeta.size > 0) {
       const result = await llmJson<SlotExtractionResult>(
         client,
-        buildSlotExtractionPrompt(slotNames, userMessage),
+        buildSlotExtractionPrompt(
+          Array.from(slotMeta, ([name, meta]) => ({ name, type: meta.type, options: meta.options })),
+          userMessage
+        ),
         validateSlotExtraction,
         { maxRetries: 1 }
       );
@@ -355,15 +365,17 @@ export async function runSheetStateMachine(
       if (result.ok) extracted = result.value;
     }
 
-    if (
-      extracted &&
-      extracted.confidence >= EXTRACTION_CONFIDENCE_THRESHOLD &&
-      extracted.slots &&
-      typeof extracted.slots === 'object'
-    ) {
-      for (const [key, value] of Object.entries(extracted.slots)) {
-        if (value !== undefined && value !== null && value !== '') state.slots[key] = value;
+    if (extracted) {
+      const accepted: Record<string, string> = {};
+      for (const [name, raw] of Object.entries(extracted.slots ?? {})) {
+        const meta = slotMeta.get(name);
+        if (!meta) continue; // ignore fields the sheet does not declare
+        const validation = validateSlotValue(raw, meta.type, meta.options);
+        if (validation.valid) accepted[name] = validation.value;
+        else rejectedSlots.push({ slot: name, value: String(raw ?? ''), reason: validation.reason ?? 'rejected' });
       }
+      Object.assign(state.slots, accepted);
+      extracted = { slots: accepted, confidence: extracted.confidence };
     }
 
     // The first step whose slot is still empty is where we start.
@@ -382,6 +394,7 @@ export async function runSheetStateMachine(
         result.extractionConfidence = extracted.confidence;
         result.skippedSteps = skippedSteps;
       }
+      if (rejectedSlots.length > 0) result.rejectedSlots = rejectedSlots;
       return result;
     }
 
@@ -401,6 +414,7 @@ export async function runSheetStateMachine(
             skippedSteps,
           }
         : {}),
+      ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
     };
   }
 
@@ -421,32 +435,32 @@ export async function runSheetStateMachine(
     return result;
   }
 
-  // Capture the slot via the LLM (structured + validated); raw text when no client.
+  // LLM extracts the raw value; CODE decides whether it is acceptable. Without a
+  // client the raw message is the candidate — validation is identical either way.
   const slotName = String(current[slotHeader] ?? '').trim();
   if (slotName) {
-    let captured = false;
+    const expectedInput = String(current[expectedHeader] ?? 'text').trim();
+    const options = parseOptions(current[optionsHeader]);
+
+    let candidate = userMessage.trim();
+    let fallbackReason: string | undefined;
+
     if (client) {
-      const options = parseOptions(current[optionsHeader]);
-      const extracted = await extractSlot(
-        client,
-        slotName,
-        String(current[expectedHeader] ?? 'text').trim(),
-        userMessage,
-        options
-      );
+      const extracted = await extractSlot(client, slotName, userMessage, {
+        type: expectedInput,
+        options,
+      });
       slotExtractionAttempts += extracted.attempts;
-      if (extracted.ok) {
-        state.slots[slotName] = extracted.value;
-        captured = true;
-      }
-    } else {
-      state.slots[slotName] = userMessage.trim();
-      captured = true;
+      if (extracted.ok) candidate = extracted.value;
+      else fallbackReason = extracted.error;
     }
 
-    if (!captured) {
-      // Invalid slot → fallback, re-ask the same question (don't advance).
+    const validation = fallbackReason ? null : validateSlotValue(candidate, expectedInput, options);
+
+    if (!validation?.valid) {
+      // Rejected by code (or extraction failed) → fallback, re-ask, don't advance.
       fallbackUsed = true;
+      const reason = validation?.reason ?? fallbackReason ?? 'no value extracted';
       const fallback = String(current[fallbackHeader] ?? '').trim();
       const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
       return {
@@ -455,8 +469,11 @@ export async function runSheetStateMachine(
         toolCalls,
         slotExtractionAttempts,
         fallbackUsed,
+        fallbackReason: reason,
       };
     }
+
+    state.slots[slotName] = validation.value;
   }
 
   const transition = parseNextStepLogic(current[nextHeader]);

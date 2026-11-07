@@ -64,7 +64,7 @@ import type {
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
-import { isSheetStateMachineEnabled, runSheetStateMachine, type SheetState } from './sheetStateMachine';
+import { isSheetStateMachineEnabled, runSheetStateMachine, type RejectedSlot, type SheetState } from './sheetStateMachine';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -226,6 +226,10 @@ export interface AiAgentExecutionResult {
   slotExtractionAttempts?: number;
   /** Whether the fallback path was triggered (invalid slot → re-ask). */
   fallbackUsed?: boolean;
+  /** Why the slot was rejected (trace only). */
+  fallbackReason?: string;
+  /** Turn-1 values the LLM extracted but code validation dropped (trace only). */
+  rejectedSlots?: RejectedSlot[];
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -270,6 +274,10 @@ export interface AiTrace {
   slotExtractionAttempts?: number;
   /** Whether the fallback path was triggered (invalid slot → re-ask). */
   fallbackUsed?: boolean;
+  /** Why the slot was rejected (trace only). */
+  fallbackReason?: string;
+  /** Turn-1 values the LLM extracted but code validation dropped (trace only). */
+  rejectedSlots?: RejectedSlot[];
 }
 
 export interface AiAgentNodeOptions {
@@ -995,6 +1003,8 @@ export async function executeAiAgentNode(
         ? { slotExtractionAttempts: turn.slotExtractionAttempts }
         : {}),
       ...(turn.fallbackUsed !== undefined ? { fallbackUsed: turn.fallbackUsed } : {}),
+      ...(turn.fallbackReason ? { fallbackReason: turn.fallbackReason } : {}),
+      ...(turn.rejectedSlots ? { rejectedSlots: turn.rejectedSlots } : {}),
       tokenBreakdown: {
         systemPromptTokens: 0,
         toolDefinitionsTokens: 0,
@@ -1531,6 +1541,8 @@ export async function executeAiAgentWorkflowNode(
       ? { slotExtractionAttempts: result.slotExtractionAttempts }
       : {}),
     ...(result.fallbackUsed !== undefined ? { fallbackUsed: result.fallbackUsed } : {}),
+    ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
+    ...(result.rejectedSlots ? { rejectedSlots: result.rejectedSlots } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
