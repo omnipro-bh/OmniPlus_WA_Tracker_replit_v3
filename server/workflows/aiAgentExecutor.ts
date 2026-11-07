@@ -1514,11 +1514,11 @@ export async function executeAiAgentWorkflowNode(
     }
   }
 
-  // Increment B — global AI Studio config (instructions + persona). Loaded for
-  // every host, including the sandbox, so the Live Chat test reflects the owner's
-  // configured Instructions/Persona. `loadAiStudioConfig` is fail-open (returns
-  // empty defaults), so a DB-less sandbox/test never drops a reply.
-  const studioConfig: AiStudioConfig | null = await loadAiStudioConfig();
+  // Increment F — workflow-scoped AI Studio config (instructions + persona).
+  // Loaded for every host, including the sandbox, so the Live Chat test reflects
+  // the owner's configured Instructions/Persona. `loadAiStudioConfig` is fail-open
+  // (returns empty defaults), so a DB-less sandbox/test never drops a reply.
+  const studioConfig: AiStudioConfig | null = await loadAiStudioConfig(options.workflowId ?? 0);
 
   const result = await executeAiAgentNode(config, {
     nodeId,

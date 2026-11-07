@@ -33,12 +33,17 @@ export const AI_DEFAULT_SYSTEM_PROMPT = ['You are a helpful assistant.', '', AI_
 );
 
 /**
- * AI Studio (Increment B) — global owner-level config, persisted in the `settings`
- * key/value table. Written once, applied to every AI node (per-node overrides are
- * a future layer).
+ * AI Studio — owner-level config, persisted in the `settings` key/value table.
+ * Scoped per workflow (Increment F): each workflow has its own Instructions +
+ * Persona, keyed by `workflowId`.
  */
-export const AI_STUDIO_INSTRUCTIONS_KEY = 'ai_studio_instructions';
-export const AI_STUDIO_PERSONA_KEY = 'ai_studio_persona';
+export function aiStudioInstructionsKey(workflowId: number | string): string {
+  return `ai_studio_instructions_wf_${workflowId}`;
+}
+
+export function aiStudioPersonaKey(workflowId: number | string): string {
+  return `ai_studio_persona_wf_${workflowId}`;
+}
 
 /** Persona injected at the top of the system prompt as the assistant's identity. */
 export interface AiStudioPersona {

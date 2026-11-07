@@ -63,6 +63,13 @@ function stepsTabName(config: AiSheetsConfig | null | undefined): string {
   return tabs.find((t) => /step/i.test(t)) ?? "Workflow_Steps";
 }
 
+function intentsTabName(config: AiSheetsConfig | null | undefined): string {
+  const tabs = Array.isArray(config?.tabs) && config.tabs.length > 0
+    ? config.tabs
+    : AI_SHEET_TAB_SCHEMA.map((t) => t.tab);
+  return tabs.find((t) => /^intents?$/i.test(t)) ?? "Intents";
+}
+
 function optionsList(raw: unknown): string[] {
   if (raw == null || raw === "") return [];
   return String(raw)
@@ -271,9 +278,40 @@ export function KnowledgeTab({ workflowId }: { workflowId: string }) {
   );
 }
 
-// ── Scenarios Tab (editable builder) ───────────────────────────────────────
+// ── Scenarios Tab (hierarchical builder: Intents → Steps) ──────────────────
 
 const EXPECTED_INPUTS = ["text", "list", "buttons", "datetime"];
+
+/** A column picker: dropdown when columns are known, else a free-text input. */
+function ColumnPicker({
+  value,
+  columns,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  columns: string[];
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  if (columns.length > 0) {
+    return (
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={placeholder || "Select column"} />
+        </SelectTrigger>
+        <SelectContent>
+          {columns.map((c) => (
+            <SelectItem key={c} value={c}>
+              {c}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+  return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+}
 
 export function ScenariosTab({ workflowId }: { workflowId: string }) {
   const { toast } = useToast();
@@ -285,29 +323,85 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
 
   const googleSheets = configData?.googleSheets ?? null;
   const stepsTab = stepsTabName(googleSheets);
+  const intentsTab = intentsTabName(googleSheets);
   const connected = Boolean(googleSheets?.spreadsheetId);
 
-  const { data: rowsData, isLoading: rowsLoading } = useQuery<AiSheetsRowsResponse>({
+  // All tab names in the sheet.
+  const { data: tabsData } = useQuery<{ tabs: string[] }>({
+    queryKey: [`/api/ai-studio/sheets/${workflowId}/tabs`],
+    enabled: connected && Boolean(workflowId),
+  });
+  const allTabs = useMemo(() => tabsData?.tabs ?? [], [tabsData]);
+
+  // Intents (for the intent dropdown).
+  const { data: intentsData } = useQuery<AiSheetsRowsResponse>({
+    queryKey: [`/api/ai-studio/sheets/${encodeURIComponent(intentsTab)}/rows?workflowId=${workflowId}`],
+    enabled: connected && Boolean(workflowId),
+  });
+  const intents = useMemo(() => intentsData?.rows ?? [], [intentsData]);
+
+  // All steps across every intent.
+  const { data: stepsData, isLoading: stepsLoading } = useQuery<AiSheetsRowsResponse>({
     queryKey: [`/api/ai-studio/sheets/${encodeURIComponent(stepsTab)}/rows?workflowId=${workflowId}`],
     enabled: connected && Boolean(workflowId),
   });
+  const allSteps = useMemo(() => stepsData?.rows ?? [], [stepsData]);
 
-  const rows = rowsData?.rows ?? [];
+  // The Intents tab keys on `id`; the Steps tab keys on `intent_id`.
+  const intentIdHeader = headerFor(googleSheets, intentsTab, "id");
+  const stepIntentHeader = headerFor(googleSheets, stepsTab, "intent_id");
 
+  const [selectedIntentId, setSelectedIntentId] = useState<string>("");
   const [steps, setSteps] = useState<Record<string, any>[]>([]);
 
+  // Auto-select the first intent.
   useEffect(() => {
-    if (rows.length > 0) {
-      const canonical = rows
-        .map((r) => rowToCanonical(r, googleSheets, stepsTab))
-        .sort((a, b) => stepNumber(a, "step_id") - stepNumber(b, "step_id"));
-      setSteps(canonical);
+    if (!selectedIntentId && intents.length > 0) {
+      setSelectedIntentId(String(intents[0][intentIdHeader] ?? "").trim());
     }
-  }, [rows, googleSheets, stepsTab]);
+  }, [intents, selectedIntentId, intentIdHeader]);
 
-  const tabs = Array.isArray(googleSheets?.tabs) && googleSheets.tabs.length > 0
-    ? googleSheets.tabs
-    : AI_SHEET_TAB_SCHEMA.map((t) => t.tab);
+  // Load the selected intent's steps into editable state.
+  useEffect(() => {
+    if (!selectedIntentId) {
+      setSteps([]);
+      return;
+    }
+    const canonical = allSteps
+      .filter((r) => String(r[stepIntentHeader] ?? "").trim() === selectedIntentId)
+      .map((r) => rowToCanonical(r, googleSheets, stepsTab))
+      .sort((a, b) => stepNumber(a, "step_id") - stepNumber(b, "step_id"));
+    setSteps(canonical);
+  }, [selectedIntentId, allSteps, googleSheets, stepsTab, stepIntentHeader]);
+
+  // Columns (header row) for every tab, for the lookup dropdowns.
+  const [columnsMap, setColumnsMap] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    if (!connected || allTabs.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const map: Record<string, string[]> = {};
+      for (const tab of allTabs) {
+        try {
+          const res = await fetch(
+            `/api/ai-studio/sheets/${workflowId}/tabs/${encodeURIComponent(tab)}/columns`,
+            { credentials: "include" }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            map[tab] = Array.isArray(data.columns) ? data.columns : [];
+          }
+        } catch {
+          /* ignore a single tab's failure */
+        }
+      }
+      if (!cancelled) setColumnsMap(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, allTabs, workflowId]);
+
   const stepIds = steps.map((s) => String(s.step_id ?? "")).filter(Boolean);
 
   const updateStep = (index: number, field: string, value: any) =>
@@ -317,13 +411,14 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
     setSteps((prev) => [
       ...prev,
       {
-        intent_id: prev[0]?.intent_id ?? "",
+        intent_id: selectedIntentId,
         step_id: `Step_${prev.length + 1}`,
         step_type: "ask",
         ai_question: "",
         slot_name: "",
         expected_input: "text",
         options: "",
+        fallback: "",
         next_step_logic: "→ done",
       },
     ]);
@@ -332,16 +427,28 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
 
   const saveSteps = useMutation({
     mutationFn: async () => {
-      // Recompute step_id + next_step_logic linearly so the flow stays consistent.
-      const normalized = steps.map((s, i) => ({
-        ...s,
-        step_id: `Step_${i + 1}`,
-        next_step_logic: i < steps.length - 1 ? `→ Step_${i + 2}` : "→ done",
-      }));
-      await apiRequest("POST", `/api/ai-studio/scenarios/${workflowId}/steps`, { steps: normalized });
+      // Keep every existing step_id (so the owner's `next_step_logic` references
+      // stay valid) and only assign a fresh one to newly added steps.
+      const used = new Set(
+        steps.map((s) => String(s.step_id ?? "").trim()).filter(Boolean)
+      );
+      let nextNum = 1;
+      const normalized = steps.map((s) => {
+        let id = String(s.step_id ?? "").trim();
+        if (!id) {
+          while (used.has(`Step_${nextNum}`)) nextNum += 1;
+          id = `Step_${nextNum}`;
+          used.add(id);
+        }
+        return { ...s, step_id: id, intent_id: selectedIntentId };
+      });
+      await apiRequest("POST", `/api/ai-studio/scenarios/${workflowId}/steps`, {
+        intent_id: selectedIntentId,
+        steps: normalized,
+      });
     },
     onSuccess: () => {
-      toast({ title: "Saved", description: "Workflow steps updated in Google Sheets." });
+      toast({ title: "Saved", description: `Steps for "${selectedIntentId}" updated in Google Sheets.` });
       queryClient.invalidateQueries({
         queryKey: [`/api/ai-studio/sheets/${encodeURIComponent(stepsTab)}/rows?workflowId=${workflowId}`],
       });
@@ -355,7 +462,7 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
     },
   });
 
-  if (configLoading || rowsLoading) {
+  if (configLoading || stepsLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading scenarios…
@@ -374,50 +481,75 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
     );
   }
 
-  if (steps.length === 0) {
+  if (intents.length === 0) {
     return (
-      <div className="space-y-4">
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            No steps found in the "{stepsTab}" tab.
-          </CardContent>
-        </Card>
-        <Button variant="outline" size="sm" onClick={addStep}>
-          <Plus className="mr-2 h-4 w-4" /> Add First Step
-        </Button>
-      </div>
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No intents found in the "{intentsTab}" tab.
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Button variant="outline" size="sm" onClick={addStep}>
-          <Plus className="mr-2 h-4 w-4" /> Add Step
-        </Button>
-        <Button onClick={() => saveSteps.mutate()} disabled={saveSteps.isPending}>
-          {saveSteps.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          Save Changes
-        </Button>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="w-full max-w-xs">
+          <Label className="mb-1 block text-xs">Intent</Label>
+          <Select value={selectedIntentId} onValueChange={setSelectedIntentId}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select an intent" />
+            </SelectTrigger>
+            <SelectContent>
+              {intents.map((it) => {
+                const id = String(it[intentIdHeader] ?? "").trim();
+                return (
+                  <SelectItem key={id} value={id}>
+                    {id}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={addStep}>
+            <Plus className="mr-2 h-4 w-4" /> Add Step
+          </Button>
+          <Button onClick={() => saveSteps.mutate()} disabled={saveSteps.isPending}>
+            {saveSteps.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save Changes
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {steps.map((step, i) => (
-          <StepEditor
-            key={i}
-            step={step}
-            index={i}
-            tabs={tabs}
-            stepIds={stepIds.filter((id) => id !== String(step.step_id ?? ""))}
-            onChange={updateStep}
-            onRemove={removeStep}
-          />
-        ))}
-      </div>
+      {steps.length === 0 ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            No steps for this intent yet. Click "Add Step" to create one.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {steps.map((step, i) => (
+            <StepEditor
+              key={i}
+              step={step}
+              index={i}
+              tabs={allTabs}
+              columnsMap={columnsMap}
+              stepIds={stepIds.filter((id) => id !== String(step.step_id ?? ""))}
+              onChange={updateStep}
+              onRemove={removeStep}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -426,6 +558,7 @@ function StepEditor({
   step,
   index,
   tabs,
+  columnsMap,
   stepIds,
   onChange,
   onRemove,
@@ -433,12 +566,14 @@ function StepEditor({
   step: Record<string, any>;
   index: number;
   tabs: string[];
+  columnsMap: Record<string, string[]>;
   stepIds: string[];
   onChange: (index: number, field: string, value: any) => void;
   onRemove: (index: number) => void;
 }) {
   const isLookup = String(step.step_type ?? "ask").trim().toLowerCase() === "lookup";
   const clauses = parseFilterClauses(String(step.lookup_filter ?? ""));
+  const sourceColumns = columnsMap[String(step.lookup_source ?? "")] ?? [];
 
   const setFilter = (next: FilterClause[]) => onChange(index, "lookup_filter", buildFilterString(next));
 
@@ -505,12 +640,31 @@ function StepEditor({
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Options (comma-separated)</Label>
+            <Input
+              value={String(step.options ?? "")}
+              onChange={(e) => onChange(index, "options", e.target.value)}
+              placeholder="Dental, ENT"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Fallback</Label>
+            <Input
+              value={String(step.fallback ?? "")}
+              onChange={(e) => onChange(index, "fallback", e.target.value)}
+              placeholder="Please choose a valid option."
+            />
+          </div>
+        </div>
+
         <div className="space-y-1.5">
-          <Label className="text-xs">Options (comma-separated)</Label>
+          <Label className="text-xs">Next step logic</Label>
           <Input
-            value={String(step.options ?? "")}
-            onChange={(e) => onChange(index, "options", e.target.value)}
-            placeholder="Dental, ENT"
+            value={String(step.next_step_logic ?? "")}
+            onChange={(e) => onChange(index, "next_step_logic", e.target.value)}
+            placeholder="→ Step_2  or  → done"
           />
         </div>
 
@@ -536,9 +690,10 @@ function StepEditor({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Extract column</Label>
-                <Input
+                <ColumnPicker
                   value={String(step.lookup_extract ?? "")}
-                  onChange={(e) => onChange(index, "lookup_extract", e.target.value)}
+                  columns={sourceColumns}
+                  onChange={(v) => onChange(index, "lookup_extract", v)}
                   placeholder="available_times"
                 />
               </div>
@@ -549,14 +704,14 @@ function StepEditor({
               <div className="space-y-2">
                 {clauses.map((c, ci) => (
                   <div key={ci} className="flex items-center gap-2">
-                    <Input
-                      className="flex-1"
-                      value={c.column}
-                      onChange={(e) =>
-                        setFilter(clauses.map((x, xi) => (xi === ci ? { ...x, column: e.target.value } : x)))
-                      }
-                      placeholder="column (e.g. doctor)"
-                    />
+                    <div className="flex-1">
+                      <ColumnPicker
+                        value={c.column}
+                        columns={sourceColumns}
+                        onChange={(v) => setFilter(clauses.map((x, xi) => (xi === ci ? { ...x, column: v } : x)))}
+                        placeholder="column"
+                      />
+                    </div>
                     <span className="text-sm text-muted-foreground">=</span>
                     <Input
                       className="flex-1"

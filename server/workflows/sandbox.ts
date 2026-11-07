@@ -339,6 +339,8 @@ export function buildSandboxHost(opts: {
   aiMode?: "mock" | "live";
   userId: number;
   maxSteps?: number;
+  /** Workflow id — used to load workflow-scoped Instructions/Persona (Increment F). */
+  workflowId?: number | null;
   /** Text of the tick's input, used as the AI node's user message. */
   lastText?: string;
   /** Draft graph — only the edges are used, for the `booked` / `no_slots` lookups. */
@@ -458,7 +460,7 @@ export function buildSandboxHost(opts: {
         { text: { body: userMessage || opts.lastText || (ctx as any)?.message?.text || "" } },
         { phone: "sandbox", userId: opts.userId },
         // The sandbox never writes ai_usage_logs: it stays DB-free and free of charge.
-        { channel: "sandbox", logUsage: false }
+        { channel: "sandbox", logUsage: false, workflowId: opts.workflowId ?? null }
       );
 
       // Increment D: surface the AI turn's trace for the Live Chat trace panel.

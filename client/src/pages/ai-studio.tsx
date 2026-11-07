@@ -57,9 +57,11 @@ export default function AIStudio() {
 
   const selectedTrace = traces.find((t) => t.id === selectedTraceId) ?? traces[0] ?? null;
 
-  // ── Global AI Studio config (Instructions + Persona) ────────────────
+  // ── Workflow-scoped AI Studio config (Instructions + Persona) ──────────
+  const configQueryKey = [`/api/ai-studio/config?workflowId=${effectiveWorkflowId}`];
   const { data: studioConfig } = useQuery<AiStudioConfig>({
-    queryKey: ["/api/ai-studio/config"],
+    queryKey: configQueryKey,
+    enabled: Boolean(effectiveWorkflowId),
   });
 
   const [instructions, setInstructions] = useState("");
@@ -68,6 +70,13 @@ export default function AIStudio() {
     title: "",
     description: "",
   });
+
+  // Clear the editors immediately when the workflow changes so a save can never
+  // write the previous workflow's text into the newly selected one.
+  useEffect(() => {
+    setInstructions("");
+    setPersona({ alias: "", title: "", description: "" });
+  }, [effectiveWorkflowId]);
 
   useEffect(() => {
     if (studioConfig) {
@@ -78,10 +87,13 @@ export default function AIStudio() {
 
   const saveConfig = useMutation({
     mutationFn: async (payload: Partial<AiStudioConfig>) => {
-      await apiRequest("PUT", "/api/ai-studio/config", payload);
+      await apiRequest("PUT", "/api/ai-studio/config", {
+        workflowId: Number(effectiveWorkflowId),
+        ...payload,
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-studio/config"] });
+      queryClient.invalidateQueries({ queryKey: configQueryKey });
       toast({ title: "Saved", description: "AI Studio config updated." });
     },
     onError: (error: any) => {

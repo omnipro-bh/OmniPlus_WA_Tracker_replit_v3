@@ -12,8 +12,8 @@
  */
 
 import {
-  AI_STUDIO_INSTRUCTIONS_KEY,
-  AI_STUDIO_PERSONA_KEY,
+  aiStudioInstructionsKey,
+  aiStudioPersonaKey,
   DEFAULT_AI_STUDIO_CONFIG,
   EMPTY_AI_STUDIO_PERSONA,
   type AiStudioConfig,
@@ -35,13 +35,13 @@ function parsePersona(raw: string | undefined | null): AiStudioPersona {
   }
 }
 
-/** Read the global AI Studio config. Never throws — returns defaults on error. */
-export async function loadAiStudioConfig(): Promise<AiStudioConfig> {
+/** Read the AI Studio config for a specific workflow. Never throws — returns defaults on error. */
+export async function loadAiStudioConfig(workflowId: number): Promise<AiStudioConfig> {
   try {
     const { storage } = await import('../storage');
     const [instructions, personaRaw] = await Promise.all([
-      storage.getSetting(AI_STUDIO_INSTRUCTIONS_KEY),
-      storage.getSetting(AI_STUDIO_PERSONA_KEY),
+      storage.getSetting(aiStudioInstructionsKey(workflowId)),
+      storage.getSetting(aiStudioPersonaKey(workflowId)),
     ]);
     return {
       instructions: instructions?.value ?? '',

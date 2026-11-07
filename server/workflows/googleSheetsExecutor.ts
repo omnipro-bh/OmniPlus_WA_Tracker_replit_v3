@@ -802,3 +802,50 @@ export async function overwriteSheetTab(
     return { success: false, error: error?.message || 'Failed to write the sheet tab' };
   }
 }
+
+export interface ListTabsResult {
+  success: boolean;
+  tabs: string[];
+  error?: string;
+}
+
+/** List every tab name in a spreadsheet. */
+export async function listSheetTabs(spreadsheetId: string): Promise<ListTabsResult> {
+  try {
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) return { success: false, tabs: [], error: 'spreadsheetId is required' };
+    const client = await getSheetsClient();
+    const res = await client.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties.title' });
+    const tabs = (res.data.sheets ?? [])
+      .map((s) => s.properties?.title)
+      .filter((t): t is string => typeof t === 'string' && t.length > 0);
+    return { success: true, tabs };
+  } catch (error: any) {
+    console.error('[AI list sheet tabs] failed:', error);
+    return { success: false, tabs: [], error: error?.message || 'Failed to list tabs' };
+  }
+}
+
+export interface RawValuesResult {
+  success: boolean;
+  values: any[][];
+  error?: string;
+}
+
+/** Read a tab's raw cell values (header row + data rows) as a 2D array. */
+export async function readSheetRawValues(
+  spreadsheetId: string,
+  tabName: string
+): Promise<RawValuesResult> {
+  try {
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) return { success: false, values: [], error: 'spreadsheetId is required' };
+    if (!tabName) return { success: false, values: [], error: 'tab is required' };
+    const client = await getSheetsClient();
+    const res = await client.spreadsheets.values.get({ spreadsheetId: id, range: tabName });
+    return { success: true, values: res.data.values ?? [] };
+  } catch (error: any) {
+    console.error('[AI read raw values] failed:', error);
+    return { success: false, values: [], error: error?.message || 'Failed to read the sheet tab' };
+  }
+}
