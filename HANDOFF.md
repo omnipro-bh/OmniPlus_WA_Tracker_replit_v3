@@ -1,69 +1,54 @@
 # HANDOFF — OmniPlus WA Tracker v3
 
-## AI Agent Phase 4d-2 increment 1 — structured extraction COMPLETE (6548c55, 2026-11-07)
+## AI Agent Phase 4d-2 increment 2 — Deterministic Validation COMPLETE (2a11b41, 2026-11-07)
 
 ### Status
 
-- Production HEAD: `6548c55`.
-- Structured slot extraction (`llmJson` + `extractSlot`) is live and verified end-to-end.
-- Turn 1: LLM extracts multiple slots from one message (0.95 confidence).
-- Skip-ahead: Steps with filled slots are skipped correctly.
-- Turn 2+: LLM validates slot values against `expected_input` + `options`.
-- Invalid input: fallback fires, flow does NOT advance.
-- Malformed LLM responses: retried up to 2 times with a corrective prompt.
-- `aiTrace` shows: `extractedSlots`, `skippedSteps`, `extractionConfidence`, `slotExtractionAttempts`, `fallbackUsed`.
+- Production HEAD: `2a11b41`. Tests: 187/187. PM2 online (HTTP 200).
+- **Architecture Reset:** the LLM extracts raw strings only; code (pure functions) performs 100% of validation. Models never own business rules.
+- `server/workflows/slotValidation.ts` created: placeholder filtering (`(leave empty)`, `(empty)`, `(optional)`, `(n/a)`, `n/a`, `-`, `—`), case-insensitive list/buttons matching with canonical sheet casing, and numeric validation. `none` is deliberately not filtered (it can be a real option).
+- `extractSlot` simplified to a 4-arg extractor returning `{ value: string }` — no `valid`, no `reason`. `llmJson` is a shape gate only: it retries malformed JSON, and `null` means "nothing extracted" (never retried).
+- `EXTRACTION_CONFIDENCE_THRESHOLD` removed. `confidence` survives as an optional/deprecated trace field, not a gate.
+- Turn 1 validates every extracted slot; invalid values are dropped (not stored) and the flow starts at the first unfilled step.
+- Residual trap fixed: if the LLM returns an empty value for the step being asked, code falls back to the raw `userMessage` before validation — the extractor can never suppress the customer's answer.
+- Trace visibility: `fallbackReason` and `rejectedSlots` added to `aiTrace` (alongside `extractedSlots`, `skippedSteps`, `slotExtractionAttempts`, `fallbackUsed`).
+- No schema change, no new dependencies.
 
-### Verified behaviors
+### Verified Behaviors (live sheet + real Groq `qwen/qwen3.8-27b`)
 
-- Valid multi-slot message: "dental + Dr. Ahmed" → skips to Step_3 ✅
-- Invalid input: "Dental" as specialist → fallback fires, stays at Step_2 ✅
-- Clean first attempt: `slotExtractionAttempts` = 1 ✅
-- High confidence: 0.95 ✅
+| Input | Slot type | Result |
+|---|---|---|
+| "today at 6 PM" | text | ✅ accepted, flow completes |
+| "anytime" | text | ✅ accepted, flow completes |
+| "ok" / "riffa" (LLM returned `""`) | text | ✅ raw-message fallback → accepted |
+| "banana" | list | ✅ rejected, fallback, no advance — `fallbackReason: "banana" is not one of: ...` |
+| "I need dental" | list | ✅ canonicalised to `Dental`, advances |
+| `(leave empty)` in the options cell | any | ✅ safely ignored (never an allowed value) |
+| Turn-1 multi-slot | mixed | ✅ invalid slots dropped + reported, valid slots stored |
 
-### What this enables (the "AI within business rules" behavior)
+### Root cause this closed
 
-- Natural language understanding: "I want to book ENT at Manama at 6 PM today" → extracts all 4 slots, skips 4 steps.
-- Validation: "banana" as location → LLM rejects → fallback re-asks.
-- Case-insensitive matching: "dental" → "Dental" (normalized).
-- Owner control: add an `options` column to gate list/button inputs.
+`extractSlot` applied the `options` list to `text` slots, and Step_4's options cell contains the human placeholder `(leave empty)`. The LLM correctly returned `{"value":"today at 6 PM","valid":true}`; the code then rejected it as "not in allowed values" (`slotExtractionAttempts: 1`, `fallbackUsed: true`) and looped forever. The LLM was right — the code threw the answer away. Control now belongs to code.
 
-### Disk hygiene (from earlier today)
+### Commits
 
-- Backup exclusions working (6.5 MB vs 350 MB per backup — 98% reduction).
-- `pm2-logrotate` installed (100 MB cap, 5 retain, compress).
-- Weekly cron for old backups.
-- Disk: 7.5 GB / 50 GB (16%).
+- `7bfc765` — refactor: invert slot control (code + new module).
+- `85612e0` — tests: 36 new (validation + pipeline).
+- `2a11b41` — fix: the extractor can no longer suppress the current answer.
 
-### Remaining in Phase 4d-2
+### Next Phase: AI Studio Dashboard
 
-- Step isolation (`StepContext` — LLM sees only the current step's context).
+The backend is deterministic and traceable; the next phase is UI.
+
+- Tabs: Instructions, Knowledge (Sheets), Scenarios (Workflow_Steps), Persona.
+- "Live Chat & Trace Viewer" panel reading `aiTrace` to show exactly why the AI passed or fell back on every message (`fallbackReason`, `rejectedSlots`, `extractedSlots`, `skippedSteps`).
+
+### Deferred (carried forward)
+
+- Step isolation (`StepContext` — the LLM sees only the current step's context).
 - RAG (per-step knowledge injection from a Policies tab).
 - Kill the free-form fallback for sheet nodes.
-
-### Remaining in Phase 4d-3
-
-- Approval steps (pause + notify manager for high-value actions).
-- Conditional branching (if dept == ENT → different steps).
-
-### AI Agent — COMPLETE ARC (current state)
-
-- Phase 1: chat (Qwen/DeepSeek/Groq)
-- Phase 2: buttons/handover
-- Phase 2.5: lists/routing/guards
-- Phase 3: schedule/usage limits/message cap
-- AI + Sheets: deterministic state machine + LLM slot extraction
-- Phase 4d-1: multi-slot extraction (skip-ahead)
-- Phase 4d-2 increment 1: validated structured extraction + fallback
-
-### Next session — user's choice
-
-1. Phase 4d-2 increment 2: `StepContext` isolation + RAG (~1–2 sessions)
-2. Phase 4d-3: approval steps + conditional branching (~2 sessions)
-3. Ship current state to a real customer and iterate based on usage (~0 sessions)
-
-### One sheet improvement (user action, optional)
-
-- Update Step_2's fallback to list available options: "Please pick a specialist. We have Dr. Ahmed, Dr. Rahman, Dr. Fatima, or General."
+- Phase 4d-3: approval steps + conditional branching.
 
 ## AI Agent Phase 2 Part 1 — tool loop + send_buttons + handover (0a84d65, 2026-11-03)
 
