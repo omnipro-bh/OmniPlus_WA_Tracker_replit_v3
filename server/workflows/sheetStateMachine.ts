@@ -165,6 +165,60 @@ export async function extractSlot(
     : { ok: false, error: result.error, attempts: result.attempts };
 }
 
+/**
+ * Increment E — generate a natural, conversational re-prompt when a slot value
+ * is rejected, instead of the static sheet `fallback`. The LLM gets to
+ * acknowledge the customer ("Anyone is fine") and gently guide them back, so the
+ * AI behaves like an agent rather than a dumb form validator.
+ *
+ * Returns '' when generation fails (or the provider errors), so the caller falls
+ * back to the static sheet `fallback`.
+ *
+ * `fallbackString` is the static sheet fallback and is intentionally NOT injected
+ * into the prompt (we do not want the model to lazily echo it); it is kept on the
+ * signature for call-site clarity and future use.
+ */
+export async function generateConversationalFallback(
+  client: LlmClient,
+  slotName: string,
+  userMessage: string,
+  currentQuestion: string,
+  _fallbackString: string,
+  allowedOptions?: string[]
+): Promise<string> {
+  const optionsLine = allowedOptions && allowedOptions.length > 0
+    ? allowedOptions.join(', ')
+    : 'Any text';
+  const prompt = [
+    `You are a helpful AI assistant. You are trying to collect the "${slotName}" from the customer.`,
+    '',
+    `The question you just asked was: "${currentQuestion}"`,
+    `The valid options are: ${optionsLine}`,
+    `The customer replied: "${userMessage}"`,
+    '',
+    'Instructions:',
+    '1. First, acknowledge what the customer said. If they asked a question, answer it if you can. If they provided a valid alternative (like "Anyone"), acknowledge it.',
+    '2. Then, gently guide them back to the current step.',
+    '3. If they provided an invalid option, list the valid options.',
+    '4. Keep it brief and natural.',
+    '5. Reply in the same language as the customer.',
+    '',
+    'Return ONLY the text you would say to the customer. Do not use JSON.',
+  ].join('\n');
+
+  try {
+    const result = await client.complete({
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      maxTokens: 160,
+    });
+    if (!result.ok) return '';
+    return result.text.trim();
+  } catch {
+    return '';
+  }
+}
+
 /** Resolve the actual header for a canonical key, honoring the owner's mapping. */
 function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
   const override = sheet.columns?.[tab]?.[key];
@@ -470,8 +524,25 @@ export async function runSheetStateMachine(
       const reason = validation?.reason ?? fallbackReason ?? 'no value extracted';
       const fallback = String(current[fallbackHeader] ?? '').trim();
       const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
+
+      // Increment E — conversational fallback: give the LLM a chance to respond
+      // naturally (acknowledge + guide back) before defaulting to the static
+      // sheet fallback. Mock clients skip this so tests/sandbox stay deterministic.
+      let text = fallback || question;
+      if (client && client.id !== 'mock') {
+        const generated = await generateConversationalFallback(
+          client,
+          slotName,
+          userMessage.trim(),
+          question,
+          fallback,
+          options
+        );
+        if (generated) text = generated;
+      }
+
       return {
-        text: fallback || question,
+        text,
         sheet: state,
         toolCalls,
         slotExtractionAttempts,
