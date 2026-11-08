@@ -15,12 +15,12 @@ import {
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
-  formatSearchResults,
   hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
   noBarePlaceholders,
   runAgentHarness,
+  serializeSearchResults,
   type HarnessChecklist,
 } from './agentHarness';
 import type { RowReader } from './sheetStateMachine';
@@ -272,22 +272,29 @@ const listReader: RowReader = async (_sheet, tab, filter) => {
   return STEPS.filter((s) => s.intent_id === filter?.value);
 };
 
-test('formatSearchResults formats entities with matched context and excludes "off" rows', () => {
-  const map = deriveScheduleMap(STEPS, {
-    stepType: 'step_type',
-    source: 'lookup_source',
-    filter: 'lookup_filter',
-    extract: 'lookup_extract',
-  })!;
+test('serializeSearchResults returns full structured rows and excludes "off" rows', () => {
   const rows = [
     { Doctor: 'Dr. Arun', department: 'Specialist Endodontist', Branch: 'Muharraq' },
     { Doctor: 'Dr. Komal Sharma', department: 'Specialist Endodontist', Branch: 'Adliya' },
     { Doctor: 'Dr. Susan', department: 'ENT Surgeon', Branch: 'Adliya', Available_Times: 'WEELKLY OFF' },
   ];
-  const list = formatSearchResults(rows, map, 'endodontist');
-  assert.match(list, /Dr. Arun — Specialist Endodontist/);
-  assert.match(list, /Dr. Komal Sharma — Specialist Endodontist/);
-  assert.doesNotMatch(list, /Dr. Susan/); // WEELKLY OFF
+  const json = serializeSearchResults(rows);
+  const parsed = JSON.parse(json);
+  // Every column is preserved (Branch, department) so the model can read them.
+  assert.equal(parsed.length, 2); // Dr. Susan (off) excluded
+  assert.deepEqual(parsed[0], { Doctor: 'Dr. Arun', department: 'Specialist Endodontist', Branch: 'Muharraq' });
+  assert.equal(parsed[1].Branch, 'Adliya');
+  assert.equal(parsed[1].department, 'Specialist Endodontist');
+});
+
+test('buildHarnessPrompt passes structured search data and warns against hallucination', () => {
+  const checklist: HarnessChecklist = { required: [], derived: [] };
+  const json = JSON.stringify([{ Doctor: 'Dr. Rinkoo Jose', Branch: 'Adliya', department: 'ORTHODONTIST' }]);
+  const prompt = buildHarnessPrompt('You are Alia.', checklist, {}, 'At which branch?', undefined, json);
+  assert.match(prompt, /SEARCH RESULTS/);
+  assert.match(prompt, /"Branch":"Adliya"/);
+  assert.match(prompt, /NEVER hallucinate or guess/);
+  assert.match(prompt, /read the actual column values/);
 });
 
 test('search_schedule finds doctors at a branch', async () => {

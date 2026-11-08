@@ -317,7 +317,11 @@ export function buildHarnessPrompt(
     `USER MESSAGE: "${userMessage}"`,
     ...(lookupResult ? ['', `LOOKUP RESULT: ${lookupResult}`] : []),
     ...(searchResults
-      ? ['', `SEARCH RESULTS (answer the customer from these, never invent names):`, searchResults]
+      ? [
+          '',
+          `SEARCH RESULTS (structured data — read the actual column values to answer accurately, NEVER hallucinate or guess a value that is not in the JSON):`,
+          searchResults,
+        ]
       : []),
     '',
     'INSTRUCTIONS:',
@@ -328,7 +332,7 @@ export function buildHarnessPrompt(
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
     '7. If the message is off-topic or a greeting, answer it naturally and still set action = "ask" with a question that guides back to a missing slot.',
-    '8. When SEARCH RESULTS are provided above, answer the customer naturally from them and set action = "ask" with your reply in next_question (then offer to book one).',
+    '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read the relevant columns), and set action = "ask" with your reply in next_question (then offer to book one).',
     '9. Reply in the same language as the customer.',
     '',
     'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "query": "..."}',
@@ -449,32 +453,23 @@ function isDoctorOff(row: Record<string, any>): boolean {
 }
 
 /**
- * Search the schedule for any cell matching `query` (a free-form term) and format
- * the matched rows as a de-duplicated "entity — matched value" list, excluding
- * off/vacation rows. Generic across businesses: doctors, properties, restaurants.
+ * Serialize the matched schedule rows as structured JSON — every column intact —
+ * so the model can answer follow-up questions (e.g. "at which branch?") from the
+ * real data instead of hallucinating. Rows marked off/vacation are excluded.
  */
-export function formatSearchResults(
-  rows: Record<string, any>[],
-  map: ScheduleMap,
-  query: string
-): string {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const row of Array.isArray(rows) ? rows : []) {
-    if (isDoctorOff(row)) continue;
-    const entity = String(readCell(row, map.doctorColumn) ?? '').trim();
-    if (!entity || seen.has(entity.toLowerCase())) continue;
-    seen.add(entity.toLowerCase());
-    // The cell that matched the query provides context (e.g. the specialty/type).
-    const matched = Object.entries(row).find(
-      ([key, value]) => key !== map.doctorColumn && looseCellMatch(value, query) && String(value ?? '').trim() !== ''
-    );
-    const context = matched ? String(matched[1] ?? '').trim() : '';
-    lines.push(
-      context && context.toLowerCase() !== entity.toLowerCase() ? `${entity} — ${context}` : entity
-    );
-  }
-  return lines.join('\n');
+export function serializeSearchResults(rows: Record<string, any>[]): string {
+  const available = (Array.isArray(rows) ? rows : []).filter((row) => !isDoctorOff(row));
+  return JSON.stringify(available);
+}
+
+/** A human-readable fallback when the model fails to produce a natural reply. */
+function summarizeRows(rows: Record<string, any>[], map: ScheduleMap): string {
+  const entities = (Array.isArray(rows) ? rows : [])
+    .filter((row) => !isDoctorOff(row))
+    .map((row) => String(readCell(row, map.doctorColumn) ?? '').trim())
+    .filter(Boolean);
+  if (entities.length === 0) return 'I could not find anything matching that.';
+  return `${entities.join(', ')}. Would you like to book one of them?`;
 }
 
 /** Is a schedule row's primary cell (or the query) a match across any column? */
@@ -660,15 +655,18 @@ export async function runAgentHarness(
             args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(query)}` },
             rows: matched.length,
           });
-          const results = formatSearchResults(matched, fallbackMap, query);
-          if (results) {
+          const results = serializeSearchResults(matched);
+          if (matched.length > 0) {
             const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
             const round2 = await askModel(
               client,
               buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, results)
             );
             slotExtractionAttempts += round2.attempts;
-            const text = noBarePlaceholders(round2.decision.next_question?.trim() || results, state.slots);
+            const text = noBarePlaceholders(
+              round2.decision.next_question?.trim() || summarizeRows(matched, fallbackMap),
+              state.slots
+            );
             return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
           }
         }
@@ -759,7 +757,7 @@ export async function runAgentHarness(
         rows: rows.length,
       });
     }
-    const searchResults = formatSearchResults(rows, scheduleMap!, query);
+    const searchResults = serializeSearchResults(rows);
     const searchRound = await askModel(
       client,
       buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, searchResults)
@@ -767,15 +765,15 @@ export async function runAgentHarness(
     slotExtractionAttempts += searchRound.attempts;
 
     // If the model hallucinated ("Let me check…") without listing a result, fall
-    // back to the deterministic results so the customer still gets the matches.
+    // back to a deterministic summary so the customer still gets the matches.
     const naturalReply = searchRound.decision.next_question?.trim() ?? '';
     const hallucinated =
       /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
       !/\b(?:dr|villa|property|room|apartment|office|unit|specialist|consultant)\b/i.test(naturalReply);
     const text = naturalReply && !hallucinated
       ? noBarePlaceholders(naturalReply, state.slots)
-      : searchResults
-        ? `${searchResults}\nWould you like to book one of them?`
+      : rows.length
+        ? summarizeRows(rows, scheduleMap!)
         : 'I could not find anything matching that.';
     return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
   }
