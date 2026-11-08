@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  bookingSummary,
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
@@ -375,4 +376,79 @@ test('time validation accepts an in-hours time', async () => {
 
   assert.notEqual(turn.fallbackReason, 'time_conflict');
   assert.equal(turn.sheet.slots.datetime, '2 PM'); // kept
+});
+
+// ── bug fixes: "PM" datetime, list_doctors hallucination, context ──────────
+
+test('bookingSummary summarizes the active booking', () => {
+  assert.equal(
+    bookingSummary({ doctor_name: 'Dr. Shankar', location: 'Adliya', department: 'Urology' }),
+    'Dr. Shankar, Urology, Adliya'
+  );
+  assert.equal(bookingSummary({}), undefined);
+  assert.equal(bookingSummary({ datetime: '5 PM' }), '5 PM');
+});
+
+test('buildHarnessPrompt includes the booking summary and the strict list_doctors rule', () => {
+  const checklist: HarnessChecklist = {
+    required: [{ name: 'department', type: 'list', options: ['Urology'] }],
+    derived: ['doctor_name'],
+  };
+  const prompt = buildHarnessPrompt(
+    'You are Alia.',
+    checklist,
+    { doctor_name: 'Dr. Shankar', department: 'Urology', location: 'Adliya' },
+    'do you have another urologist?'
+  );
+
+  assert.match(prompt, /CURRENT BOOKING: Dr. Shankar, Urology, Adliya/);
+  assert.match(prompt, /ALTERNATIVE/);
+  assert.match(prompt, /MUST set action = "list_doctors"/);
+  assert.match(prompt, /NEVER reply with "Let me check"/);
+});
+
+const TIME_ONLY_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question: 'What time would you like?',
+    slot_name: 'datetime',
+    expected_input: 'text',
+    next_step_logic: '→ done',
+  },
+];
+
+const timeOnlyReader: RowReader = async (_sheet, tab, filter) =>
+  tab === 'Intents'
+    ? [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }]
+    : TIME_ONLY_STEPS.filter((s) => s.intent_id === filter?.value);
+
+test('a datetime slot rejects a value with no digits (e.g. "PM")', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "What time would you like?"}',
+  ]);
+  const seed = { intentId: '1', stepId: null, slots: { datetime: 'PM' } };
+
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'book', timeOnlyReader, client);
+
+  assert.equal(turn.fallbackUsed, true);
+  assert.equal(turn.fallbackReason, 'invalid_time');
+  assert.equal(turn.sheet.slots.datetime, undefined); // cleared
+  assert.equal(turn.text, 'Please provide a specific time (e.g., 5 PM).');
+});
+
+test('an alternative request routes through list_doctors', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "list_doctors", "next_question": "", "lookup": {"location": "Adliya"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Sujith and Dr. Bindiya at Adliya. Would you like to book one?"}',
+  ]);
+
+  // Mid-flow: the customer already picked Adliya and asks for an alternative.
+  const seed = { intentId: '1', stepId: null, slots: { location: 'Adliya' } };
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'do you have another doctor?', listReader, client);
+
+  // The harness queried Doctors_Schedule (via list_doctors) and returned the list.
+  assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
+  assert.match(turn.text, /Would you like to book/);
 });

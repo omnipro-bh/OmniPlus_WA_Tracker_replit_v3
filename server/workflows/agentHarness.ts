@@ -247,6 +247,28 @@ export function deriveScheduleMap(
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
 
+/**
+ * A concise, natural-language summary of the booking in progress, injected into
+ * the prompt so the model retains context across interruptions ("Currently
+ * booking: Dr. Shankar, Urology, Adliya, 5 PM"). Empty until the customer has
+ * provided at least one identifying slot.
+ */
+export function bookingSummary(slots: Record<string, any>): string | undefined {
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = slots?.[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+    return undefined;
+  };
+  const doctor = pick('doctor_name', 'doctor', 'property_name');
+  const department = pick('department', 'specialty');
+  const location = pick('location', 'branch');
+  const datetime = pick('datetime', 'time', 'preferred_time', 'booking_time');
+  const parts = [doctor, department, location, datetime].filter((p): p is string => Boolean(p));
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
 export function buildHarnessPrompt(
   systemPrompt: string,
   checklist: HarnessChecklist,
@@ -274,10 +296,13 @@ export function buildHarnessPrompt(
     .map((name) => `- ${name}: ${isFilled(slots, name) ? JSON.stringify(slots[name]) : '(missing)'}`)
     .join('\n');
 
+  const summary = bookingSummary(slots);
+
   return [
     (systemPrompt ?? '').trim() || 'You are a helpful assistant.',
     '',
     'TASK: You are a booking agent. Collect the REQUIRED SLOTS from the customer.',
+    ...(summary ? ['', `CURRENT BOOKING: ${summary}`] : []),
     '',
     'REQUIRED SLOTS (a checklist, not a sequence):',
     ...requiredLines,
@@ -296,7 +321,7 @@ export function buildHarnessPrompt(
     'INSTRUCTIONS:',
     '1. Extract any new slot values from the USER MESSAGE into updated_slots.',
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
-    '3. If the user asks for a LIST of doctors, or asks who is available at a branch or in a department, set action = "list_doctors" and put the branch in lookup.location or the department in lookup.department (e.g. {"action":"list_doctors","lookup":{"location":"Adliya"}}). Do NOT guess names.',
+    '3. If the user asks for a LIST of doctors, asks who is available at a branch or in a department, or asks for an ALTERNATIVE (e.g. "another urologist?"), you MUST set action = "list_doctors" with the branch in lookup.location or the department in lookup.department. NEVER reply with "Let me check" or similar prose without returning action = "list_doctors" — always trigger the tool. Do NOT guess names.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
@@ -726,14 +751,29 @@ export async function runAgentHarness(
   }
 
   // ── Generic time validation ────────────────────────────────────────────────
-  // Only when a `lookup` step exists and a time slot is filled: find the matched
-  // schedule row, read its hours column (Available_Times / Viewing_Hours / …) and
-  // reject an out-of-window request so the customer can pick a valid time. This is
-  // business-agnostic — it works for clinics, showings, reservations, etc.
+  // Two layers, both business-agnostic:
+  //   1. a filled time slot must contain a parseable time (a digit) — reject "PM",
+  //      "today" or "tomorrow" with no specific time;
+  //   2. when a `lookup` step exists, the time must fall within the matched
+  //      schedule row's hours column (Available_Times / Viewing_Hours / …).
   const timeSlot = findTimeSlot(state.slots);
-  if (scheduleMap && timeSlot) {
-    const requested = parseRequestedTime(state.slots[timeSlot]);
-    if (requested !== undefined) {
+  if (timeSlot) {
+    const timeText = String(state.slots[timeSlot]);
+    const requested = parseRequestedTime(timeText);
+    if (requested === undefined) {
+      fallbackUsed = true;
+      delete state.slots[timeSlot];
+      return {
+        text: 'Please provide a specific time (e.g., 5 PM).',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+        fallbackReason: 'invalid_time',
+      };
+    }
+
+    if (scheduleMap) {
       const rows = await scheduleLookup(readRows, sheet, scheduleMap, {
         department: isFilled(state.slots, 'department') ? String(state.slots.department) : undefined,
         location: isFilled(state.slots, 'location') ? String(state.slots.location) : undefined,
@@ -745,7 +785,6 @@ export async function runAgentHarness(
       const windows = hoursValue ? parseTimeWindows(hoursValue) : [];
       if (windows.length > 0 && !isWithinWindow(requested, windows)) {
         fallbackUsed = true;
-        const timeText = String(state.slots[timeSlot]);
         delete state.slots[timeSlot];
         return {
           text: `The requested time (${timeText}) is not within the available schedule (${hoursValue}). Could you please choose a time within those hours?`,
