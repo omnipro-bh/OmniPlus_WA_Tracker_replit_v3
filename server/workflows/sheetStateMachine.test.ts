@@ -11,8 +11,10 @@ import {
   extractSlot,
   generateConversationalFallback,
   isSheetStateMachineEnabled,
+  looseCellMatch,
   parseLookupFilter,
   parseNextStepLogic,
+  rankLookupHits,
   readSheetState,
   runSheetStateMachine,
   substituteSlots,
@@ -71,6 +73,9 @@ function stubClient(responses: (string | 'error')[]): LlmClient & { calls: numbe
 test('parseNextStepLogic advances on "→ Step_N" and completes otherwise', () => {
   assert.deepEqual(parseNextStepLogic('→ Step_2'), { kind: 'advance', stepId: 'Step_2' });
   assert.deepEqual(parseNextStepLogic(' →  step_3 '), { kind: 'advance', stepId: 'Step_3' });
+  // The arrow is optional — owners also type "Step_5" / "Step 5".
+  assert.deepEqual(parseNextStepLogic('Step_5'), { kind: 'advance', stepId: 'Step_5' });
+  assert.deepEqual(parseNextStepLogic('Step 7'), { kind: 'advance', stepId: 'Step_7' });
   assert.deepEqual(parseNextStepLogic('→ done'), { kind: 'done' });
   assert.deepEqual(parseNextStepLogic('done'), { kind: 'done' });
   assert.deepEqual(parseNextStepLogic(''), { kind: 'done' });
@@ -1077,4 +1082,241 @@ test('the booking flow: "ENT doctor" → confirm → location → time → docto
     t4.text,
     'We have Dr. Muhammed Ahsan has availability. To confirm booking, can you provide your name?'
   );
+});
+
+// ── Turn-1 deterministic pre-fill + loose lookup matching (production sheet) ─
+
+test('looseCellMatch matches whole words/phrases in either direction', () => {
+  assert.equal(looseCellMatch('ENT SURGEON', 'ENT'), true);
+  assert.equal(looseCellMatch('ENT', 'ENT SURGEON'), true);
+  assert.equal(looseCellMatch('SPECIALIST ENT', 'ent'), true);
+  assert.equal(looseCellMatch('GASTROENTEROLOGIST', 'ENT'), false);
+  assert.equal(looseCellMatch('Adliya', 'adliya'), true);
+  assert.equal(looseCellMatch('Muharraq', 'Adliya'), false);
+  assert.equal(looseCellMatch('', 'ENT'), false);
+});
+
+test('rankLookupHits moves rows marked off/vacation to the end', () => {
+  const rows = [
+    { Doctor: 'DR. SUSAN', Available_Times: 'WEELKLY OFF' },
+    { Doctor: 'DR. MUHAMMED AHSAN', Available_Times: '09:30-12:30&04:30-09:30' },
+    { Doctor: 'DR. X', Available_Times: 'ON VACATION UNTIL 17-11-2026' },
+  ];
+  assert.deepEqual(
+    rankLookupHits(rows).map((r) => r.Doctor),
+    ['DR. MUHAMMED AHSAN', 'DR. SUSAN', 'DR. X']
+  );
+});
+
+test('turn-1 pre-fill matches list options without the LLM', async () => {
+  const prefillReader: RowReader = async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Done' }]
+      : [
+          {
+            intent_id: '1',
+            step_id: 'Step_1',
+            ai_question: 'Which location?',
+            expected_input: 'list',
+            options: 'Muharraq, Riffa, Adliya',
+            slot_name: 'location',
+            next_step_logic: '→ Step_2',
+          },
+          {
+            intent_id: '1',
+            step_id: 'Step_2',
+            ai_question: 'When?',
+            slot_name: 'datetime',
+            next_step_logic: '→ done',
+          },
+        ].filter((s) => s.intent_id === filter?.value);
+
+  // No client: only the deterministic pre-fill can fill `location`.
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book at Adliya please', prefillReader);
+
+  assert.equal(turn.sheet.slots.location, 'Adliya');
+  assert.equal(turn.text, 'When?');
+  assert.deepEqual(turn.skippedSteps, ['Step_1']);
+});
+
+// Mirrors the production rows: Step_1 asks for confirmation with `{department}`,
+// but no step declares a `department` slot — it must come from the schedule's
+// own vocabulary ("ENT" inside "ENT SURGEON").
+const PRODUCTION_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question:
+      'Sure, Would you like to confirm the availability of the {department} doctor for your appointment?',
+    expected_input: 'buttons',
+    slot_name: 'confirm',
+    options: 'Yes, No',
+    next_step_logic: '→ Step_2',
+    fallback: 'Please reply with Yes or No.',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_2',
+    step_type: 'ask',
+    ai_question: 'And which location is the closest to you?',
+    expected_input: 'list',
+    slot_name: 'location',
+    options: 'Muharraq, Riffa, Adliya, Hamad Town',
+    next_step_logic: '→ Step_3',
+    fallback: 'Sorry, please pick a location from the list.',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_3',
+    step_type: 'ask',
+    ai_question: 'Sure, and could you confirm the preferred date and time for the appointment?',
+    expected_input: 'text',
+    slot_name: 'datetime',
+    next_step_logic: '→ Step_4',
+    fallback: 'What date and time?',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_4',
+    step_type: 'lookup',
+    ai_question: '(silent)',
+    slot_name: 'doctor_name',
+    lookup_source: 'Doctors_Schedule',
+    lookup_filter: 'department={department} AND branch={location}',
+    lookup_extract: 'Doctor',
+    alternate_step: 'Step_6',
+    next_step_logic: '→ Step_5',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_5',
+    step_type: 'ask',
+    ai_question:
+      'We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number',
+    slot_name: 'customer_details',
+    next_step_logic: '→ Step_7',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_6',
+    step_type: 'ask',
+    ai_question:
+      "Sorry, we don't have a {department} doctor at {location}. Would you like to try another location?",
+    expected_input: 'buttons',
+    slot_name: 'retry',
+    options: 'Yes, No',
+    next_step_logic: '',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_7',
+    step_type: 'ask',
+    ai_question: 'Thank you for your details. Our booking team will call you to confirm.',
+    slot_name: 'completed',
+    next_step_logic: '→ done',
+  },
+];
+
+const PRODUCTION_SCHEDULE = [
+  { Doctor: 'DR. SUSAN', Branch: 'Adliya', Available_Times: 'WEELKLY OFF', department: 'ENT SURGEON' },
+  {
+    Doctor: 'DR. MUHAMMED AHSAN',
+    Branch: 'Adliya',
+    Available_Times: '09:30-12:30&04:30-09:30',
+    department: 'ENT SURGEON',
+  },
+  { Doctor: 'DR. PRASANTH', Branch: 'Muharraq', Available_Times: '9-1/5-9', department: 'SPECIALIST ENT' },
+];
+
+const productionReader: RowReader = async (_s, tab, filter) => {
+  if (tab === 'Intents') {
+    return [
+      {
+        id: '1',
+        keywords: 'ENT, dental, doctor, book',
+        start_step: 'Step_1',
+        type: 'Booking',
+        answer: '',
+        priority: 'High',
+      },
+    ];
+  }
+  if (tab === 'Doctors_Schedule') return PRODUCTION_SCHEDULE;
+  return PRODUCTION_STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('production flow: "ENT doctor" pre-fills {department} from the schedule vocabulary', async () => {
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'ENT doctor', productionReader);
+
+  assert.equal(t1.sheet.slots.department, 'ENT');
+  assert.equal(t1.sheet.stepId, 'Step_1');
+  assert.equal(
+    t1.text,
+    'Sure, Would you like to confirm the availability of the ENT doctor for your appointment?'
+  );
+});
+
+test('production flow: confirm → location → time → doctor lookup → details', async () => {
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'ENT doctor', productionReader);
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Yes', productionReader);
+  assert.equal(t2.text, 'And which location is the closest to you?');
+  assert.equal(t2.sheet.slots.confirm, 'Yes');
+
+  const t3 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Adliya',
+    productionReader
+  );
+  assert.equal(t3.text, 'Sure, and could you confirm the preferred date and time for the appointment?');
+  assert.equal(t3.sheet.slots.location, 'Adliya');
+
+  const t4 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t3.sheet } } },
+    'n1',
+    'today at 6 PM',
+    productionReader
+  );
+  // The lookup ran, matched "ENT" inside "ENT SURGEON" + Adliya, and skipped the
+  // doctor marked "WEELKLY OFF".
+  assert.equal(t4.sheet.stepId, 'Step_5');
+  assert.equal(t4.sheet.slots.doctor_name, 'DR. MUHAMMED AHSAN');
+  assert.equal(
+    t4.text,
+    'We have DR. MUHAMMED AHSAN has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number'
+  );
+});
+
+test('production flow: a lookup miss follows the arrow-less alternate_step', async () => {
+  const noMatchReader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Doctors_Schedule') {
+      // ENT exists in the vocabulary (so {department} pre-fills) but not at Adliya.
+      return [{ Doctor: 'DR. PRASANTH', Branch: 'Muharraq', Available_Times: '9-1/5-9', department: 'SPECIALIST ENT' }];
+    }
+    return productionReader(_s, tab, filter);
+  };
+
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'ENT doctor', noMatchReader);
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Yes', noMatchReader);
+  const t3 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Adliya',
+    noMatchReader
+  );
+  const t4 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t3.sheet } } },
+    'n1',
+    'today at 6 PM',
+    noMatchReader
+  );
+
+  // alternate_step "Step_6" (no arrow) must advance, not complete.
+  assert.equal(t4.sheet.stepId, 'Step_6');
+  assert.equal(t4.text, "Sorry, we don't have a ENT doctor at Adliya. Would you like to try another location?");
 });

@@ -20,7 +20,14 @@ import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
 import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
-import { canonicalizeOption, normalizeInputType, normalizeOptions, parseOptions, validateSlotValue } from './slotValidation';
+import {
+  canonicalizeOption,
+  matchWholeWordOption,
+  normalizeInputType,
+  normalizeOptions,
+  parseOptions,
+  validateSlotValue,
+} from './slotValidation';
 import type { RejectedSlot } from './slotValidation';
 
 export type { RejectedSlot } from './slotValidation';
@@ -99,7 +106,9 @@ export function parseNextStepLogic(value: any): StepTransition {
   const s = typeof value === 'string' ? value.trim() : '';
   if (!s) return { kind: 'done' };
   if (/^(→\s*)?done$/i.test(s)) return { kind: 'done' };
-  const m = s.match(/→\s*Step_(\d+)/i);
+  // The arrow is optional: owners write both "→ Step_2" and "Step_2" (and the
+  // odd "Step 2"). A missing arrow must never be read as "complete".
+  const m = s.match(/Step[\s_]*(\d+)/i);
   if (m) return { kind: 'advance', stepId: `Step_${m[1]}` };
   return { kind: 'done' };
 }
@@ -124,6 +133,35 @@ function readCell(row: Record<string, any>, column: string): any {
   const lower = String(column).toLowerCase();
   const key = Object.keys(row).find((k) => k.toLowerCase() === lower);
   return key === undefined ? undefined : row[key];
+}
+
+/** Case-insensitive whole-word/phrase containment in either direction. */
+export function looseCellMatch(cell: any, wanted: any): boolean {
+  const a = String(cell ?? '').trim().toLowerCase();
+  const b = String(wanted ?? '').trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const contains = (haystack: string, needle: string) => {
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(haystack);
+  };
+  // "ENT" in "ENT SURGEON", and the reverse for short cells.
+  return contains(a, b) || contains(b, a);
+}
+
+/** Rows that look unavailable ("weekly off", "on vacation", "--") sort last. */
+const UNAVAILABLE_RE = /\b(off|vacation|unavailable|not available|closed)\b/i;
+
+export function rankLookupHits(rows: Record<string, any>[]): Record<string, any>[] {
+  const available: Record<string, any>[] = [];
+  const unavailable: Record<string, any>[] = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const text = Object.values(row ?? {})
+      .map((value) => String(value ?? ''))
+      .join(' ');
+    (UNAVAILABLE_RE.test(text) ? unavailable : available).push(row);
+  }
+  return [...available, ...unavailable];
 }
 
 /**
@@ -489,12 +527,11 @@ export async function runSheetStateMachine(
             rows: rows.length,
           });
           const clauses = parseLookupFilter(filterRaw);
-          const hits = rows.filter((row) =>
-            clauses.every((c) => {
-              const cell = readCell(row, c.column);
-              return cell !== undefined && cell !== null &&
-                String(cell).trim().toLowerCase() === c.value.toLowerCase();
-            })
+          // Loose (whole-word) matching: "department=ENT" must find the
+          // schedule's "ENT SURGEON" / "SPECIALIST ENT" rows, not just an
+          // exact "ENT" cell. Rows marked off/vacation sort last.
+          const hits = rankLookupHits(
+            rows.filter((row) => clauses.every((c) => looseCellMatch(readCell(row, c.column), c.value)))
           );
           if (hits.length > 0) {
             matched = true;
@@ -596,7 +633,65 @@ export async function runSheetStateMachine(
       ? startStep
       : String((firstStep(steps, stepIdHeader)?.[stepIdHeader] ?? '')).trim();
 
-    // ── Task 5b: turn-1 LLM extraction → skip already-filled steps ──────────
+    const isFilled = (name: string) =>
+      name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
+
+    // ── Turn-1 deterministic pre-fill (no LLM) ───────────────────────────────
+    // Models are unreliable at single-word extraction, so code fills whatever it
+    // can from the owner's own vocabulary first; the LLM only sees the rest.
+    //  (a) list/buttons steps: the `options` cell is the vocabulary.
+    for (const step of steps) {
+      const name = String(step[slotHeader] ?? '').trim();
+      if (!name || isFilled(name)) continue;
+      const input = normalizeInputType(step[expectedHeader]);
+      if (input !== 'list' && input !== 'buttons') continue;
+      const options = parseOptions(step[optionsHeader]);
+      if (!options || options.length === 0) continue;
+      const exact = options.find((o) => o.toLowerCase() === userMessage.trim().toLowerCase());
+      const hit = exact ?? matchWholeWordOption(userMessage, options);
+      if (hit) state.slots[name] = hit;
+    }
+
+    //  (b) lookup-filter slots that no step declares (e.g. `{department}` in
+    //      "the {department} doctor"): use the lookup source's own column values
+    //      as the vocabulary ("ENT" inside "ENT SURGEON").
+    const declaredSlots = new Set(
+      steps.map((s) => String(s[slotHeader] ?? '').trim()).filter(Boolean)
+    );
+    for (const step of steps) {
+      if (String(step[stepTypeHeader] ?? '').trim().toLowerCase() !== 'lookup') continue;
+      const source = String(step[lookupSourceHeader] ?? '').trim();
+      const filter = String(step[lookupFilterHeader] ?? '').trim();
+      if (!source || !filter) continue;
+
+      const pending = parseLookupFilter(filter).filter((clause) => {
+        const m = clause.value.match(/^\{(\w+)\}$/);
+        return Boolean(m) && !declaredSlots.has(m![1]) && !isFilled(m![1]);
+      });
+      if (pending.length === 0) continue;
+
+      const rows = await readRows(sheet, source);
+      toolCalls.push({ name: 'lookup_sheet', args: { tab: source, filter: 'prefill' }, rows: rows.length });
+
+      for (const clause of pending) {
+        const slot = clause.value.slice(1, -1);
+        const vocabulary = new Set<string>();
+        for (const row of rows) {
+          const cell = String(readCell(row, clause.column) ?? '').trim();
+          if (!cell) continue;
+          vocabulary.add(cell);
+          for (const word of cell.split(/[^A-Za-z0-9&]+/)) {
+            if (word.length >= 3) vocabulary.add(word);
+          }
+        }
+        // Longest first so a full "ENT SURGEON" wins over the bare word "ENT".
+        const candidates = Array.from(vocabulary).sort((a, b) => b.length - a.length);
+        const hit = matchWholeWordOption(userMessage, candidates);
+        if (hit && !isFilled(slot)) state.slots[slot] = hit;
+      }
+    }
+
+    // ── Task 5b: LLM extraction for whatever code could not pre-fill ────────
     // The LLM returns raw strings only. validateSlotValue decides what is kept,
     // so an out-of-list value is dropped (never stored) instead of trusted.
     // A slot that feeds a `lookup_filter` is treated as free text: the schedule
@@ -616,18 +711,30 @@ export async function runSheetStateMachine(
         });
       }
     }
-    const hasSlot = (name: string) =>
-      name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
+    // Safety net: placeholders used in a question/filter but declared by no step
+    // (e.g. `{department}`) — let the model try when code could not fill them.
+    const placeholders = new Set<string>();
+    for (const step of steps) {
+      for (const text of [step[questionHeader], step[lookupFilterHeader], step[fallbackHeader]]) {
+        for (const m of String(text ?? '').match(/\{(\w+)\}/g) ?? []) placeholders.add(m.slice(1, -1));
+      }
+    }
+    for (const name of Array.from(placeholders)) {
+      if (!slotMeta.has(name)) slotMeta.set(name, { type: 'text' });
+    }
+
+    const fields = Array.from(slotMeta, ([name, meta]) => ({
+      name,
+      type: meta.type,
+      options: meta.options,
+    })).filter((field) => !isFilled(field.name));
 
     let extracted: SlotExtractionResult | null = null;
     const rejectedSlots: RejectedSlot[] = [];
-    if (client && slotMeta.size > 0) {
+    if (client && fields.length > 0) {
       const result = await llmJson<SlotExtractionResult>(
         client,
-        buildSlotExtractionPrompt(
-          Array.from(slotMeta, ([name, meta]) => ({ name, type: meta.type, options: meta.options })),
-          userMessage
-        ),
+        buildSlotExtractionPrompt(fields, userMessage),
         validateSlotExtraction,
         { maxRetries: 1 }
       );
@@ -640,6 +747,7 @@ export async function runSheetStateMachine(
       for (const [name, raw] of Object.entries(extracted.slots ?? {})) {
         const meta = slotMeta.get(name);
         if (!meta) continue; // ignore fields the sheet does not declare
+        if (isFilled(name)) continue; // never overwrite a deterministic pre-fill
         const validation = validateSlotValue(raw, meta.type, meta.options);
         if (validation.valid) {
           accepted[name] = meta.lookupFed
@@ -652,9 +760,9 @@ export async function runSheetStateMachine(
     }
 
     // The first step whose slot is still empty is where we start.
-    const firstUnfilled = steps.find((s) => !hasSlot(String(s[slotHeader] ?? '').trim()));
+    const firstUnfilled = steps.find((s) => !isFilled(String(s[slotHeader] ?? '').trim()));
     const skippedSteps = steps
-      .filter((s) => hasSlot(String(s[slotHeader] ?? '').trim()))
+      .filter((s) => isFilled(String(s[slotHeader] ?? '').trim()))
       .map((s) => String(s[stepIdHeader] ?? '').trim());
 
     if (!firstUnfilled) {
@@ -665,8 +773,8 @@ export async function runSheetStateMachine(
       if (extracted) {
         result.extractedSlots = extracted.slots;
         result.extractionConfidence = extracted.confidence;
-        result.skippedSteps = skippedSteps;
       }
+      if (skippedSteps.length > 0) result.skippedSteps = skippedSteps;
       if (rejectedSlots.length > 0) result.rejectedSlots = rejectedSlots;
       return result;
     }
@@ -680,8 +788,8 @@ export async function runSheetStateMachine(
       if (extracted) {
         result.extractedSlots = extracted.slots;
         result.extractionConfidence = extracted.confidence;
-        result.skippedSteps = skippedSteps;
       }
+      if (skippedSteps.length > 0) result.skippedSteps = skippedSteps;
       if (rejectedSlots.length > 0) result.rejectedSlots = rejectedSlots;
       return result;
     }
@@ -695,9 +803,9 @@ export async function runSheetStateMachine(
         ? {
             extractedSlots: extracted.slots,
             extractionConfidence: extracted.confidence,
-            skippedSteps,
           }
         : {}),
+      ...(skippedSteps.length > 0 ? { skippedSteps } : {}),
       ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
     };
   }
