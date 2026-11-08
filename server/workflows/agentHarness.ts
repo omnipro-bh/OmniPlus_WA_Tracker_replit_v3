@@ -69,8 +69,13 @@ export interface HarnessDecision {
   /** `ask` to collect a slot, `complete` to book, `search_schedule` for a search. */
   action: 'ask' | 'complete' | 'search_schedule';
   next_question: string;
-  /** The free-form search term, required for action "search_schedule". */
-  query?: string;
+  /** Structured constraints for action "search_schedule" (the code filters on these). */
+  search?: {
+    specialty?: string; // matches the department/specialty column
+    branch?: string;    // matches the branch/location column
+    name?: string;      // matches the doctor/property name column
+    query?: string;     // catch-all full-text fallback (only when no structured field)
+  };
   tool_call?: 'lookup_schedule';
   /** Filter for `lookup_schedule` (location = branch). */
   lookup?: { doctor?: string; department?: string; location?: string };
@@ -327,15 +332,16 @@ export function buildHarnessPrompt(
     'INSTRUCTIONS:',
     '1. Extract any new slot values from the USER MESSAGE into updated_slots.',
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
-    '3. If the user asks whether something exists, or asks for a list or an ALTERNATIVE (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?"), you MUST set action = "search_schedule" with query = X (the thing they asked about). NEVER reply with "Let me check" or similar prose without returning action = "search_schedule" — always trigger the search. Do NOT guess names.',
+    '3. If the user asks whether something exists, or asks for a list or an ALTERNATIVE (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?"), you MUST set action = "search_schedule" and put the constraints in "search" as SEPARATE fields: search.specialty (the specialty/type), search.branch (the location), search.name (the doctor/property name). Do NOT merge them into one query string — e.g. "Orthodontist at Riffa" → {"search":{"specialty":"Orthodontist","branch":"Riffa"}}. Only use search.query as a last resort when you cannot identify a structured field. NEVER reply with "Let me check" without returning action = "search_schedule". Do NOT guess names.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
     '7. If the message is off-topic or a greeting, answer it naturally and still set action = "ask" with a question that guides back to a missing slot.',
     '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read the relevant columns), and set action = "ask" with your reply in next_question (then offer to book one).',
     '9. Reply in the same language as the customer.',
+    '10. If a SEARCH RESULTS row has empty or "--" available times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
     '',
-    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "query": "..."}',
+    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"specialty": "...", "branch": "...", "name": "..."}}',
   ].join('\n');
 }
 
@@ -359,7 +365,16 @@ function validateHarnessDecision(
 
   const tool_call = obj.tool_call === 'lookup_schedule' ? ('lookup_schedule' as const) : undefined;
   const lookup = obj.lookup && typeof obj.lookup === 'object' ? obj.lookup : undefined;
-  const query = typeof obj.query === 'string' ? obj.query.trim() : undefined;
+
+  const rawSearch = obj.search && typeof obj.search === 'object' ? obj.search : {};
+  const search = Object.keys(rawSearch).length > 0
+    ? {
+        ...(typeof rawSearch.specialty === 'string' && rawSearch.specialty.trim() ? { specialty: rawSearch.specialty.trim() } : {}),
+        ...(typeof rawSearch.branch === 'string' && rawSearch.branch.trim() ? { branch: rawSearch.branch.trim() } : {}),
+        ...(typeof rawSearch.name === 'string' && rawSearch.name.trim() ? { name: rawSearch.name.trim() } : {}),
+        ...(typeof rawSearch.query === 'string' && rawSearch.query.trim() ? { query: rawSearch.query.trim() } : {}),
+      }
+    : undefined;
 
   return {
     ok: true,
@@ -367,7 +382,7 @@ function validateHarnessDecision(
       updated_slots,
       action: obj.action,
       next_question,
-      ...(query ? { query } : {}),
+      ...(search ? { search } : {}),
       ...(tool_call ? { tool_call } : {}),
       ...(lookup ? { lookup } : {}),
     },
@@ -444,22 +459,63 @@ function formatScheduleRow(row: Record<string, any>, map: ScheduleMap): string {
   return `${doctor} is ${department ? `a ${department}` : 'available'}${branch ? ` at ${branch}` : ''}${times ? ` (available ${times})` : ''}.`;
 }
 
-/** Is a schedule row clearly not seeing patients ("off", "vacation", "—")? */
+/**
+ * Is a schedule row genuinely unavailable ("off", "vacation", "closed")? A bare
+ * "--" or empty availability is NOT treated as off — the row is kept so the model
+ * can honestly report "no available times" instead of borrowing another branch's.
+ */
 function isDoctorOff(row: Record<string, any>): boolean {
   const header = availabilityHeader(row);
   if (!header) return false;
   const value = String(readCell(row, header) ?? '').trim();
-  return /off|vacation|unavailable|not available|^--?$|^$/i.test(value);
+  return /\b(off|vacation|unavailable|not available|closed)\b/i.test(value);
+}
+
+/**
+ * Deterministic AND-filter for `search_schedule`. The CODE is the sole filter:
+ * every present structured constraint must match (specialty AND branch AND name).
+ * A full-text `query` search is only used when no structured field was provided.
+ */
+export function filterRowsStructured(
+  rows: Record<string, any>[],
+  search: { specialty?: string; branch?: string; name?: string; query?: string } | undefined,
+  map: ScheduleMap
+): Record<string, any>[] {
+  const s = search ?? {};
+  const hasStructured = Boolean(s.specialty || s.branch || s.name);
+  return rows.filter((row) => {
+    if (s.specialty && !looseCellMatch(readCell(row, map.departmentColumn), s.specialty)) return false;
+    if (s.branch && !looseCellMatch(readCell(row, map.branchColumn), s.branch)) return false;
+    if (s.name && !matchDoctor(readCell(row, map.doctorColumn), s.name)) return false;
+    if (!hasStructured && s.query) {
+      return Object.values(row).some((value) => looseCellMatch(value, s.query));
+    }
+    return true;
+  });
+}
+
+/** Collapse rows sharing the same entity + branch so the model never merges rows. */
+function dedupeRows(rows: Record<string, any>[], map: ScheduleMap): Record<string, any>[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const entity = String(readCell(row, map.doctorColumn) ?? '').trim().toLowerCase();
+    const branch = String(readCell(row, map.branchColumn) ?? '').trim().toLowerCase();
+    const key = `${entity}||${branch}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
  * Serialize the matched schedule rows as structured JSON — every column intact —
  * so the model can answer follow-up questions (e.g. "at which branch?") from the
- * real data instead of hallucinating. Rows marked off/vacation are excluded.
+ * real data instead of hallucinating. Rows marked off/vacation are excluded;
+ * "--" times are preserved.
  */
-export function serializeSearchResults(rows: Record<string, any>[]): string {
+export function serializeSearchResults(rows: Record<string, any>[], map: ScheduleMap): string {
   const available = (Array.isArray(rows) ? rows : []).filter((row) => !isDoctorOff(row));
-  return JSON.stringify(available);
+  return JSON.stringify(dedupeRows(available, map));
 }
 
 /** A human-readable fallback when the model fails to produce a natural reply. */
@@ -470,11 +526,6 @@ function summarizeRows(rows: Record<string, any>[], map: ScheduleMap): string {
     .filter(Boolean);
   if (entities.length === 0) return 'I could not find anything matching that.';
   return `${entities.join(', ')}. Would you like to book one of them?`;
-}
-
-/** Is a schedule row's primary cell (or the query) a match across any column? */
-function rowMatchesQuery(row: Record<string, any>, query: string): boolean {
-  return Object.values(row ?? {}).some((value) => looseCellMatch(value, query));
 }
 
 /**
@@ -648,18 +699,26 @@ export async function runAgentHarness(
           extract: extractHeader,
         });
         if (fallbackMap) {
-          const query = userMessage.trim();
+          const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
+          // Round 1: ask the model to extract structured search constraints.
+          const round1 = await askModel(
+            client,
+            buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage)
+          );
+          slotExtractionAttempts += round1.attempts;
+          const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
+          const effectiveSearch = { ...(search ?? {}), query: search?.query || userMessage.trim() };
+
           const rows = await readRows(sheet, fallbackMap.source);
-          const matched = rows.filter((row) => rowMatchesQuery(row, query));
+          const matched = filterRowsStructured(rows, effectiveSearch, fallbackMap);
           toolCalls.push({
             name: 'lookup_sheet',
-            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(query)}` },
+            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
             rows: matched.length,
           });
-          const results = serializeSearchResults(matched);
+          const results = serializeSearchResults(matched, fallbackMap);
           if (matched.length > 0) {
             state.lastSearch = results;
-            const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
             const round2 = await askModel(
               client,
               buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, results)
@@ -675,7 +734,6 @@ export async function runAgentHarness(
           // No fresh matches — this is likely a follow-up ("At which branch?")
           // about the previous search. Reuse the last structured results.
           if (state.lastSearch) {
-            const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
             const round2 = await askModel(
               client,
               buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
@@ -757,22 +815,24 @@ export async function runAgentHarness(
   mergeSlots(state.slots, decision.updated_slots, checklist);
 
   // ── Knowledge query: search the schedule for any term ──────────────────────
-  // The model never guesses — it returns action "search_schedule" + a query, the
-  // harness searches every cell of every row, and a second model call turns the
-  // matches into prose.
+  // The model returns structured constraints; the CODE does the AND-filtering.
   if (decision.action === 'search_schedule') {
-    const query = (decision.query ?? '').trim() || userMessage.trim();
+    const search = decision.search ?? {};
+    const effectiveSearch = {
+      ...search,
+      query: search.query || userMessage.trim(),
+    };
     let rows: Record<string, any>[] = [];
     if (scheduleMap) {
       const allRows = await readRows(sheet, scheduleMap.source);
-      rows = allRows.filter((row) => rowMatchesQuery(row, query));
+      rows = filterRowsStructured(allRows, effectiveSearch, scheduleMap);
       toolCalls.push({
         name: 'lookup_sheet',
-        args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(query)}` },
+        args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
         rows: rows.length,
       });
     }
-    const searchResults = serializeSearchResults(rows);
+    const searchResults = serializeSearchResults(rows, scheduleMap!);
     state.lastSearch = rows.length > 0 ? searchResults : state.lastSearch;
     const searchRound = await askModel(
       client,

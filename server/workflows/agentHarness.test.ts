@@ -15,6 +15,7 @@ import {
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
+  filterRowsStructured,
   hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
@@ -273,12 +274,18 @@ const listReader: RowReader = async (_sheet, tab, filter) => {
 };
 
 test('serializeSearchResults returns full structured rows and excludes "off" rows', () => {
+  const map = deriveScheduleMap(STEPS, {
+    stepType: 'step_type',
+    source: 'lookup_source',
+    filter: 'lookup_filter',
+    extract: 'lookup_extract',
+  })!;
   const rows = [
     { Doctor: 'Dr. Arun', department: 'Specialist Endodontist', Branch: 'Muharraq' },
     { Doctor: 'Dr. Komal Sharma', department: 'Specialist Endodontist', Branch: 'Adliya' },
     { Doctor: 'Dr. Susan', department: 'ENT Surgeon', Branch: 'Adliya', Available_Times: 'WEELKLY OFF' },
   ];
-  const json = serializeSearchResults(rows);
+  const json = serializeSearchResults(rows, map);
   const parsed = JSON.parse(json);
   // Every column is preserved (Branch, department) so the model can read them.
   assert.equal(parsed.length, 2); // Dr. Susan (off) excluded
@@ -299,7 +306,7 @@ test('buildHarnessPrompt passes structured search data and warns against halluci
 
 test('search_schedule finds doctors at a branch', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "Adliya"}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"branch": "Adliya"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?"}',
   ]);
 
@@ -452,7 +459,7 @@ test('a datetime slot rejects a value with no digits (e.g. "PM")', async () => {
 
 test('an alternative request routes through search_schedule', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "Adliya"}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"branch": "Adliya"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Sujith and Dr. Bindiya at Adliya. Would you like to book one?"}',
   ]);
 
@@ -481,7 +488,7 @@ const endoReader: RowReader = async (_sheet, tab, filter) => {
 
 test('search_schedule returns matching endodontists', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "SPECIALIST ENDODONTIST"}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "SPECIALIST ENDODONTIST"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Arun and Dr. Komal Sharma. Would you like to book one?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have SPECIALIST ENDODONTIST?', endoReader, client);
@@ -491,7 +498,7 @@ test('search_schedule returns matching endodontists', async () => {
 
 test('search_schedule returns matching cardiologists', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "cardiologist"}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "cardiologist"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Santosh (Cardiologist). Would you like to book?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a cardiologist?', endoReader, client);
@@ -531,7 +538,7 @@ const propertyReader: RowReader = async (_sheet, tab, filter) => {
 
 test('search_schedule returns matching properties (real estate)', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "3-bedroom villa"}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"query": "3-bedroom villa"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Villa One (3-bedroom villa). Would you like to book a viewing?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a 3-bedroom villa?', propertyReader, client);
@@ -576,4 +583,58 @@ test('a follow-up "At which branch?" reads the branch column from structured res
   );
   assert.match(t2.text, /Adliya/);
   assert.match(t2.text, /Hamad Town/);
+});
+
+// ── deterministic structured AND-filtering ─────────────────────────────────
+
+const RICHA_SCHEDULE = [
+  { Doctor: 'Dr. Tabassum Tayab', Branch: 'Riffa', department: 'Specialist Pedodontist', Available_Times: '--' },
+  { Doctor: 'Dr. Rinkoo Jose', Branch: 'Riffa', department: 'Specialist Orthodontist', Available_Times: '5 to 9:30' },
+  { Doctor: 'DR. RINKOO JOSE', Branch: 'Muharraq', department: 'CONSULTANT ORTHODONTIST', Available_Times: 'SUN,SAT 01:00-09:00' },
+];
+
+const richaMap = {
+  source: 'Doctors_Schedule',
+  doctorColumn: 'Doctor',
+  departmentColumn: 'department',
+  branchColumn: 'branch',
+};
+
+test('filterRowsStructured applies AND logic (specialty + branch)', () => {
+  const rows = filterRowsStructured(
+    RICHA_SCHEDULE,
+    { specialty: 'Orthodontist', branch: 'Riffa' },
+    richaMap
+  );
+  // Only Dr. Rinkoo Jose at Riffa survives — NOT the Pedodontist at Riffa, and
+  // NOT the orthodontist at Muharraq.
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Doctor, 'Dr. Rinkoo Jose');
+  assert.equal(rows[0].Branch, 'Riffa');
+});
+
+test('serializeSearchResults dedupes by entity+branch and preserves "--" times', () => {
+  const rows = [
+    { Doctor: 'Dr. Rinkoo Jose', Branch: 'Riffa', department: 'Specialist Orthodontist', Available_Times: '--' },
+    { Doctor: 'Dr. Rinkoo Jose', Branch: 'Riffa', department: 'Specialist Orthodontist', Available_Times: '5 to 9:30' },
+  ];
+  const parsed = JSON.parse(serializeSearchResults(rows, richaMap));
+  assert.equal(parsed.length, 1); // collapsed to one row
+  assert.equal(parsed[0].Available_Times, '--'); // "--" is preserved, not dropped
+});
+
+test('search "Orthodontist at Riffa" returns only the Riffa orthodontist', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "Orthodontist", "branch": "Riffa"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "Dr. Rinkoo Jose is at Riffa, available 5 to 9:30."}',
+  ]);
+  const reader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', keywords: 'book, doctor', start_step: 'Step_1', answer: 'Booked' }];
+    if (tab === 'Doctors_Schedule') return RICHA_SCHEDULE;
+    return STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Orthodontist at Riffa', reader, client);
+  // The structured JSON passed to the model must NOT contain the pedodontist.
+  assert.match(turn.text, /Rinkoo/);
+  assert.doesNotMatch(turn.text, /Tabassum/);
 });
