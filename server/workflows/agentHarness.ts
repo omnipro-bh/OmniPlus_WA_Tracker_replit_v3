@@ -103,6 +103,39 @@ function stepsTabName(sheet: AiGoogleSheetsConfig): string {
   return sheet.tabs.find((t) => /step/i.test(t)) ?? sheet.tabs[1] ?? sheet.tabs[0];
 }
 
+function tokenize(s: string): string[] {
+  return String(s ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3);
+}
+
+function commonPrefixLen(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
+}
+
+/**
+ * Lenient intent-keyword match. The strict `lookupSheetRows` substring match
+ * misses simple inflections: "doctors" does not contain the keyword "doctor"
+ * the way it expects. This matches exact tokens, ±s plurals, and a shared prefix
+ * of ≥4 chars ("dentist" ↔ "dental"), so a knowledge query like "who are the
+ * doctors at adliya?" still routes into the booking intent.
+ */
+export function matchesIntentKeywords(keywords: string, message: string): boolean {
+  const kw = tokenize(keywords);
+  const msg = tokenize(message);
+  for (const m of msg) {
+    for (const k of kw) {
+      if (m === k) return true;
+      if (m.length >= 4 && (m === `${k}s` || k === `${m}s`)) return true;
+      if (m.length >= 4 && k.length >= 4 && commonPrefixLen(m, k) >= 4) return true;
+    }
+  }
+  return false;
+}
+
 async function defaultReadRows(
   sheet: AiGoogleSheetsConfig,
   tab: string,
@@ -493,14 +526,27 @@ export async function runAgentHarness(
   let slotExtractionAttempts = 0;
   let fallbackUsed = false;
 
-  // ── Turn 1: match the intent (keyword substring — same as the state machine) ──
+  // ── Turn 1: match the intent ───────────────────────────────────────────────
   if (!state.intentId) {
-    const intents = await readRows(sheet, intentsTab, { column: keywordsHeader, value: userMessage });
+    let intents = await readRows(sheet, intentsTab, { column: keywordsHeader, value: userMessage });
     toolCalls.push({
       name: 'lookup_sheet',
       args: { tab: intentsTab, filter_column: keywordsHeader, filter_value: userMessage },
       rows: intents.length,
     });
+
+    // Lenient fallback: the strict substring match misses inflections ("doctors"
+    // vs "doctor"), which would otherwise drop a knowledge query into the free
+    // form path instead of the harness.
+    if (intents.length === 0) {
+      const allIntents = await readRows(sheet, intentsTab);
+      intents = allIntents.filter((i) => matchesIntentKeywords(readCell(i, keywordsHeader), userMessage));
+      toolCalls.push({
+        name: 'lookup_sheet',
+        args: { tab: intentsTab, filter: 'lenient-keywords' },
+        rows: intents.length,
+      });
+    }
 
     if (intents.length === 0) {
       return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true };

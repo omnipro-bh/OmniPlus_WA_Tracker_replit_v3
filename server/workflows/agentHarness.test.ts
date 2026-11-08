@@ -16,6 +16,7 @@ import {
   deriveScheduleMap,
   formatDoctorList,
   matchDoctor,
+  matchesIntentKeywords,
   noBarePlaceholders,
   runAgentHarness,
   type HarnessChecklist,
@@ -183,6 +184,14 @@ test('matchDoctor matches the named doctor but not a shared "DR" title', () => {
   // The generic looseCellMatch would match every "DR …" row via the "dr" token.
   assert.equal(matchDoctor('DR SURESH DAIVASIKHAMANI', 'Dr. Goutham'), false);
   assert.equal(matchDoctor('DR GOUTHAM', 'Suresh'), false);
+});
+
+test('matchesIntentKeywords matches inflections and shared prefixes', () => {
+  const keywords = 'ENT, dental, doctor, book';
+  assert.equal(matchesIntentKeywords(keywords, 'who are the doctors at adliya?'), true); // doctors → doctor
+  assert.equal(matchesIntentKeywords(keywords, 'book an appointment'), true);
+  assert.equal(matchesIntentKeywords(keywords, 'which dentists do you have?'), true); // dentist → dental
+  assert.equal(matchesIntentKeywords(keywords, 'what are your hours?'), false);
 });
 
 test('noBarePlaceholders substitutes filled slots and strips the rest', () => {  assert.equal(
