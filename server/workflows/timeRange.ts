@@ -3,8 +3,13 @@
  * customer's requested datetime. Pure functions — no I/O, no LLM.
  *
  * The schedule is free-form: "09:30-12:30/04:30-09:30", "9-1/5-9", "5 to 9",
- * "8.30AM-01:00PM", "7AM-3PM". Times are written in 12-hour notation and most
- * entries omit the AM/PM marker. The convention observed across the sheet:
+ * "8.30AM-01:00PM", "7AM-3PM", "SUN-THURS 1 TO 9PM (SAT 9-1/5-9)". Before
+ * tokenizing, `parseTimeWindows` strips day names, parentheses, `&`, `,`, and
+ * normalizes "to" → "-".
+ *
+ * Times are written in 12-hour notation and most entries omit the AM/PM marker
+ * (even when they carry a colon: "01:00-09:00" means 1 PM–9 PM, not 1 AM–9 AM).
+ * The convention observed across the sheet:
  *
  *   - morning session → starts 7–11, ends 12–1  ("09:30-12:30", "9-1")
  *   - evening session → starts 1–6, ends 8–11   ("04:30-09:30", "5-9")
@@ -23,6 +28,14 @@ export interface TimeWindow {
 
 /** Rows that carry no usable hours (a day off, "as per GP rota", etc.). */
 const OFF_RE = /\b(off|vacation|unavailable|not available|closed|as per|reporting)\b/i;
+
+/**
+ * Day names / abbreviations / plurals that qualify a time block ("SUN-THURS",
+ * "SATURDAY", "MONDAYS"). Stripped before parsing so they never become part of a
+ * time token.
+ */
+const DAY_RE =
+  /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)s?\b/gi;
 
 function markerOf(marker: 'am' | 'pm' | ''): 'am' | 'pm' | '' {
   return marker;
@@ -76,8 +89,17 @@ export function parseTimeWindows(text: any): TimeWindow[] {
   const raw = String(text ?? '');
   if (!raw.trim() || OFF_RE.test(raw)) return [];
 
-  // Dots are used as colons in places ("9.30-1.30").
-  const normalized = raw.replace(/(\d)\.(\d{2})/g, '$1:$2');
+  // Pre-process the messy roster before tokenizing:
+  let normalized = raw
+    // Dots are used as colons in places ("9.30-1.30", "8.12PM").
+    .replace(/(\d)\.(\d{2})/g, '$1:$2')
+    // Strip day names / abbreviations / plurals ("SUN-THURS", "SATURDAY", "MONDAYS").
+    .replace(DAY_RE, ' ')
+    // Strip parentheses and stray separators. `:` is kept (needed for HH:MM) and
+    // `/` is left alone — the token scan ignores both.
+    .replace(/[()&,]/g, ' ')
+    // Normalize "to" / "TO" into a range dash ("5 to 9", "1 TO 9PM").
+    .replace(/\bto\b/gi, '-');
 
   const tokens: { hour: number; minute: number; marker: 'am' | 'pm' | '' }[] = [];
   const re = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/gi;

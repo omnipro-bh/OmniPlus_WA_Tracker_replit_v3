@@ -38,6 +38,7 @@ import {
   type SheetTurn,
 } from './sheetStateMachine';
 import { canonicalizeOption, normalizeInputType, parseOptions, validateSlotValue } from './slotValidation';
+import { isWithinWindow, parseRequestedTime, parseTimeWindows } from './timeRange';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -466,6 +467,30 @@ function resolveListFilter(
   return filter;
 }
 
+/**
+ * Slot names that hold the customer's requested time. The harness validates a
+ * time only when one of these is filled.
+ */
+const TIME_SLOT_KEYS = new Set(['datetime', 'time', 'preferred_time', 'booking_time', 'appointment_time', 'booking_datetime']);
+
+function findTimeSlot(slots: Record<string, any>): string | undefined {
+  for (const key of Object.keys(slots ?? {})) {
+    if (TIME_SLOT_KEYS.has(normalizeSlotKey(key)) && isFilled(slots, key)) return key;
+  }
+  return undefined;
+}
+
+/**
+ * Find the schedule row's "hours" column generically. Clinics use
+ * `Available_Times`, real estate uses `Viewing_Hours`, restaurants use
+ * `Reservation_Hours` — any column whose name ends in "time(s)", "hour(s)", or
+ * "availability" is treated as the hours column.
+ */
+export function hoursColumn(row: Record<string, any>): string | undefined {
+  if (!row) return undefined;
+  return Object.keys(row).find((k) => /(times?|hours?|availability)$/i.test(String(k).trim()));
+}
+
 // ── Guards ──────────────────────────────────────────────────────────────────
 
 /** Replace `{slot}` with values, then strip any token that still has no value. */
@@ -698,6 +723,40 @@ export async function runAgentHarness(
     decision = round.decision;
     slotExtractionAttempts += round.attempts;
     mergeSlots(state.slots, decision.updated_slots, checklist);
+  }
+
+  // ── Generic time validation ────────────────────────────────────────────────
+  // Only when a `lookup` step exists and a time slot is filled: find the matched
+  // schedule row, read its hours column (Available_Times / Viewing_Hours / …) and
+  // reject an out-of-window request so the customer can pick a valid time. This is
+  // business-agnostic — it works for clinics, showings, reservations, etc.
+  const timeSlot = findTimeSlot(state.slots);
+  if (scheduleMap && timeSlot) {
+    const requested = parseRequestedTime(state.slots[timeSlot]);
+    if (requested !== undefined) {
+      const rows = await scheduleLookup(readRows, sheet, scheduleMap, {
+        department: isFilled(state.slots, 'department') ? String(state.slots.department) : undefined,
+        location: isFilled(state.slots, 'location') ? String(state.slots.location) : undefined,
+        doctor: isFilled(state.slots, 'doctor_name') ? String(state.slots.doctor_name) : undefined,
+      });
+      const row = rows[0];
+      const hoursHeader = row ? hoursColumn(row) : undefined;
+      const hoursValue = hoursHeader ? String(readCell(row, hoursHeader) ?? '').trim() : '';
+      const windows = hoursValue ? parseTimeWindows(hoursValue) : [];
+      if (windows.length > 0 && !isWithinWindow(requested, windows)) {
+        fallbackUsed = true;
+        const timeText = String(state.slots[timeSlot]);
+        delete state.slots[timeSlot];
+        return {
+          text: `The requested time (${timeText}) is not within the available schedule (${hoursValue}). Could you please choose a time within those hours?`,
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+          fallbackReason: 'time_conflict',
+        };
+      }
+    }
   }
 
   // ── Finalize ──────────────────────────────────────────────────────────────

@@ -52,6 +52,41 @@ test('parseTimeWindows returns [] for a day off / rota text', () => {
   assert.deepEqual(parseTimeWindows('--'), []);
 });
 
+// ── messy real-world data ──────────────────────────────────────────────────
+
+test('parseTimeWindows handles "8-12/5-9"', () => {
+  assert.deepEqual(parseTimeWindows('8-12/5-9'), [
+    { start: 480, end: 720 }, // 8 AM – 12 PM
+    { start: 1020, end: 1260 }, // 5 PM – 9 PM
+  ]);
+});
+
+test('parseTimeWindows strips day names, parens and "to"', () => {
+  assert.deepEqual(parseTimeWindows('SUN-THURS 1 TO 9PM (SAT 9-1/5-9)'), [
+    { start: 780, end: 1260 }, // 1 PM – 9 PM
+    { start: 540, end: 780 }, // 9 AM – 1 PM
+    { start: 1020, end: 1260 }, // 5 PM – 9 PM
+  ]);
+});
+
+test('parseTimeWindows strips day names and a stray colon', () => {
+  assert.deepEqual(parseTimeWindows('7AM -3PM ,THURS : 8AM-12PM'), [
+    { start: 420, end: 900 }, // 7 AM – 3 PM
+    { start: 480, end: 720 }, // 8 AM – 12 PM
+  ]);
+});
+
+test('parseTimeWindows handles "4 to 8"', () => {
+  assert.deepEqual(parseTimeWindows('4 to 8'), [{ start: 960, end: 1200 }]); // 4 PM – 8 PM
+});
+
+test('parseTimeWindows handles colon times with day ranges (12-hour convention)', () => {
+  assert.deepEqual(parseTimeWindows('FRI TO MON 01:00-09:00 , TUES-& WED 09:00-05:00'), [
+    { start: 780, end: 1260 }, // 01:00–09:00 = 1 PM – 9 PM (12-hour, no AM/PM marker)
+    { start: 540, end: 1020 }, // 09:00–05:00 = 9 AM – 5 PM
+  ]);
+});
+
 // ── containment ────────────────────────────────────────────────────────────
 
 test('"7 PM" is within "09:30-12:30/04:30-09:30"', () => {

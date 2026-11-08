@@ -15,6 +15,7 @@ import {
   deriveChecklist,
   deriveScheduleMap,
   formatDoctorList,
+  hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
   noBarePlaceholders,
@@ -298,4 +299,80 @@ test('"who are the doctors at adliya?" lists them from the sheet', async () => {
   // The harness queried Doctors_Schedule before answering.
   assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
   assert.equal(client.calls, 2); // list_doctors round + the natural-answer round
+});
+
+// ── generic time validation ────────────────────────────────────────────────
+
+test('hoursColumn finds the hours column generically (Available_Times / Viewing_Hours)', () => {
+  assert.equal(hoursColumn({ Doctor: 'Dr. X', Available_Times: '9-5' }), 'Available_Times');
+  assert.equal(hoursColumn({ Property: 'Villa', Viewing_Hours: '9-5' }), 'Viewing_Hours');
+  assert.equal(hoursColumn({ Doctor: 'Dr. X', Branch: 'Riffa' }), undefined);
+});
+
+const VIEWING_SCHEDULE = [
+  { Property: 'Villa One', department: 'Real Estate', Branch: 'Riffa', Viewing_Hours: '9-5' },
+];
+
+const VIEWING_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question: 'What time would you like to book?',
+    slot_name: 'datetime',
+    expected_input: 'text',
+    next_step_logic: '→ done',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_2',
+    step_type: 'lookup',
+    slot_name: 'property_name',
+    lookup_source: 'Property_Listings',
+    lookup_filter: 'department={department} AND branch={location}',
+    lookup_extract: 'Property',
+  },
+];
+
+const viewingReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }];
+  }
+  if (tab === 'Property_Listings') return VIEWING_SCHEDULE;
+  return VIEWING_STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('time validation rejects an out-of-hours time and clears the slot', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "What time would you like?"}',
+  ]);
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Real Estate', location: 'Riffa', datetime: '7 PM' },
+  };
+
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'book', viewingReader, client);
+
+  assert.equal(turn.fallbackUsed, true);
+  assert.equal(turn.fallbackReason, 'time_conflict');
+  assert.equal(turn.sheet.slots.datetime, undefined); // cleared so the customer can re-enter
+  assert.match(turn.text, /not within the available schedule/);
+  assert.match(turn.text, /9-5/);
+});
+
+test('time validation accepts an in-hours time', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Great, please provide your contact details."}',
+  ]);
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Real Estate', location: 'Riffa', datetime: '2 PM' },
+  };
+
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'book', viewingReader, client);
+
+  assert.notEqual(turn.fallbackReason, 'time_conflict');
+  assert.equal(turn.sheet.slots.datetime, '2 PM'); // kept
 });
