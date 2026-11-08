@@ -1099,6 +1099,16 @@ test('looseCellMatch matches whole words/phrases in either direction', () => {
   assert.equal(looseCellMatch('', 'ENT'), false);
 });
 
+test('looseCellMatch maps a specialty to its schedule spelling', () => {
+  // The production failure: "Gastroenterology" must match "CONSULTANT
+  // GASTROENTEROLOGIST" (shared root after stripping -ology / -ologist).
+  assert.equal(looseCellMatch('CONSULTANT GASTROENTEROLOGIST', 'Gastroenterology'), true);
+  // A shorthand prefix also matches.
+  assert.equal(looseCellMatch('CONSULTANT GASTROENTEROLOGIST', 'gastro'), true);
+  // "ENT" must NOT false-positive on "gastroenterologist" (the "ent" substring).
+  assert.equal(looseCellMatch('CONSULTANT GASTROENTEROLOGIST', 'ENT'), false);
+});
+
 test('rankLookupHits moves rows marked off/vacation to the end', () => {
   const rows = [
     { Doctor: 'DR. SUSAN', Available_Times: 'WEELKLY OFF' },
@@ -1550,4 +1560,101 @@ test('the Step_5 shape: "yes" is rejected, all four details advance', async () =
   );
   assert.equal(accepted.sheet.stepId, 'Step_7');
   assert.equal(accepted.text, 'Thank you for your details.');
+});
+
+// ── fuzzy specialty lookup + time availability ─────────────────────────────
+
+test('gastro: 7 PM is accepted, 11 PM is rejected', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'And which location is the closest to you?',
+      expected_input: 'list',
+      slot_name: 'location',
+      options: 'Muharraq, Riffa, Adliya',
+      next_step_logic: '→ Step_3',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_3',
+      ai_question: 'Sure, and could you confirm the preferred date and time?',
+      expected_input: 'text',
+      slot_name: 'datetime',
+      next_step_logic: '→ Step_4',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_4',
+      step_type: 'lookup',
+      slot_name: 'doctor_name',
+      lookup_source: 'Doctors_Schedule',
+      lookup_filter: 'department={department} AND branch={location}',
+      lookup_extract: 'Doctor',
+      alternate_step: 'Step_6',
+      next_step_logic: '→ Step_5',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_5',
+      ai_question: 'We have {doctor_name} has availability. To confirm booking, can you provide your name?',
+      slot_name: 'customer_details',
+      next_step_logic: '→ Step_7',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_6',
+      ai_question: "Sorry, we don't have that at this location. Would you like to try another?",
+      slot_name: 'retry',
+      next_step_logic: '',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_7',
+      ai_question: 'Thank you, our booking team will call you.',
+      slot_name: 'completed',
+      next_step_logic: '→ done',
+    },
+  ];
+  const schedule = [
+    {
+      Doctor: 'DR SURESH DAIVASIKHAMANI',
+      Branch: 'Muharraq',
+      Available_Times: '09:30-12:30/04:30-09:30',
+      department: 'CONSULTANT GASTROENTEROLOGIST',
+    },
+  ];
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', keywords: 'gastro, doctor, book', start_step: 'Step_1', answer: '' }];
+    }
+    if (tab === 'Doctors_Schedule') return schedule;
+    return steps.filter((s) => s.intent_id === filter?.value);
+  };
+
+  // The LLM's turn-1 output: "gastro doctor" → department "Gastroenterology".
+  const seed = { intentId: '1', stepId: 'Step_2', slots: { department: 'Gastroenterology', confirm: 'Yes' } };
+
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'Muharraq', reader);
+  assert.equal(t2.sheet.slots.location, 'Muharraq');
+  assert.equal(t2.sheet.stepId, 'Step_3');
+
+  // 7 PM is inside the evening window → lookup succeeds.
+  const t3 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t2.sheet } } }, 'n1', 'today at 7 PM', reader);
+  assert.equal(t3.sheet.slots.doctor_name, 'DR SURESH DAIVASIKHAMANI');
+  assert.match(t3.text, /DR SURESH DAIVASIKHAMANI has availability/);
+
+  // 11 PM is outside → the flow re-asks the time and does not store a doctor.
+  const t3b = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'today at 11 PM',
+    reader
+  );
+  assert.equal(t3b.fallbackUsed, true);
+  assert.match(t3b.text, /available from 09:30-12:30\/04:30-09:30/);
+  assert.match(t3b.text, /Would you like to choose a different time\?/);
+  assert.equal(t3b.sheet.stepId, 'Step_3');
+  assert.equal(t3b.sheet.slots.doctor_name, undefined);
 });

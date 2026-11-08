@@ -17,6 +17,7 @@
  */
 
 import { lookupSheetRows } from './googleSheetsExecutor';
+import { isWithinWindow, parseRequestedTime, parseTimeWindows } from './timeRange';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
 import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
@@ -136,18 +137,72 @@ function readCell(row: Record<string, any>, column: string): any {
   return key === undefined ? undefined : row[key];
 }
 
+/** The availability column header ("Available_Times") on a schedule row, if any. */
+function availabilityHeader(row: Record<string, any>): string | undefined {
+  if (!row) return undefined;
+  return Object.keys(row).find((k) => /available[\s_-]*times/i.test(k));
+}
+
+/**
+ * The customer's requested time (minutes since midnight), read from the first
+ * filled slot that looks like a time slot (`datetime`, `time`, …). `undefined`
+ * when the flow never collected a time — the availability check is then skipped.
+ */
+function requestedTimeMinutes(slots: Record<string, any>): number | undefined {
+  for (const [key, value] of Object.entries(slots ?? {})) {
+    const n = normalizeSlotKey(key);
+    if (n === 'datetime' || n === 'time' || n === 'appointment_time' || n === 'preferred_time') {
+      const parsed = parseRequestedTime(value);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+  return undefined;
+}
+
+/** "DR SURESH" stays as-is; a bare name gets a "Dr. " prefix. */
+function doctorLabel(name: string): string {
+  const n = String(name ?? '').trim();
+  return /^dr\b/i.test(n) ? n : `Dr. ${n}`;
+}
+
 /** Case-insensitive whole-word/phrase containment in either direction. */
 export function looseCellMatch(cell: any, wanted: any): boolean {
   const a = String(cell ?? '').trim().toLowerCase();
   const b = String(wanted ?? '').trim().toLowerCase();
   if (!a || !b) return false;
   if (a === b) return true;
-  const contains = (haystack: string, needle: string) => {
-    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(haystack);
+
+  const aWords = a.split(/[^a-z0-9]+/).filter(Boolean);
+  const bWords = b.split(/[^a-z0-9]+/).filter(Boolean);
+
+  // 1. whole-word containment ("ENT" ↔ "ENT SURGEON")
+  if (aWords.some((w) => bWords.includes(w)) || bWords.some((w) => aWords.includes(w))) {
+    return true;
+  }
+
+  // 2. word-prefix match ("gastro" → "gastroenterologist"), guarded so a short
+  //    token like "ent" can't false-positive on the middle of "gastroenterologist".
+  const prefixed = (longer: string, shorter: string) =>
+    shorter.length >= 4 && longer.length >= shorter.length && longer.startsWith(shorter);
+  if (aWords.some((aw) => bWords.some((bw) => prefixed(aw, bw) || prefixed(bw, aw)))) {
+    return true;
+  }
+
+  // 3. shared root: "gastroenterology" ↔ "gastroenterologist" after stripping
+  //    common medical suffixes ("-ology" / "-ologist" → "gastroenter").
+  const stem = (word: string): string => {
+    let s = word;
+    for (const suffix of ['ologist', 'ology', 'ologic', 'ological', 'ist', 'ic', 'ical', 'surgery']) {
+      if (s.endsWith(suffix) && s.length - suffix.length >= 4) {
+        s = s.slice(0, -suffix.length);
+        break;
+      }
+    }
+    return s;
   };
-  // "ENT" in "ENT SURGEON", and the reverse for short cells.
-  return contains(a, b) || contains(b, a);
+  const aStems = aWords.map(stem);
+  const bStems = bWords.map(stem);
+  return aStems.some((as) => as.length >= 5 && bStems.some((bs) => as === bs));
 }
 
 /** Rows that look unavailable ("weekly off", "on vacation", "--") sort last. */
@@ -586,7 +641,7 @@ export async function runSheetStateMachine(
   const resolveNextAsk = async (
     steps: Record<string, any>[],
     startStep: Record<string, any> | undefined
-  ): Promise<{ kind: 'ask'; text: string } | { kind: 'done' }> => {
+  ): Promise<{ kind: 'ask'; text: string; rewindTo?: string } | { kind: 'done' }> => {
     let step = startStep;
     let guard = 0;
     while (step && guard++ < 100) {
@@ -599,6 +654,7 @@ export async function runSheetStateMachine(
         const slotName = String(step[slotHeader] ?? '').trim();
 
         let matched = false;
+        let timeRejected: { doctor: string; times: string } | null = null;
         if (source) {
           const rows = await readRows(sheet, source);
           toolCalls.push({
@@ -607,13 +663,33 @@ export async function runSheetStateMachine(
             rows: rows.length,
           });
           const clauses = parseLookupFilter(filterRaw);
-          // Loose (whole-word) matching: "department=ENT" must find the
-          // schedule's "ENT SURGEON" / "SPECIALIST ENT" rows, not just an
-          // exact "ENT" cell. Rows marked off/vacation sort last.
-          const hits = rankLookupHits(
+          // Loose (whole-word / prefix / stem) matching: "department=ENT" must
+          // find "ENT SURGEON", and "department=Gastroenterology" must find
+          // "CONSULTANT GASTROENTEROLOGIST". Rows marked off/vacation sort last.
+          let hits = rankLookupHits(
             rows.filter((row) => clauses.every((c) => looseCellMatch(readCell(row, c.column), c.value)))
           );
-          if (hits.length > 0) {
+
+          // Availability check: if the customer gave a time, only keep rows whose
+          // `Available_Times` cover it. Rows with no availability info pass.
+          const time = requestedTimeMinutes(state.slots);
+          if (time !== undefined && hits.length > 0) {
+            const covered = hits.filter((row) => {
+              const header = availabilityHeader(row);
+              if (!header) return true;
+              return isWithinWindow(time, parseTimeWindows(readCell(row, header)));
+            });
+            if (covered.length > 0) {
+              hits = covered;
+            } else {
+              const doctor = String(readCell(hits[0], extractCol) ?? '').trim() || 'this doctor';
+              const header = availabilityHeader(hits[0]);
+              const times = header ? String(readCell(hits[0], header) ?? '').trim() : '';
+              timeRejected = { doctor, times };
+            }
+          }
+
+          if (!timeRejected && hits.length > 0) {
             matched = true;
             if (extractCol) {
               const value = readCell(hits[0], extractCol);
@@ -626,6 +702,23 @@ export async function runSheetStateMachine(
               }
             }
           }
+        }
+
+        if (timeRejected) {
+          fallbackUsed = true;
+          const text = timeRejected.times
+            ? `${doctorLabel(timeRejected.doctor)} is available from ${timeRejected.times}. Would you like to choose a different time?`
+            : `${doctorLabel(timeRejected.doctor)} is not available at that time. Would you like to choose a different time?`;
+          // Re-ask the time: wind back to the step that collects `datetime` so
+          // the next answer re-runs this lookup with the new time.
+          const datetimeStep = steps.find((s) =>
+            parseSlotNames(s[slotHeader]).some((n) => normalizeSlotKey(n) === 'datetime')
+          );
+          return {
+            kind: 'ask',
+            text,
+            rewindTo: datetimeStep ? String(datetimeStep[stepIdHeader] ?? '').trim() : undefined,
+          };
         }
 
         if (!matched) {
@@ -869,8 +962,7 @@ export async function runSheetStateMachine(
 
     state.stepId = String(firstUnfilled[stepIdHeader] ?? '').trim();
     const resolved = await resolveNextAsk(steps, findStep(steps, stepIdHeader, state.stepId) ?? firstUnfilled);
-    if (resolved.kind === 'done') {
-      const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
+    if (resolved.kind === 'done') {      const result = await complete(readRows, sheet, intentsTab, state, toolCalls, idHeader, answerHeader);
       result.slotExtractionAttempts = slotExtractionAttempts;
       result.fallbackUsed = fallbackUsed;
       if (extracted) {
@@ -880,6 +972,9 @@ export async function runSheetStateMachine(
       if (skippedSteps.length > 0) result.skippedSteps = skippedSteps;
       if (rejectedSlots.length > 0) result.rejectedSlots = rejectedSlots;
       return result;
+    }
+    if (resolved.kind === 'ask' && resolved.rewindTo) {
+      state.stepId = resolved.rewindTo;
     }
     return {
       text: resolved.text,
@@ -1082,6 +1177,9 @@ export async function runSheetStateMachine(
     result.slotExtractionAttempts = slotExtractionAttempts;
     result.fallbackUsed = fallbackUsed;
     return result;
+  }
+  if (resolved.rewindTo) {
+    state.stepId = resolved.rewindTo;
   }
   return {
     text: resolved.text,
