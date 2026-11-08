@@ -11,6 +11,7 @@ import {
   extractSlot,
   formatRejectionText,
   generateConversationalFallback,
+  isInterruption,
   isSheetStateMachineEnabled,
   looseCellMatch,
   missingSlotsText,
@@ -1657,4 +1658,148 @@ test('gastro: 7 PM is accepted, 11 PM is rejected', async () => {
   assert.match(t3b.text, /Would you like to choose a different time\?/);
   assert.equal(t3b.sheet.stepId, 'Step_3');
   assert.equal(t3b.sheet.slots.doctor_name, undefined);
+});
+
+// ── interruption handling (Increment I) ────────────────────────────────────
+
+test('isInterruption flags questions and greetings, but not real values', () => {
+  assert.equal(isInterruption('what time is it?'), true);
+  assert.equal(isInterruption('What are your hours?'), true);
+  assert.equal(isInterruption('where are you located'), true);
+  assert.equal(isInterruption('can you help me?'), true);
+  assert.equal(isInterruption('hello'), true);
+  assert.equal(isInterruption('Hi there'), true);
+  assert.equal(isInterruption('good morning'), true);
+  // Real slot values must never trip the detector.
+  assert.equal(isInterruption('Ali Hassan'), false);
+  assert.equal(isInterruption('39001234'), false);
+  assert.equal(isInterruption('Muharraq'), false);
+  assert.equal(isInterruption('today at 6 PM'), false);
+  assert.equal(isInterruption('May'), false); // "May" is a name, not "may I…"
+  assert.equal(isInterruption(''), false);
+});
+
+test('generateConversationalFallback injects the persona and the interruption instruction', async () => {
+  let captured: string | undefined;
+  const real: LlmClient = {
+    id: 'groq',
+    defaultModel: 'test-model',
+    async complete(req: LlmCompletionRequest): Promise<LlmCompletionResult> {
+      captured = (req.messages[0] as { content: string }).content;
+      return {
+        ok: true,
+        text: 'Of course! I am Alia from Al Hilal. What time would you like to book?',
+        provider: 'groq',
+        model: 'test-model',
+        finishReason: 'stop',
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+        latencyMs: 1,
+        attempts: 1,
+        toolCalls: [],
+      };
+    },
+  };
+
+  const systemPrompt = 'You are Alia, a receptionist. About the business: Al Hilal hospital.';
+  const out = await generateConversationalFallback(
+    real,
+    'name',
+    'what time is it?',
+    'May I have your name?',
+    '',
+    undefined,
+    { systemPrompt, interruption: true }
+  );
+
+  assert.match(out, /Alia/);
+  assert.ok(captured);
+  assert.match(captured!, /Alia/);            // persona injected
+  assert.match(captured!, /off-topic/);       // interruption framing
+  assert.match(captured!, /May I have your name/); // current step re-shown
+});
+
+test('a text slot does not store an off-topic question as the value', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_1',
+      ai_question: 'May I have your name?',
+      slot_name: 'name',
+      expected_input: 'text',
+      fallback: 'I am happy to help with that, but first may I have your name?',
+      next_step_logic: '→ Step_2',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'Thanks, and your phone number?',
+      slot_name: 'phone',
+      expected_input: 'text',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader: RowReader = async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }]
+      : steps.filter((s) => s.intent_id === filter?.value);
+
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'book', reader);
+  assert.equal(t1.sheet.stepId, 'Step_1');
+
+  const t2 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'what time is it?',
+    reader
+  );
+  // NOT stored, did not advance, and the fallback acknowledges the interruption.
+  assert.equal(t2.sheet.slots.name, undefined);
+  assert.equal(t2.sheet.stepId, 'Step_1');
+  assert.equal(t2.fallbackUsed, true);
+  assert.equal(t2.fallbackReason, 'interruption');
+  assert.equal(t2.text, 'I am happy to help with that, but first may I have your name?');
+
+  // A real answer is still stored normally.
+  const t3 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Ali Hassan',
+    reader
+  );
+  assert.equal(t3.sheet.slots.name, 'Ali Hassan');
+  assert.equal(t3.sheet.stepId, 'Step_2');
+});
+
+test('a greeting mid-flow is treated as an interruption, not a value', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'And which location is the closest to you?',
+      slot_name: 'location',
+      expected_input: 'list',
+      options: 'Muharraq, Riffa, Adliya',
+      fallback: 'Please choose a location.',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader: RowReader = async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', keywords: 'book', start_step: 'Step_2', answer: 'Booked' }]
+      : steps.filter((s) => s.intent_id === filter?.value);
+
+  const seed = { intentId: '1', stepId: 'Step_2', slots: {} };
+  const t = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    'hello',
+    reader
+  );
+  assert.equal(t.sheet.slots.location, undefined);
+  assert.equal(t.sheet.stepId, 'Step_2');
+  assert.equal(t.fallbackUsed, true);
+  assert.equal(t.fallbackReason, 'interruption');
 });

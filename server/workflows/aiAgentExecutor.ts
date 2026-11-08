@@ -927,6 +927,24 @@ export async function executeAiAgentNode(
     );
   }
 
+  // ── Increment I — resolve the owner persona + instructions up front so the
+  // deterministic engine can hand an interruption back to a persona-aware
+  // conversational fallback (rather than being "persona-blind").
+  const studio = exec.studioConfig ?? null;
+  const baseInstructions = studio?.instructions?.trim()
+    ? studio.instructions
+    : settings.systemPrompt?.trim()
+      ? settings.systemPrompt
+      : AI_DEFAULT_SYSTEM_PROMPT;
+  const resolvedPrompt = resolveTemplate(baseInstructions, context);
+  const workflowSystemPrompt = buildSystemPrompt({
+    ownerPrompt: resolvedPrompt,
+    businessName: exec.businessName,
+    persona: studio?.persona,
+    channel: exec.channel === 'web_chat' ? 'web_chat' : 'whatsapp',
+    hasOptionTools: declaredButtons.length > 0 || declaredRows.length > 0,
+  });
+
   // ── Phase 4d: deterministic sheet state machine (Task 5 MVP) ──────────────
   // The engine reads the current step from the sheet and asks its ai_question,
   // so the model can't improvise. On turn 1 it may make ONE LLM call to extract
@@ -972,7 +990,8 @@ export async function executeAiAgentNode(
       nodeId,
       userMessage,
       exec.sheetReader,
-      trackedClient
+      trackedClient,
+      workflowSystemPrompt
     );
     const latencyMs = Date.now() - startedAt;
 
@@ -1060,13 +1079,8 @@ export async function executeAiAgentNode(
   //   2. this node's own systemPrompt (legacy per-node behaviour)
   //   3. AI_DEFAULT_SYSTEM_PROMPT (the shared fallback)
   // {{variables}} are resolved against the current context regardless of source.
-  const studio = exec.studioConfig ?? null;
-  const baseInstructions = studio?.instructions?.trim()
-    ? studio.instructions
-    : settings.systemPrompt?.trim()
-      ? settings.systemPrompt
-      : AI_DEFAULT_SYSTEM_PROMPT;
-  const resolvedPrompt = resolveTemplate(baseInstructions, context);
+  // (Increment I: `studio`, `baseInstructions` and `resolvedPrompt` are already
+  // resolved above, so the free-form path reuses them — see the hoisted block.)
 
   // Phase 2.5b — Tool Stripping Guard. If the customer's message is the title of
   // an option we offered moments ago, this turn is a CLICK: remove send_buttons

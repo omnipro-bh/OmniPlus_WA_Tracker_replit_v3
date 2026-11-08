@@ -370,14 +370,28 @@ export async function extractSlot(
  * `fallbackString` is the static sheet fallback and is intentionally NOT injected
  * into the prompt (we do not want the model to lazily echo it); it is kept on the
  * signature for call-site clarity and future use.
+ *
+ * Interruption mode (`context.interruption`) adds the owner's persona/instructions
+ * (`context.systemPrompt`) as the assistant's identity and reframes the task as
+ * "the customer went off-topic / asked a question / greeted you — answer them
+ * naturally, then guide them back to the step" instead of a flat "that is not a
+ * valid option".
  */
+export interface ConversationalFallbackContext {
+  /** The owner's system prompt (persona + instructions). Injected as the identity. */
+  systemPrompt?: string;
+  /** True when the customer interrupted (off-topic question, greeting, new request). */
+  interruption?: boolean;
+}
+
 export async function generateConversationalFallback(
   client: LlmClient,
   slotName: string,
   userMessage: string,
   currentQuestion: string,
   _fallbackString: string,
-  allowedOptions?: string[]
+  allowedOptions?: string[],
+  context: ConversationalFallbackContext = {}
 ): Promise<string> {
   // The mock provider has no real model — its "reply" is an echo of the prompt,
   // which must never leak to the customer. Skip it so mock mode and unit tests
@@ -387,19 +401,24 @@ export async function generateConversationalFallback(
   const optionsLine = allowedOptions && allowedOptions.length > 0
     ? allowedOptions.join(', ')
     : 'Any text';
+  const persona = (context.systemPrompt ?? '').trim();
+  const interruption = context.interruption === true;
+
   const prompt = [
-    `You are a helpful AI assistant collecting the "${slotName}" from the customer.`,
+    persona || 'You are a helpful AI assistant.',
     '',
-    `The question you asked was: "${currentQuestion}"`,
-    `The valid options are: ${optionsLine}`,
+    `You are helping a customer complete a booking.`,
+    `The step currently waiting for the customer is: "${currentQuestion}"`,
+    `The valid options for the next reply are: ${optionsLine}`,
     `The customer replied: "${userMessage}"`,
     '',
-    `The customer's reply is NOT one of the valid options. Do exactly this:`,
-    '1. Acknowledge what the customer said (e.g. "I see you are looking for a dentist").',
-    '2. Briefly explain it is not a valid option, then list the valid options.',
-    '3. Ask them to choose one of the valid options.',
-    '4. Keep it brief, natural and conversational.',
-    '5. Reply in the same language as the customer.',
+    interruption
+      ? `The customer's reply is off-topic or is not a valid answer for this step (for example a question, a greeting, or a new request). Do exactly this:`
+      : `The customer's reply is NOT one of the valid options. Do exactly this:`,
+    '1. Answer their question (or acknowledge them) naturally, in character.',
+    '2. Then gently remind them of the current step and re-ask for the required information.',
+    '3. Keep it brief, natural and conversational (1-3 sentences).',
+    '4. Reply in the same language as the customer.',
     '',
     'Return ONLY the text you would say to the customer. Do not use JSON.',
   ].join('\n');
@@ -408,13 +427,36 @@ export async function generateConversationalFallback(
     const result = await client.complete({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
-      maxTokens: 160,
+      maxTokens: 220,
     });
     if (!result.ok) return '';
     return result.text.trim();
   } catch {
     return '';
   }
+}
+
+/**
+ * A deterministic, no-LLM signal that the customer interrupted the flow with an
+ * off-topic message instead of answering the current slot. Used to block text
+ * slots from silently storing questions/greetings as values. Deliberately
+ * conservative: it only fires on question marks, question openers, and greetings
+ * so a real value (a name, a phone number, "Adliya") never trips it.
+ */
+export function isInterruption(message: string): boolean {
+  const m = String(message ?? '').trim();
+  if (!m) return false;
+  const lower = m.toLowerCase();
+  if (lower.includes('?')) return true;
+  if (
+    /^(what|whats|what's|when|where|who|whom|how|why|which|can you|could you|would you|do you|does it|does the|is it|is the|are you|did you|should i|may i|can i|is there|are there|tell me)\b/.test(lower)
+  ) {
+    return true;
+  }
+  if (/^(hi|hello|hey|yo|salam|salaam|good morning|good afternoon|good evening|assalamu|asalamu)\b/.test(lower)) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -597,7 +639,8 @@ export async function runSheetStateMachine(
   nodeId: string,
   userMessage: string,
   reader?: RowReader,
-  client?: LlmClient
+  client?: LlmClient,
+  systemPrompt?: string
 ): Promise<SheetTurn> {
   const readRows = reader ?? defaultReadRows;
   const state = readSheetState(context, nodeId);
@@ -743,6 +786,42 @@ export async function runSheetStateMachine(
       return { kind: 'ask', text: question || String(step[fallbackHeader] ?? '').trim() };
     }
     return { kind: 'done' };
+  };
+
+  // ── Interruption handling (Increment I) ────────────────────────────────────
+  // The customer went off-topic (question / greeting / new request) or gave an
+  // invalid answer. Answer them in character via the LLM (persona + instructions
+  // via `systemPrompt`), then guide them back to the current step. Nothing is
+  // stored and the flow stays on the same step, so the next valid answer resumes.
+  const interruptionTurn = async (opts: {
+    slotName: string;
+    question: string;
+    fallback: string;
+    options?: string[];
+    reason?: string;
+  }): Promise<SheetTurn> => {
+    fallbackUsed = true;
+    let text = opts.fallback || opts.question;
+    if (client) {
+      const generated = await generateConversationalFallback(
+        client,
+        opts.slotName,
+        userMessage.trim(),
+        opts.question,
+        opts.fallback,
+        opts.options,
+        { systemPrompt, interruption: true }
+      );
+      if (generated) text = generated;
+    }
+    return {
+      text,
+      sheet: state,
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
+      fallbackReason: opts.reason ?? 'interruption',
+    };
   };
 
   // ── Turn 1: resolve the intent ─────────────────────────────────────────────
@@ -1020,6 +1099,19 @@ export async function runSheetStateMachine(
   // of them are captured. "yes" extracts nothing, so the flow re-asks instead of
   // booking with a meaningless value.
   if (slotNames.length > 1) {
+    const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
+    const fallback = String(current[fallbackHeader] ?? '').trim();
+
+    // A question/greeting must not be stored as the customer's name/phone/etc.
+    if (isInterruption(userMessage)) {
+      return await interruptionTurn({
+        slotName: slotNames.join(', '),
+        question,
+        fallback,
+        reason: 'interruption',
+      });
+    }
+
     const missing = slotNames.filter((name) => !isSlotFilled(state.slots, name));
     const values: Record<string, string> = {};
 
@@ -1113,16 +1205,24 @@ export async function runSheetStateMachine(
       }
     }
 
+    const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
+    const fallback = String(current[fallbackHeader] ?? '').trim();
+
     const validation = fallbackReason
       ? null
       : validateSlotValue(candidate, expectedInput, options, validationRule);
+
+    // Increment I — an off-topic question / greeting must not be stored as the
+    // slot's value (a text slot would otherwise swallow "what time is it?" as a
+    // name). Answer it in character, then guide the customer back to the step.
+    if (isInterruption(userMessage) && !fallbackReason) {
+      return await interruptionTurn({ slotName, question, fallback, options, reason: 'interruption' });
+    }
 
     if (!validation?.valid) {
       // Rejected by code (or extraction failed) → fallback, re-ask, don't advance.
       fallbackUsed = true;
       const reason = validation?.reason ?? fallbackReason ?? 'no value extracted';
-      const fallback = String(current[fallbackHeader] ?? '').trim();
-      const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
 
       // A format rejection ("yes" in a phone slot) is a form error: answer with
       // the fixed wording instead of asking a model to improvise.
@@ -1137,31 +1237,8 @@ export async function runSheetStateMachine(
         };
       }
 
-      // Increment E — conversational fallback: give the LLM a chance to respond
-      // naturally (acknowledge + guide back) before defaulting to the static
-      // sheet fallback. Real providers (Groq, DeepSeek, …) always run here; the
-      // mock provider short-circuits inside `generateConversationalFallback`.
-      let text = fallback || question;
-      if (client) {
-        const generated = await generateConversationalFallback(
-          client,
-          slotName,
-          userMessage.trim(),
-          question,
-          fallback,
-          options
-        );
-        if (generated) text = generated;
-      }
-
-      return {
-        text,
-        sheet: state,
-        toolCalls,
-        slotExtractionAttempts,
-        fallbackUsed,
-        fallbackReason: reason,
-      };
+      // Interruption / invalid answer → persona-aware conversational fallback.
+      return await interruptionTurn({ slotName, question, fallback, options, reason });
     }
 
     state.slots[slotName] = isLookupFed
