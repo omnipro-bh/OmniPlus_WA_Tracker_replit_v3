@@ -3403,6 +3403,27 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           {sheetConnected && (
             <>
               <div>
+                <Label htmlFor="ai-engine">Booking engine</Label>
+                <Select
+                  value={config.engine === 'agent' ? 'agent' : 'legacy'}
+                  onValueChange={(value) => updateConfig('engine', value === 'agent' ? 'agent' : 'legacy')}
+                >
+                  <SelectTrigger id="ai-engine" data-testid="select-ai-engine">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="legacy">Legacy (step-by-step state machine)</SelectItem>
+                    <SelectItem value="agent">Agent (goal-oriented booking)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The Agent engine treats your steps as a goal checklist: it can deduce a doctor's
+                  department and location automatically and handle interruptions gracefully. Legacy
+                  follows the steps in fixed order.
+                </p>
+              </div>
+
+              <div>
                 <Label htmlFor="ai-sheets-spreadsheet-id">Spreadsheet ID or URL</Label>
                 <Input
                   id="ai-sheets-spreadsheet-id"
