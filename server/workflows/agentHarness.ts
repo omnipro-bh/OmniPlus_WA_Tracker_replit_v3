@@ -587,6 +587,7 @@ export async function runAgentHarness(
     intentId: rawState?.intentId ?? null,
     stepId: null,
     slots: rawState?.slots && typeof rawState.slots === 'object' ? { ...rawState.slots } : {},
+    lastSearch: typeof rawState?.lastSearch === 'string' ? rawState.lastSearch : undefined,
   };
 
   const intentsTab = intentsTabName(sheet);
@@ -657,6 +658,7 @@ export async function runAgentHarness(
           });
           const results = serializeSearchResults(matched);
           if (matched.length > 0) {
+            state.lastSearch = results;
             const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
             const round2 = await askModel(
               client,
@@ -667,6 +669,19 @@ export async function runAgentHarness(
               round2.decision.next_question?.trim() || summarizeRows(matched, fallbackMap),
               state.slots
             );
+            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+          }
+
+          // No fresh matches — this is likely a follow-up ("At which branch?")
+          // about the previous search. Reuse the last structured results.
+          if (state.lastSearch) {
+            const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
+            const round2 = await askModel(
+              client,
+              buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
+            );
+            slotExtractionAttempts += round2.attempts;
+            const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
             return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
           }
         }
@@ -758,6 +773,7 @@ export async function runAgentHarness(
       });
     }
     const searchResults = serializeSearchResults(rows);
+    state.lastSearch = rows.length > 0 ? searchResults : state.lastSearch;
     const searchRound = await askModel(
       client,
       buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, searchResults)

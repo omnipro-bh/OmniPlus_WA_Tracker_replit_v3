@@ -537,3 +537,43 @@ test('search_schedule returns matching properties (real estate)', async () => {
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a 3-bedroom villa?', propertyReader, client);
   assert.match(turn.text, /Villa One/);
 });
+
+const ORTHO_SCHEDULE = [
+  { Doctor: 'Dr. Rinkoo Jose', Branch: 'Adliya', department: 'ORTHODONTIST' },
+  { Doctor: 'Dr. Rajeesh Radhakrishnan', Branch: 'Hamad Town', department: 'ORTHODONTIST' },
+];
+
+// A reader where NO booking intent matches (so the harness takes the search
+// fallback), but the schedule + steps exist.
+const noIntentReader: RowReader = async (_sheet, tab, _filter) => {
+  if (tab === 'Intents') return [];
+  if (tab === 'Doctors_Schedule') return ORTHO_SCHEDULE;
+  return STEPS;
+};
+
+test('a follow-up "At which branch?" reads the branch column from structured results', async () => {
+  // Turn 1: search for the orthodontists (no booking intent → search fallback).
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Rinkoo Jose and Dr. Rajeesh Radhakrishnan."}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'You have CONSULTANT ORTHODONTIST', noIntentReader, client1);
+  assert.match(t1.text, /Rinkoo/);
+  // The structured rows (with Branch) are remembered for follow-ups.
+  assert.ok(t1.sheet.lastSearch);
+  assert.match(t1.sheet.lastSearch!, /"Branch":"Adliya"/);
+
+  // Turn 2: "At which branch?" finds no fresh match and reuses the last results.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Dr. Rinkoo Jose is at Adliya, and Dr. Rajeesh Radhakrishnan is at Hamad Town."}',
+  ]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'At which branch?',
+    noIntentReader,
+    client2
+  );
+  assert.match(t2.text, /Adliya/);
+  assert.match(t2.text, /Hamad Town/);
+});

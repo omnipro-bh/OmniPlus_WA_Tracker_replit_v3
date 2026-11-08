@@ -38,6 +38,8 @@ export interface SheetState {
   intentId: string | null;
   stepId: string | null;
   slots: Record<string, any>;
+  /** Structured JSON of the most recent `search_schedule` results (Phase 5). */
+  lastSearch?: string;
 }
 
 /** A fresh empty state — never reuse a shared object (slots must not leak across turns). */
