@@ -14,6 +14,7 @@ import {
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
+  matchDoctor,
   noBarePlaceholders,
   runAgentHarness,
   type HarnessChecklist,
@@ -175,8 +176,15 @@ test('deriveScheduleMap reads the lookup source + column mapping', () => {
   });
 });
 
-test('noBarePlaceholders substitutes filled slots and strips the rest', () => {
-  assert.equal(
+test('matchDoctor matches the named doctor but not a shared "DR" title', () => {
+  assert.equal(matchDoctor('DR GOUTHAM', 'Dr. Goutham'), true);
+  assert.equal(matchDoctor('DR. MUHAMMED AHSAN', 'Muhammed Ahsan'), true);
+  // The generic looseCellMatch would match every "DR …" row via the "dr" token.
+  assert.equal(matchDoctor('DR SURESH DAIVASIKHAMANI', 'Dr. Goutham'), false);
+  assert.equal(matchDoctor('DR GOUTHAM', 'Suresh'), false);
+});
+
+test('noBarePlaceholders substitutes filled slots and strips the rest', () => {  assert.equal(
     noBarePlaceholders('We have {doctor_name} at {location}.', { doctor_name: 'Dr. Goutham', location: 'Riffa' }),
     'We have Dr. Goutham at Riffa.'
   );

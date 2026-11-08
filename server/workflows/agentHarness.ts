@@ -315,6 +315,31 @@ async function askModel(
 
 // ── Schedule lookup ─────────────────────────────────────────────────────────
 
+/**
+ * A doctor-name match that is stricter than `looseCellMatch`. The generic matcher
+ * whole-word-matches the shared title token "DR", which would let "Dr. Goutham"
+ * match every "DR …" row. Here the title is stripped and every remaining token of
+ * the wanted name must equal (or prefix) a token of the schedule name.
+ */
+export function matchDoctor(cell: any, wanted: any): boolean {
+  const strip = (s: string) =>
+    String(s ?? '')
+      .replace(/\b(doctor|prof)\b\.?/gi, ' ')
+      .replace(/\bdr\b\.?/gi, ' ')
+      .replace(/[^a-z0-9]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  const a = strip(cell);
+  const b = strip(wanted);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aTokens = a.split(' ');
+  const bTokens = b.split(' ').filter((t) => t.length >= 2);
+  if (bTokens.length === 0) return false;
+  return bTokens.every((t) => aTokens.some((aw) => aw === t || aw.startsWith(t)));
+}
+
 async function scheduleLookup(
   readRows: RowReader,
   sheet: AiGoogleSheetsConfig,
@@ -325,7 +350,7 @@ async function scheduleLookup(
   const rows = await readRows(sheet, map.source);
   return rankLookupHits(
     rows.filter((row) => {
-      if (filter.doctor && !looseCellMatch(readCell(row, map.doctorColumn), filter.doctor)) return false;
+      if (filter.doctor && !matchDoctor(readCell(row, map.doctorColumn), filter.doctor)) return false;
       if (filter.department && !looseCellMatch(readCell(row, map.departmentColumn), filter.department)) return false;
       if (filter.location && !looseCellMatch(readCell(row, map.branchColumn), filter.location)) return false;
       return true;
