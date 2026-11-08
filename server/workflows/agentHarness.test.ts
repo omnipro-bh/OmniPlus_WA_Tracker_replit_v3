@@ -14,6 +14,7 @@ import {
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
+  formatDoctorList,
   matchDoctor,
   noBarePlaceholders,
   runAgentHarness,
@@ -241,4 +242,51 @@ test('"book with Dr. Goutham" auto-looks up the doctor and only asks for datetim
   assert.equal(turn.sheet.slots.datetime, undefined);
   assert.equal(turn.text, 'What date and time works for you?');
   assert.equal(client.calls, 2); // extraction round + the post-lookup round
+});
+
+// ── knowledge query: list doctors ──────────────────────────────────────────
+
+const LIST_SCHEDULE = [
+  { Doctor: 'Dr. Sujith', department: 'Dental Surgeon', Branch: 'Adliya', Available_Times: '07:00-03:00' },
+  { Doctor: 'Dr. Bindiya', department: 'General Dentist', Branch: 'Adliya', Available_Times: '03:00-11:00' },
+  { Doctor: 'Dr. Susan', department: 'ENT Surgeon', Branch: 'Adliya', Available_Times: 'WEELKLY OFF' },
+  { Doctor: 'Dr. Goutham', department: 'Paediatrician', Branch: 'Muharraq', Available_Times: '8-12/5-9' },
+];
+
+const listReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [{ id: '1', keywords: 'book, doctor', start_step: 'Step_1', answer: 'Booked' }];
+  }
+  if (tab === 'Doctors_Schedule') return LIST_SCHEDULE;
+  return STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('formatDoctorList lists doctors with specialties and excludes "off" rows', () => {
+  const map = deriveScheduleMap(STEPS, {
+    stepType: 'step_type',
+    source: 'lookup_source',
+    filter: 'lookup_filter',
+    extract: 'lookup_extract',
+  })!;
+  const list = formatDoctorList(LIST_SCHEDULE, map);
+  assert.match(list, /Dr. Sujith — Dental Surgeon/);
+  assert.match(list, /Dr. Bindiya — General Dentist/);
+  assert.doesNotMatch(list, /Dr. Susan/); // WEELKLY OFF
+});
+
+test('"who are the doctors at adliya?" lists them from the sheet', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "list_doctors", "next_question": "", "lookup": {"location": "Adliya"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?"}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'who are the doctors at adliya?', listReader, client);
+
+  assert.equal(
+    turn.text,
+    'At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?'
+  );
+  // The harness queried Doctors_Schedule before answering.
+  assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
+  assert.equal(client.calls, 2); // list_doctors round + the natural-answer round
 });
