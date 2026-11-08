@@ -26,6 +26,7 @@ import {
   normalizeInputType,
   normalizeOptions,
   parseOptions,
+  parseValidation,
   validateSlotValue,
 } from './slotValidation';
 import type { RejectedSlot } from './slotValidation';
@@ -361,8 +362,29 @@ export async function generateConversationalFallback(
   }
 }
 
-/** Resolve the actual header for a canonical key, honoring the owner's mapping. */
-function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
+/**
+ * The customer-facing message when a value fails the step's `validation` gate.
+ *
+ * Deterministic on purpose: the wording is part of the contract (the owner sees
+ * exactly what the customer sees), and a format rejection is a form error, not
+ * something to improvise. Falls back to the generic wording for a custom regex.
+ */
+export function formatRejectionText(validationType: string): string {
+  switch (parseValidation(validationType)?.kind) {
+    case 'phone':
+      return "That doesn't look like a valid phone number. Could you please provide your phone number again?";
+    case 'email':
+      return "That doesn't look like a valid email address. Could you please provide your email address again?";
+    case 'number':
+      return "That doesn't look like a valid number. Could you please provide that number again?";
+    case 'date':
+      return "That doesn't look like a valid date. Could you please provide the date again?";
+    default:
+      return "That doesn't look like a valid answer. Could you please provide it again?";
+  }
+}
+
+/** Resolve the actual header for a canonical key, honoring the owner's mapping. */function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
   const override = sheet.columns?.[tab]?.[key];
   if (typeof override === 'string' && override.trim()) return override.trim();
   const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === tab);
@@ -488,6 +510,7 @@ export async function runSheetStateMachine(
   const nextHeader = headerFor(sheet, stepsTab, 'next_step_logic');
   const fallbackHeader = headerFor(sheet, stepsTab, 'fallback');
   const expectedHeader = headerFor(sheet, stepsTab, 'expected_input');
+  const validationHeader = headerFor(sheet, stepsTab, 'validation');
 
   const toolCalls: SheetLookupCall[] = [];
   let slotExtractionAttempts = 0;
@@ -697,7 +720,10 @@ export async function runSheetStateMachine(
     // A slot that feeds a `lookup_filter` is treated as free text: the schedule
     // lookup — not a hardcoded `options` list — decides whether it is valid.
     const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
-    const slotMeta = new Map<string, { type: string; options?: string[]; lookupFed?: boolean }>();
+    const slotMeta = new Map<
+      string,
+      { type: string; options?: string[]; lookupFed?: boolean; validation?: string }
+    >();
     for (const step of steps) {
       const name = String(step[slotHeader] ?? '').trim();
       if (name && !slotMeta.has(name)) {
@@ -708,6 +734,7 @@ export async function runSheetStateMachine(
           // extraction hint and a canonicalisation source, never a validity gate.
           options: parseOptions(step[optionsHeader]),
           lookupFed: isLookupFed,
+          validation: String(step[validationHeader] ?? '').trim() || undefined,
         });
       }
     }
@@ -748,7 +775,7 @@ export async function runSheetStateMachine(
         const meta = slotMeta.get(name);
         if (!meta) continue; // ignore fields the sheet does not declare
         if (isFilled(name)) continue; // never overwrite a deterministic pre-fill
-        const validation = validateSlotValue(raw, meta.type, meta.options);
+        const validation = validateSlotValue(raw, meta.type, meta.options, meta.validation);
         if (validation.valid) {
           accepted[name] = meta.lookupFed
             ? canonicalizeOption(validation.value, meta.options)
@@ -836,11 +863,18 @@ export async function runSheetStateMachine(
     const isLookupFed = lookupFedSlots.has(slotName);
     const expectedInput = isLookupFed ? 'text' : String(current[expectedHeader] ?? 'text').trim();
     const options = parseOptions(current[optionsHeader]);
+    // Owner-declared format gate (`validation` column). Undefined = no gate.
+    const validationRule = String(current[validationHeader] ?? '').trim();
+    const formatSpec = parseValidation(validationRule);
 
     let candidate = userMessage.trim();
     let fallbackReason: string | undefined;
 
-    if (client) {
+    // A format-gated slot stores exactly what the customer typed: the extractor
+    // must not "helpfully" reduce "Ali, 39001234, ali@x.com, CPR 1" to the phone
+    // number alone (the booking team needs every detail), and a format answer
+    // needs no model at all.
+    if (client && !formatSpec) {
       const extracted = await extractSlot(client, slotName, userMessage, {
         type: expectedInput,
         options,
@@ -857,7 +891,9 @@ export async function runSheetStateMachine(
       }
     }
 
-    const validation = fallbackReason ? null : validateSlotValue(candidate, expectedInput, options);
+    const validation = fallbackReason
+      ? null
+      : validateSlotValue(candidate, expectedInput, options, validationRule);
 
     if (!validation?.valid) {
       // Rejected by code (or extraction failed) → fallback, re-ask, don't advance.
@@ -865,6 +901,19 @@ export async function runSheetStateMachine(
       const reason = validation?.reason ?? fallbackReason ?? 'no value extracted';
       const fallback = String(current[fallbackHeader] ?? '').trim();
       const question = substituteSlots(String(current[questionHeader] ?? '').trim(), state.slots);
+
+      // A format rejection ("yes" in a phone slot) is a form error: answer with
+      // the fixed wording instead of asking a model to improvise.
+      if (formatSpec && reason === `Invalid format for ${formatSpec.raw}`) {
+        return {
+          text: formatRejectionText(validationRule),
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+          fallbackReason: reason,
+        };
+      }
 
       // Increment E — conversational fallback: give the LLM a chance to respond
       // naturally (acknowledge + guide back) before defaulting to the static

@@ -8130,8 +8130,25 @@ export function registerRoutes(app: Express) {
         ? existingDataRows.filter((row) => String(row[intentIdx] ?? "").trim() !== intentId)
         : existingDataRows;
 
+      // The owner may fill a column the sheet does not have yet (e.g. `validation`
+      // added to the schema after the tab was created). The positional write below
+      // is driven by the header row, so a missing header would silently drop the
+      // value. Append every schema column that carries data but has no header.
+      const finalHeader = [...headerRow];
+      for (const c of schema.columns) {
+        const header = headerFor(c.key);
+        if (finalHeader.some((h) => headerToKey.get(h.toLowerCase()) === c.key)) continue;
+        const used = steps.some((step: any) => {
+          const v = step?.[c.key];
+          return v !== undefined && v !== null && String(v).trim() !== "";
+        });
+        if (!used) continue;
+        finalHeader.push(header);
+        headerToKey.set(header.toLowerCase(), c.key);
+      }
+
       const newRows = steps.map((step: any) =>
-        headerRow.map((h) => {
+        finalHeader.map((h) => {
           const key = headerToKey.get(h.toLowerCase());
           if (!key) return "";
           const v = step?.[key];
@@ -8139,7 +8156,7 @@ export function registerRoutes(app: Express) {
         })
       );
 
-      const result = await overwriteSheetTab(googleSheets.spreadsheetId, stepsTab, [headerRow, ...remaining, ...newRows]);
+      const result = await overwriteSheetTab(googleSheets.spreadsheetId, stepsTab, [finalHeader, ...remaining, ...newRows]);
       if (!result.success) {
         return res.status(400).json({ error: result.error || "Failed to write the Workflow_Steps tab" });
       }

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   collectLookupFedSlots,
   extractSlot,
+  formatRejectionText,
   generateConversationalFallback,
   isSheetStateMachineEnabled,
   looseCellMatch,
@@ -1319,4 +1320,95 @@ test('production flow: a lookup miss follows the arrow-less alternate_step', asy
   // alternate_step "Step_6" (no arrow) must advance, not complete.
   assert.equal(t4.sheet.stepId, 'Step_6');
   assert.equal(t4.text, "Sorry, we don't have a ENT doctor at Adliya. Would you like to try another location?");
+});
+
+// ── `validation` column: owner-declared format gates ───────────────────────
+
+test('formatRejectionText names the expected format', () => {
+  assert.equal(
+    formatRejectionText('phone'),
+    "That doesn't look like a valid phone number. Could you please provide your phone number again?"
+  );
+  assert.match(formatRejectionText('email'), /valid email address/);
+  assert.match(formatRejectionText('number'), /valid number/);
+  assert.match(formatRejectionText('date'), /valid date/);
+  assert.match(formatRejectionText('^\\d{8}$'), /valid answer/);
+});
+
+test('a phone-validated step rejects "yes" and re-asks without advancing', async () => {
+  const validationSteps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_1',
+      ai_question: 'Please provide your name, active phone number and email.',
+      slot_name: 'customer_details',
+      expected_input: 'text',
+      validation: 'phone',
+      next_step_logic: '→ Step_2',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'Thank you, our booking team will call you.',
+      slot_name: 'completed',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }];
+    }
+    return validationSteps.filter((s) => s.intent_id === filter?.value);
+  };
+
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'book', reader);
+  assert.equal(t1.sheet.stepId, 'Step_1');
+
+  // The production bug: "yes" used to be stored as the customer's details.
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'yes', reader);
+  assert.equal(
+    t2.text,
+    "That doesn't look like a valid phone number. Could you please provide your phone number again?"
+  );
+  assert.equal(t2.fallbackUsed, true);
+  assert.equal(t2.fallbackReason, 'Invalid format for phone');
+  assert.equal(t2.sheet.stepId, 'Step_1');
+  assert.equal(t2.sheet.slots.customer_details, undefined);
+
+  // A real answer (multi-field, contains a phone) is accepted verbatim.
+  const details = 'Ali Hassan, 39001234, ali@example.com, CPR 880011223';
+  const t3 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t2.sheet } } }, 'n1', details, reader);
+  assert.equal(t3.sheet.slots.customer_details, details);
+  assert.equal(t3.sheet.stepId, 'Step_2');
+  assert.equal(t3.text, 'Thank you, our booking team will call you.');
+});
+
+test('a step without a validation cell still accepts any non-empty answer', async () => {
+  const plainSteps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_1',
+      ai_question: 'Any notes?',
+      slot_name: 'notes',
+      expected_input: 'text',
+      validation: '',
+      next_step_logic: '→ Step_2',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'Thanks!',
+      slot_name: 'completed',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader: RowReader = async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Thanks!' }]
+      : plainSteps.filter((s) => s.intent_id === filter?.value);
+
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'book', reader);
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'yes', reader);
+  assert.equal(t2.sheet.slots.notes, 'yes');
+  assert.equal(t2.text, 'Thanks!');
 });

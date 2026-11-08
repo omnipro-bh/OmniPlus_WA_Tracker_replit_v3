@@ -282,6 +282,26 @@ export function KnowledgeTab({ workflowId }: { workflowId: string }) {
 
 const EXPECTED_INPUTS = ["text", "list", "buttons", "datetime"];
 
+/**
+ * Owner-facing format gate (`validation` column). `None` writes an empty cell;
+ * `Custom regex…` writes the pattern itself, which the server compiles and
+ * applies case-insensitively.
+ */
+const VALIDATION_OPTIONS = [
+  { value: "__none__", label: "None" },
+  { value: "text", label: "Text" },
+  { value: "phone", label: "Phone" },
+  { value: "email", label: "Email" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+];
+const NO_VALIDATION = "__none__";
+const CUSTOM_VALIDATION = "__custom__";
+const NAMED_VALIDATIONS = VALIDATION_OPTIONS.map((o) => o.value).filter(
+  (v) => v !== NO_VALIDATION
+);
+const DEFAULT_CUSTOM_VALIDATION = "^\\d{8}$";
+
 /** A column picker: dropdown when columns are known, else a free-text input. */
 function ColumnPicker({
   value,
@@ -418,6 +438,7 @@ export function ScenariosTab({ workflowId }: { workflowId: string }) {
         slot_name: "",
         expected_input: "text",
         options: "",
+        validation: "",
         fallback: "",
         next_step_logic: "→ done",
       },
@@ -575,6 +596,15 @@ function StepEditor({
   const clauses = parseFilterClauses(String(step.lookup_filter ?? ""));
   const sourceColumns = columnsMap[String(step.lookup_source ?? "")] ?? [];
 
+  // `validation` holds a named format or a custom regex. Anything not named is
+  // shown in the "Custom regex" input so the owner can edit the pattern.
+  const rawValidation = String(step.validation ?? "").trim();
+  const isCustomValidation =
+    rawValidation !== "" && !NAMED_VALIDATIONS.includes(rawValidation.toLowerCase());
+  const validationSelectValue = isCustomValidation
+    ? CUSTOM_VALIDATION
+    : rawValidation.toLowerCase() || NO_VALIDATION;
+
   const setFilter = (next: FilterClause[]) => onChange(index, "lookup_filter", buildFilterString(next));
 
   return (
@@ -657,6 +687,51 @@ function StepEditor({
               placeholder="Please choose a valid option."
             />
           </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Validation</Label>
+          <Select
+            value={validationSelectValue}
+            onValueChange={(v) =>
+              onChange(
+                index,
+                "validation",
+                v === NO_VALIDATION
+                  ? ""
+                  : v === CUSTOM_VALIDATION
+                    ? isCustomValidation
+                      ? rawValidation
+                      : DEFAULT_CUSTOM_VALIDATION
+                    : v
+              )
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VALIDATION_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+              <SelectItem value={CUSTOM_VALIDATION}>Custom regex…</SelectItem>
+            </SelectContent>
+          </Select>
+          {isCustomValidation ? (
+            <Input
+              className="font-mono text-xs"
+              value={rawValidation}
+              onChange={(e) => onChange(index, "validation", e.target.value)}
+              placeholder={DEFAULT_CUSTOM_VALIDATION}
+            />
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Rejects an answer that does not match the format (checked on the whole answer, then on each
+              comma-separated field) and asks the question again.
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">

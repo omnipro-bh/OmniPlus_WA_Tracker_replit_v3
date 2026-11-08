@@ -15,6 +15,7 @@ import {
   normalizeInputType,
   normalizeOptions,
   parseOptions,
+  parseValidation,
   validateSlotValue,
 } from './slotValidation';
 
@@ -206,4 +207,86 @@ test('options with messy whitespace are matched after normalisation', () => {
     valid: true,
     value: 'Dental',
   });
+});
+
+// ── validation column (owner-declared format gate) ─────────────────────────
+
+test('parseValidation maps named formats and drops blanks', () => {
+  assert.equal(parseValidation(''), undefined);
+  assert.equal(parseValidation(null), undefined);
+  assert.equal(parseValidation('none'), undefined);
+  assert.equal(parseValidation('text'), undefined);
+  assert.deepEqual(parseValidation(' PHONE '), { kind: 'phone', raw: 'phone' });
+  assert.deepEqual(parseValidation('Email'), { kind: 'email', raw: 'email' });
+  assert.equal(parseValidation('number')?.kind, 'number');
+  assert.equal(parseValidation('date')?.kind, 'date');
+});
+
+test('parseValidation treats any other cell as a custom regex', () => {
+  const spec = parseValidation('^\\d{8}$');
+  assert.equal(spec?.kind, 'regex');
+  assert.equal(spec?.regex?.test('88001122'), true);
+  assert.equal(spec?.regex?.test('8800112'), false);
+  // An uncompilable pattern must not trap the customer.
+  assert.equal(parseValidation('^([a-z'), undefined);
+});
+
+test('phone accepts local and international formats', () => {
+  for (const value of ['39001234', '+97339001234', '+973 3900 1234', '3900-1234']) {
+    assert.deepEqual(validateSlotValue(value, 'text', undefined, 'phone'), { valid: true, value });
+  }
+});
+
+test('phone rejects "yes" (the Step_5 production bug)', () => {
+  const out = validateSlotValue('yes', 'text', undefined, 'phone');
+  assert.equal(out.valid, false);
+  assert.equal(out.reason, 'Invalid format for phone');
+});
+
+test('phone rejects too few / too many digits', () => {
+  assert.equal(validateSlotValue('123', 'text', undefined, 'phone').valid, false);
+  assert.equal(validateSlotValue('1234567890123456', 'text', undefined, 'phone').valid, false);
+});
+
+test('phone accepts a multi-field answer that contains a phone number', () => {
+  const details = 'Ali Hassan, 39001234, ali@example.com, CPR 880011223';
+  assert.deepEqual(validateSlotValue(details, 'text', undefined, 'phone'), {
+    valid: true,
+    value: details,
+  });
+});
+
+test('email accepts a normal address and rejects prose', () => {
+  assert.equal(validateSlotValue('ali@example.com', 'text', undefined, 'email').valid, true);
+  assert.equal(validateSlotValue('yes', 'text', undefined, 'email').valid, false);
+  assert.equal(validateSlotValue('ali@example', 'text', undefined, 'email').valid, false);
+});
+
+test('number and date gates reject non-numeric / unparseable values', () => {
+  assert.equal(validateSlotValue('42', 'text', undefined, 'number').valid, true);
+  assert.equal(validateSlotValue('forty two', 'text', undefined, 'number').valid, false);
+  assert.equal(validateSlotValue('2026-11-08', 'text', undefined, 'date').valid, true);
+  assert.equal(validateSlotValue('sometime', 'text', undefined, 'date').valid, false);
+});
+
+test('a custom regex gate is applied case-insensitively', () => {
+  assert.equal(validateSlotValue('88001122', 'text', undefined, '^\\d{8}$').valid, true);
+  assert.equal(validateSlotValue('8800112', 'text', undefined, '^\\d{8}$').valid, false);
+  assert.equal(validateSlotValue('abc', 'text', undefined, '^[A-F]+$').valid, true);
+});
+
+test('a blank or unusable validation cell changes nothing', () => {
+  assert.deepEqual(validateSlotValue('anything at all', 'text', undefined, ''), {
+    valid: true,
+    value: 'anything at all',
+  });
+  assert.deepEqual(validateSlotValue('anything at all', 'text', undefined, '^([a-z'), {
+    valid: true,
+    value: 'anything at all',
+  });
+});
+
+test('the format gate runs after the shape gate (list + phone)', () => {
+  assert.equal(validateSlotValue('Yes', 'buttons', ['Yes', 'No'], 'phone').valid, false);
+  assert.equal(validateSlotValue('39001234', 'buttons', ['Yes', 'No'], 'phone').valid, false);
 });

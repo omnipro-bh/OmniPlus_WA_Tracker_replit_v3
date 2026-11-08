@@ -122,6 +122,11 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
       { key: 'expected_input', label: 'Expected input', column: 'expected_input' },
       { key: 'slot_name', label: 'Slot name', column: 'slot_name' },
       { key: 'options', label: 'Options (comma-separated)', column: 'options' },
+      {
+        key: 'validation',
+        label: 'Validation (text|phone|email|number|date|regex)',
+        column: 'validation',
+      },
       { key: 'lookup_source', label: 'Lookup source tab', column: 'lookup_source' },
       { key: 'lookup_filter', label: 'Lookup filter', column: 'lookup_filter' },
       { key: 'lookup_extract', label: 'Lookup extract column', column: 'lookup_extract' },

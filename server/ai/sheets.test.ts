@@ -62,6 +62,7 @@ test('matchSheetHeaders reports unmatched schema keys for a steps tab', () => {
     'expected_input',
     'slot_name',
     'options',
+    'validation',
     'lookup_source',
     'lookup_filter',
     'lookup_extract',

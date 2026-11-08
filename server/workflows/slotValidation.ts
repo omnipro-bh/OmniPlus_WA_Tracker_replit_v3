@@ -103,6 +103,97 @@ export function canonicalizeOption(
   );
 }
 
+// ── Owner-declared format validation (`validation` column) ─────────────────
+
+/**
+ * The `validation` column is the owner's second control surface, next to
+ * `options`: `options` says WHICH values are allowed, `validation` says what
+ * SHAPE the answer must have. Owners pick one of these from the Scenario
+ * Builder; any other non-empty cell is treated as a custom regular expression.
+ */
+export type ValidationKind = 'text' | 'phone' | 'email' | 'number' | 'date' | 'regex';
+
+export interface ValidationSpec {
+  kind: ValidationKind;
+  /** The raw cell value — used in the rejection reason/trace. */
+  raw: string;
+  /** Compiled custom pattern (`kind === 'regex'` only). */
+  regex?: RegExp;
+}
+
+/** Named formats the UI offers; `text` and the blanks mean "no format gate". */
+const NAMED_VALIDATIONS: Record<string, ValidationKind> = {
+  text: 'text',
+  phone: 'phone',
+  email: 'email',
+  number: 'number',
+  date: 'date',
+};
+
+/**
+ * Parse the `validation` cell.
+ *
+ * Blank / `none` / `text` → `undefined` (no format gate: non-empty is already
+ * enforced). A named format → that kind. Anything else → a case-insensitive
+ * custom regex. An uncompilable regex is a configuration error and is DROPPED:
+ * a typo in the sheet must never trap the customer.
+ */
+export function parseValidation(value: any): ValidationSpec | undefined {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+  if (lower === 'none' || lower === '-' || lower === 'no') return undefined;
+  const named = NAMED_VALIDATIONS[lower];
+  if (named) return named === 'text' ? undefined : { kind: named, raw: lower };
+  try {
+    return { kind: 'regex', raw, regex: new RegExp(raw, 'i') };
+  } catch {
+    return undefined;
+  }
+}
+
+const PHONE_RE = /^\+?[0-9]{7,15}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+
+function matchesFormat(value: string, spec: ValidationSpec): boolean {
+  switch (spec.kind) {
+    case 'phone':
+      // Spaces/dashes/parentheses are formatting, not digits: "+973 3900 1234".
+      return PHONE_RE.test(value.replace(/[\s().-]/g, ''));
+    case 'email':
+      return EMAIL_RE.test(value);
+    case 'number':
+      return !Number.isNaN(Number(value));
+    case 'date':
+      return !Number.isNaN(Date.parse(value));
+    case 'regex':
+      return spec.regex ? spec.regex.test(value) : true;
+    default:
+      return true;
+  }
+}
+
+/** Fields of a multi-part answer ("Ali, 39001234, a@b.com, CPR 880011223"). */
+function splitFields(value: string): string[] {
+  return value
+    .split(/[,;\n]+/)
+    .map((field) => field.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Does `value` satisfy the owner's format?
+ *
+ * The whole value is checked first; when it fails, each comma/semicolon/newline
+ * separated field is checked too. That keeps a step that collects several
+ * details in one answer usable ("customer_details" + `phone` rejects "yes" but
+ * accepts a reply that contains a phone number).
+ */
+export function valueMatchesFormat(value: string, spec: ValidationSpec): boolean {
+  if (matchesFormat(value, spec)) return true;
+  return splitFields(value).some((field) => matchesFormat(field, spec));
+}
+
 /**
  * Decide whether a raw extracted value is acceptable for a step.
  *
@@ -113,40 +204,57 @@ export function canonicalizeOption(
  *   number          → Number.isFinite(Number(value)); raw text is stored
  *   datetime        → non-empty (dayjs parsing is a follow-up increment)
  *   anything else   → non-empty
+ *
+ * `validationType` (the step's `validation` cell) is applied on top of the
+ * shape check: a value that is a valid shape but the wrong format (a "yes" in a
+ * phone slot) is rejected with `Invalid format for <validationType>`.
  */
 export function validateSlotValue(
   value: unknown,
   expectedInput?: string | null,
-  options?: Array<string | null | undefined> | null
+  options?: Array<string | null | undefined> | null,
+  validationType?: string | null
 ): SlotValidationResult {
   const raw =
     typeof value === 'string' ? value.trim() : value === null || value === undefined ? '' : String(value).trim();
 
   if (!raw) return { valid: false, value: '', reason: 'empty value' };
 
+  const spec = parseValidation(validationType);
+  const withFormat = (result: SlotValidationResult): SlotValidationResult => {
+    if (!result.valid || !spec) return result;
+    return valueMatchesFormat(result.value, spec)
+      ? result
+      : { valid: false, value: result.value, reason: `Invalid format for ${spec.raw}` };
+  };
+
   switch (normalizeInputType(expectedInput)) {
     case 'list':
     case 'buttons': {
       const allowed = normalizeOptions(options);
-      if (allowed.length === 0) return { valid: true, value: raw };
+      if (allowed.length === 0) return withFormat({ valid: true, value: raw });
       const match =
         allowed.find((option) => option.toLowerCase() === raw.toLowerCase()) ??
         matchWholeWordOption(raw, allowed);
-      return match
-        ? { valid: true, value: match }
-        : { valid: false, value: raw, reason: `"${raw}" is not one of: ${allowed.join(', ')}` };
+      return withFormat(
+        match
+          ? { valid: true, value: match }
+          : { valid: false, value: raw, reason: `"${raw}" is not one of: ${allowed.join(', ')}` }
+      );
     }
 
     case 'number':
-      return Number.isFinite(Number(raw))
-        ? { valid: true, value: raw }
-        : { valid: false, value: raw, reason: `"${raw}" is not a number` };
+      return withFormat(
+        Number.isFinite(Number(raw))
+          ? { valid: true, value: raw }
+          : { valid: false, value: raw, reason: `"${raw}" is not a number` }
+      );
 
     case 'datetime':
-      return { valid: true, value: raw };
+      return withFormat({ valid: true, value: raw });
 
     case 'text':
     default:
-      return { valid: true, value: raw };
+      return withFormat({ valid: true, value: raw });
   }
 }
