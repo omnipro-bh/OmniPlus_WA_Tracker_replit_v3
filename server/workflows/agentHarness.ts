@@ -66,11 +66,13 @@ export interface HarnessChecklist {
 /** The strict JSON the LLM returns each round. */
 export interface HarnessDecision {
   updated_slots: Record<string, string>;
-  /** `ask` to collect a slot, `complete` to book, `list_doctors` for a knowledge query. */
-  action: 'ask' | 'complete' | 'list_doctors';
+  /** `ask` to collect a slot, `complete` to book, `search_schedule` for a search. */
+  action: 'ask' | 'complete' | 'search_schedule';
   next_question: string;
+  /** The free-form search term, required for action "search_schedule". */
+  query?: string;
   tool_call?: 'lookup_schedule';
-  /** Filter for `lookup_schedule` / `list_doctors` (location = branch). */
+  /** Filter for `lookup_schedule` (location = branch). */
   lookup?: { doctor?: string; department?: string; location?: string };
 }
 
@@ -275,7 +277,7 @@ export function buildHarnessPrompt(
   slots: Record<string, any>,
   userMessage: string,
   lookupResult?: string,
-  doctorList?: string
+  searchResults?: string
 ): string {
   const requiredLines = checklist.required.map((slot) => {
     const opts = slot.options?.length ? ` (options: ${slot.options.join(', ')})` : '';
@@ -314,22 +316,22 @@ export function buildHarnessPrompt(
     '',
     `USER MESSAGE: "${userMessage}"`,
     ...(lookupResult ? ['', `LOOKUP RESULT: ${lookupResult}`] : []),
-    ...(doctorList
-      ? ['', `DOCTOR LIST (answer the customer from this, never invent names):`, doctorList]
+    ...(searchResults
+      ? ['', `SEARCH RESULTS (answer the customer from these, never invent names):`, searchResults]
       : []),
     '',
     'INSTRUCTIONS:',
     '1. Extract any new slot values from the USER MESSAGE into updated_slots.',
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
-    '3. If the user asks for a LIST of doctors, asks who is available at a branch or in a department, or asks for an ALTERNATIVE (e.g. "another urologist?"), you MUST set action = "list_doctors" with the branch in lookup.location or the department in lookup.department. NEVER reply with "Let me check" or similar prose without returning action = "list_doctors" — always trigger the tool. Do NOT guess names.',
+    '3. If the user asks whether something exists, or asks for a list or an ALTERNATIVE (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?"), you MUST set action = "search_schedule" with query = X (the thing they asked about). NEVER reply with "Let me check" or similar prose without returning action = "search_schedule" — always trigger the search. Do NOT guess names.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
     '7. If the message is off-topic or a greeting, answer it naturally and still set action = "ask" with a question that guides back to a missing slot.',
-    '8. When a DOCTOR LIST is provided above, answer the customer naturally from it and set action = "ask" with your reply in next_question (then offer to book one of them).',
+    '8. When SEARCH RESULTS are provided above, answer the customer naturally from them and set action = "ask" with your reply in next_question (then offer to book one).',
     '9. Reply in the same language as the customer.',
     '',
-    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"list_doctors", "next_question": "...", "lookup": {}}',
+    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "query": "..."}',
   ].join('\n');
 }
 
@@ -337,8 +339,8 @@ function validateHarnessDecision(
   obj: any
 ): { ok: true; value: HarnessDecision } | { ok: false; reason: string } {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, reason: 'not an object' };
-  if (obj.action !== 'ask' && obj.action !== 'complete' && obj.action !== 'list_doctors') {
-    return { ok: false, reason: 'action must be ask|complete|list_doctors' };
+  if (obj.action !== 'ask' && obj.action !== 'complete' && obj.action !== 'search_schedule') {
+    return { ok: false, reason: 'action must be ask|complete|search_schedule' };
   }
   if (obj.updated_slots === undefined || obj.updated_slots === null || typeof obj.updated_slots !== 'object') {
     return { ok: false, reason: 'updated_slots must be an object' };
@@ -353,6 +355,7 @@ function validateHarnessDecision(
 
   const tool_call = obj.tool_call === 'lookup_schedule' ? ('lookup_schedule' as const) : undefined;
   const lookup = obj.lookup && typeof obj.lookup === 'object' ? obj.lookup : undefined;
+  const query = typeof obj.query === 'string' ? obj.query.trim() : undefined;
 
   return {
     ok: true,
@@ -360,6 +363,7 @@ function validateHarnessDecision(
       updated_slots,
       action: obj.action,
       next_question,
+      ...(query ? { query } : {}),
       ...(tool_call ? { tool_call } : {}),
       ...(lookup ? { lookup } : {}),
     },
@@ -445,51 +449,37 @@ function isDoctorOff(row: Record<string, any>): boolean {
 }
 
 /**
- * Format matching schedule rows as a plain-text list of doctors for the model to
- * turn into a natural answer: one "Doctor — Specialty" line each, de-duplicated,
- * with rows that are marked off/vacation excluded.
+ * Search the schedule for any cell matching `query` (a free-form term) and format
+ * the matched rows as a de-duplicated "entity — matched value" list, excluding
+ * off/vacation rows. Generic across businesses: doctors, properties, restaurants.
  */
-export function formatDoctorList(rows: Record<string, any>[], map: ScheduleMap): string {
+export function formatSearchResults(
+  rows: Record<string, any>[],
+  map: ScheduleMap,
+  query: string
+): string {
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (isDoctorOff(row)) continue;
-    const doctor = String(readCell(row, map.doctorColumn) ?? '').trim();
-    if (!doctor || seen.has(doctor.toLowerCase())) continue;
-    seen.add(doctor.toLowerCase());
-    const department = String(readCell(row, map.departmentColumn) ?? '').trim();
-    lines.push(department ? `${doctor} — ${department}` : doctor);
+    const entity = String(readCell(row, map.doctorColumn) ?? '').trim();
+    if (!entity || seen.has(entity.toLowerCase())) continue;
+    seen.add(entity.toLowerCase());
+    // The cell that matched the query provides context (e.g. the specialty/type).
+    const matched = Object.entries(row).find(
+      ([key, value]) => key !== map.doctorColumn && looseCellMatch(value, query) && String(value ?? '').trim() !== ''
+    );
+    const context = matched ? String(matched[1] ?? '').trim() : '';
+    lines.push(
+      context && context.toLowerCase() !== entity.toLowerCase() ? `${entity} — ${context}` : entity
+    );
   }
   return lines.join('\n');
 }
 
-/**
- * Resolve the filter for a `list_doctors` query. The model's `lookup` wins when it
- * provided a branch/department; otherwise the harness scans the schedule for a
- * branch or department the customer actually mentioned, so the list is never
- * "every doctor" by accident.
- */
-function resolveListFilter(
-  message: string,
-  rows: Record<string, any>[],
-  map: ScheduleMap,
-  modelLookup?: { doctor?: string; department?: string; location?: string }
-): { doctor?: string; department?: string; location?: string } {
-  const filter: { doctor?: string; department?: string; location?: string } = { ...(modelLookup ?? {}) };
-  if (filter.doctor || filter.department || filter.location) return filter;
-
-  for (const row of rows) {
-    if (!filter.location) {
-      const branch = String(readCell(row, map.branchColumn) ?? '').trim();
-      if (branch && looseCellMatch(branch, message)) filter.location = branch;
-    }
-    if (!filter.department) {
-      const dept = String(readCell(row, map.departmentColumn) ?? '').trim();
-      if (dept && looseCellMatch(dept, message)) filter.department = dept;
-    }
-    if (filter.location && filter.department) break;
-  }
-  return filter;
+/** Is a schedule row's primary cell (or the query) a match across any column? */
+function rowMatchesQuery(row: Record<string, any>, query: string): boolean {
+  return Object.values(row ?? {}).some((value) => looseCellMatch(value, query));
 }
 
 /**
@@ -709,44 +699,40 @@ export async function runAgentHarness(
 
   mergeSlots(state.slots, decision.updated_slots, checklist);
 
-  // ── Knowledge query: list doctors at a branch / in a department ────────────
-  // The model never guesses names — it returns action "list_doctors" + a filter,
-  // the harness fetches the rows, and a second model call turns them into prose.
-  if (decision.action === 'list_doctors') {
+  // ── Knowledge query: search the schedule for any term ──────────────────────
+  // The model never guesses — it returns action "search_schedule" + a query, the
+  // harness searches every cell of every row, and a second model call turns the
+  // matches into prose.
+  if (decision.action === 'search_schedule') {
+    const query = (decision.query ?? '').trim() || userMessage.trim();
     let rows: Record<string, any>[] = [];
     if (scheduleMap) {
       const allRows = await readRows(sheet, scheduleMap.source);
-      const filter = resolveListFilter(userMessage, allRows, scheduleMap, decision.lookup);
-      rows = allRows.filter((row) => {
-        if (filter.doctor && !matchDoctor(readCell(row, scheduleMap.doctorColumn), filter.doctor)) return false;
-        if (filter.department && !looseCellMatch(readCell(row, scheduleMap.departmentColumn), filter.department)) return false;
-        if (filter.location && !looseCellMatch(readCell(row, scheduleMap.branchColumn), filter.location)) return false;
-        return true;
-      });
+      rows = allRows.filter((row) => rowMatchesQuery(row, query));
       toolCalls.push({
         name: 'lookup_sheet',
-        args: { tab: scheduleMap.source, filter: `list ${JSON.stringify(filter)}` },
+        args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(query)}` },
         rows: rows.length,
       });
     }
-    const doctorList = formatDoctorList(rows, scheduleMap!);
-    const listRound = await askModel(
+    const searchResults = formatSearchResults(rows, scheduleMap!, query);
+    const searchRound = await askModel(
       client,
-      buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, doctorList)
+      buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, searchResults)
     );
-    slotExtractionAttempts += listRound.attempts;
+    slotExtractionAttempts += searchRound.attempts;
 
-    // If the model hallucinated ("Let me check…") without actually listing a doctor,
-    // fall back to the deterministic list so the customer still gets the names.
-    const naturalReply = listRound.decision.next_question?.trim() ?? '';
+    // If the model hallucinated ("Let me check…") without listing a result, fall
+    // back to the deterministic results so the customer still gets the matches.
+    const naturalReply = searchRound.decision.next_question?.trim() ?? '';
     const hallucinated =
       /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
-      !/dr\.?\s/i.test(naturalReply);
+      !/\b(?:dr|villa|property|room|apartment|office|unit|specialist|consultant)\b/i.test(naturalReply);
     const text = naturalReply && !hallucinated
       ? noBarePlaceholders(naturalReply, state.slots)
-      : doctorList
-        ? `${doctorList}\nWould you like to book one of them?`
-        : 'I could not find any doctors for that.';
+      : searchResults
+        ? `${searchResults}\nWould you like to book one of them?`
+        : 'I could not find anything matching that.';
     return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
   }
 

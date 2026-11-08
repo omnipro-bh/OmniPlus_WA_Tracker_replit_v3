@@ -15,7 +15,7 @@ import {
   buildHarnessPrompt,
   deriveChecklist,
   deriveScheduleMap,
-  formatDoctorList,
+  formatSearchResults,
   hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
@@ -272,22 +272,27 @@ const listReader: RowReader = async (_sheet, tab, filter) => {
   return STEPS.filter((s) => s.intent_id === filter?.value);
 };
 
-test('formatDoctorList lists doctors with specialties and excludes "off" rows', () => {
+test('formatSearchResults formats entities with matched context and excludes "off" rows', () => {
   const map = deriveScheduleMap(STEPS, {
     stepType: 'step_type',
     source: 'lookup_source',
     filter: 'lookup_filter',
     extract: 'lookup_extract',
   })!;
-  const list = formatDoctorList(LIST_SCHEDULE, map);
-  assert.match(list, /Dr. Sujith — Dental Surgeon/);
-  assert.match(list, /Dr. Bindiya — General Dentist/);
+  const rows = [
+    { Doctor: 'Dr. Arun', department: 'Specialist Endodontist', Branch: 'Muharraq' },
+    { Doctor: 'Dr. Komal Sharma', department: 'Specialist Endodontist', Branch: 'Adliya' },
+    { Doctor: 'Dr. Susan', department: 'ENT Surgeon', Branch: 'Adliya', Available_Times: 'WEELKLY OFF' },
+  ];
+  const list = formatSearchResults(rows, map, 'endodontist');
+  assert.match(list, /Dr. Arun — Specialist Endodontist/);
+  assert.match(list, /Dr. Komal Sharma — Specialist Endodontist/);
   assert.doesNotMatch(list, /Dr. Susan/); // WEELKLY OFF
 });
 
-test('"who are the doctors at adliya?" lists them from the sheet', async () => {
+test('search_schedule finds doctors at a branch', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "list_doctors", "next_question": "", "lookup": {"location": "Adliya"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "Adliya"}',
     '{"updated_slots": {}, "action": "ask", "next_question": "At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?"}',
   ]);
 
@@ -299,7 +304,7 @@ test('"who are the doctors at adliya?" lists them from the sheet', async () => {
   );
   // The harness queried Doctors_Schedule before answering.
   assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
-  assert.equal(client.calls, 2); // list_doctors round + the natural-answer round
+  assert.equal(client.calls, 2); // search round + the natural-answer round
 });
 
 // ── generic time validation ────────────────────────────────────────────────
@@ -389,7 +394,7 @@ test('bookingSummary summarizes the active booking', () => {
   assert.equal(bookingSummary({ datetime: '5 PM' }), '5 PM');
 });
 
-test('buildHarnessPrompt includes the booking summary and the strict list_doctors rule', () => {
+test('buildHarnessPrompt includes the booking summary and the strict search_schedule rule', () => {
   const checklist: HarnessChecklist = {
     required: [{ name: 'department', type: 'list', options: ['Urology'] }],
     derived: ['doctor_name'],
@@ -403,7 +408,7 @@ test('buildHarnessPrompt includes the booking summary and the strict list_doctor
 
   assert.match(prompt, /CURRENT BOOKING: Dr. Shankar, Urology, Adliya/);
   assert.match(prompt, /ALTERNATIVE/);
-  assert.match(prompt, /MUST set action = "list_doctors"/);
+  assert.match(prompt, /MUST set action = "search_schedule"/);
   assert.match(prompt, /NEVER reply with "Let me check"/);
 });
 
@@ -438,9 +443,9 @@ test('a datetime slot rejects a value with no digits (e.g. "PM")', async () => {
   assert.equal(turn.text, 'Please provide a specific time (e.g., 5 PM).');
 });
 
-test('an alternative request routes through list_doctors', async () => {
+test('an alternative request routes through search_schedule', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "list_doctors", "next_question": "", "lookup": {"location": "Adliya"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "Adliya"}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Sujith and Dr. Bindiya at Adliya. Would you like to book one?"}',
   ]);
 
@@ -448,7 +453,80 @@ test('an alternative request routes through list_doctors', async () => {
   const seed = { intentId: '1', stepId: null, slots: { location: 'Adliya' } };
   const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'do you have another doctor?', listReader, client);
 
-  // The harness queried Doctors_Schedule (via list_doctors) and returned the list.
+  // The harness queried Doctors_Schedule (via search_schedule) and returned the list.
   assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
   assert.match(turn.text, /Would you like to book/);
+});
+
+// ── search_schedule: generic entity search ─────────────────────────────────
+
+const ENDO_SCHEDULE = [
+  { Doctor: 'Dr. Arun', department: 'Specialist Endodontist', Branch: 'Muharraq', Available_Times: '9-5' },
+  { Doctor: 'Dr. Komal Sharma', department: 'Specialist Endodontist', Branch: 'Adliya', Available_Times: '9-5' },
+  { Doctor: 'Dr. Santosh', department: 'Cardiologist', Branch: 'Riffa', Available_Times: '9-5' },
+];
+
+const endoReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') return [{ id: '1', keywords: 'book, doctor', start_step: 'Step_1', answer: 'Booked' }];
+  if (tab === 'Doctors_Schedule') return ENDO_SCHEDULE;
+  return STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('search_schedule returns matching endodontists', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "SPECIALIST ENDODONTIST"}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Arun and Dr. Komal Sharma. Would you like to book one?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have SPECIALIST ENDODONTIST?', endoReader, client);
+  assert.match(turn.text, /Dr. Arun/);
+  assert.match(turn.text, /Dr. Komal Sharma/);
+});
+
+test('search_schedule returns matching cardiologists', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "cardiologist"}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Santosh (Cardiologist). Would you like to book?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a cardiologist?', endoReader, client);
+  assert.match(turn.text, /Santosh/);
+});
+
+const PROPERTY_SCHEDULE = [
+  { Property: 'Villa One', Type: '3-bedroom villa', Location: 'Riffa', Viewing_Hours: '9-5' },
+  { Property: 'Villa Two', Type: '4-bedroom villa', Location: 'Adliya', Viewing_Hours: '9-5' },
+];
+
+const propertySteps = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question: 'What are you looking for?',
+    slot_name: 'datetime',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_2',
+    step_type: 'lookup',
+    slot_name: 'property_name',
+    lookup_source: 'Property_Listings',
+    lookup_filter: 'type={type} AND location={location}',
+    lookup_extract: 'Property',
+  },
+];
+
+const propertyReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') return [{ id: '1', keywords: 'villa, property, book', start_step: 'Step_1', answer: 'Booked' }];
+  if (tab === 'Property_Listings') return PROPERTY_SCHEDULE;
+  return propertySteps.filter((s) => s.intent_id === filter?.value);
+};
+
+test('search_schedule returns matching properties (real estate)', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "query": "3-bedroom villa"}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Villa One (3-bedroom villa). Would you like to book a viewing?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a 3-bedroom villa?', propertyReader, client);
+  assert.match(turn.text, /Villa One/);
 });
