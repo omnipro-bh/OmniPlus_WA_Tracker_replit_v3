@@ -13,8 +13,10 @@ import {
   generateConversationalFallback,
   isSheetStateMachineEnabled,
   looseCellMatch,
+  missingSlotsText,
   parseLookupFilter,
   parseNextStepLogic,
+  parseSlotNames,
   rankLookupHits,
   readSheetState,
   runSheetStateMachine,
@@ -1383,8 +1385,7 @@ test('a phone-validated step rejects "yes" and re-asks without advancing', async
   assert.equal(t3.text, 'Thank you, our booking team will call you.');
 });
 
-test('a step without a validation cell still accepts any non-empty answer', async () => {
-  const plainSteps = [
+test('a step without a validation cell still accepts any non-empty answer', async () => {  const plainSteps = [
     {
       intent_id: '1',
       step_id: 'Step_1',
@@ -1411,4 +1412,142 @@ test('a step without a validation cell still accepts any non-empty answer', asyn
   const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'yes', reader);
   assert.equal(t2.sheet.slots.notes, 'yes');
   assert.equal(t2.text, 'Thanks!');
+});
+
+// ── multi-slot steps (`slot_name` = "name, phone, email, cpr") ─────────────
+
+test('parseSlotNames splits a comma-separated slot_name cell', () => {
+  assert.deepEqual(parseSlotNames('name, phone,email , cpr'), ['name', 'phone', 'email', 'cpr']);
+  assert.deepEqual(parseSlotNames('name'), ['name']);
+  assert.deepEqual(parseSlotNames(' name , name '), ['name']);
+  assert.deepEqual(parseSlotNames('  '), []);
+  assert.deepEqual(parseSlotNames(undefined), []);
+});
+
+test('missingSlotsText names every required slot', () => {
+  assert.equal(
+    missingSlotsText(['name', 'phone', 'email', 'cpr']),
+    'I need your name, phone, email, and CPR to complete the booking. Could you please provide them?'
+  );
+  assert.equal(
+    missingSlotsText(['name', 'phone']),
+    'I need your name and phone to complete the booking. Could you please provide them?'
+  );
+  // The owner's `fallback` cell wins when set.
+  assert.equal(missingSlotsText(['name'], 'Please send your name.'), 'Please send your name.');
+});
+
+function multiSlotReader(steps: Record<string, any>[]): RowReader {
+  return async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }]
+      : steps.filter((s) => s.intent_id === filter?.value);
+}
+
+test('a step with slots "name, phone" rejects "yes" and accepts "Ali, 39001234"', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_1',
+      ai_question: 'Please provide your name and phone number.',
+      slot_name: 'name, phone',
+      expected_input: 'text',
+      next_step_logic: '→ Step_2',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      ai_question: 'Thanks!',
+      slot_name: 'completed',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader = multiSlotReader(steps);
+
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'book', reader);
+  assert.equal(t1.sheet.stepId, 'Step_1');
+
+  const t2 = await runSheetStateMachine(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'yes', reader);
+  assert.equal(t2.sheet.stepId, 'Step_1');
+  assert.equal(t2.fallbackUsed, true);
+  assert.equal(t2.fallbackReason, 'missing: name, phone');
+  assert.equal(
+    t2.text,
+    'I need your name and phone to complete the booking. Could you please provide them?'
+  );
+  // Nothing partial is stored: "yes" must never become the customer's name.
+  assert.deepEqual(t2.sheet.slots, {});
+
+  const t3 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Ali, 39001234',
+    reader
+  );
+  assert.equal(t3.sheet.slots.name, 'Ali');
+  assert.equal(t3.sheet.slots.phone, '39001234');
+  assert.equal(t3.sheet.stepId, 'Step_2');
+  assert.equal(t3.text, 'Thanks!');
+});
+
+test('the Step_5 shape: "yes" is rejected, all four details advance', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_5',
+      ai_question:
+        'We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number',
+      slot_name: 'name, phone, email, cpr',
+      expected_input: 'text',
+      next_step_logic: '→ Step_7',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_7',
+      ai_question: 'Thank you for your details.',
+      slot_name: 'completed',
+      next_step_logic: '→ done',
+    },
+  ];
+  const reader = multiSlotReader(steps);
+  const start = { intentId: '1', stepId: 'Step_5', slots: {} };
+
+  const rejected = await runSheetStateMachine(sheet, { ai: { n1: { sheet: start } } }, 'n1', 'yes', reader);
+  assert.equal(rejected.sheet.stepId, 'Step_5');
+  assert.equal(rejected.fallbackUsed, true);
+  assert.equal(
+    rejected.text,
+    'I need your name, phone, email, and CPR to complete the booking. Could you please provide them?'
+  );
+
+  // Incomplete answers never advance either.
+  const partial = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: rejected.sheet } } },
+    'n1',
+    'Ali, 39001234',
+    reader
+  );
+  assert.equal(partial.sheet.stepId, 'Step_5');
+  assert.deepEqual(partial.sheet.slots, {});
+
+  const accepted = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: partial.sheet } } },
+    'n1',
+    'Ali, 39001234, ali@example.com, 880011223',
+    reader
+  );
+  assert.deepEqual(
+    {
+      name: accepted.sheet.slots.name,
+      phone: accepted.sheet.slots.phone,
+      email: accepted.sheet.slots.email,
+      cpr: accepted.sheet.slots.cpr,
+    },
+    { name: 'Ali', phone: '39001234', email: 'ali@example.com', cpr: '880011223' }
+  );
+  assert.equal(accepted.sheet.stepId, 'Step_7');
+  assert.equal(accepted.text, 'Thank you for your details.');
 });

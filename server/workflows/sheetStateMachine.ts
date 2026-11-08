@@ -384,7 +384,64 @@ export function formatRejectionText(validationType: string): string {
   }
 }
 
-/** Resolve the actual header for a canonical key, honoring the owner's mapping. */function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
+/** Is a slot already captured? (A blank slot name is never "filled".) */
+function isSlotFilled(slots: Record<string, any>, name: string): boolean {
+  return (
+    name !== '' && slots[name] !== undefined && slots[name] !== null && slots[name] !== ''
+  );
+}
+
+/**
+ * Parse a step's `slot_name` cell into the slots it collects.
+ *
+ * One step may collect several values in a single answer ("name, phone, email,
+ * cpr"): the cell is comma-separated, blanks/duplicates are dropped, and a
+ * single name is just a one-element list (backward compatible).
+ */
+export function parseSlotNames(value: any): string[] {
+  if (typeof value !== 'string') return [];
+  const names: string[] = [];
+  for (const part of value.split(',')) {
+    const name = part.trim();
+    if (!name) continue;
+    if (names.some((n) => n.toLowerCase() === name.toLowerCase())) continue;
+    names.push(name);
+  }
+  return names;
+}
+
+/** Display form of a slot name in customer-facing text ("cpr" → "CPR"). */
+const SLOT_ACRONYMS = new Set(['cpr', 'id', 'dob', 'otp', 'ssn', 'nid', 'pin']);
+function displaySlotName(name: string): string {
+  const cleaned = String(name ?? '').trim().replace(/[_-]+/g, ' ');
+  if (!cleaned) return '';
+  return SLOT_ACRONYMS.has(cleaned.toLowerCase()) ? cleaned.toUpperCase() : cleaned.toLowerCase();
+}
+
+/**
+ * The re-ask used when a multi-slot step did not receive every value it needs.
+ *
+ * The owner's `fallback` cell wins when set; otherwise the message names the
+ * slots so the customer knows exactly what is missing.
+ */
+export function missingSlotsText(slotNames: string[], fallback?: string): string {
+  const fb = String(fallback ?? '').trim();
+  if (fb) return fb;
+  const shown = (Array.isArray(slotNames) ? slotNames : []).map(displaySlotName).filter(Boolean);
+  if (shown.length === 0) return 'Could you please provide those details again?';
+  const list =
+    shown.length === 1
+      ? shown[0]
+      : shown.length === 2
+        ? `${shown[0]} and ${shown[1]}`
+        : `${shown.slice(0, -1).join(', ')}, and ${shown[shown.length - 1]}`;
+  return `I need your ${list} to complete the booking. Could you please provide them?`;
+}
+
+/**
+ * Resolve the actual header for a canonical key, honoring the owner's mapping.
+ */
+function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
   const override = sheet.columns?.[tab]?.[key];
   if (typeof override === 'string' && override.trim()) return override.trim();
   const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === tab);
@@ -656,31 +713,29 @@ export async function runSheetStateMachine(
       ? startStep
       : String((firstStep(steps, stepIdHeader)?.[stepIdHeader] ?? '')).trim();
 
-    const isFilled = (name: string) =>
-      name !== '' && state.slots[name] !== undefined && state.slots[name] !== null && state.slots[name] !== '';
+    const isFilled = (name: string) => isSlotFilled(state.slots, name);
 
     // ── Turn-1 deterministic pre-fill (no LLM) ───────────────────────────────
     // Models are unreliable at single-word extraction, so code fills whatever it
     // can from the owner's own vocabulary first; the LLM only sees the rest.
     //  (a) list/buttons steps: the `options` cell is the vocabulary.
     for (const step of steps) {
-      const name = String(step[slotHeader] ?? '').trim();
-      if (!name || isFilled(name)) continue;
       const input = normalizeInputType(step[expectedHeader]);
       if (input !== 'list' && input !== 'buttons') continue;
       const options = parseOptions(step[optionsHeader]);
       if (!options || options.length === 0) continue;
       const exact = options.find((o) => o.toLowerCase() === userMessage.trim().toLowerCase());
       const hit = exact ?? matchWholeWordOption(userMessage, options);
-      if (hit) state.slots[name] = hit;
+      if (!hit) continue;
+      for (const name of parseSlotNames(step[slotHeader])) {
+        if (!isFilled(name)) state.slots[name] = hit;
+      }
     }
 
     //  (b) lookup-filter slots that no step declares (e.g. `{department}` in
     //      "the {department} doctor"): use the lookup source's own column values
     //      as the vocabulary ("ENT" inside "ENT SURGEON").
-    const declaredSlots = new Set(
-      steps.map((s) => String(s[slotHeader] ?? '').trim()).filter(Boolean)
-    );
+    const declaredSlots = new Set(steps.flatMap((s) => parseSlotNames(s[slotHeader])));
     for (const step of steps) {
       if (String(step[stepTypeHeader] ?? '').trim().toLowerCase() !== 'lookup') continue;
       const source = String(step[lookupSourceHeader] ?? '').trim();
@@ -725,8 +780,8 @@ export async function runSheetStateMachine(
       { type: string; options?: string[]; lookupFed?: boolean; validation?: string }
     >();
     for (const step of steps) {
-      const name = String(step[slotHeader] ?? '').trim();
-      if (name && !slotMeta.has(name)) {
+      for (const name of parseSlotNames(step[slotHeader])) {
+        if (slotMeta.has(name)) continue;
         const isLookupFed = lookupFedSlots.has(name);
         slotMeta.set(name, {
           type: isLookupFed ? 'text' : String(step[expectedHeader] ?? 'text').trim(),
@@ -786,10 +841,16 @@ export async function runSheetStateMachine(
       extracted = { slots: accepted, confidence: extracted.confidence };
     }
 
-    // The first step whose slot is still empty is where we start.
-    const firstUnfilled = steps.find((s) => !isFilled(String(s[slotHeader] ?? '').trim()));
+    // The first step that still needs a value is where we start. A step with
+    // several slots is only "done" when every one of them is filled.
+    const stepNames = (step: Record<string, any>) => parseSlotNames(step[slotHeader]);
+    const stepFilled = (step: Record<string, any>) => {
+      const names = stepNames(step);
+      return names.length > 0 && names.every((name) => isFilled(name));
+    };
+    const firstUnfilled = steps.find((s) => !stepFilled(s));
     const skippedSteps = steps
-      .filter((s) => isFilled(String(s[slotHeader] ?? '').trim()))
+      .filter((s) => stepFilled(s))
       .map((s) => String(s[stepIdHeader] ?? '').trim());
 
     if (!firstUnfilled) {
@@ -857,8 +918,74 @@ export async function runSheetStateMachine(
   // LLM extracts the raw value; CODE decides whether it is acceptable. Without a
   // client the raw message is the candidate — validation is identical either way.
   // A slot that feeds a `lookup_filter` is free text: the schedule lookup decides.
-  const slotName = String(current[slotHeader] ?? '').trim();
-  if (slotName) {
+  const slotNames = parseSlotNames(current[slotHeader]);
+
+  // ── Multi-slot step: one answer must supply several values ────────────────
+  // `slot_name` = "name, phone, email, cpr": the step is complete only when ALL
+  // of them are captured. "yes" extracts nothing, so the flow re-asks instead of
+  // booking with a meaningless value.
+  if (slotNames.length > 1) {
+    const missing = slotNames.filter((name) => !isSlotFilled(state.slots, name));
+    const values: Record<string, string> = {};
+
+    if (missing.length > 0) {
+      const fields = missing.map((name) => ({ name, type: 'text' }));
+      let raw: Record<string, any> = {};
+
+      if (client) {
+        const result = await llmJson<SlotExtractionResult>(
+          client,
+          buildSlotExtractionPrompt(fields, userMessage),
+          validateSlotExtraction,
+          { maxRetries: 1 }
+        );
+        slotExtractionAttempts += result.attempts;
+        if (result.ok) raw = result.value.slots ?? {};
+      } else {
+        // No model available (tests/sandbox): a comma-separated answer maps to
+        // the declared slots in order. Anything else leaves the slots empty.
+        const parts = userMessage
+          .split(/[,;\n]+/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        if (parts.length === missing.length) {
+          missing.forEach((name, i) => {
+            raw[name] = parts[i];
+          });
+        } else if (parts.length === slotNames.length) {
+          slotNames.forEach((name, i) => {
+            raw[name] = parts[i];
+          });
+        }
+      }
+
+      for (const name of missing) {
+        // Every field of a multi-slot answer is free text; the step's own
+        // `validation` cell applies to single-slot steps only.
+        const validation = validateSlotValue(raw[name], 'text');
+        if (validation.valid) values[name] = validation.value;
+      }
+    }
+
+    const stillMissing = slotNames.filter(
+      (name) => !isSlotFilled(state.slots, name) && values[name] === undefined
+    );
+
+    if (stillMissing.length > 0) {
+      fallbackUsed = true;
+      return {
+        text: missingSlotsText(slotNames, String(current[fallbackHeader] ?? '')),
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+        fallbackReason: `missing: ${stillMissing.join(', ')}`,
+      };
+    }
+
+    Object.assign(state.slots, values);
+  } else if (slotNames.length === 1) {
+    const slotName = slotNames[0];
     const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
     const isLookupFed = lookupFedSlots.has(slotName);
     const expectedInput = isLookupFed ? 'text' : String(current[expectedHeader] ?? 'text').trim();

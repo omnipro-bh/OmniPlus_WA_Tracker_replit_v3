@@ -650,8 +650,12 @@ function StepEditor({
             <Input
               value={String(step.slot_name ?? "")}
               onChange={(e) => onChange(index, "slot_name", e.target.value)}
-              placeholder="department"
+              placeholder="department  ·  or: name, phone, email, cpr"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Enter one or more slot names separated by commas. A step with several slots only advances
+              once every value is captured.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Expected input</Label>
