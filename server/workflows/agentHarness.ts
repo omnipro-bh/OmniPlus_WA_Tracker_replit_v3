@@ -506,6 +506,17 @@ function findTimeSlot(slots: Record<string, any>): string | undefined {
 }
 
 /**
+ * A bare time token — "PM", "5 PM", "evening", "morning" — that the customer typed
+ * as an answer to a time question. Used to force a model-ignored token into the
+ * time slot so the deterministic validation can accept or reject it.
+ */
+function looksLikeTimeToken(message: string): boolean {
+  const m = String(message ?? '').trim().toLowerCase();
+  if (!m) return false;
+  return /^(am|pm|evening|morning|afternoon|noon|midnight|\d{1,2}(\s*(am|pm))?)$/.test(m);
+}
+
+/**
  * Find the schedule row's "hours" column generically. Clinics use
  * `Available_Times`, real estate uses `Viewing_Hours`, restaurants use
  * `Reservation_Hours` — any column whose name ends in "time(s)", "hour(s)", or
@@ -679,6 +690,23 @@ export async function runAgentHarness(
   let round = await askModel(client, buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage));
   let decision = round.decision;
   slotExtractionAttempts += round.attempts;
+
+  // If the customer typed a bare time token ("PM", "5 PM", "evening") while a time
+  // slot is still missing and the model did not extract it (treating it as a
+  // greeting instead), force it into the time slot so the deterministic time
+  // validation below can accept or reject it.
+  const pendingTimeSlot = checklist.required.find(
+    (s) => TIME_SLOT_KEYS.has(normalizeSlotKey(s.name)) && !isFilled(state.slots, s.name)
+  );
+  if (pendingTimeSlot && looksLikeTimeToken(userMessage)) {
+    const hasTimeExtract = Object.keys(decision.updated_slots ?? {}).some((k) =>
+      TIME_SLOT_KEYS.has(normalizeSlotKey(k))
+    );
+    if (!hasTimeExtract) {
+      decision.updated_slots = { ...(decision.updated_slots ?? {}), [pendingTimeSlot.name]: userMessage };
+    }
+  }
+
   mergeSlots(state.slots, decision.updated_slots, checklist);
 
   // ── Knowledge query: list doctors at a branch / in a department ────────────
@@ -707,10 +735,18 @@ export async function runAgentHarness(
       buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, doctorList)
     );
     slotExtractionAttempts += listRound.attempts;
-    const text = noBarePlaceholders(
-      listRound.decision.next_question || doctorList || 'I could not find any doctors for that.',
-      state.slots
-    );
+
+    // If the model hallucinated ("Let me check…") without actually listing a doctor,
+    // fall back to the deterministic list so the customer still gets the names.
+    const naturalReply = listRound.decision.next_question?.trim() ?? '';
+    const hallucinated =
+      /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
+      !/dr\.?\s/i.test(naturalReply);
+    const text = naturalReply && !hallucinated
+      ? noBarePlaceholders(naturalReply, state.slots)
+      : doctorList
+        ? `${doctorList}\nWould you like to book one of them?`
+        : 'I could not find any doctors for that.';
     return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
   }
 
