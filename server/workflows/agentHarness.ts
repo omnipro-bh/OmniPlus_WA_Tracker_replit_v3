@@ -295,7 +295,7 @@ export function buildHarnessPrompt(
     'INSTRUCTIONS:',
     '1. Extract any new slot values from the USER MESSAGE into updated_slots.',
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
-    '3. If the user asks for a LIST of doctors, or asks who is available at a branch or in a department, set action = "list_doctors" and put the branch (lookup.location) or department (lookup.department). Do NOT guess names.',
+    '3. If the user asks for a LIST of doctors, or asks who is available at a branch or in a department, set action = "list_doctors" and put the branch in lookup.location or the department in lookup.department (e.g. {"action":"list_doctors","lookup":{"location":"Adliya"}}). Do NOT guess names.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
@@ -303,7 +303,7 @@ export function buildHarnessPrompt(
     '8. When a DOCTOR LIST is provided above, answer the customer naturally from it and set action = "ask" with your reply in next_question (then offer to book one of them).',
     '9. Reply in the same language as the customer.',
     '',
-    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"list_doctors", "next_question": "..."}',
+    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"list_doctors", "next_question": "...", "lookup": {}}',
   ].join('\n');
 }
 
@@ -435,6 +435,35 @@ export function formatDoctorList(rows: Record<string, any>[], map: ScheduleMap):
     lines.push(department ? `${doctor} — ${department}` : doctor);
   }
   return lines.join('\n');
+}
+
+/**
+ * Resolve the filter for a `list_doctors` query. The model's `lookup` wins when it
+ * provided a branch/department; otherwise the harness scans the schedule for a
+ * branch or department the customer actually mentioned, so the list is never
+ * "every doctor" by accident.
+ */
+function resolveListFilter(
+  message: string,
+  rows: Record<string, any>[],
+  map: ScheduleMap,
+  modelLookup?: { doctor?: string; department?: string; location?: string }
+): { doctor?: string; department?: string; location?: string } {
+  const filter: { doctor?: string; department?: string; location?: string } = { ...(modelLookup ?? {}) };
+  if (filter.doctor || filter.department || filter.location) return filter;
+
+  for (const row of rows) {
+    if (!filter.location) {
+      const branch = String(readCell(row, map.branchColumn) ?? '').trim();
+      if (branch && looseCellMatch(branch, message)) filter.location = branch;
+    }
+    if (!filter.department) {
+      const dept = String(readCell(row, map.departmentColumn) ?? '').trim();
+      if (dept && looseCellMatch(dept, message)) filter.department = dept;
+    }
+    if (filter.location && filter.department) break;
+  }
+  return filter;
 }
 
 // ── Guards ──────────────────────────────────────────────────────────────────
@@ -606,11 +635,19 @@ export async function runAgentHarness(
   // The model never guesses names — it returns action "list_doctors" + a filter,
   // the harness fetches the rows, and a second model call turns them into prose.
   if (decision.action === 'list_doctors') {
-    const rows = scheduleMap ? await scheduleLookup(readRows, sheet, scheduleMap, decision.lookup ?? {}) : [];
+    let rows: Record<string, any>[] = [];
     if (scheduleMap) {
+      const allRows = await readRows(sheet, scheduleMap.source);
+      const filter = resolveListFilter(userMessage, allRows, scheduleMap, decision.lookup);
+      rows = allRows.filter((row) => {
+        if (filter.doctor && !matchDoctor(readCell(row, scheduleMap.doctorColumn), filter.doctor)) return false;
+        if (filter.department && !looseCellMatch(readCell(row, scheduleMap.departmentColumn), filter.department)) return false;
+        if (filter.location && !looseCellMatch(readCell(row, scheduleMap.branchColumn), filter.location)) return false;
+        return true;
+      });
       toolCalls.push({
         name: 'lookup_sheet',
-        args: { tab: scheduleMap.source, filter: `list ${JSON.stringify(decision.lookup ?? {})}` },
+        args: { tab: scheduleMap.source, filter: `list ${JSON.stringify(filter)}` },
         rows: rows.length,
       });
     }
