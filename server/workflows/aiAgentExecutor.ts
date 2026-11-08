@@ -67,6 +67,7 @@ import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaul
 import type { AiStudioConfig } from '@shared/ai-defaults';
 import { loadAiStudioConfig } from '../ai/studioConfig';
 import { isSheetStateMachineEnabled, runSheetStateMachine, type RejectedSlot, type SheetLookupCall, type SheetState } from './sheetStateMachine';
+import { runAgentHarness } from './agentHarness';
 
 const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
 
@@ -130,6 +131,8 @@ export interface AiAgentNodeConfig {
   maxAiCallsPerDay?: number | string;
   /** Phase 4: Google Sheets data source (absent = no `lookup_sheet` tool). */
   googleSheets?: AiGoogleSheetsConfig;
+  /** Phase 5: which brain drives the sheet-backed flow (`agent` or `legacy`). */
+  engine?: string;
 }
 
 export interface AiAgentExecutionContext {
@@ -463,6 +466,7 @@ export function normalizeAiConfig(config: AiAgentNodeConfig | undefined): AiAgen
     usageLimits: normalizeUsageLimits(config?.usageLimits),
     maxAiCallsPerDay: normalizeDailyUserCap(config?.maxAiCallsPerDay),
     googleSheets: normalizeGoogleSheets(config?.googleSheets),
+    engine: config?.engine === 'agent' ? 'agent' : 'legacy',
   };
 }
 
@@ -984,15 +988,25 @@ export async function executeAiAgentNode(
         }
       : undefined;
 
-    const turn = await runSheetStateMachine(
-      settings.googleSheets,
-      context,
-      nodeId,
-      userMessage,
-      exec.sheetReader,
-      trackedClient,
-      workflowSystemPrompt
-    );
+    const turn = settings.engine === 'agent'
+      ? await runAgentHarness(
+          settings.googleSheets,
+          context,
+          nodeId,
+          userMessage,
+          exec.sheetReader,
+          trackedClient,
+          workflowSystemPrompt
+        )
+      : await runSheetStateMachine(
+          settings.googleSheets,
+          context,
+          nodeId,
+          userMessage,
+          exec.sheetReader,
+          trackedClient,
+          workflowSystemPrompt
+        );
     const latencyMs = Date.now() - startedAt;
 
     if (turn.conversational) {
@@ -1522,6 +1536,7 @@ export async function executeAiAgentWorkflowNode(
     usageLimits: rawConfig.usageLimits,
     maxAiCallsPerDay: rawConfig.maxAiCallsPerDay,
     googleSheets: rawConfig.googleSheets,
+    engine: rawConfig.engine,
   };
 
   const executionContext = buildExecutionContext(conversationState, incomingMessage, userMetadata);

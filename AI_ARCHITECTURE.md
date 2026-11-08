@@ -423,3 +423,285 @@ These are the structural gaps behind the recent edge cases.
 | `server/ai/contextBuilder.ts` | `buildChatContext`, `trimHistory` (12 msgs / 8 KB) |
 | `server/ai/studioConfig.ts` | `loadAiStudioConfig` (workflow-scoped persona + instructions) |
 | `shared/ai-defaults.ts` | `AI_DEFAULT_SYSTEM_PROMPT`, `AI_SHEET_TAB_SCHEMA`, `AI_TOOL_RULES`, persona/instructions keys |
+
+---
+
+# PART 2 — Proposed: Agent Harness Architecture (Model + Harness)
+
+> **Status: implemented** behind `engine: 'agent'` (the AI node's `engine` config;
+> default `legacy` keeps the PART 1 state machine). See `server/workflows/agentHarness.ts`.
+> PART 1 above documents the current (legacy) engine.
+
+## P2.0 Why we are pivoting
+
+The rigid, linear state machine has three structural flaws that keep resurfacing:
+
+1. **Forced Step 1 → Step 2 order.** The engine has a single `stepId` cursor and
+   always walks `next_step_logic`. It cannot notice that "book with Dr. Goutham"
+   already implies `department` and `location`, so it still asks for Department.
+2. **Empty slots leak literal `{department}` strings.** `substituteSlots` only
+   replaces placeholders that have values; an unfilled slot renders the raw token
+   into the customer-facing text.
+3. **No backward / jump-ahead navigation.** There is no "go back" or "reorder" —
+   the only move is `next_step_logic` or `alternate_step`, and both are fixed at
+   authoring time.
+
+The harness replaces the *path* with a **goal**: collect the required slots, in any
+order, as efficiently as the conversation allows.
+
+## P2.1 The mental model
+
+| Legacy (PART 1) | Harness (PART 2) |
+|---|---|
+| `Workflow_Steps` is a **sequence** | `Workflow_Steps` is a **goal checklist** (set of required slots) |
+| Code tracks `stepId` | Code tracks only `state.slots` (+ an intent id) |
+| Code decides the next question | The **LLM** decides the next question from the missing slots |
+| `ai_question` cells are the actual text | `ai_question` cells are only *phrasing hints*; the LLM composes natural text |
+| Deterministic lookup step | **LLM-assisted dynamic lookup** (doctor → department/location) |
+| Persona/instructions invisible in-flow | Persona/instructions are in the harness prompt every turn |
+
+The Workflow_Steps sheet keeps its columns — `slot_name`, `expected_input`,
+`options`, `validation`, `lookup_source`, `lookup_filter`, `lookup_extract` — but the
+harness reads them as **declarations of what must be filled**, not as an ordered
+walk.
+
+## P2.2 The required slots (the "Goal Checklist")
+
+The harness derives the checklist from the matched intent's `Workflow_Steps` rows:
+
+- Union of every `slot_name` (split on commas, de-duplicated) → the required slots.
+- Each slot carries its `expected_input` (`text`/`list`/`buttons`/`datetime`),
+  `options` (canonical values), and `validation` (format gate).
+- A `step_type: lookup` row does **not** add a required slot; it declares a
+  *derivation rule*: "`doctor_name` + `lookup_schedule` ⇒ `department` + `location`".
+
+> Example: for the Booking intent, the checklist is
+> `{ department, location, datetime, name, phone, email, cpr }`. Order is irrelevant;
+> the goal is "all filled".
+
+## P2.3 The harness loop (per customer message)
+
+```
+runHarnessTurn(state, userMessage):
+  checklist = requiredSlots(intent)                    # from Workflow_Steps (cached)
+  decision  = await askModel(persona, instructions, checklist, state.slots, userMessage)
+
+  # The model may ask the harness to run a lookup before it can decide.
+  while decision.tool_call == "lookup_schedule" and rounds_left:
+      rows = scheduleLookup(decision.lookup)           # read Doctors_Schedule
+      decision = await askModel(..., toolResult=format(rows))   # feed back, re-decide
+
+  merge(validated(decision.updated_slots), state.slots)   # validate, never clobber filled
+
+  if decision.action == "ask":
+      return send(substitute(decision.next_question, state.slots))   # guard against bare {…}
+  if decision.action == "complete":
+      return confirmBooking(state.slots)               # emit the confirmation
+```
+
+Three harness guardrails wrap the model (the model never touches business rules):
+
+1. **Slot validation** — every value in `updated_slots` runs through the existing
+   `validateSlotValue` (type + options + format). A value the model invents that
+   fails validation is dropped, not stored.
+2. **No bare placeholders** — before `next_question` is sent, any remaining
+   `{slot}` token that has no value is stripped/flagged, so a literal
+   `"{department}"` can never reach the customer (this fixes flaw #2).
+3. **Bounded rounds** — the `askModel → lookup → askModel` loop is capped (e.g. ≤ 3
+   tool rounds) so the harness can never loop indefinitely.
+
+## P2.4 The exact LLM prompt structure
+
+The harness builds a **single** prompt per model call. It is the persona system
+prompt (already built by `buildSystemPrompt`) plus a task block:
+
+```
+{systemPrompt}                          ← identity + instructions + language rules
+
+TASK: You are a booking agent. Collect the required slots below from the customer.
+
+REQUIRED SLOTS (a checklist, not a sequence):
+- department   (options: ENT, Dental, Dermatology, …)
+- location     (options: Muharraq, Riffa, Adliya, …)
+- datetime     (text)
+- name, phone, email, cpr (text)
+
+CURRENT STATE:
+- department: <filled or "(missing)">
+- location:   "(missing)"
+- datetime:   "(missing)"
+- doctor_name: Dr. Goutham
+
+USER MESSAGE: "book with Dr. Goutham at Riffa"
+
+{OPTIONAL — only present after a lookup ran}
+LOOKUP RESULT: Dr. Goutham is a Dentist at Riffa. Available: 8-12 / 5-9.
+
+INSTRUCTIONS:
+1. Extract any new slot values from the USER MESSAGE into updated_slots.
+2. If the customer named a doctor, request a lookup_schedule to deduce their
+   department and location (do not guess them).
+3. If all required slots are filled, set action = "complete".
+4. Otherwise set action = "ask" and write ONE natural question for the FIRST
+   missing slot. Never ask for a slot you already have.
+5. If the message is off-topic or a greeting, answer it naturally in character and
+   still set action = "ask" with a question that guides them back to a missing slot.
+
+Return ONLY strict JSON matching the schema below. No markdown, no prose.
+```
+
+Notes:
+
+- The checklist is ordered by the harness for determinism, but the model is told
+  explicitly it is **not a sequence**.
+- `CURRENT STATE` lists every slot as `"(missing)"` so the model sees the whole
+  goal, not just the current step.
+- The `LOOKUP RESULT` block is only injected after a tool call, so the model's
+  *first* answer for "Dr. Goutham" asks for a lookup, and its *second* answer fills
+  `department`/`location` from the result.
+
+## P2.5 The strict JSON schema the LLM returns
+
+```ts
+// server/workflows/agentHarness.ts (proposed types)
+type HarnessAction = "ask" | "complete";
+type HarnessTool = "lookup_schedule";
+
+interface HarnessLookup {
+  /** Filter the schedule by doctor name (preferred, most reliable). */
+  doctor?: string;
+  /** Or filter by department / branch when no doctor is known. */
+  department?: string;
+  location?: string;
+}
+
+interface HarnessDecision {
+  /** Newly extracted/derived slot values. The harness validates each and never
+   *  overwrites an already-filled slot with a different value. */
+  updated_slots: Record<string, string>;
+
+  /** What to do after any tool call resolves. */
+  action: HarnessAction;
+
+  /** Required when action === "ask". Natural language, in the customer's language. */
+  next_question: string;
+
+  /** Optional: the harness must run a schedule lookup and re-invoke the model. */
+  tool_call?: HarnessTool;
+
+  /** Arguments for the lookup. Present iff tool_call === "lookup_schedule". */
+  lookup?: HarnessLookup;
+}
+```
+
+Shape-validated example (the model's *first* reply for `"book with Dr. Goutham at Riffa"`):
+
+```json
+{
+  "updated_slots": { "doctor_name": "Dr. Goutham", "location": "Riffa" },
+  "action": "ask",
+  "next_question": "Let me check Dr. Goutham's availability. What time works for you?",
+  "tool_call": "lookup_schedule",
+  "lookup": { "doctor": "Dr. Goutham" }
+}
+```
+
+The harness runs `lookup_schedule`, injects `LOOKUP RESULT`, and the model's second
+reply fills `department: "Dentist"` (deduced, not guessed) and finally asks only for
+`datetime`.
+
+**Shape validation** (code, mirroring `validateSlotExtraction`): `updated_slots`
+must be a string map; `action` ∈ {ask, complete}; `next_question` non-empty when
+`action === "ask"`; `tool_call` ∈ {undefined, "lookup_schedule"}; `lookup` present
+iff `tool_call` is set. Malformed JSON → one corrective retry, then the harness
+falls back to a deterministic "ask for the first missing slot" prompt.
+
+## P2.6 Code structure for `agentHarness.ts` (design sketch)
+
+> Signatures and pseudocode only — this is the structure to review, **not** a
+> runnable implementation.
+
+```
+server/workflows/agentHarness.ts
+├── Types
+│   HarnessDecision, HarnessAction, HarnessTool, HarnessLookup      (P2.5)
+│   HarnessSlot        { name; type; options?; validation? }         // one checklist item
+│   HarnessState       { intentId; slots: Record<string,string> }    // NOTE: no stepId
+│   HarnessTurn        { text; state; toolCalls; fallbackUsed; ... } // mirrors SheetTurn
+│
+├── Checklist derivation (from the sheet)
+│   deriveChecklist(steps): HarnessSlot[]            // union of slot_name, deduped,
+│                                                    //   carrying type/options/validation
+│   deriveLookupRules(steps): LookupRule[]           // step_type:lookup rows →
+│                                                    //   { source, filter, extract }
+│
+├── Prompt
+│   buildHarnessPrompt(systemPrompt, checklist, slots, userMessage, lookupResult?)
+│                                                    // the P2.4 task block
+│
+├── Model IO (reuses llmJson from prompt.ts)
+│   askModel(client, prompt): HarnessDecision         // one call, shape-validated, 1 retry
+│
+├── Tool execution (reuses googleSheetsExecutor + sheetStateMachine helpers)
+│   runScheduleLookup(sheet, lookup): rows            // looseCellMatch + rankLookupHits
+│
+├── Guardrails (reuse slotValidation.ts)
+│   validateUpdatedSlots(slots, checklist, current)   // validateSlotValue per value,
+│                                                    //   never clobber a filled slot
+│   noBarePlaceholders(text, slots): string           // strip/flag leftover {…} tokens
+│
+├── The loop
+│   runHarnessTurn(sheet, context, nodeId, userMessage, reader?, client?, systemPrompt?)
+│       : Promise<HarnessTurn>
+│       // 1. read intent (turn 1) or reuse state.intentId
+│       // 2. derive checklist + lookup rules
+│       // 3. askModel → while tool_call and rounds_left: run lookup, askModel again
+│       // 4. validateUpdatedSlots → merge
+│       // 5. action === "ask"   → return noBarePlaceholders(next_question)
+│       //    action === "complete" → confirm booking (intent.answer substituted)
+│
+└── Integration
+    isHarnessEnabled(sheet)                          // replaces isSheetStateMachineEnabled
+```
+
+### Reuse map (what does NOT need to be rewritten)
+
+| Capability | Source | Role in the harness |
+|---|---|---|
+| `looseCellMatch` / `rankLookupHits` | `sheetStateMachine.ts` | fuzzy schedule row matching for `lookup_schedule` |
+| `parseTimeWindows` / `isWithinWindow` | `timeRange.ts` | time-availability check on completion |
+| `validateSlotValue` / `parseValidation` | `slotValidation.ts` | guardrail #1 (validate model output) |
+| `substituteSlots` | `sheetStateMachine.ts` | fill `{slot}` in the final confirmation |
+| `lookupSheetRows` / `readSheetRawValues` | `googleSheetsExecutor.ts` | actual sheet reads |
+| `buildSystemPrompt` / `llmJson` | `prompt.ts` | persona + instructions; strict-JSON LLM calls |
+| `loadAiStudioConfig` | `studioConfig.ts` | persona + instructions per workflow |
+
+### How the harness resolves the three flaws
+
+1. **Rigid order → goal checklist.** There is no `stepId`. The model asks for the
+   *first missing* slot, so "book with Dr. Goutham" fills `doctor_name` + (via
+   lookup) `department` + `location` and only asks for `datetime`.
+2. **Empty-slot `{department}` leak → `noBarePlaceholders` guard** plus natural-language
+   `next_question` (the model never echoes a raw token; the guard catches it anyway).
+3. **No navigation → the model can revisit any missing slot.** "Actually, make it
+   Salmabad instead" simply overwrites `location` (validation allows a changed value
+   when the new one is valid) and re-checks the checklist.
+
+### Open questions to settle before implementation
+
+1. **Where does the harness live?** Replace `runSheetStateMachine` in
+   `aiAgentExecutor.ts`, or run it as a separate branch behind a flag? (Proposed:
+   a flag/feature-detection so the legacy engine remains as a fallback.)
+2. **`ai_question` cells: hint vs. source of truth?** Should the model be allowed to
+   phrase freely (proposed), or constrained to the sheet text with slot insertion?
+3. **Doctor-name → department/location deduction policy.** Auto-run the lookup
+   whenever `doctor_name` is filled, or only when the model requests it? (Proposed:
+   harness auto-triggers it — the model should not be trusted to remember.)
+4. **Completion condition.** "All required slots filled" — do optional slots (e.g.
+   `retry`, `anything_else`) participate in the checklist, or are they dropped?
+5. **Time-availability on completion.** Reuse `isWithinWindow` to reject a
+   `datetime` outside `Available_Times` before confirming, with the existing
+   "Dr. X is available from …" message.
+6. **History/context.** Should the harness inject the trimmed conversation history
+   into the model prompt (the legacy engine did not), so "make it Salmabad instead"
+   resolves against the prior message?

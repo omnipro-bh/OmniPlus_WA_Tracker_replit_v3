@@ -120,7 +120,7 @@ export function parseNextStepLogic(value: any): StepTransition {
  * characters collapsed to `_`. Lets `{doctor_name}` resolve a lookup result stored
  * under `Doctor Name` (and vice versa).
  */
-function normalizeSlotKey(name: string): string {
+export function normalizeSlotKey(name: string): string {
   return String(name ?? '')
     .trim()
     .toLowerCase()
@@ -129,7 +129,7 @@ function normalizeSlotKey(name: string): string {
 }
 
 /** Read a row cell by header name, tolerating case differences in the header. */
-function readCell(row: Record<string, any>, column: string): any {
+export function readCell(row: Record<string, any>, column: string): any {
   if (!row || !column) return undefined;
   if (Object.prototype.hasOwnProperty.call(row, column)) return row[column];
   const lower = String(column).toLowerCase();
@@ -138,7 +138,7 @@ function readCell(row: Record<string, any>, column: string): any {
 }
 
 /** The availability column header ("Available_Times") on a schedule row, if any. */
-function availabilityHeader(row: Record<string, any>): string | undefined {
+export function availabilityHeader(row: Record<string, any>): string | undefined {
   if (!row) return undefined;
   return Object.keys(row).find((k) => /available[\s_-]*times/i.test(k));
 }
@@ -538,13 +538,12 @@ export function missingSlotsText(slotNames: string[], fallback?: string): string
 /**
  * Resolve the actual header for a canonical key, honoring the owner's mapping.
  */
-function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
+export function headerFor(sheet: AiGoogleSheetsConfig, tab: string, key: string): string {
   const override = sheet.columns?.[tab]?.[key];
   if (typeof override === 'string' && override.trim()) return override.trim();
   const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === tab);
   return schema?.columns.find((c) => c.key === key)?.column ?? key;
 }
-
 function intentsTabName(sheet: AiGoogleSheetsConfig): string {
   return sheet.tabs.find((t) => /^intents?$/i.test(t)) ?? sheet.tabs[0];
 }

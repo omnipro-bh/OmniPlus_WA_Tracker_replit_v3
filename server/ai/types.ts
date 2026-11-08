@@ -197,4 +197,9 @@ export interface AiAgentSettings {
   maxAiCallsPerDay?: number;
   /** Phase 4: Google Sheets data source (absent = no `lookup_sheet` tool). */
   googleSheets?: AiGoogleSheetsConfig;
+  /**
+   * Phase 5: which brain drives the sheet-backed flow. `'legacy'` (default) runs
+   * the deterministic state machine; `'agent'` runs the goal-oriented harness.
+   */
+  engine: 'legacy' | 'agent';
 }
