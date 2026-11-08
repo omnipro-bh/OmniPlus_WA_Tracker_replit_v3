@@ -1108,6 +1108,9 @@ test('looseCellMatch maps a specialty to its schedule spelling', () => {
   assert.equal(looseCellMatch('CONSULTANT GASTROENTEROLOGIST', 'gastro'), true);
   // "ENT" must NOT false-positive on "gastroenterologist" (the "ent" substring).
   assert.equal(looseCellMatch('CONSULTANT GASTROENTEROLOGIST', 'ENT'), false);
+  // Short specialty roots: "urology" ↔ "urologist" (the stem step skips "ur").
+  assert.equal(looseCellMatch('SPECIALIST UROLOGIST', 'UROLOGY'), true);
+  assert.equal(looseCellMatch('CONSULTANT CARDIOLOGIST', 'Cardiology'), true);
 });
 
 test('rankLookupHits moves rows marked off/vacation to the end', () => {

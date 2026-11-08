@@ -202,7 +202,21 @@ export function looseCellMatch(cell: any, wanted: any): boolean {
   };
   const aStems = aWords.map(stem);
   const bStems = bWords.map(stem);
-  return aStems.some((as) => as.length >= 5 && bStems.some((bs) => as === bs));
+  if (aStems.some((as) => as.length >= 5 && bStems.some((bs) => as === bs))) {
+    return true;
+  }
+
+  // 4. specialty root: "urology" ↔ "urologist", "cardiology" ↔ "cardiologist".
+  //    The stem step above skips short roots ("ur" is only 2 chars), so compare the
+  //    bare specialty root directly.
+  const specialtyRoot = (word: string): string | undefined => {
+    const m = word.match(/^(.*?)(ologist|ology|ologic|ological)$/);
+    return m && m[1].length >= 2 ? m[1] : undefined;
+  };
+  return aWords.some((aw) => {
+    const ar = specialtyRoot(aw);
+    return ar !== undefined && bWords.some((bw) => specialtyRoot(bw) === ar);
+  });
 }
 
 /** Rows that look unavailable ("weekly off", "on vacation", "--") sort last. */
