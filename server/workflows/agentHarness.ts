@@ -507,6 +507,17 @@ function looksLikeTimeToken(message: string): boolean {
 }
 
 /**
+ * A free-form "does this exist / who is this" question — "Do you have X?",
+ * "Who is the X?", "Which X …?" — that should search the schedule even when no
+ * booking intent matched.
+ */
+function looksLikeSearchQuery(message: string): boolean {
+  return /\b(have|who|which|what|do you|is there|are there|any|list|show|available|find|looking for)\b/i.test(
+    String(message ?? '')
+  );
+}
+
+/**
  * Find the schedule row's "hours" column generically. Clinics use
  * `Available_Times`, real estate uses `Viewing_Hours`, restaurants use
  * `Reservation_Hours` — any column whose name ends in "time(s)", "hour(s)", or
@@ -629,6 +640,39 @@ export async function runAgentHarness(
     }
 
     if (intents.length === 0) {
+      // No intent matched. If the message looks like a search question and a
+      // schedule exists, search it generically instead of falling back to the
+      // free-form path — so "Do you have X?" can be answered from the sheet.
+      if (looksLikeSearchQuery(userMessage)) {
+        const allSteps = await readRows(sheet, stepsTab);
+        const fallbackMap = deriveScheduleMap(allSteps, {
+          stepType: stepTypeHeader,
+          source: sourceHeader,
+          filter: filterHeader,
+          extract: extractHeader,
+        });
+        if (fallbackMap) {
+          const query = userMessage.trim();
+          const rows = await readRows(sheet, fallbackMap.source);
+          const matched = rows.filter((row) => rowMatchesQuery(row, query));
+          toolCalls.push({
+            name: 'lookup_sheet',
+            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(query)}` },
+            rows: matched.length,
+          });
+          const results = formatSearchResults(matched, fallbackMap, query);
+          if (results) {
+            const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
+            const round2 = await askModel(
+              client,
+              buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, results)
+            );
+            slotExtractionAttempts += round2.attempts;
+            const text = noBarePlaceholders(round2.decision.next_question?.trim() || results, state.slots);
+            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+          }
+        }
+      }
       return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true };
     }
 
