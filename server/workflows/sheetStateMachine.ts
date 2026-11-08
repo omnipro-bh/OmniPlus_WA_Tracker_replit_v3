@@ -20,7 +20,7 @@ import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
 import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
-import { normalizeInputType, normalizeOptions, parseOptions, validateSlotValue } from './slotValidation';
+import { canonicalizeOption, normalizeInputType, normalizeOptions, parseOptions, validateSlotValue } from './slotValidation';
 import type { RejectedSlot } from './slotValidation';
 
 export type { RejectedSlot } from './slotValidation';
@@ -104,10 +104,55 @@ export function parseNextStepLogic(value: any): StepTransition {
   return { kind: 'done' };
 }
 
-/** Replace `{slot_name}` placeholders in an answer template with captured values. */
+/**
+ * Canonical key for slot/column matching: lowercase, every run of non-alphanumeric
+ * characters collapsed to `_`. Lets `{doctor_name}` resolve a lookup result stored
+ * under `Doctor Name` (and vice versa).
+ */
+function normalizeSlotKey(name: string): string {
+  return String(name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/** Read a row cell by header name, tolerating case differences in the header. */
+function readCell(row: Record<string, any>, column: string): any {
+  if (!row || !column) return undefined;
+  if (Object.prototype.hasOwnProperty.call(row, column)) return row[column];
+  const lower = String(column).toLowerCase();
+  const key = Object.keys(row).find((k) => k.toLowerCase() === lower);
+  return key === undefined ? undefined : row[key];
+}
+
+/**
+ * Replace `{slot_name}` placeholders in an answer template with captured values.
+ *
+ * Resolution order: exact key → case-insensitive key → normalized key
+ * (`Doctor Name` ≡ `doctor_name`). This is what lets a silent lookup store a
+ * value under the sheet's `lookup_extract` column and still have `{doctor_name}`
+ * substitute on the following step.
+ */
 export function substituteSlots(template: string, slots: Record<string, any>): string {
+  const source = slots && typeof slots === 'object' ? slots : {};
+  const normalized = new Map<string, any>();
+  for (const [key, value] of Object.entries(source)) {
+    const normalizedKey = normalizeSlotKey(key);
+    if (normalizedKey && !normalized.has(normalizedKey)) normalized.set(normalizedKey, value);
+  }
+
+  const lookup = (name: string): any => {
+    if (Object.prototype.hasOwnProperty.call(source, name)) return source[name];
+    const lower = String(name).toLowerCase();
+    const caseInsensitive = Object.keys(source).find((k) => k.toLowerCase() === lower);
+    if (caseInsensitive !== undefined) return source[caseInsensitive];
+    const normalizedKey = normalizeSlotKey(name);
+    return normalizedKey ? normalized.get(normalizedKey) : undefined;
+  };
+
   return String(template ?? '').replace(/\{(\w+)\}/g, (match, name) => {
-    const v = slots[name];
+    const v = lookup(name);
     return v === undefined || v === null || v === '' ? match : String(v);
   });
 }
@@ -391,6 +436,7 @@ export async function runSheetStateMachine(
   const keywordsHeader = headerFor(sheet, intentsTab, 'keywords');
   const startStepHeader = headerFor(sheet, intentsTab, 'start_step');
   const answerHeader = headerFor(sheet, intentsTab, 'answer');
+  const typeHeader = headerFor(sheet, intentsTab, 'type');
   const intentIdHeader = headerFor(sheet, stepsTab, 'intent_id');
   const stepIdHeader = headerFor(sheet, stepsTab, 'step_id');
   const stepTypeHeader = headerFor(sheet, stepsTab, 'step_type');
@@ -445,17 +491,21 @@ export async function runSheetStateMachine(
           const clauses = parseLookupFilter(filterRaw);
           const hits = rows.filter((row) =>
             clauses.every((c) => {
-              const cell = row[c.column];
+              const cell = readCell(row, c.column);
               return cell !== undefined && cell !== null &&
                 String(cell).trim().toLowerCase() === c.value.toLowerCase();
             })
           );
           if (hits.length > 0) {
             matched = true;
-            if (slotName && extractCol) {
-              const value = hits[0][extractCol];
+            if (extractCol) {
+              const value = readCell(hits[0], extractCol);
               if (value !== undefined && value !== null && value !== '') {
-                state.slots[slotName] = value;
+                // Store under the step's `slot_name`; when that is blank fall back
+                // to the extracted column's normalized name so a later
+                // `{doctor_name}` placeholder still resolves.
+                const target = slotName || normalizeSlotKey(extractCol);
+                if (target) state.slots[target] = value;
               }
             }
           }
@@ -510,6 +560,21 @@ export async function runSheetStateMachine(
     state.intentId = String(intent[idHeader] ?? '').trim();
     const startStep = String(intent[startStepHeader] ?? '').trim();
 
+    // ── Intent type gate ─────────────────────────────────────────────────────
+    // Only `Booking` intents run the step sequence. Greeting / FAQ / any other
+    // type returns the `answer` column immediately: no state machine, no LLM
+    // round-trip. An empty type is treated as Booking (backward compatible).
+    const intentType = String(readCell(intent, typeHeader) ?? '').trim();
+    if (intentType && !/^booking$/i.test(intentType)) {
+      const answer = substituteSlots(String(readCell(intent, answerHeader) ?? '').trim(), state.slots);
+      if (answer) {
+        return { text: answer, sheet: freshState(), toolCalls };
+      }
+      // Non-booking intent with no answer cell — let the executor answer from
+      // the persona/instructions instead of sending an empty message.
+      return { text: '', sheet: freshState(), toolCalls, conversational: true };
+    }
+
     const steps = await readRows(sheet, stepsTab, { column: intentIdHeader, value: state.intentId });
     toolCalls.push({
       name: 'lookup_sheet',
@@ -537,14 +602,17 @@ export async function runSheetStateMachine(
     // A slot that feeds a `lookup_filter` is treated as free text: the schedule
     // lookup — not a hardcoded `options` list — decides whether it is valid.
     const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
-    const slotMeta = new Map<string, { type: string; options?: string[] }>();
+    const slotMeta = new Map<string, { type: string; options?: string[]; lookupFed?: boolean }>();
     for (const step of steps) {
       const name = String(step[slotHeader] ?? '').trim();
       if (name && !slotMeta.has(name)) {
         const isLookupFed = lookupFedSlots.has(name);
         slotMeta.set(name, {
           type: isLookupFed ? 'text' : String(step[expectedHeader] ?? 'text').trim(),
-          options: isLookupFed ? undefined : parseOptions(step[optionsHeader]),
+          // Options stay attached even for lookup-fed slots: they are an
+          // extraction hint and a canonicalisation source, never a validity gate.
+          options: parseOptions(step[optionsHeader]),
+          lookupFed: isLookupFed,
         });
       }
     }
@@ -573,8 +641,11 @@ export async function runSheetStateMachine(
         const meta = slotMeta.get(name);
         if (!meta) continue; // ignore fields the sheet does not declare
         const validation = validateSlotValue(raw, meta.type, meta.options);
-        if (validation.valid) accepted[name] = validation.value;
-        else rejectedSlots.push({ slot: name, value: String(raw ?? ''), reason: validation.reason ?? 'rejected' });
+        if (validation.valid) {
+          accepted[name] = meta.lookupFed
+            ? canonicalizeOption(validation.value, meta.options)
+            : validation.value;
+        } else rejectedSlots.push({ slot: name, value: String(raw ?? ''), reason: validation.reason ?? 'rejected' });
       }
       Object.assign(state.slots, accepted);
       extracted = { slots: accepted, confidence: extracted.confidence };
@@ -656,7 +727,7 @@ export async function runSheetStateMachine(
     const lookupFedSlots = collectLookupFedSlots(steps, lookupFilterHeader);
     const isLookupFed = lookupFedSlots.has(slotName);
     const expectedInput = isLookupFed ? 'text' : String(current[expectedHeader] ?? 'text').trim();
-    const options = isLookupFed ? undefined : parseOptions(current[optionsHeader]);
+    const options = parseOptions(current[optionsHeader]);
 
     let candidate = userMessage.trim();
     let fallbackReason: string | undefined;
@@ -714,7 +785,9 @@ export async function runSheetStateMachine(
       };
     }
 
-    state.slots[slotName] = validation.value;
+    state.slots[slotName] = isLookupFed
+      ? canonicalizeOption(validation.value, options)
+      : validation.value;
   }
 
   const transition = parseNextStepLogic(current[nextHeader]);

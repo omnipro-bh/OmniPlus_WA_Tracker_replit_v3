@@ -68,6 +68,42 @@ export function parseOptions(value: any): string[] | undefined {
 }
 
 /**
+ * Whole-word containment match ("ENT doctor" → "ENT", "dental appointment" →
+ * "Dental"). Deliberately word-bounded so "not sure" never matches "No" and
+ * "yesterday" never matches "Yes". Returns the sheet's spelling.
+ */
+export function matchWholeWordOption(raw: string, allowed: string[]): string | undefined {
+  const text = String(raw ?? '');
+  if (!text) return undefined;
+  for (const option of allowed) {
+    const candidate = String(option ?? '').trim();
+    if (!candidate) continue;
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text)) return option;
+  }
+  return undefined;
+}
+
+/**
+ * Canonicalise a free-text value to the owner-declared option spelling when it
+ * matches exactly or as a whole word. Used for slots that feed a `lookup_filter`:
+ * the lookup (not the options list) decides validity, but "ENT doctor" should
+ * still be stored as the sheet's "ENT" so `{department}` substitutes cleanly.
+ */
+export function canonicalizeOption(
+  raw: string,
+  options?: Array<string | null | undefined> | null
+): string {
+  const allowed = normalizeOptions(options);
+  if (allowed.length === 0) return raw;
+  return (
+    allowed.find((option) => option.toLowerCase() === raw.toLowerCase()) ??
+    matchWholeWordOption(raw, allowed) ??
+    raw
+  );
+}
+
+/**
  * Decide whether a raw extracted value is acceptable for a step.
  *
  *   text            → non-empty after trim
@@ -93,7 +129,9 @@ export function validateSlotValue(
     case 'buttons': {
       const allowed = normalizeOptions(options);
       if (allowed.length === 0) return { valid: true, value: raw };
-      const match = allowed.find((option) => option.toLowerCase() === raw.toLowerCase());
+      const match =
+        allowed.find((option) => option.toLowerCase() === raw.toLowerCase()) ??
+        matchWholeWordOption(raw, allowed);
       return match
         ? { valid: true, value: match }
         : { valid: false, value: raw, reason: `"${raw}" is not one of: ${allowed.join(', ')}` };

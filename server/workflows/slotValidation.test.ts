@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   isPlaceholderOption,
+  matchWholeWordOption,
   normalizeInputType,
   normalizeOptions,
   parseOptions,
@@ -92,6 +93,24 @@ test('list accepts an exact option', () => {
     valid: true,
     value: 'Manama',
   });
+});
+
+test('list accepts a whole-word option inside a longer phrase', () => {
+  // "ENT doctor" on turn 1 must fill the `department` slot with "ENT".
+  assert.deepEqual(validateSlotValue('ENT doctor', 'list', ['ENT', 'Dental']), {
+    valid: true,
+    value: 'ENT',
+  });
+  assert.deepEqual(validateSlotValue('I need a dental appointment', 'list', ['ENT', 'Dental']), {
+    valid: true,
+    value: 'Dental',
+  });
+});
+
+test('whole-word matching never matches inside another word', () => {
+  assert.equal(matchWholeWordOption('not sure', ['Yes', 'No']), undefined);
+  assert.equal(matchWholeWordOption('yesterday', ['Yes', 'No']), undefined);
+  assert.equal(matchWholeWordOption('yep, yes please', ['Yes', 'No']), 'Yes');
 });
 
 test('list accepts a lowercase option and canonicalises to the sheet spelling', () => {

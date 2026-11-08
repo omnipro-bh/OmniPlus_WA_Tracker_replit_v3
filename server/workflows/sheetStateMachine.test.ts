@@ -839,3 +839,242 @@ test('turn-1 skip-ahead runs an intermediate lookup then asks the remaining step
   assert.equal(turn.sheet.stepId, 'Step_3');
   assert.deepEqual(turn.sheet.slots, { specialist: 'Dr. X', available_times: '5 PM' });
 });
+
+// ── Intent type gate: Greeting / FAQ return the answer, Booking runs steps ───
+
+test('a Greeting intent returns the answer column immediately (no state machine)', async () => {
+  const calls: string[] = [];
+  const greetingReader: RowReader = async (_s, tab) => {
+    calls.push(tab);
+    if (tab === 'Intents') {
+      return [
+        {
+          id: 'greet',
+          type: 'Greeting',
+          keywords: 'hello, hi',
+          answer: 'Hello! Welcome to Smile Clinic.',
+        },
+      ];
+    }
+    return STEPS;
+  };
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'hello', greetingReader);
+
+  assert.equal(turn.text, 'Hello! Welcome to Smile Clinic.');
+  assert.deepEqual(turn.sheet, { intentId: null, stepId: null, slots: {} });
+  assert.equal(turn.conversational, undefined);
+  // Only the Intents tab is read — Workflow_Steps is never touched.
+  assert.deepEqual(calls, ['Intents']);
+  assert.equal(turn.toolCalls.length, 1);
+});
+
+test('an FAQ intent matches any casing and substitutes known slots', async () => {
+  const faqReader: RowReader = async (_s, tab) =>
+    tab === 'Intents'
+      ? [{ id: 'faq', type: 'faq', keywords: 'hours', answer: 'We are open {hours}.' }]
+      : [];
+
+  const context = {
+    ai: { n1: { sheet: { intentId: null, stepId: null, slots: { hours: '9 to 5' } } } },
+  };
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'hours', faqReader);
+
+  assert.equal(turn.text, 'We are open 9 to 5.');
+  assert.equal(turn.sheet.intentId, null);
+});
+
+test('a Booking intent type still runs the step sequence', async () => {
+  const bookingReader: RowReader = async (_s, tab, filter) =>
+    tab === 'Intents'
+      ? [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Done' }]
+      : STEPS.filter((s) => s.intent_id === filter?.value);
+
+  const turn = await runSheetStateMachine(sheet, {}, 'n1', 'book', bookingReader);
+
+  assert.equal(turn.sheet.intentId, '1');
+  assert.equal(turn.sheet.stepId, 'Step_1');
+  assert.equal(turn.text, 'Which service do you need?');
+});
+
+// ── Slot substitution hardening (case-insensitive + normalized keys) ────────
+
+test('substituteSlots resolves case-insensitive and normalized slot keys', () => {
+  assert.equal(substituteSlots('Dr {doctor_name}', { 'Doctor Name': 'Dr. Ahmed' }), 'Dr Dr. Ahmed');
+  assert.equal(substituteSlots('Dr {Doctor_Name}', { doctor_name: 'Dr. A' }), 'Dr Dr. A');
+  assert.equal(substituteSlots('Dr {doctor_name}', { Doctor_Name: 'Dr. B' }), 'Dr Dr. B');
+});
+
+test('a lookup with a blank slot_name stores under the normalized lookup_extract', async () => {
+  const lookupReader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Done' }];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return [{ specialist: 'Dr. X', 'Doctor Name': 'Dr. Muhammed Ahsan' }];
+    }
+    return [
+      {
+        intent_id: '1',
+        step_id: 'Step_1',
+        ai_question: 'Which specialist?',
+        slot_name: 'specialist',
+        next_step_logic: '→ Step_2',
+      },
+      {
+        intent_id: '1',
+        step_id: 'Step_2',
+        step_type: 'lookup',
+        lookup_source: 'Doctors_Schedule',
+        lookup_filter: 'specialist={specialist}',
+        lookup_extract: 'Doctor Name',
+        next_step_logic: '→ Step_3',
+      },
+      {
+        intent_id: '1',
+        step_id: 'Step_3',
+        ai_question: 'We have {doctor_name}. Your name?',
+        slot_name: 'patient_name',
+        next_step_logic: '→ done',
+      },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const context = { ai: { n1: { sheet: { intentId: '1', stepId: 'Step_1', slots: {} } } } };
+  const turn = await runSheetStateMachine(sheet, context, 'n1', 'Dr. X', lookupReader);
+
+  assert.equal(turn.sheet.slots.doctor_name, 'Dr. Muhammed Ahsan');
+  assert.equal(turn.text, 'We have Dr. Muhammed Ahsan. Your name?');
+});
+
+// ── Real-world booking flow (Greeting → Dept → Confirm → Location → Time →
+//    Doctor lookup → Collect details) ────────────────────────────────────────
+
+test('the booking flow: "ENT doctor" → confirm → location → time → doctor lookup', async () => {
+  const bookingReader: RowReader = async (_s, tab, filter) => {
+    if (tab === 'Intents') {
+      return [
+        {
+          id: 'book',
+          type: 'Booking',
+          keywords: 'book, appointment, doctor',
+          start_step: 'Step_1',
+          answer: 'Booked.',
+        },
+      ];
+    }
+    if (tab === 'Doctors_Schedule') {
+      return [
+        {
+          department: 'ENT',
+          location: 'Adliya',
+          datetime: 'today at 6 PM',
+          doctor_name: 'Dr. Muhammed Ahsan',
+        },
+      ];
+    }
+    return [
+      {
+        intent_id: 'book',
+        step_id: 'Step_1',
+        step_type: 'ask',
+        ai_question: 'Which department do you need?',
+        expected_input: 'list',
+        options: 'ENT, Dental',
+        slot_name: 'department',
+        next_step_logic: '→ Step_2',
+      },
+      {
+        intent_id: 'book',
+        step_id: 'Step_2',
+        step_type: 'ask',
+        ai_question: 'Sure, Would you like to confirm the availability of the {department} doctor?',
+        next_step_logic: '→ Step_3',
+      },
+      {
+        intent_id: 'book',
+        step_id: 'Step_3',
+        step_type: 'ask',
+        ai_question: 'And which location would you prefer?',
+        slot_name: 'location',
+        next_step_logic: '→ Step_4',
+      },
+      {
+        intent_id: 'book',
+        step_id: 'Step_4',
+        step_type: 'ask',
+        ai_question: 'Sure, and could you confirm the preferred date and time?',
+        slot_name: 'datetime',
+        next_step_logic: '→ Step_5',
+      },
+      {
+        intent_id: 'book',
+        step_id: 'Step_5',
+        step_type: 'lookup',
+        lookup_source: 'Doctors_Schedule',
+        lookup_filter: 'department={department} AND location={location} AND datetime={datetime}',
+        lookup_extract: 'doctor_name',
+        slot_name: 'doctor_name',
+        next_step_logic: '→ Step_6',
+      },
+      {
+        intent_id: 'book',
+        step_id: 'Step_6',
+        step_type: 'ask',
+        ai_question:
+          'We have {doctor_name} has availability. To confirm booking, can you provide your name?',
+        slot_name: 'patient_name',
+        next_step_logic: '→ done',
+      },
+    ].filter((s) => s.intent_id === filter?.value);
+  };
+
+  const client = stubClient([
+    '{"slots": {"department": "ENT doctor"}}',
+    '{"value": "Adliya"}',
+    '{"value": "today at 6 PM"}',
+  ]);
+
+  // 1. "ENT doctor" → department extracted (whole-word match) → confirm question.
+  const t1 = await runSheetStateMachine(sheet, {}, 'n1', 'ENT doctor', bookingReader, client);
+  assert.equal(t1.sheet.slots.department, 'ENT');
+  assert.equal(t1.text, 'Sure, Would you like to confirm the availability of the ENT doctor?');
+
+  // 2. "Yes" → the confirm step has no slot → location question.
+  const t2 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Yes',
+    bookingReader,
+    client
+  );
+  assert.equal(t2.text, 'And which location would you prefer?');
+
+  // 3. "Adliya" → time question.
+  const t3 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Adliya',
+    bookingReader,
+    client
+  );
+  assert.equal(t3.text, 'Sure, and could you confirm the preferred date and time?');
+
+  // 4. "today at 6 PM" → silent doctor lookup → name substituted into Step_6.
+  const t4 = await runSheetStateMachine(
+    sheet,
+    { ai: { n1: { sheet: t3.sheet } } },
+    'n1',
+    'today at 6 PM',
+    bookingReader,
+    client
+  );
+  assert.equal(t4.sheet.stepId, 'Step_6');
+  assert.equal(t4.sheet.slots.doctor_name, 'Dr. Muhammed Ahsan');
+  assert.equal(
+    t4.text,
+    'We have Dr. Muhammed Ahsan has availability. To confirm booking, can you provide your name?'
+  );
+});
