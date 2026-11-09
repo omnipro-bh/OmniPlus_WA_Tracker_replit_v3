@@ -834,16 +834,12 @@ function filledFrom(slots: Record<string, any>, names: string[]): string | undef
   return undefined;
 }
 
-/** Fill the first empty alias slot (never overwrite an existing value). */
+/** Fill the first alias slot when none of the aliases is filled yet. */
 function setFirstEmpty(slots: Record<string, any>, names: string[], value: string): void {
   const trimmed = String(value ?? '').trim();
-  if (!trimmed) return;
-  for (const name of names) {
-    if (!isFilled(slots, name)) {
-      slots[name] = trimmed;
-      return;
-    }
-  }
+  if (!trimmed || names.length === 0) return;
+  if (names.some((name) => isFilled(slots, name))) return; // already set under another alias
+  slots[names[0]] = trimmed;
 }
 
 /** Parse the stored structured search results, tolerating malformed state. */
