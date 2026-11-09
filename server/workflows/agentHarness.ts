@@ -977,53 +977,31 @@ export async function runAgentHarness(
     }
 
     if (intents.length === 0) {
-      // No intent matched. If the message looks like a search question and a
-      // schedule exists, search it generically instead of falling back to the
-      // free-form path — so "Do you have X?" can be answered from the sheet.
-      if (looksLikeSearchQuery(userMessage)) {
-        const allSteps = await readRows(sheet, stepsTab);
-        const fallbackMap = deriveScheduleMap(
-          allSteps,
-          {
-            stepType: stepTypeHeader,
-            source: sourceHeader,
-            filter: filterHeader,
-            extract: extractHeader,
-          },
-          sheet
+      // No intent matched. If a schedule exists, ask the model to extract
+      // structured constraints; the CODE filters, the model never scans cells.
+      const allSteps = await readRows(sheet, stepsTab);
+      const fallbackMap = deriveScheduleMap(
+        allSteps,
+        {
+          stepType: stepTypeHeader,
+          source: sourceHeader,
+          filter: filterHeader,
+          extract: extractHeader,
+        },
+        sheet
+      );
+
+      if (fallbackMap) {
+        const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
+        // Round 1: ask the model to extract structured search constraints.
+        const round1 = await askModel(
+          client,
+          buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage)
         );
-        if (fallbackMap) {
-          const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
-          // Round 1: ask the model to extract structured search constraints.
-          const round1 = await askModel(
-            client,
-            buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage)
-          );
-          slotExtractionAttempts += round1.attempts;
-          const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
+        slotExtractionAttempts += round1.attempts;
+        const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
 
-          // No structured constraint: this is either a follow-up about the last
-          // search ("At which branch?") or a request we cannot filter. Never
-          // fall back to a full-text scan.
-          if (!hasStructuredSearch(search)) {
-            if (state.lastSearch) {
-              const round2 = await askModel(
-                client,
-                buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
-              );
-              slotExtractionAttempts += round2.attempts;
-              const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
-              return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
-            }
-            return {
-              text: 'Could you tell me the specialty, branch, or doctor you are looking for?',
-              sheet: state,
-              toolCalls,
-              slotExtractionAttempts,
-              fallbackUsed,
-            };
-          }
-
+        if (hasStructuredSearch(search)) {
           const rows = await readRows(sheet, fallbackMap.source);
           const matched = filterRowsStructured(rows, search, fallbackMap);
           toolCalls.push({
@@ -1056,7 +1034,36 @@ export async function runAgentHarness(
             fallbackUsed,
           };
         }
+
+        // No structured constraint. A follow-up about the previous search
+        // ("At which branch?") reuses it; anything else goes to the free-form path.
+        if (state.lastSearch) {
+          const round2 = await askModel(
+            client,
+            buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
+          );
+          slotExtractionAttempts += round2.attempts;
+          const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
+          return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+        }
+
+        // The model tried to search but produced no usable constraint. Ask for
+        // clarification rather than guessing — but only when this really looks
+        // like a search/availability request.
+        if (
+          round1.decision.action === 'search_schedule' &&
+          (looksLikeSearchQuery(userMessage) || looksLikeAvailabilityQuery(userMessage))
+        ) {
+          return {
+            text: 'Could you tell me the specialty, branch, or doctor you are looking for?',
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+          };
+        }
       }
+
       return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true };
     }
 
