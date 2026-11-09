@@ -497,6 +497,9 @@ export const workflows = pgTable("workflows", {
   // `unsupported_node`, exactly as in 4A-3a-2. Toggled by the owner
   // `PATCH /api/workflows/:id/web-chat { allowBooking }`.
   webChatBookingEnabled: boolean("web_chat_booking_enabled").notNull().default(false),
+  // Phase 5 — lead capture. When true, a completed AI booking copies its
+  // collected slots into the `leads` table for follow-up.
+  captureLead: boolean("capture_lead").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -651,6 +654,51 @@ export const aiUsageLogsRelations = relations(aiUsageLogs, ({ one }) => ({
 
 export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
 export type InsertAiUsageLog = typeof aiUsageLogs.$inferInsert;
+
+// Leads table — AI-collected leads (completed bookings + unanswered questions)
+// copied out of a conversation when `workflows.capture_lead` is enabled.
+export const leads = pgTable("leads", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workflowId: integer("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+  nodeId: text("node_id"), // which AI node produced the lead
+  channel: text("channel").notNull().default("whatsapp"), // whatsapp | web_chat
+
+  // Contact (dedupe key)
+  phone: text("phone").notNull(),
+
+  // Full snapshot of the slots the customer provided.
+  collectedSlotsJson: jsonb("collected_slots_json").notNull().default({}),
+
+  // Why it became a lead: completed_booking | no_answer | declined_verification | handover
+  source: text("source").notNull().default("completed_booking"),
+
+  // The raw question/message that had no answer (feeds the unanswered KPI).
+  question: text("question"),
+
+  status: text("status").notNull().default("new"), // new | contacted | converted | closed
+  notes: text("notes"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  workflowPhoneIdx: index("leads_workflow_phone_idx").on(table.workflowId, table.phone),
+  statusIdx: index("leads_status_idx").on(table.status),
+}));
+
+export const leadsRelations = relations(leads, ({ one }) => ({
+  user: one(users, {
+    fields: [leads.userId],
+    references: [users.id],
+  }),
+  workflow: one(workflows, {
+    fields: [leads.workflowId],
+    references: [workflows.id],
+  }),
+}));
+
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = typeof leads.$inferInsert;
 
 // Audit Logs table
 export const auditLogs = pgTable("audit_logs", {

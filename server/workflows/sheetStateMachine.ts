@@ -40,11 +40,15 @@ export interface SheetState {
   slots: Record<string, any>;
   /** Structured JSON of the most recent `search_schedule` results (Phase 5). */
   lastSearch?: string;
+  /** Intent matched but not yet confirmed (verification step). */
+  pendingIntentId?: string | null;
+  /** True while the verification question is on screen. */
+  awaitingVerification?: boolean;
 }
 
 /** A fresh empty state — never reuse a shared object (slots must not leak across turns). */
 function freshState(): SheetState {
-  return { intentId: null, stepId: null, slots: {} };
+  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false };
 }
 
 /** Read the persisted sheet state, tolerating any malformed shape. */
@@ -55,6 +59,8 @@ export function readSheetState(context: Record<string, any>, nodeId: string): Sh
     intentId: raw.intentId ?? null,
     stepId: raw.stepId ?? null,
     slots: raw.slots && typeof raw.slots === 'object' ? { ...raw.slots } : {},
+    pendingIntentId: raw.pendingIntentId ?? null,
+    awaitingVerification: raw.awaitingVerification === true,
   };
 }
 
@@ -95,6 +101,18 @@ export interface SheetTurn {
    * LLM (persona + instructions) instead of a "could not find an answer" reply.
    */
   conversational?: boolean;
+  /**
+   * The booking flow reached completion (all required slots filled). Signals the
+   * executor to copy the collected slots into `leads` when capture-lead is on.
+   */
+  completed?: boolean;
+  /** The final filled slots at completion (for lead capture). */
+  completedSlots?: Record<string, any>;
+  /**
+   * No answer was found in `Intents` or `Doctors_Schedule` (never set for
+   * validation rejections like `invalid_time`/`day_conflict`).
+   */
+  unanswered?: boolean;
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };

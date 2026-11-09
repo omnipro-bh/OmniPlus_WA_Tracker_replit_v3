@@ -97,15 +97,17 @@ test('substituteSlots replaces {slot} placeholders and leaves unknown ones', () 
 });
 
 test('readSheetState tolerates a missing or malformed sheet object', () => {
-  assert.deepEqual(readSheetState({}, 'n1'), { intentId: null, stepId: null, slots: {} });
+  assert.deepEqual(readSheetState({}, 'n1'), { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false });
   assert.deepEqual(readSheetState({ ai: { n1: { sheet: 'garbage' } } }, 'n1'), {
     intentId: null,
     stepId: null,
     slots: {},
+    pendingIntentId: null,
+    awaitingVerification: false,
   });
   assert.deepEqual(
     readSheetState({ ai: { n1: { sheet: { intentId: '1', stepId: 'Step_2', slots: { a: 1 } } } } }, 'n1'),
-    { intentId: '1', stepId: 'Step_2', slots: { a: 1 } }
+    { intentId: '1', stepId: 'Step_2', slots: { a: 1 }, pendingIntentId: null, awaitingVerification: false }
   );
 });
 
@@ -871,7 +873,7 @@ test('a Greeting intent returns the answer column immediately (no state machine)
   const turn = await runSheetStateMachine(sheet, {}, 'n1', 'hello', greetingReader);
 
   assert.equal(turn.text, 'Hello! Welcome to Smile Clinic.');
-  assert.deepEqual(turn.sheet, { intentId: null, stepId: null, slots: {} });
+  assert.deepEqual(turn.sheet, { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false });
   assert.equal(turn.conversational, undefined);
   // Only the Intents tab is read — Workflow_Steps is never touched.
   assert.deepEqual(calls, ['Intents']);

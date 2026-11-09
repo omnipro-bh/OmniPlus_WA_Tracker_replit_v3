@@ -200,6 +200,9 @@ export interface IStorage {
   updateWorkflow(id: number, data: Partial<Workflow>): Promise<Workflow | undefined>;
   deleteWorkflow(id: number): Promise<void>;
 
+  // Leads
+  insertLead(lead: schema.InsertLead): Promise<schema.Lead>;
+
   // Offline Payments
   getOfflinePayments(status?: string): Promise<OfflinePayment[]>;
   getOfflinePayment(id: number): Promise<OfflinePayment | undefined>;
@@ -838,6 +841,11 @@ export class DatabaseStorage implements IStorage {
 
   async deleteWorkflow(id: number): Promise<void> {
     await db.delete(schema.workflows).where(eq(schema.workflows.id, id));
+  }
+
+  async insertLead(lead: schema.InsertLead): Promise<schema.Lead> {
+    const [row] = await db.insert(schema.leads).values(lead).returning();
+    return row;
   }
 
   // Offline Payments

@@ -111,13 +111,20 @@ export interface ScheduleMap {
   feesColumn?: string;
 }
 
-/** Slot names that are flow-control artifacts of the old linear sheet, not customer data. */
-const FLOW_CONTROL_SLOTS = new Set(['confirm', 'retry', 'completed', 'anything_else', 'done']);
+/**
+ * Slot names that are flow-control artifacts of the old linear sheet, not
+ * customer data. `confirm` is deliberately NOT here — it is the owner's
+ * verification step and must be asked as a required slot. `retry`, `completed`
+ * and `anything_else` remain terminal/branching steps (the checklist model does
+ * not evaluate `alternate_step`/`next_step_logic`, so linearising `retry` would
+ * ask "sorry, no doctor at that location" even on a successful booking).
+ */
+const FLOW_CONTROL_SLOTS = new Set(['retry', 'completed', 'anything_else', 'done']);
 
 // ── State ───────────────────────────────────────────────────────────────────
 
 function freshHarnessState(): SheetState {
-  return { intentId: null, stepId: null, slots: {} };
+  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false };
 }
 
 function isFilled(slots: Record<string, any>, name: string): boolean {
@@ -1166,6 +1173,8 @@ export async function runAgentHarness(
     stepId: null,
     slots: rawState?.slots && typeof rawState.slots === 'object' ? { ...rawState.slots } : {},
     lastSearch: typeof rawState?.lastSearch === 'string' ? rawState.lastSearch : undefined,
+    pendingIntentId: rawState?.pendingIntentId ?? null,
+    awaitingVerification: rawState?.awaitingVerification === true,
   };
 
   const intentsTab = intentsTabName(sheet);
@@ -1175,6 +1184,7 @@ export async function runAgentHarness(
   const keywordsHeader = headerFor(sheet, intentsTab, 'keywords');
   const answerHeader = headerFor(sheet, intentsTab, 'answer');
   const typeHeader = headerFor(sheet, intentsTab, 'type');
+  const verificationHeader = headerFor(sheet, intentsTab, 'verification_question');
   const intentIdHeader = headerFor(sheet, stepsTab, 'intent_id');
   const stepTypeHeader = headerFor(sheet, stepsTab, 'step_type');
   const slotHeader = headerFor(sheet, stepsTab, 'slot_name');
@@ -1190,6 +1200,64 @@ export async function runAgentHarness(
   const toolCalls: SheetLookupCall[] = [];
   let slotExtractionAttempts = 0;
   let fallbackUsed = false;
+
+  // ── Verification: a pending non-booking intent awaiting "Yes/No" ────────────
+  if (state.awaitingVerification && state.pendingIntentId) {
+    const pending = await readRows(sheet, intentsTab, { column: idHeader, value: state.pendingIntentId });
+    toolCalls.push({
+      name: 'lookup_sheet',
+      args: { tab: intentsTab, filter_column: idHeader, filter_value: state.pendingIntentId },
+      rows: pending.length,
+    });
+    const pendingIntent = pending[0];
+    const verification = pendingIntent
+      ? String(readCell(pendingIntent, verificationHeader) ?? '').trim()
+      : '';
+
+    const yes = /\b(yes|yeah|yep|sure|ok|okay|correct|confirm|right)\b/i.test(userMessage);
+    const no = /\b(no|nope|nah|not really|cancel|never mind|wrong)\b/i.test(userMessage);
+
+    if (yes) {
+      // Confirm: promote the pending intent and branch on its type.
+      state.intentId = state.pendingIntentId;
+      state.pendingIntentId = null;
+      state.awaitingVerification = false;
+      const intentType = String(readCell(pendingIntent, typeHeader) ?? '').trim();
+      if (intentType && !/^booking$/i.test(intentType)) {
+        const answer = substituteSlots(String(readCell(pendingIntent, answerHeader) ?? '').trim(), state.slots);
+        return {
+          text: answer || '',
+          sheet: freshHarnessState(),
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+          ...(answer ? {} : { conversational: true, unanswered: true }),
+        };
+      }
+      // Booking intent → fall through to the checklist below.
+    } else if (no) {
+      // Decline: forget the pending intent and re-open the conversation.
+      state.intentId = null;
+      state.pendingIntentId = null;
+      state.awaitingVerification = false;
+      return {
+        text: 'No problem — how can I help you?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    } else {
+      // Ambiguous → re-ask the verification question verbatim.
+      return {
+        text: verification || 'Could you confirm?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+  }
 
   // ── Turn 1: match the intent ───────────────────────────────────────────────
   if (!state.intentId) {
@@ -1312,6 +1380,7 @@ export async function runAgentHarness(
             toolCalls,
             slotExtractionAttempts,
             fallbackUsed,
+            unanswered: true,
           };
         }
 
@@ -1344,7 +1413,7 @@ export async function runAgentHarness(
         }
       }
 
-      return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true };
+      return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true, unanswered: true };
     }
 
     const intent = intents[0];
@@ -1353,6 +1422,21 @@ export async function runAgentHarness(
     // Intent type gate: a non-Booking intent answers directly (no checklist).
     const intentType = String(readCell(intent, typeHeader) ?? '').trim();
     if (intentType && !/^booking$/i.test(intentType)) {
+      // Verification-first (non-booking only): ask the owner's verification
+      // question before returning the answer.
+      const verification = String(readCell(intent, verificationHeader) ?? '').trim();
+      if (verification) {
+        state.pendingIntentId = state.intentId;
+        state.intentId = null;
+        state.awaitingVerification = true;
+        return {
+          text: verification,
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+        };
+      }
       const answer = substituteSlots(String(readCell(intent, answerHeader) ?? '').trim(), state.slots);
       return {
         text: answer || '',
@@ -1360,7 +1444,7 @@ export async function runAgentHarness(
         toolCalls,
         slotExtractionAttempts,
         fallbackUsed,
-        ...(answer ? {} : { conversational: true }),
+        ...(answer ? {} : { conversational: true, unanswered: true }),
       };
     }
   }
@@ -1395,6 +1479,38 @@ export async function runAgentHarness(
     sheet
   );
 
+  // ── Context switch: a mid-booking FAQ / general question ───────────────────
+  // The customer is mid-flow (intentId set) but this message matches a DIFFERENT
+  // non-booking intent. Answer it verbatim WITHOUT touching state.slots, then
+  // re-ask the current step's ai_question.
+  {
+    const strict = await readRows(sheet, intentsTab, { column: keywordsHeader, value: userMessage });
+    let faq = strict.find((i) => {
+      const t = String(readCell(i, typeHeader) ?? '').trim();
+      return t && !/^booking$/i.test(t);
+    });
+    if (!faq) {
+      const allIntents = await readRows(sheet, intentsTab);
+      faq = allIntents.find((i) => {
+        const t = String(readCell(i, typeHeader) ?? '').trim();
+        return t && !/^booking$/i.test(t) && matchesIntentKeywords(readCell(i, keywordsHeader), userMessage);
+      });
+    }
+    if (faq) {
+      const answer = substituteSlots(String(readCell(faq, answerHeader) ?? '').trim(), state.slots);
+      if (answer) {
+        const resume = noBarePlaceholders(defaultQuestion(firstMissing(state.slots, checklist)), state.slots);
+        return {
+          text: [answer, resume].filter(Boolean).join('\n\n'),
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+        };
+      }
+    }
+  }
+
   /**
    * Run a structured search end-to-end: the CODE filters, the model only renders.
    * Never passes un-filtered rows to the LLM.
@@ -1407,6 +1523,7 @@ export async function runAgentHarness(
         toolCalls,
         slotExtractionAttempts,
         fallbackUsed,
+        unanswered: true,
       };
     }
 
@@ -1429,6 +1546,7 @@ export async function runAgentHarness(
         toolCalls,
         slotExtractionAttempts,
         fallbackUsed,
+        unanswered: true,
       };
     }
 
@@ -1656,7 +1774,15 @@ export async function runAgentHarness(
       substituteSlots(answerText, state.slots) || 'Your booking is confirmed. Our team will contact you shortly.',
       state.slots
     );
-    return { text, sheet: freshHarnessState(), toolCalls, slotExtractionAttempts, fallbackUsed };
+    return {
+      text,
+      sheet: freshHarnessState(),
+      completed: true,
+      completedSlots: { ...state.slots },
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
+    };
   }
 
   const missing = firstMissing(state.slots, checklist);

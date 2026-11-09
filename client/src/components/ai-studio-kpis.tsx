@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
+  HelpCircle,
   Loader2,
   MessageSquareX,
   ShieldCheck,
@@ -42,6 +43,11 @@ interface KpiTimePoint {
   conversations: number;
 }
 
+interface KpiUnansweredMessage {
+  message: string;
+  count: number;
+}
+
 interface KpiMetrics {
   totalConversations: number;
   totalAiTurns: number;
@@ -52,6 +58,8 @@ interface KpiMetrics {
   slotDistribution: Record<string, Record<string, number>>;
   stepFunnel: KpiStepCount[];
   timeSeries: KpiTimePoint[];
+  unansweredQuestions: number;
+  topUnansweredMessages: KpiUnansweredMessage[];
 }
 
 const tooltipStyle = {
@@ -176,11 +184,12 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
       </div>
 
       {/* Top row: stat cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard icon={Users} label="Total Conversations" value={String(metrics.totalConversations)} tone="default" />
         <StatCard icon={ShieldCheck} label="Containment Rate" value={pct(metrics.containmentRate)} tone={containmentTone} />
         <StatCard icon={AlertTriangle} label="Fallback Rate" value={pct(metrics.fallbackRate)} tone={fallbackTone} />
         <StatCard icon={MessageSquareX} label="Total AI Turns" value={String(metrics.totalAiTurns)} tone="default" />
+        <StatCard icon={HelpCircle} label="Unanswered Questions" value={String(metrics.unansweredQuestions)} tone="default" />
       </div>
 
       {/* Funnel */}
@@ -278,6 +287,31 @@ export function KpisTab({ workflowId }: { workflowId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Top unanswered questions */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+            Top Unanswered Questions
+          </CardTitle>
+          <CardDescription>What customers asked that the AI could not answer from the sheet.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {metrics.topUnansweredMessages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No unanswered questions recorded.</p>
+          ) : (
+            <ul className="space-y-2">
+              {metrics.topUnansweredMessages.map((m) => (
+                <li key={m.message} className="flex items-start justify-between gap-3 text-sm">
+                  <span className="break-words text-muted-foreground">{m.message}</span>
+                  <span className="shrink-0 font-medium">{m.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Time series */}
       {timeData.length > 0 && (

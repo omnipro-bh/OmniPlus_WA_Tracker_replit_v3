@@ -24,6 +24,8 @@ test("empty input yields all-zero metrics", () => {
     slotDistribution: {},
     stepFunnel: [],
     timeSeries: [],
+    unansweredQuestions: 0,
+    topUnansweredMessages: [],
   });
 });
 
@@ -207,5 +209,21 @@ test("timeSeries counts distinct conversations per day, ascending", () => {
   assert.deepEqual(computeKpis(rows).timeSeries, [
     { date: "2026-11-01", conversations: 2 },
     { date: "2026-11-02", conversations: 1 },
+  ]);
+});
+
+test("unansweredQuestions counts only flagged turns and surfaces top messages", () => {
+  const rows = [
+    row("a", "2026-11-01T10:00:00Z", { ...midFlow("Step_1"), unanswered: true, userMessage: "what are your hours?" }),
+    row("a", "2026-11-01T10:01:00Z", { ...midFlow("Step_1"), unanswered: true, userMessage: "what are your hours?" }),
+    row("b", "2026-11-01T10:00:00Z", { ...midFlow("Step_1"), unanswered: true, userMessage: "do you have a cardiologist?" }),
+    // A validation rejection is NOT unanswered.
+    row("c", "2026-11-01T10:00:00Z", { ...midFlow("Step_1"), fallbackUsed: true, fallbackReason: "invalid_time", userMessage: "PM" }),
+  ];
+  const m = computeKpis(rows);
+  assert.equal(m.unansweredQuestions, 3);
+  assert.deepEqual(m.topUnansweredMessages, [
+    { message: "what are your hours?", count: 2 },
+    { message: "do you have a cardiologist?", count: 1 },
   ]);
 });

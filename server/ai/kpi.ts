@@ -23,6 +23,7 @@ export interface KpiRejectedSlot {
 }
 
 export interface KpiAiTrace {
+  userMessage?: string;
   sheetState?: {
     intentId?: string | null;
     stepId?: string | null;
@@ -32,6 +33,8 @@ export interface KpiAiTrace {
   fallbackReason?: string;
   rejectedSlots?: KpiRejectedSlot[];
   nextHandle?: string;
+  /** No answer found in Intents/Doctors_Schedule (not a validation rejection). */
+  unanswered?: boolean;
 }
 
 export interface KpiExecutionRow {
@@ -47,6 +50,11 @@ export interface KpiStepCount {
 
 export interface KpiReasonCount {
   reason: string;
+  count: number;
+}
+
+export interface KpiUnansweredMessage {
+  message: string;
   count: number;
 }
 
@@ -71,6 +79,10 @@ export interface KpiMetrics {
   stepFunnel: KpiStepCount[];
   /** Conversations per day (days with activity only). */
   timeSeries: KpiTimePoint[];
+  /** Turns where no answer was found in Intents/Doctors_Schedule. */
+  unansweredQuestions: number;
+  /** Top raw user messages (top 5) that had no answer. */
+  topUnansweredMessages: KpiUnansweredMessage[];
 }
 
 function timestampOf(v: string | Date): number {
@@ -131,12 +143,20 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
   const slotValues = new Map<string, Map<string, number>>();
   const stepReach = new Map<string, Set<string>>();
   const dayPhones = new Map<string, Set<string>>();
+  let unansweredTurns = 0;
+  const unansweredMessages = new Map<string, number>();
 
   for (const row of list) {
     const trace = row.aiTrace;
     if (!trace) continue;
 
     if (trace.fallbackUsed === true) fallbackTurns += 1;
+
+    if (trace.unanswered === true) {
+      unansweredTurns += 1;
+      const message = (trace.userMessage ?? "").trim();
+      if (message) bump(unansweredMessages, message);
+    }
 
     for (const r of trace.rejectedSlots ?? []) {
       const reason = r?.reason?.trim();
@@ -241,5 +261,10 @@ export function computeKpis(rows: KpiExecutionRow[]): KpiMetrics {
     slotDistribution,
     stepFunnel,
     timeSeries,
+    unansweredQuestions: unansweredTurns,
+    topUnansweredMessages: topN(unansweredMessages, 5).map(([message, count]) => ({
+      message,
+      count,
+    })),
   };
 }

@@ -163,8 +163,8 @@ test('deriveChecklist adds an undeclared placeholder slot (e.g. department)', ()
     },
   ];
   const checklist = deriveChecklist(steps, HEADERS);
-  // `confirm` is flow-control; `department`/`location` come from placeholders.
-  assert.deepEqual(checklist.required.map((s) => s.name), ['department', 'location']);
+  // `confirm` is a real required slot now; `department`/`location` come from placeholders.
+  assert.deepEqual(checklist.required.map((s) => s.name), ['confirm', 'department', 'location']);
   assert.deepEqual(checklist.derived, ['doctor_name']);
 });
 
@@ -930,4 +930,149 @@ test('a plain ask uses the sheet ai_question verbatim', async () => {
   assert.match(turn.text, /Which department do you need\?/);
   assert.doesNotMatch(turn.text, /How can I help/);
 });
+
+// ── verification-first (non-booking intents) ───────────────────────────────
+
+const FAQ_INTENTS = [
+  { id: '1', type: 'Booking', keywords: 'book, doctor', start_step: 'Step_1', verification_question: '', answer: '' },
+  { id: '2', type: 'FAQ', keywords: 'hours, opening, working', start_step: '', verification_question: 'Are you asking about our working hours?', answer: 'We are open 9 AM to 5 PM.' },
+];
+
+const faqReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    const col = filter?.column;
+    const val = String(filter?.value ?? '');
+    if (col === 'id') return FAQ_INTENTS.filter((i) => String(i.id) === val);
+    return FAQ_INTENTS.filter((i) => matchesIntentKeywords(String(i.keywords), val));
+  }
+  if (tab === 'Doctors_Schedule') return [];
+  return STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('a FAQ intent with a verification_question asks it before answering', async () => {
+  const client = harnessClient([]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'what are your working hours?', faqReader, client);
+  assert.equal(turn.text, 'Are you asking about our working hours?');
+  assert.equal(turn.sheet.pendingIntentId, '2');
+  assert.equal(turn.sheet.awaitingVerification, true);
+  assert.equal(turn.sheet.intentId, null);
+});
+
+test('"Yes" to the verification returns the FAQ answer verbatim', async () => {
+  const client = harnessClient([]);
+  const seed = { intentId: null, stepId: null, slots: {}, pendingIntentId: '2', awaitingVerification: true };
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'Yes', faqReader, client);
+  assert.equal(turn.text, 'We are open 9 AM to 5 PM.');
+  assert.equal(turn.sheet.intentId, null);
+  assert.equal(turn.sheet.pendingIntentId, null);
+  assert.equal(turn.sheet.awaitingVerification, false);
+});
+
+test('"No" to the verification clears the pending intent', async () => {
+  const client = harnessClient([]);
+  const seed = { intentId: null, stepId: null, slots: {}, pendingIntentId: '2', awaitingVerification: true };
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'No', faqReader, client);
+  assert.match(turn.text, /how can I help/i);
+  assert.equal(turn.sheet.intentId, null);
+  assert.equal(turn.sheet.pendingIntentId, null);
+  assert.equal(turn.sheet.awaitingVerification, false);
+});
+
+test('a Booking intent is NOT gated by verification_question', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department do you need?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book a doctor', faqReader, client);
+  // Straight into the booking checklist (no verification question).
+  assert.equal(turn.sheet.pendingIntentId, null);
+  assert.equal(turn.sheet.awaitingVerification, false);
+  assert.equal(turn.sheet.intentId, '1');
+});
+
+// ── confirm step is a required slot (not blacklisted) ──────────────────────
+
+const CONFIRM_STEPS = [
+  { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which department?', slot_name: 'department', expected_input: 'list', options: 'Dental, ENT', lookup_source: '', lookup_filter: '', lookup_extract: '', fallback: '', validation: '' },
+  { intent_id: '1', step_id: 'Step_2', step_type: 'ask', ai_question: 'Would you like to confirm the {department} doctor?', slot_name: 'confirm', expected_input: 'buttons', options: 'Yes, No', lookup_source: '', lookup_filter: '', lookup_extract: '', fallback: '', validation: '' },
+  { intent_id: '1', step_id: 'Step_3', step_type: 'lookup', slot_name: 'doctor_name', lookup_source: 'Doctors_Schedule', lookup_filter: 'department={department}', lookup_extract: 'Doctor', fallback: '', validation: '' },
+];
+
+test('deriveChecklist includes the confirm step', () => {
+  const checklist = deriveChecklist(CONFIRM_STEPS, HEADERS);
+  assert.ok(checklist.required.some((s) => s.name === 'confirm'));
+});
+
+test('the harness asks the confirm step after department is filled', async () => {
+  const confirmReader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: '' }];
+    if (tab === 'Doctors_Schedule') return [];
+    return CONFIRM_STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  const client = harnessClient([
+    '{"updated_slots": {"department": "Dental"}, "action": "ask", "next_question": "Would you like to confirm the Dental doctor?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', confirmReader, client);
+  // department filled → confirm is the next missing slot, asked verbatim.
+  assert.match(turn.text, /Would you like to confirm the Dental doctor\?/);
+  assert.equal(turn.sheet.slots.department, 'Dental');
+});
+
+// ── context switch: mid-flow FAQ keeps slots ───────────────────────────────
+
+test('a mid-flow FAQ is answered verbatim without losing slots', async () => {
+  const client1 = harnessClient([
+    '{"updated_slots": {"department": "Dental"}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', faqReader, client1);
+  assert.equal(t1.sheet.slots.department, 'Dental');
+
+  // Turn 2: the customer asks an FAQ mid-booking.
+  const client2 = harnessClient([]);
+  const t2 = await runAgentHarness(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'what are your working hours?', faqReader, client2);
+  // The FAQ answer is verbatim and the booking slot is untouched.
+  assert.match(t2.text, /We are open 9 AM to 5 PM/);
+  assert.equal(t2.sheet.slots.department, 'Dental');
+  assert.equal(t2.sheet.intentId, '1');
+  // It resumes by re-asking the next missing slot (location).
+  assert.match(t2.text, /And which location\?/);
+});
+
+// ── completion + unanswered flags ──────────────────────────────────────────
+
+test('completion sets completed + completedSlots', async () => {
+  const completeReader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Booked!' }];
+    if (tab === 'Doctors_Schedule') return [];
+    return STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  const client = harnessClient([
+    '{"updated_slots": {"department": "Dental", "location": "Riffa", "datetime": "5 PM"}, "action": "complete", "next_question": ""}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', completeReader, client);
+  assert.equal(turn.completed, true);
+  assert.equal(turn.completedSlots.department, 'Dental');
+  assert.equal(turn.completedSlots.location, 'Riffa');
+});
+
+test('a normal ask does not set unanswered', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department do you need?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', reader, client);
+  assert.equal(turn.unanswered, undefined);
+});
+
+test('a no-match schedule search sets unanswered', async () => {
+  const emptyScheduleReader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: '' }];
+    if (tab === 'Doctors_Schedule') return []; // nothing matches
+    return STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "Cardiologist"}}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'do you have a cardiologist?', emptyScheduleReader, client);
+  assert.equal(turn.unanswered, true);
+});
+
 

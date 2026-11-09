@@ -251,6 +251,15 @@ export interface AiAgentExecutionResult {
    * intent matched (no active flow). Trace-only signal.
    */
   conversational?: boolean;
+  /**
+   * No answer was found in `Intents` or `Doctors_Schedule` (never set for
+   * validation rejections like `invalid_time`/`day_conflict`).
+   */
+  unanswered?: boolean;
+  /** The booking flow reached completion (all required slots filled). */
+  completed?: boolean;
+  /** The final filled slots at completion (for lead capture). */
+  completedSlots?: Record<string, any>;
 }
 
 /** Node-level result — mirrors `GoogleSheetsNodeExecutionResult`. */
@@ -304,6 +313,8 @@ export interface AiTrace {
    * intent matched (no active flow). Trace-only signal.
    */
   conversational?: boolean;
+  /** No answer found in Intents/Doctors_Schedule (never a validation rejection). */
+  unanswered?: boolean;
 }
 
 export interface AiAgentNodeOptions {
@@ -959,7 +970,7 @@ export async function executeAiAgentNode(
   // failure. We then fall through to the normal LLM path below, which answers
   // from the persona + instructions (and carries the sheet lookups in the trace).
   let conversationalMode = false;
-  let conversationalSheet: { sheet: SheetState; toolCalls: SheetLookupCall[] } | null = null;
+  let conversationalSheet: { sheet: SheetState; toolCalls: SheetLookupCall[]; unanswered?: boolean } | null = null;
 
   if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
     const startedAt = Date.now();
@@ -1013,7 +1024,7 @@ export async function executeAiAgentNode(
       // Increment G — no intent matched and no flow is active. Keep the sheet
       // lookups for the trace, then fall through to the conversational LLM path.
       conversationalMode = true;
-      conversationalSheet = { sheet: turn.sheet, toolCalls: turn.toolCalls };
+      conversationalSheet = { sheet: turn.sheet, toolCalls: turn.toolCalls, unanswered: turn.unanswered };
       console.log(
         `[AI Executor] No workflow intent matched "${userMessage.slice(0, 80)}" - replying conversationally.`
       );
@@ -1078,6 +1089,8 @@ export async function executeAiAgentNode(
         ...(turn.fallbackUsed !== undefined ? { fallbackUsed: turn.fallbackUsed } : {}),
         ...(turn.fallbackReason ? { fallbackReason: turn.fallbackReason } : {}),
         ...(turn.rejectedSlots ? { rejectedSlots: turn.rejectedSlots } : {}),
+        ...(turn.unanswered ? { unanswered: true } : {}),
+        ...(turn.completed ? { completed: true, completedSlots: turn.completedSlots ?? {} } : {}),
         tokenBreakdown: {
           systemPromptTokens: 0,
           toolDefinitionsTokens: 0,
@@ -1486,6 +1499,7 @@ export async function executeAiAgentNode(
     ...(handover ? { handover } : {}),
     ...(conversationalMode ? { conversational: true } : {}),
     ...(conversationalSheet ? { sheetState: conversationalSheet.sheet } : {}),
+    ...(conversationalSheet?.unanswered ? { unanswered: true } : {}),
     toolCalls: tracedToolCalls,
     tokenBreakdown,
   };
@@ -1642,6 +1656,7 @@ export async function executeAiAgentWorkflowNode(
     ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
     ...(result.rejectedSlots ? { rejectedSlots: result.rejectedSlots } : {}),
     ...(result.conversational ? { conversational: true } : {}),
+    ...(result.unanswered ? { unanswered: true } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
@@ -1670,6 +1685,39 @@ export async function executeAiAgentWorkflowNode(
       finishReason: result.finishReason,
       errorMessage: result.error ?? null,
     });
+  }
+
+  // Phase 5 — lead capture: when the booking flow completed and the workflow has
+  // `capture_lead` enabled, copy the collected slots into `leads`. Fire-and-forget
+  // (a failed insert never fails the conversation), and gated off in the sandbox.
+  if (
+    result.completed &&
+    result.completedSlots &&
+    options.logUsage !== false &&
+    options.workflowId != null
+  ) {
+    const leadPhone = String(userMetadata.phone || incomingMessage?.from || '').trim();
+    if (leadPhone) {
+      void (async () => {
+        try {
+          const { storage } = await import('../storage');
+          const workflow = await storage.getWorkflow(options.workflowId!);
+          if (workflow?.captureLead) {
+            await storage.insertLead({
+              userId: workflow.userId,
+              workflowId: workflow.id,
+              nodeId,
+              channel: options.channel ?? 'whatsapp',
+              phone: leadPhone,
+              collectedSlotsJson: result.completedSlots,
+              source: 'completed_booking',
+            });
+          }
+        } catch (error: any) {
+          console.warn(`[AI] lead capture failed: ${error?.message ?? error}`);
+        }
+      })();
+    }
   }
 
   return {
