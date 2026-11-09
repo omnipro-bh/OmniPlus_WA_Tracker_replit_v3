@@ -983,6 +983,49 @@ function commitEntitySelection(
 }
 
 /**
+ * If the customer's message names a branch/location from the previous search
+ * results ("Riffa"), commit it. This is deterministic: the model often answers
+ * "Let me check…" without searching, which loses the branch the customer gave.
+ */
+function commitLocationSelection(
+  state: SheetState,
+  userMessage: string,
+  map: ScheduleMap
+): boolean {
+  if (!looksLikeSelection(userMessage)) return false;
+  const rows = parseLastSearchRows(state.lastSearch);
+  if (rows.length === 0) return false;
+
+  // Distinct branch values present in the previous results.
+  const branches = new Map<string, string>();
+  for (const row of rows) {
+    const branch = String(readCell(row, map.branchColumn) ?? '').trim();
+    if (branch) branches.set(normalizeStrict(branch), branch);
+  }
+  if (branches.size === 0) return false;
+
+  const words = messageTokens(userMessage);
+  if (words.length === 0) return false;
+
+  const matches = Array.from(branches.entries()).filter(([normalized]) => {
+    const tokens = normalized.split(' ');
+    return words.some((word) =>
+      tokens.some((token) => token === word || (word.length >= 4 && token.startsWith(word)))
+    );
+  });
+  if (matches.length !== 1) return false;
+
+  const branch = matches[0][1];
+  const existing = filledFrom(state.slots, LOCATION_SLOTS);
+  if (existing && strictCellMatch(existing, branch)) return false; // already committed
+
+  // The customer's explicit branch wins over an auto-derived one.
+  const target = LOCATION_SLOTS.find((name) => isFilled(state.slots, name)) ?? LOCATION_SLOTS[0];
+  state.slots[target] = branch;
+  return true;
+}
+
+/**
  * Merge a search with the slots already committed. A location/day-only follow-up
  * ("Riffa") narrows the previous search, so its category/entity is preserved
  * (urologist + Riffa, not every doctor at Riffa).
@@ -1200,6 +1243,7 @@ export async function runAgentHarness(
           fallbackMap,
           fallbackChecklist.derived[0] ?? ENTITY_SLOTS[0]
         );
+        const locationSelected = commitLocationSelection(state, userMessage, fallbackMap);
         if (selected && round1.decision.action !== 'complete') {
           // The customer already picked an entity from the last results — do NOT
           // search again. Ask for the next slot using the sheet's own question.
@@ -1215,8 +1259,10 @@ export async function runAgentHarness(
           }
         }
 
-        if (hasStructuredSearch(search)) {
-          const effectiveSearch = mergeSearchWithSlots(search!, state.slots);
+        // A branch follow-up narrows the previous search even when the model only
+        // answered "Let me check…" without returning a structured search.
+        const effectiveSearch = mergeSearchWithSlots(search ?? {}, state.slots);
+        if (locationSelected || hasStructuredSearch(search)) {
           const rows = await readRows(sheet, fallbackMap.source);
           const matched = filterRowsStructured(rows, effectiveSearch, fallbackMap);
           toolCalls.push({
@@ -1421,6 +1467,9 @@ export async function runAgentHarness(
   const selectedFromSearch = scheduleMap
     ? commitEntitySelection(state, userMessage, scheduleMap, checklist.derived[0] ?? ENTITY_SLOTS[0])
     : false;
+  const locationFromSearch = scheduleMap
+    ? commitLocationSelection(state, userMessage, scheduleMap)
+    : false;
 
   if (selectedFromSearch && decision.action !== 'complete') {
     // Advance to the next missing slot instead of looping on a filled one.
@@ -1434,6 +1483,13 @@ export async function runAgentHarness(
         fallbackUsed,
       };
     }
+  }
+
+  // The customer named a branch from the previous results but the model did not
+  // search ("Let me check…"). Run the narrowed search deterministically instead
+  // of answering with a promise and losing the branch.
+  if (locationFromSearch && decision.action !== 'complete') {
+    return executeSearch({});
   }
 
   // ── Knowledge / availability query: structured search ──────────────────────

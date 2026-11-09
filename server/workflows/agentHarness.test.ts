@@ -816,9 +816,11 @@ test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a
   const t1 = await runAgentHarness(sheet, {}, 'n1', 'urologist', urologyReader, client1);
   assert.equal(t1.sheet.slots.department, 'Urologist');
 
-  // Turn 2: "Riffa" narrows the previous search to the Riffa urologists.
+  // Turn 2: "Riffa" narrows the previous search. The model only replies "Let me
+  // check…" (the live failure) instead of returning a structured search, so the
+  // harness must commit the branch and run the narrowed search itself.
   const client2 = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"location": "Riffa"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check the available urologists at our Riffa branch for you."}',
     '{"updated_slots": {}, "action": "ask", "next_question": "At Riffa we have Dr. Shankar Narayanappa and Dr. Arun Antony."}',
   ]);
   const t2 = await runAgentHarness(
@@ -833,6 +835,9 @@ test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a
   assert.equal(t2.sheet.slots.location, 'Riffa');
   assert.match(t2.text, /Shankar/);
   assert.doesNotMatch(t2.text, /Shabeena/);
+  // The narrowed rows replaced the previous result set (2 Riffa urologists).
+  assert.equal(JSON.parse(t2.sheet.lastSearch!).length, 2);
+  assert.ok(t2.toolCalls.some((call) => call.args.tab === 'Doctors_Schedule'));
 
   // Turn 3: "Shankar" selects a doctor from the previous results. The model tries
   // to search again (the old loop), but the harness commits the FULL name from
