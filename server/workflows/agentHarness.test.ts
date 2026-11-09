@@ -1036,7 +1036,122 @@ test('"book" → "Dental" pre-fills department in code and asks confirm', async 
   assert.match(t2.text, /Would you like to confirm the Dental doctor\?/);
 });
 
-// ── context switch: mid-flow FAQ keeps slots ───────────────────────────────
+// ── deterministic confirmation handling ──────────────────────────────────────
+
+const CONFIRM_READER_SLOTS = [
+  { intent_id: '1', step_id: 'Step_1', step_type: 'ask', ai_question: 'Which department?', slot_name: 'department', expected_input: 'list', options: 'Dental, ENT', lookup_source: '', lookup_filter: '', lookup_extract: '', fallback: '', validation: '' },
+  { intent_id: '1', step_id: 'Step_2', step_type: 'ask', ai_question: 'Would you like to confirm the {department} doctor?', slot_name: 'confirm', expected_input: 'buttons', options: 'Yes, No', lookup_source: '', lookup_filter: '', lookup_extract: '', fallback: '', validation: '' },
+  { intent_id: '1', step_id: 'Step_3', step_type: 'lookup', slot_name: 'doctor_name', lookup_source: 'Doctors_Schedule', lookup_filter: 'department={department}', lookup_extract: 'Doctor', fallback: '', validation: '' },
+];
+
+const confirmSlotReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: '' }];
+  if (tab === 'Doctors_Schedule') return [];
+  return CONFIRM_READER_SLOTS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('confirm step: "Yes" deterministically fills confirm and advances to next slot', async () => {
+  // Turn 1: book → department.
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client1);
+  assert.match(t1.text, /Which department\?/);
+
+  // Turn 2: "Dental" pre-fills department; next missing slot is confirm.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t2 = await runAgentHarness(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Dental', confirmSlotReader, client2);
+  assert.equal(t2.sheet.slots.department, 'Dental');
+  assert.match(t2.text, /Would you like to confirm/);
+
+  // Turn 3: "Yes" — deterministic confirmation handling fills confirm and
+  // advances to the doctor_name lookup (next missing slot), no loop back to
+  // confirm. The model is NOT consulted for this turn.
+  const client3 = harnessClient([]);
+  const t3 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Yes',
+    confirmSlotReader,
+    client3
+  );
+  assert.equal(t3.sheet.slots.confirm, 'Yes');
+  assert.equal(t3.sheet.slots.department, 'Dental');
+  // Advanced past confirm — text does not ask about confirm again.
+  assert.ok(!/confirm/i.test(t3.text));
+});
+
+test('confirm step: "Sure" fills confirm (not misread as a doctor name)', async () => {
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client1);
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t2 = await runAgentHarness(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Dental', confirmSlotReader, client2);
+  assert.equal(t2.sheet.slots.department, 'Dental');
+
+  const client3 = harnessClient([]);
+  const t3 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Sure',
+    confirmSlotReader,
+    client3
+  );
+  assert.equal(t3.sheet.slots.confirm, 'Yes');
+});
+
+test('confirm step: "No" resets the intent and re-opens the conversation', async () => {
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client1);
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t2 = await runAgentHarness(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Dental', confirmSlotReader, client2);
+  assert.equal(t2.sheet.slots.department, 'Dental');
+
+  const client3 = harnessClient([]);
+  const t3 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'No',
+    confirmSlotReader,
+    client3
+  );
+  assert.equal(t3.sheet.slots.confirm, 'No');
+  assert.equal(t3.sheet.intentId, null);
+  assert.match(t3.text, /how can I help/i);
+});
+
+// ── empty LLM response guard ────────────────────────────────────────────────
+
+test('empty LLM response re-asks the current question instead of sending []', async () => {
+  const client = harnessClient([
+    '[]', // empty array response from the model
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client);
+  // The harness re-asks the department question instead of sending [].
+  assert.match(turn.text, /Which department\?/);
+  assert.notEqual(turn.text, '[]');
+});
+
+test('whitespace-only LLM response re-asks the current question', async () => {
+  const client = harnessClient([
+    '   ',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client);
+  assert.match(turn.text, /Which department\?/);
+});
+
 
 test('a mid-flow FAQ is answered verbatim without losing slots', async () => {
   const client1 = harnessClient([

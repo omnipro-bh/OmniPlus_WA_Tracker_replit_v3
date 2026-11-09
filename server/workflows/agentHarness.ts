@@ -896,7 +896,39 @@ const SELECTION_STOPWORDS = new Set([
   'thank', 'you', 'i', 'ill', 'will', 'take', 'choose', 'select', 'prefer', 'want', 'would',
   'like', 'book', 'booking', 'appointment', 'with', 'doctor', 'dr', 'for', 'at', 'on', 'to',
   'of', 'and', 'that', 'this', 'him', 'her', 'go', 'lets', 'let',
+  // Confirmation words must never be mistaken for a doctor/entity name
+  // ("Sure" must not prefix-match "DR SURESH DAIVASIKHAMANI").
+  'sure', 'yep', 'yup', 'confirm', 'correct', 'right', 'no', 'nope', 'nah', 'cancel', 'not',
 ]);
+
+/** Words treated as a deterministic "Yes" to a confirm/verification question. */
+const CONFIRM_YES = new Set([
+  'yes', 'y', 'sure', 'ok', 'okay', 'confirm', 'correct', 'right', 'yeah', 'yep', 'yup', 'ya', 'aye',
+]);
+
+/** Words treated as a deterministic "No". */
+const CONFIRM_NO = new Set(['no', 'n', 'nope', 'nah', 'cancel', 'wrong', 'not']);
+
+/**
+ * Deterministically classify a message as a confirmation ("yes") or a decline
+ * ("no"), or `undefined` when it is neither. Used by the harness to fill the
+ * `confirm` slot in code instead of trusting the model (which misreads "Sure"
+ * as a doctor name).
+ */
+function confirmIntent(message: string): 'yes' | 'no' | undefined {
+  const words = String(message ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  if (words.length === 0) return undefined;
+  const yes = words.some((w) => CONFIRM_YES.has(w));
+  const no = words.some((w) => CONFIRM_NO.has(w));
+  if (no && !yes) return 'no';
+  if (yes) return 'yes';
+  return undefined;
+}
+
+/** Is `confirm` a required slot that is still unfilled? */
+function confirmSlotPending(checklist: HarnessChecklist, slots: Record<string, any>): boolean {
+  return checklist.required.some((s) => s.name === 'confirm') && !isFilled(slots, 'confirm');
+}
 
 const ORDINALS: Record<string, number> = {
   first: 0, '1st': 0, one: 0,
@@ -1509,6 +1541,37 @@ export async function runAgentHarness(
     sheet
   );
 
+  // ── Deterministic confirmation (the confirm step's Yes/No) ──────────────────
+  // Handled in code, never by the LLM. "Yes"/"Sure"/"Yeah" → confirm = "Yes" and
+  // advance to the next slot; "No"/"Cancel" → reset. This prevents both the
+  // confirm loop and the model misreading "Sure" as a doctor name.
+  if (confirmSlotPending(checklist, state.slots)) {
+    const confirmation = confirmIntent(userMessage);
+    if (confirmation === 'yes') {
+      state.slots.confirm = 'Yes';
+      return {
+        text: noBarePlaceholders(defaultQuestion(firstMissing(state.slots, checklist)), state.slots),
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+    if (confirmation === 'no') {
+      state.slots.confirm = 'No';
+      state.intentId = null;
+      state.pendingIntentId = null;
+      state.awaitingVerification = false;
+      return {
+        text: 'No problem — how can I help you?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+  }
+
   // ── Deterministic option pre-fill (list / buttons) ─────────────────────────
   // "Dental" → department, "Riffa" → location, "Yes" → confirm — filled in code
   // from the owner's `options` vocabulary, before the (unreliable) LLM extract.
@@ -1829,8 +1892,16 @@ export async function runAgentHarness(
   const modelText = noBarePlaceholders(decision.next_question || defaultQuestion(missing), state.slots);
   // The owner's ai_question is the only question allowed. Keep any natural
   // acknowledgement the model wrote, but replace its invented question.
-  const text = guided
+  let text = guided
     ? [stripTrailingQuestions(modelText), guided].filter(Boolean).join('\n\n')
     : modelText;
+
+  // Empty LLM response guard: never send `[]`, `{}`, or whitespace to the user.
+  // Re-ask the current step's question instead.
+  if (!text || /^\s*(?:\[|\{|\[|\{\s*)\s*$/.test(text) || /^\s*\[\s*\]\s*$/.test(text)) {
+    text = guided || defaultQuestion(missing);
+    text = noBarePlaceholders(text, state.slots) || `Could you please provide your ${missing?.name ?? 'the required information'}.`;
+  }
+
   return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
 }
