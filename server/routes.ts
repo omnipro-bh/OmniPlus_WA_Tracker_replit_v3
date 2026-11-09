@@ -7307,6 +7307,7 @@ export function registerRoutes(app: Express) {
         name: z.string().min(1).optional(),
         definitionJson: z.record(z.any()).optional(),
         entryNodeId: z.string().optional().nullable(),
+        captureLead: z.boolean().optional(),
       });
 
       const validationResult = updateSchema.safeParse(req.body);
@@ -7317,7 +7318,7 @@ export function registerRoutes(app: Express) {
         });
       }
 
-      const { name, definitionJson, entryNodeId } = validationResult.data;
+      const { name, definitionJson, entryNodeId, captureLead } = validationResult.data;
 
       // Phase 4A-1: validate the new node types' configs only. Errors block;
       // warnings (including unsupported entry node types) are logged and allowed.
@@ -7339,6 +7340,7 @@ export function registerRoutes(app: Express) {
         name,
         definitionJson,
         entryNodeId,
+        ...(captureLead !== undefined ? { captureLead } : {}),
       });
 
       res.json(updated);

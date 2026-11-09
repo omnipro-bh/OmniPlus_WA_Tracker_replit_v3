@@ -36,7 +36,7 @@ import {
   type SheetState,
   type SheetTurn,
 } from './sheetStateMachine';
-import { canonicalizeOption, normalizeInputType, parseOptions, validateSlotValue } from './slotValidation';
+import { canonicalizeOption, matchWholeWordOption, normalizeInputType, parseOptions, validateSlotValue } from './slotValidation';
 import { isWithinWindow, parseRequestedTime, parseTimeWindows } from './timeRange';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -1129,6 +1129,36 @@ function stripTrailingQuestions(text: string): string {
   return parts.join(' ').trim();
 }
 
+// ── Deterministic slot pre-fill (list / buttons) ────────────────────────────
+
+/**
+ * Ported from the legacy state machine: models are unreliable at single-token
+ * extraction, so the code fills whatever it can from the owner's own vocabulary
+ * BEFORE the LLM runs. For every `list`/`buttons` step, if the customer's
+ * message matches one of the step's `options` (exact case-insensitive, then
+ * whole-word), fill that slot. "Dental" → department, "Yes" → confirm.
+ */
+function prefillOptionsSlots(
+  steps: Record<string, any>[],
+  userMessage: string,
+  slots: Record<string, any>,
+  headers: { slot: string; expected: string; options: string }
+): void {
+  const message = String(userMessage ?? '').trim();
+  for (const step of steps) {
+    const input = normalizeInputType(step[headers.expected]);
+    if (input !== 'list' && input !== 'buttons') continue;
+    const options = parseOptions(step[headers.options]);
+    if (!options || options.length === 0) continue;
+    const exact = options.find((o) => o.toLowerCase() === message.toLowerCase());
+    const hit = exact ?? matchWholeWordOption(message, options);
+    if (!hit) continue;
+    for (const name of parseSlotNames(step[headers.slot])) {
+      if (!isFilled(slots, name)) slots[name] = hit;
+    }
+  }
+}
+
 // ── Validation + merge ──────────────────────────────────────────────────────
 
 function mergeSlots(
@@ -1478,6 +1508,15 @@ export async function runAgentHarness(
     },
     sheet
   );
+
+  // ── Deterministic option pre-fill (list / buttons) ─────────────────────────
+  // "Dental" → department, "Riffa" → location, "Yes" → confirm — filled in code
+  // from the owner's `options` vocabulary, before the (unreliable) LLM extract.
+  prefillOptionsSlots(steps, userMessage, state.slots, {
+    slot: slotHeader,
+    expected: expectedHeader,
+    options: optionsHeader,
+  });
 
   // ── Context switch: a mid-booking FAQ / general question ───────────────────
   // The customer is mid-flow (intentId set) but this message matches a DIFFERENT

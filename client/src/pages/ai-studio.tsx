@@ -22,6 +22,7 @@ import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
 import { KnowledgeTab, ScenariosTab } from "@/components/ai-studio-sheets";
 import { LiveChatTab } from "@/components/ai-studio-live-chat";
 import { KpisTab } from "@/components/ai-studio-kpis";
+import { Switch } from "@/components/ui/switch";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -95,6 +96,26 @@ export default function AIStudio() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configQueryKey });
       toast({ title: "Saved", description: "AI Studio config updated." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Save failed",
+        description: error?.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveCaptureLead = useMutation({
+    mutationFn: async (captureLead: boolean) => {
+      await apiRequest("PUT", `/api/workflows/${effectiveWorkflowId}`, { captureLead });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({
+        title: "Saved",
+        description: "Lead capture updated.",
+      });
     },
     onError: (error: any) => {
       toast({
@@ -274,6 +295,24 @@ export default function AIStudio() {
                   )}
                   Save Instructions
                 </Button>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label htmlFor="capture-lead">Capture Leads</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Save completed bookings to the Leads table so your team can follow up.
+                    </p>
+                  </div>
+                  <Switch
+                    id="capture-lead"
+                    checked={selectedWorkflow?.captureLead === true}
+                    disabled={saveCaptureLead.isPending || !effectiveWorkflowId}
+                    onCheckedChange={(checked) => saveCaptureLead.mutate(checked)}
+                    aria-label="Toggle lead capture"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

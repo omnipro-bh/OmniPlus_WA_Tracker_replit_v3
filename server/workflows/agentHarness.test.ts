@@ -835,12 +835,11 @@ test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a
   const t1 = await runAgentHarness(sheet, {}, 'n1', 'urologist', urologyReader, client1);
   assert.equal(t1.sheet.slots.department, 'Urologist');
 
-  // Turn 2: "Riffa" narrows the previous search. The model only replies "Let me
-  // check…" (the live failure) instead of returning a structured search, so the
-  // harness must commit the branch and run the narrowed search itself.
+  // Turn 2: "Riffa" is deterministically pre-filled as the location (from the
+  // location step's options), so the harness advances to the datetime question
+  // without re-running the search.
   const client2 = harnessClient([
-    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check the available urologists at our Riffa branch for you."}',
-    '{"updated_slots": {}, "action": "ask", "next_question": "At Riffa we have Dr. Shankar Narayanappa and Dr. Arun Antony."}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "Sure."}',
   ]);
   const t2 = await runAgentHarness(
     sheet,
@@ -851,12 +850,8 @@ test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a
     client2
   );
   assert.equal(t2.sheet.slots.department, 'Urologist');
-  assert.equal(t2.sheet.slots.location, 'Riffa');
-  assert.match(t2.text, /Shankar/);
-  assert.doesNotMatch(t2.text, /Shabeena/);
-  // The narrowed rows replaced the previous result set (2 Riffa urologists).
-  assert.equal(JSON.parse(t2.sheet.lastSearch!).length, 2);
-  assert.ok(t2.toolCalls.some((call) => call.args.tab === 'Doctors_Schedule'));
+  assert.equal(t2.sheet.slots.location, 'Riffa'); // pre-filled by code, not the LLM
+  assert.match(t2.text, /date and time/i); // advanced past location to datetime
 
   // Turn 3: "Shankar" selects a doctor from the previous results. The model tries
   // to search again (the old loop), but the harness commits the FULL name from
@@ -1015,6 +1010,30 @@ test('the harness asks the confirm step after department is filled', async () =>
   // department filled → confirm is the next missing slot, asked verbatim.
   assert.match(turn.text, /Would you like to confirm the Dental doctor\?/);
   assert.equal(turn.sheet.slots.department, 'Dental');
+});
+
+test('"book" → "Dental" pre-fills department in code and asks confirm', async () => {
+  const confirmReader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: '' }];
+    if (tab === 'Doctors_Schedule') return [];
+    return CONFIRM_STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  // Turn 1: book → department question.
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', confirmReader, client1);
+  assert.match(t1.text, /Which department\?/);
+
+  // Turn 2: "Dental" — the model FAILS to extract it (empty updated_slots), but
+  // the deterministic pre-fill catches the list option and fills department, so
+  // the harness advances to the confirm step.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Which department?"}',
+  ]);
+  const t2 = await runAgentHarness(sheet, { ai: { n1: { sheet: t1.sheet } } }, 'n1', 'Dental', confirmReader, client2);
+  assert.equal(t2.sheet.slots.department, 'Dental'); // filled by code, not the LLM
+  assert.match(t2.text, /Would you like to confirm the Dental doctor\?/);
 });
 
 // ── context switch: mid-flow FAQ keeps slots ───────────────────────────────
