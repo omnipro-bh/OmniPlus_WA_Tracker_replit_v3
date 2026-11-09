@@ -1186,6 +1186,7 @@ function prefillOptionsSlots(
     const hit = exact ?? matchWholeWordOption(message, options);
     if (!hit) continue;
     for (const name of parseSlotNames(step[headers.slot])) {
+      if (FLOW_CONTROL_SLOTS.has(name)) continue; // never pre-fill flow-control slots
       if (!isFilled(slots, name)) slots[name] = hit;
     }
   }
