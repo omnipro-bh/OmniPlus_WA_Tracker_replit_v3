@@ -20,8 +20,10 @@ import {
   matchDoctor,
   matchesIntentKeywords,
   noBarePlaceholders,
+  resolveDay,
   runAgentHarness,
   serializeSearchResults,
+  strictCellMatch,
   type HarnessChecklist,
 } from './agentHarness';
 import type { RowReader } from './sheetStateMachine';
@@ -178,7 +180,29 @@ test('deriveScheduleMap reads the lookup source + column mapping', () => {
     doctorColumn: 'Doctor',
     departmentColumn: 'department',
     branchColumn: 'branch',
+    dayOffColumn: 'Day-Off',
+    timeStartColumn: 'Start_Time',
+    timeEndColumn: 'End_Time',
+    feesColumn: 'Consultation Fees',
   });
+});
+
+test('strictCellMatch is exact (case/qualifier-insensitive) and not fuzzy', () => {
+  assert.equal(strictCellMatch('Urologist', 'urologist'), true);
+  assert.equal(strictCellMatch('Specialist Orthodontist', 'Orthodontist'), true);
+  assert.equal(strictCellMatch('Hamad Town', 'hamad town'), true);
+  // No prefix/stem/substring fuzz: these are different specialties.
+  assert.equal(strictCellMatch('Pedodontist', 'Orthodontist'), false);
+  assert.equal(strictCellMatch('Cardiologist', 'Cardiology'), false);
+});
+
+test('resolveDay resolves relative and named days', () => {
+  const monday = new Date('2026-11-09T12:00:00');
+  assert.equal(resolveDay('tomorrow', monday), 'tuesday');
+  assert.equal(resolveDay('today', monday), 'monday');
+  assert.equal(resolveDay('Tue', monday), 'tuesday');
+  assert.equal(resolveDay('Friday', monday), 'friday');
+  assert.equal(resolveDay('whenever', monday), undefined);
 });
 
 test('matchDoctor matches the named doctor but not a shared "DR" title', () => {
@@ -306,7 +330,7 @@ test('buildHarnessPrompt passes structured search data and warns against halluci
 
 test('search_schedule finds doctors at a branch', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"branch": "Adliya"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"location": "Adliya"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?"}',
   ]);
 
@@ -459,7 +483,7 @@ test('a datetime slot rejects a value with no digits (e.g. "PM")', async () => {
 
 test('an alternative request routes through search_schedule', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"branch": "Adliya"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"location": "Adliya"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Sujith and Dr. Bindiya at Adliya. Would you like to book one?"}',
   ]);
 
@@ -488,7 +512,7 @@ const endoReader: RowReader = async (_sheet, tab, filter) => {
 
 test('search_schedule returns matching endodontists', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "SPECIALIST ENDODONTIST"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "SPECIALIST ENDODONTIST"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Arun and Dr. Komal Sharma. Would you like to book one?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have SPECIALIST ENDODONTIST?', endoReader, client);
@@ -498,7 +522,7 @@ test('search_schedule returns matching endodontists', async () => {
 
 test('search_schedule returns matching cardiologists', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "cardiologist"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "cardiologist"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Santosh (Cardiologist). Would you like to book?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a cardiologist?', endoReader, client);
@@ -538,7 +562,7 @@ const propertyReader: RowReader = async (_sheet, tab, filter) => {
 
 test('search_schedule returns matching properties (real estate)', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"query": "3-bedroom villa"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "3-bedroom villa"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Villa One (3-bedroom villa). Would you like to book a viewing?"}',
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'Do you have a 3-bedroom villa?', propertyReader, client);
@@ -561,6 +585,7 @@ const noIntentReader: RowReader = async (_sheet, tab, _filter) => {
 test('a follow-up "At which branch?" reads the branch column from structured results', async () => {
   // Turn 1: search for the orthodontists (no booking intent → search fallback).
   const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "ORTHODONTIST"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Rinkoo Jose and Dr. Rajeesh Radhakrishnan."}',
   ]);
   const t1 = await runAgentHarness(sheet, {}, 'n1', 'You have CONSULTANT ORTHODONTIST', noIntentReader, client1);
@@ -600,10 +625,10 @@ const richaMap = {
   branchColumn: 'branch',
 };
 
-test('filterRowsStructured applies AND logic (specialty + branch)', () => {
+test('filterRowsStructured applies AND logic (category + location)', () => {
   const rows = filterRowsStructured(
     RICHA_SCHEDULE,
-    { specialty: 'Orthodontist', branch: 'Riffa' },
+    { category: 'Orthodontist', location: 'Riffa' },
     richaMap
   );
   // Only Dr. Rinkoo Jose at Riffa survives — NOT the Pedodontist at Riffa, and
@@ -611,6 +636,12 @@ test('filterRowsStructured applies AND logic (specialty + branch)', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].Doctor, 'Dr. Rinkoo Jose');
   assert.equal(rows[0].Branch, 'Riffa');
+});
+
+test('filterRowsStructured returns [] when no structured constraint is present', () => {
+  // No free-text fallback: an unstructured search must not scan every cell.
+  assert.deepEqual(filterRowsStructured(RICHA_SCHEDULE, {}, richaMap), []);
+  assert.deepEqual(filterRowsStructured(RICHA_SCHEDULE, { category: '' }, richaMap), []);
 });
 
 test('serializeSearchResults dedupes by entity+branch and preserves "--" times', () => {
@@ -625,7 +656,7 @@ test('serializeSearchResults dedupes by entity+branch and preserves "--" times',
 
 test('search "Orthodontist at Riffa" returns only the Riffa orthodontist', async () => {
   const client = harnessClient([
-    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"specialty": "Orthodontist", "branch": "Riffa"}}',
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "Orthodontist", "location": "Riffa"}}',
     '{"updated_slots": {}, "action": "ask", "next_question": "Dr. Rinkoo Jose is at Riffa, available 5 to 9:30."}',
   ]);
   const reader: RowReader = async (_sheet, tab, filter) => {
@@ -637,4 +668,92 @@ test('search "Orthodontist at Riffa" returns only the Riffa orthodontist', async
   // The structured JSON passed to the model must NOT contain the pedodontist.
   assert.match(turn.text, /Rinkoo/);
   assert.doesNotMatch(turn.text, /Tabassum/);
+});
+
+// ── normalized schema: Day-Off / Start_Time / End_Time / fees ──────────────
+
+const NEW_SCHEMA_SCHEDULE = [
+  {
+    Doctor: 'Dr. Arun Antony',
+    Branch: 'Hamad Town',
+    Department: 'Urologist',
+    'Day-Off': '',
+    Start_Time: '13:00',
+    End_Time: '17:00',
+    'Consultation Fees': '5 BD',
+  },
+  {
+    Doctor: 'Dr. Rinkoo Jose',
+    Branch: 'Riffa',
+    Department: 'Orthodontist',
+    'Day-Off': 'Tuesday',
+    Start_Time: '17:00',
+    End_Time: '21:30',
+    'Consultation Fees': '10 BD',
+  },
+  {
+    Doctor: 'Dr. Tabassum Tayab',
+    Branch: 'Riffa',
+    Department: 'Pedodontist',
+    'Day-Off': '',
+    Start_Time: '--',
+    End_Time: '--',
+    'Consultation Fees': '5 BD',
+  },
+];
+
+const newSchemaMap = {
+  source: 'Doctors_Schedule',
+  doctorColumn: 'Doctor',
+  departmentColumn: 'Department',
+  branchColumn: 'Branch',
+  dayOffColumn: 'Day-Off',
+  timeStartColumn: 'Start_Time',
+  timeEndColumn: 'End_Time',
+  feesColumn: 'Consultation Fees',
+};
+
+test('"urologist at Hamad Town tomorrow" resolves tomorrow (Tuesday) and keeps the row', () => {
+  // 2026-11-09 is a Monday, so "tomorrow" is Tuesday. Dr. Arun's Day-Off is
+  // blank → he works every day.
+  const monday = new Date('2026-11-09T12:00:00');
+  const rows = filterRowsStructured(
+    NEW_SCHEMA_SCHEDULE,
+    { category: 'Urologist', location: 'Hamad Town', day: 'tomorrow' },
+    newSchemaMap,
+    monday
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Doctor, 'Dr. Arun Antony');
+  assert.equal(rows[0].Start_Time, '13:00');
+  assert.equal(rows[0].End_Time, '17:00');
+  assert.equal(rows[0]['Consultation Fees'], '5 BD');
+});
+
+test('Day-Off blocks the requested day (Dr. Rinkoo is off on Tuesday)', () => {
+  const monday = new Date('2026-11-09T12:00:00');
+  const rows = filterRowsStructured(
+    NEW_SCHEMA_SCHEDULE,
+    { category: 'Orthodontist', location: 'Riffa', day: 'tomorrow' },
+    newSchemaMap,
+    monday
+  );
+  assert.deepEqual(rows, []);
+});
+
+test('"orthodontist at Riffa" returns only Dr. Rinkoo (not the pedodontist / other branch)', () => {
+  const rows = filterRowsStructured(
+    NEW_SCHEMA_SCHEDULE,
+    { category: 'Orthodontist', location: 'Riffa' },
+    newSchemaMap
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Doctor, 'Dr. Rinkoo Jose');
+});
+
+test('missing times ("--") are preserved so the reply can report the gap', () => {
+  const parsed = JSON.parse(serializeSearchResults([NEW_SCHEMA_SCHEDULE[2]], newSchemaMap));
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].Start_Time, '--');
+  assert.equal(parsed[0].End_Time, '--');
 });

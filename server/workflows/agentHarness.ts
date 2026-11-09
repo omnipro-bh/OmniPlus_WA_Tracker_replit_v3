@@ -14,8 +14,8 @@
  *   5. sends a natural question for the first still-missing slot, guarding against
  *      a literal `{slot}` ever reaching the customer.
  *
- * The model never owns business rules: `validateSlotValue`, `looseCellMatch`,
- * `substituteSlots` and the bounded loop are all code.
+ * The model never owns business rules: `validateSlotValue`, `strictCellMatch`,
+ * `filterRowsStructured`, `substituteSlots` and the bounded loop are all code.
  */
 
 import { lookupSheetRows } from './googleSheetsExecutor';
@@ -25,7 +25,6 @@ import type { AiGoogleSheetsConfig, LlmClient } from '../ai/types';
 import {
   availabilityHeader,
   headerFor,
-  looseCellMatch,
   normalizeSlotKey,
   parseLookupFilter,
   parseSlotNames,
@@ -70,23 +69,46 @@ export interface HarnessDecision {
   action: 'ask' | 'complete' | 'search_schedule';
   next_question: string;
   /** Structured constraints for action "search_schedule" (the code filters on these). */
-  search?: {
-    specialty?: string; // matches the department/specialty column
-    branch?: string;    // matches the branch/location column
-    name?: string;      // matches the doctor/property name column
-    query?: string;     // catch-all full-text fallback (only when no structured field)
-  };
+  search?: ScheduleSearch;
   tool_call?: 'lookup_schedule';
   /** Filter for `lookup_schedule` (location = branch). */
   lookup?: { doctor?: string; department?: string; location?: string };
 }
 
-/** Column mapping of the schedule tab, derived from a `lookup` step. */
+/**
+ * Structured search constraints. Every field is optional; the code applies them
+ * with AND semantics. There is deliberately no free-text `query` field — if the
+ * model cannot produce a structured constraint it must ask the customer instead
+ * of guessing.
+ */
+export interface ScheduleSearch {
+  /** Specialty / category — matches the Department (or equivalent) column. */
+  category?: string;
+  /** Branch / location — matches the Branch (or equivalent) column. */
+  location?: string;
+  /** Entity name — matches the Doctor/Property (or equivalent) column. */
+  name?: string;
+  /** Weekday or relative day ("Tuesday", "tomorrow") — checked against Day-Off. */
+  day?: string;
+}
+
+/** Column mapping of the schedule tab, derived from a `lookup` step + schema. */
 export interface ScheduleMap {
   source: string;
+  /** Entity column (Doctor / Property / …). */
   doctorColumn: string;
+  /** Category column (Department / Type / …). */
   departmentColumn: string;
+  /** Location column (Branch / Location / …). */
   branchColumn: string;
+  /** Weekday(s) the entity does NOT work (blank = works every day). */
+  dayOffColumn?: string;
+  /** Start of the availability window (e.g. 13:00). */
+  timeStartColumn?: string;
+  /** End of the availability window (e.g. 17:00). */
+  timeEndColumn?: string;
+  /** Consultation fee / price column, rendered verbatim. */
+  feesColumn?: string;
 }
 
 /** Slot names that are flow-control artifacts of the old linear sheet, not customer data. */
@@ -226,7 +248,61 @@ export function deriveChecklist(
   return { required: Array.from(requiredByName.values()), derived: Array.from(derived) };
 }
 
-/** Derive the schedule column mapping from the intent's `lookup` step(s). */
+/** Normalize a header for case/space/underscore-insensitive matching. */
+function normalizeHeader(value: any): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+/**
+ * Resolve the canonical schedule columns for a tab, in priority order:
+ *   1. the declared schema (`AI_SHEET_TAB_SCHEMA`),
+ *   2. the owner's column mapping (`sheet.columns[tab]`),
+ *   3. the actual headers detected in the sheet (`sheet.detected[tab]`).
+ * This is the `ScheduleSchema`: the code knows which column is the entity, the
+ * category, the location, the day off, and the time window — no guessing.
+ */
+function schemaColumnsFor(
+  tab: string,
+  sheet?: AiGoogleSheetsConfig
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const schema = AI_SHEET_TAB_SCHEMA.find((t) => t.tab === tab);
+  if (schema) {
+    for (const col of schema.columns) out[col.key] = col.column;
+  }
+
+  const overrides = sheet?.columns?.[tab];
+  if (overrides && typeof overrides === 'object') {
+    for (const [key, value] of Object.entries(overrides)) {
+      if (typeof value === 'string' && value.trim()) out[key] = value.trim();
+    }
+  }
+
+  const detected = sheet?.detected?.[tab];
+  if (Array.isArray(detected) && detected.length > 0) {
+    const byNormalized = new Map<string, string>();
+    for (const header of detected) {
+      const normalized = normalizeHeader(header);
+      if (normalized && !byNormalized.has(normalized)) byNormalized.set(normalized, String(header).trim());
+    }
+    for (const [key, column] of Object.entries(out)) {
+      const hit =
+        byNormalized.get(normalizeHeader(key)) ?? byNormalized.get(normalizeHeader(column));
+      if (hit) out[key] = hit;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Derive the schedule column mapping from the intent's `lookup` step(s) plus the
+ * declared schema. The lookup step's `lookup_extract` / `lookup_filter` still win
+ * for the entity/category/location columns (owner intent), while the schema fills
+ * in the day-off, start/end time and fee columns.
+ */
 export function deriveScheduleMap(
   steps: Record<string, any>[],
   headers: {
@@ -234,20 +310,39 @@ export function deriveScheduleMap(
     source: string;
     filter: string;
     extract: string;
-  }
+  },
+  sheet?: AiGoogleSheetsConfig
 ): ScheduleMap | undefined {
   for (const step of Array.isArray(steps) ? steps : []) {
     if (String(step[headers.stepType] ?? '').trim().toLowerCase() !== 'lookup') continue;
     const source = String(step[headers.source] ?? '').trim();
     const extract = String(step[headers.extract] ?? '').trim();
     if (!source || !extract) continue;
-    let departmentColumn = 'department';
-    let branchColumn = 'branch';
+
+    const cols = schemaColumnsFor(source, sheet);
+    let departmentColumn = cols.department ?? 'department';
+    let branchColumn = cols.branch ?? 'branch';
     for (const clause of parseLookupFilter(String(step[headers.filter] ?? ''))) {
-      if (clause.value === '{department}') departmentColumn = clause.column;
-      else if (clause.value === '{location}') branchColumn = clause.column;
+      // Generic aliases: the category slot may be called department/specialty/
+      // type/category, and the location slot branch/location.
+      if (['{department}', '{specialty}', '{type}', '{category}'].includes(clause.value)) {
+        departmentColumn = clause.column;
+      } else if (['{location}', '{branch}'].includes(clause.value)) {
+        branchColumn = clause.column;
+      }
     }
-    return { source, doctorColumn: extract, departmentColumn, branchColumn };
+
+    const map: ScheduleMap = {
+      source,
+      doctorColumn: extract || cols.doctor || 'Doctor',
+      departmentColumn,
+      branchColumn,
+    };
+    if (cols.day_off) map.dayOffColumn = cols.day_off;
+    if (cols.start_time) map.timeStartColumn = cols.start_time;
+    if (cols.end_time) map.timeEndColumn = cols.end_time;
+    if (cols.consultation_fees) map.feesColumn = cols.consultation_fees;
+    return map;
   }
   return undefined;
 }
@@ -332,16 +427,16 @@ export function buildHarnessPrompt(
     'INSTRUCTIONS:',
     '1. Extract any new slot values from the USER MESSAGE into updated_slots.',
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
-    '3. If the user asks whether something exists, or asks for a list or an ALTERNATIVE (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?"), you MUST set action = "search_schedule" and put the constraints in "search" as SEPARATE fields: search.specialty (the specialty/type), search.branch (the location), search.name (the doctor/property name). Do NOT merge them into one query string — e.g. "Orthodontist at Riffa" → {"search":{"specialty":"Orthodontist","branch":"Riffa"}}. Only use search.query as a last resort when you cannot identify a structured field. NEVER reply with "Let me check" without returning action = "search_schedule". Do NOT guess names.',
+    '3. If the user asks whether something exists, asks for a list, an ALTERNATIVE, or AVAILABILITY (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?", "availability tomorrow at Hamad Town"), you MUST set action = "search_schedule" and put the constraints in "search" as SEPARATE fields: search.category (the specialty/type/Department), search.location (the branch/location), search.name (the doctor/property name), search.day (the weekday or "today"/"tomorrow"). Do NOT merge them into one string. Examples: "Orthodontist at Riffa" → {"search":{"category":"Orthodontist","location":"Riffa"}}; "urologist at Hamad Town tomorrow" → {"search":{"category":"Urologist","location":"Hamad Town","day":"tomorrow"}}. NEVER reply with "Let me check" without returning action = "search_schedule". Do NOT guess names. If you cannot identify any structured field, ask the customer to clarify instead of searching.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
     '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
     '6. Rephrase in character using your persona, but keep the core intent of the question.',
     '7. If the message is off-topic or a greeting, answer it naturally and still set action = "ask" with a question that guides back to a missing slot.',
-    '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read the relevant columns), and set action = "ask" with your reply in next_question (then offer to book one).',
+    '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read Doctor, Branch, Department, Day-Off, Start_Time, End_Time and Consultation Fees), and set action = "ask" with your reply in next_question (then offer to book one). Render Start_Time–End_Time as the available times.',
     '9. Reply in the same language as the customer.',
-    '10. If a SEARCH RESULTS row has empty or "--" available times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
+    '10. If a SEARCH RESULTS row has empty or "--" start/end times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
     '',
-    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"specialty": "...", "branch": "...", "name": "..."}}',
+    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"category": "...", "location": "...", "name": "...", "day": "..."}}',
   ].join('\n');
 }
 
@@ -367,12 +462,16 @@ function validateHarnessDecision(
   const lookup = obj.lookup && typeof obj.lookup === 'object' ? obj.lookup : undefined;
 
   const rawSearch = obj.search && typeof obj.search === 'object' ? obj.search : {};
+  // Accept the older `specialty`/`branch` names as aliases, but never accept a
+  // free-text `query`: an unstructured search must ask for clarification.
+  const category = rawSearch.category ?? rawSearch.specialty;
+  const location = rawSearch.location ?? rawSearch.branch;
   const search = Object.keys(rawSearch).length > 0
     ? {
-        ...(typeof rawSearch.specialty === 'string' && rawSearch.specialty.trim() ? { specialty: rawSearch.specialty.trim() } : {}),
-        ...(typeof rawSearch.branch === 'string' && rawSearch.branch.trim() ? { branch: rawSearch.branch.trim() } : {}),
+        ...(typeof category === 'string' && category.trim() ? { category: category.trim() } : {}),
+        ...(typeof location === 'string' && location.trim() ? { location: location.trim() } : {}),
         ...(typeof rawSearch.name === 'string' && rawSearch.name.trim() ? { name: rawSearch.name.trim() } : {}),
-        ...(typeof rawSearch.query === 'string' && rawSearch.query.trim() ? { query: rawSearch.query.trim() } : {}),
+        ...(typeof rawSearch.day === 'string' && rawSearch.day.trim() ? { day: rawSearch.day.trim() } : {}),
       }
     : undefined;
 
@@ -432,6 +531,123 @@ export function matchDoctor(cell: any, wanted: any): boolean {
   return bTokens.every((t) => aTokens.some((aw) => aw === t || aw.startsWith(t)));
 }
 
+/**
+ * Strict, deterministic cell match for constraint columns (category/location).
+ *
+ * Case-insensitive, punctuation/whitespace-normalized **equality**. Generic
+ * qualifiers ("specialist", "consultant", "senior", …) are ignored on both sides
+ * so "Specialist Orthodontist" ≡ "Orthodontist". There is deliberately **no**
+ * prefix/stem/substring fuzziness — that is what `looseCellMatch` did and why
+ * unrelated rows leaked into search results.
+ */
+const GENERIC_QUALIFIERS = new Set([
+  'specialist',
+  'consultant',
+  'senior',
+  'junior',
+  'general',
+  'doctor',
+  'dr',
+  'prof',
+  'professor',
+]);
+
+function normalizeStrict(value: any): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function stripQualifiers(value: string): string {
+  return value
+    .split(' ')
+    .filter((token) => token && !GENERIC_QUALIFIERS.has(token))
+    .join(' ');
+}
+
+export function strictCellMatch(cell: any, wanted: any): boolean {
+  const a = normalizeStrict(cell);
+  const b = normalizeStrict(wanted);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const strippedA = stripQualifiers(a);
+  const strippedB = stripQualifiers(b);
+  return strippedA !== '' && strippedA === strippedB;
+}
+
+// ── Day-of-week helpers ─────────────────────────────────────────────────────
+
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+const DAY_ALIASES: Record<string, string> = {
+  sun: 'sunday',
+  mon: 'monday',
+  tue: 'tuesday',
+  tues: 'tuesday',
+  wed: 'wednesday',
+  thu: 'thursday',
+  thur: 'thursday',
+  thurs: 'thursday',
+  fri: 'friday',
+  sat: 'saturday',
+};
+
+/**
+ * Resolve a weekday from free text — "Tuesday", "Tue", "today", "tomorrow".
+ * Relative days are resolved against `now` (injectable for tests).
+ */
+export function resolveDay(value: any, now: Date = new Date()): string | undefined {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return undefined;
+  if (/\bday\s+after\s+tomorrow\b/.test(raw)) return DAY_NAMES[(now.getDay() + 2) % 7];
+  if (/\btomorrow\b/.test(raw)) return DAY_NAMES[(now.getDay() + 1) % 7];
+  if (/\btoday\b/.test(raw)) return DAY_NAMES[now.getDay()];
+  for (const [alias, full] of Object.entries(DAY_ALIASES)) {
+    if (new RegExp(`\\b${alias}\\b`, 'i').test(raw)) return full;
+  }
+  for (const full of DAY_NAMES) {
+    if (new RegExp(`\\b${full}\\b`, 'i').test(raw)) return full;
+  }
+  return undefined;
+}
+
+/**
+ * Does the row's `Day-Off` cell block the requested day? Blank means the entity
+ * works every day. A listed day blocks only that day.
+ */
+export function dayOffBlocks(row: Record<string, any>, day: string, map: ScheduleMap): boolean {
+  if (!map.dayOffColumn) return false;
+  const value = String(readCell(row, map.dayOffColumn) ?? '').trim();
+  if (!value) return false;
+  if (/^(none|no|n\/?a|--?|—)$/i.test(value)) return false;
+
+  const requested = resolveDay(day);
+  if (!requested) return false;
+
+  const normalized = value.toLowerCase();
+  if (/\bweekend\b/.test(normalized) && (requested === 'friday' || requested === 'saturday')) {
+    return true;
+  }
+  const alias = Object.entries(DAY_ALIASES).find(([, full]) => full === requested)?.[0];
+  const pattern = alias
+    ? new RegExp(`\\b(${requested}|${alias})\\b`, 'i')
+    : new RegExp(`\\b${requested}\\b`, 'i');
+  return pattern.test(normalized);
+}
+
+/** Is at least one structured constraint present? (No free-text fallback.) */
+export function hasStructuredSearch(search?: ScheduleSearch): boolean {
+  const s = search ?? {};
+  return Boolean(
+    (s.category && String(s.category).trim()) ||
+      (s.location && String(s.location).trim()) ||
+      (s.name && String(s.name).trim()) ||
+      (s.day && String(s.day).trim())
+  );
+}
+
 async function scheduleLookup(
   readRows: RowReader,
   sheet: AiGoogleSheetsConfig,
@@ -443,53 +659,78 @@ async function scheduleLookup(
   return rankLookupHits(
     rows.filter((row) => {
       if (filter.doctor && !matchDoctor(readCell(row, map.doctorColumn), filter.doctor)) return false;
-      if (filter.department && !looseCellMatch(readCell(row, map.departmentColumn), filter.department)) return false;
-      if (filter.location && !looseCellMatch(readCell(row, map.branchColumn), filter.location)) return false;
+      if (filter.department && !strictCellMatch(readCell(row, map.departmentColumn), filter.department)) return false;
+      if (filter.location && !strictCellMatch(readCell(row, map.branchColumn), filter.location)) return false;
       return true;
     })
   );
+}
+
+/** Render a row's availability window (structured Start/End or a legacy column). */
+function formatTimes(row: Record<string, any>, map: ScheduleMap): string {
+  if (map.timeStartColumn || map.timeEndColumn) {
+    const start = map.timeStartColumn ? String(readCell(row, map.timeStartColumn) ?? '').trim() : '';
+    const end = map.timeEndColumn ? String(readCell(row, map.timeEndColumn) ?? '').trim() : '';
+    if (start || end) return [start || '?', end || '?'].join(' - ');
+  }
+  const header = availabilityHeader(row) ?? hoursColumn(row);
+  return header ? String(readCell(row, header) ?? '').trim() : '';
 }
 
 function formatScheduleRow(row: Record<string, any>, map: ScheduleMap): string {
   const doctor = String(readCell(row, map.doctorColumn) ?? '').trim() || 'a doctor';
   const department = String(readCell(row, map.departmentColumn) ?? '').trim();
   const branch = String(readCell(row, map.branchColumn) ?? '').trim();
-  const timesHeader = availabilityHeader(row);
-  const times = timesHeader ? String(readCell(row, timesHeader) ?? '').trim() : '';
-  return `${doctor} is ${department ? `a ${department}` : 'available'}${branch ? ` at ${branch}` : ''}${times ? ` (available ${times})` : ''}.`;
+  const times = formatTimes(row, map);
+  const fees = map.feesColumn ? String(readCell(row, map.feesColumn) ?? '').trim() : '';
+  const dayOff = map.dayOffColumn ? String(readCell(row, map.dayOffColumn) ?? '').trim() : '';
+  return `${doctor} is ${department ? `a ${department}` : 'available'}${branch ? ` at ${branch}` : ''}${times ? ` (available ${times})` : ''}${fees ? `, consultation fee ${fees}` : ''}${dayOff ? `, off ${dayOff}` : ''}.`;
 }
 
 /**
  * Is a schedule row genuinely unavailable ("off", "vacation", "closed")? A bare
- * "--" or empty availability is NOT treated as off — the row is kept so the model
- * can honestly report "no available times" instead of borrowing another branch's.
+ * "--" or empty time is NOT treated as off — the row is kept so the model can
+ * honestly report "no available times" instead of borrowing another branch's.
  */
-function isDoctorOff(row: Record<string, any>): boolean {
-  const header = availabilityHeader(row);
-  if (!header) return false;
-  const value = String(readCell(row, header) ?? '').trim();
-  return /\b(off|vacation|unavailable|not available|closed)\b/i.test(value);
+function isDoctorOff(row: Record<string, any>, map?: ScheduleMap): boolean {
+  const legacy = availabilityHeader(row);
+  if (legacy) {
+    const value = String(readCell(row, legacy) ?? '').trim();
+    if (/\b(off|vacation|unavailable|not available|closed)\b/i.test(value)) return true;
+  }
+  for (const column of [map?.timeStartColumn, map?.timeEndColumn]) {
+    if (!column) continue;
+    const value = String(readCell(row, column) ?? '').trim();
+    if (/\b(off|vacation|unavailable|not available|closed)\b/i.test(value)) return true;
+  }
+  if (map?.dayOffColumn) {
+    const value = String(readCell(row, map.dayOffColumn) ?? '').trim();
+    if (/^(all|every\s*day|always)$/i.test(value)) return true;
+  }
+  return false;
 }
 
 /**
  * Deterministic AND-filter for `search_schedule`. The CODE is the sole filter:
- * every present structured constraint must match (specialty AND branch AND name).
- * A full-text `query` search is only used when no structured field was provided.
+ * every present structured constraint must match (category AND location AND name
+ * AND day). There is no free-text fallback — an unstructured search returns `[]`
+ * so the caller can ask the customer to clarify.
  */
 export function filterRowsStructured(
   rows: Record<string, any>[],
-  search: { specialty?: string; branch?: string; name?: string; query?: string } | undefined,
-  map: ScheduleMap
+  search: ScheduleSearch | undefined,
+  map: ScheduleMap,
+  now?: Date
 ): Record<string, any>[] {
   const s = search ?? {};
-  const hasStructured = Boolean(s.specialty || s.branch || s.name);
-  return rows.filter((row) => {
-    if (s.specialty && !looseCellMatch(readCell(row, map.departmentColumn), s.specialty)) return false;
-    if (s.branch && !looseCellMatch(readCell(row, map.branchColumn), s.branch)) return false;
+  if (!hasStructuredSearch(s)) return [];
+
+  const day = s.day ? resolveDay(s.day, now) : undefined;
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (s.category && !strictCellMatch(readCell(row, map.departmentColumn), s.category)) return false;
+    if (s.location && !strictCellMatch(readCell(row, map.branchColumn), s.location)) return false;
     if (s.name && !matchDoctor(readCell(row, map.doctorColumn), s.name)) return false;
-    if (!hasStructured && s.query) {
-      return Object.values(row).some((value) => looseCellMatch(value, s.query));
-    }
+    if (day && dayOffBlocks(row, day, map)) return false;
     return true;
   });
 }
@@ -511,21 +752,70 @@ function dedupeRows(rows: Record<string, any>[], map: ScheduleMap): Record<strin
  * Serialize the matched schedule rows as structured JSON — every column intact —
  * so the model can answer follow-up questions (e.g. "at which branch?") from the
  * real data instead of hallucinating. Rows marked off/vacation are excluded;
- * "--" times are preserved.
+ * empty/"--" times are preserved.
  */
 export function serializeSearchResults(rows: Record<string, any>[], map: ScheduleMap): string {
-  const available = (Array.isArray(rows) ? rows : []).filter((row) => !isDoctorOff(row));
+  const available = (Array.isArray(rows) ? rows : []).filter((row) => !isDoctorOff(row, map));
   return JSON.stringify(dedupeRows(available, map));
 }
 
 /** A human-readable fallback when the model fails to produce a natural reply. */
 function summarizeRows(rows: Record<string, any>[], map: ScheduleMap): string {
   const entities = (Array.isArray(rows) ? rows : [])
-    .filter((row) => !isDoctorOff(row))
+    .filter((row) => !isDoctorOff(row, map))
     .map((row) => String(readCell(row, map.doctorColumn) ?? '').trim())
     .filter(Boolean);
   if (entities.length === 0) return 'I could not find anything matching that.';
   return `${entities.join(', ')}. Would you like to book one of them?`;
+}
+
+/** Render a row's hours as a value `parseTimeWindows` can read. */
+function scheduleHoursValue(row: Record<string, any> | undefined, map: ScheduleMap): string {
+  if (!row) return '';
+  const legacy = hoursColumn(row);
+  if (legacy) {
+    const value = String(readCell(row, legacy) ?? '').trim();
+    if (value) return value;
+  }
+  if (map.timeStartColumn && map.timeEndColumn) {
+    const start = String(readCell(row, map.timeStartColumn) ?? '').trim();
+    const end = String(readCell(row, map.timeEndColumn) ?? '').trim();
+    if (start || end) return [start, end].filter(Boolean).join('-');
+  }
+  return '';
+}
+
+/**
+ * Derive a structured search from slots the customer already provided. Used as a
+ * deterministic guard so an availability question ("tomorrow at Hamad Town") is
+ * never answered without a real lookup, even if the model forgets to ask for one.
+ */
+function searchFromSlots(slots: Record<string, any>, userMessage: string): ScheduleSearch {
+  const pick = (...keys: string[]): string | undefined => {
+    for (const key of keys) {
+      if (isFilled(slots, key)) return String(slots[key]).trim();
+    }
+    return undefined;
+  };
+
+  const search: ScheduleSearch = {};
+  const category = pick('department', 'specialty', 'type', 'category');
+  const location = pick('location', 'branch');
+  const name = pick('doctor_name', 'doctor', 'property_name', 'name');
+  if (category) search.category = category;
+  if (location) search.location = location;
+  if (name) search.name = name;
+
+  const day = resolveDay(pick('datetime', 'time', 'preferred_time', 'booking_time') ?? userMessage);
+  if (day) search.day = day;
+  return search;
+}
+
+/** Does the message ask about availability / a day? */
+function looksLikeAvailabilityQuery(message: string): boolean {
+  return /\b(availab\w*|open|free|schedule|timing|times?|tomorrow|today|tonight|weekend|do you have|is there|are there|any)\b/i.test(
+    String(message ?? '')
+  );
 }
 
 /**
@@ -692,12 +982,16 @@ export async function runAgentHarness(
       // free-form path — so "Do you have X?" can be answered from the sheet.
       if (looksLikeSearchQuery(userMessage)) {
         const allSteps = await readRows(sheet, stepsTab);
-        const fallbackMap = deriveScheduleMap(allSteps, {
-          stepType: stepTypeHeader,
-          source: sourceHeader,
-          filter: filterHeader,
-          extract: extractHeader,
-        });
+        const fallbackMap = deriveScheduleMap(
+          allSteps,
+          {
+            stepType: stepTypeHeader,
+            source: sourceHeader,
+            filter: filterHeader,
+            extract: extractHeader,
+          },
+          sheet
+        );
         if (fallbackMap) {
           const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
           // Round 1: ask the model to extract structured search constraints.
@@ -707,13 +1001,34 @@ export async function runAgentHarness(
           );
           slotExtractionAttempts += round1.attempts;
           const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
-          const effectiveSearch = { ...(search ?? {}), query: search?.query || userMessage.trim() };
+
+          // No structured constraint: this is either a follow-up about the last
+          // search ("At which branch?") or a request we cannot filter. Never
+          // fall back to a full-text scan.
+          if (!hasStructuredSearch(search)) {
+            if (state.lastSearch) {
+              const round2 = await askModel(
+                client,
+                buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
+              );
+              slotExtractionAttempts += round2.attempts;
+              const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
+              return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+            }
+            return {
+              text: 'Could you tell me the specialty, branch, or doctor you are looking for?',
+              sheet: state,
+              toolCalls,
+              slotExtractionAttempts,
+              fallbackUsed,
+            };
+          }
 
           const rows = await readRows(sheet, fallbackMap.source);
-          const matched = filterRowsStructured(rows, effectiveSearch, fallbackMap);
+          const matched = filterRowsStructured(rows, search, fallbackMap);
           toolCalls.push({
             name: 'lookup_sheet',
-            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
+            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(search)}` },
             rows: matched.length,
           });
           const results = serializeSearchResults(matched, fallbackMap);
@@ -731,17 +1046,15 @@ export async function runAgentHarness(
             return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
           }
 
-          // No fresh matches — this is likely a follow-up ("At which branch?")
-          // about the previous search. Reuse the last structured results.
-          if (state.lastSearch) {
-            const round2 = await askModel(
-              client,
-              buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, state.lastSearch)
-            );
-            slotExtractionAttempts += round2.attempts;
-            const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
-            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
-          }
+          // Structured search with no matches: report the gap, do not reuse an
+          // unrelated previous result.
+          return {
+            text: 'I could not find anything matching that.',
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+          };
         }
       }
       return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true };
@@ -784,12 +1097,73 @@ export async function runAgentHarness(
     fallback: fallbackHeader,
   });
 
-  const scheduleMap = deriveScheduleMap(steps, {
-    stepType: stepTypeHeader,
-    source: sourceHeader,
-    filter: filterHeader,
-    extract: extractHeader,
-  });
+  const scheduleMap = deriveScheduleMap(
+    steps,
+    {
+      stepType: stepTypeHeader,
+      source: sourceHeader,
+      filter: filterHeader,
+      extract: extractHeader,
+    },
+    sheet
+  );
+
+  /**
+   * Run a structured search end-to-end: the CODE filters, the model only renders.
+   * Never passes un-filtered rows to the LLM.
+   */
+  const executeSearch = async (search: ScheduleSearch): Promise<SheetTurn> => {
+    if (!scheduleMap) {
+      return {
+        text: 'I could not find anything matching that.',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+
+    const allRows = await readRows(sheet, scheduleMap.source);
+    const rows = filterRowsStructured(allRows, search, scheduleMap);
+    toolCalls.push({
+      name: 'lookup_sheet',
+      args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(search)}` },
+      rows: rows.length,
+    });
+    // No matches: answer deterministically. Never hand an empty/irrelevant result
+    // set to the model, which could invent a doctor or availability.
+    if (rows.length === 0) {
+      return {
+        text: 'I could not find anything matching that.',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+
+    const searchResults = serializeSearchResults(rows, scheduleMap);
+    state.lastSearch = searchResults;
+
+    const searchRound = await askModel(
+      client,
+      buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, searchResults)
+    );
+    slotExtractionAttempts += searchRound.attempts;
+
+    // If the model hallucinated ("Let me check…") without listing a result, fall
+    // back to a deterministic summary so the customer still gets the matches.
+    const naturalReply = searchRound.decision.next_question?.trim() ?? '';
+    const hallucinated =
+      /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
+      !/\b(?:dr|villa|property|room|apartment|office|unit|specialist|consultant)\b/i.test(naturalReply);
+    const text = naturalReply && !hallucinated
+      ? noBarePlaceholders(naturalReply, state.slots)
+      : rows.length
+        ? summarizeRows(rows, scheduleMap)
+        : 'I could not find anything matching that.';
+    return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+  };
 
   // ── Round 1: the model extracts + decides ────────────────────────────────
   let round = await askModel(client, buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage));
@@ -814,44 +1188,32 @@ export async function runAgentHarness(
 
   mergeSlots(state.slots, decision.updated_slots, checklist);
 
-  // ── Knowledge query: search the schedule for any term ──────────────────────
+  // ── Knowledge / availability query: structured search ──────────────────────
   // The model returns structured constraints; the CODE does the AND-filtering.
-  if (decision.action === 'search_schedule') {
-    const search = decision.search ?? {};
-    const effectiveSearch = {
-      ...search,
-      query: search.query || userMessage.trim(),
-    };
-    let rows: Record<string, any>[] = [];
-    if (scheduleMap) {
-      const allRows = await readRows(sheet, scheduleMap.source);
-      rows = filterRowsStructured(allRows, effectiveSearch, scheduleMap);
-      toolCalls.push({
-        name: 'lookup_sheet',
-        args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
-        rows: rows.length,
-      });
+  // There is no full-text fallback: without a structured constraint we ask the
+  // customer to clarify instead of guessing.
+  if (decision.action === 'search_schedule' || hasStructuredSearch(decision.search)) {
+    if (!hasStructuredSearch(decision.search)) {
+      return {
+        text: 'Could you tell me the specialty, branch, or doctor you are looking for?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
     }
-    const searchResults = serializeSearchResults(rows, scheduleMap!);
-    state.lastSearch = rows.length > 0 ? searchResults : state.lastSearch;
-    const searchRound = await askModel(
-      client,
-      buildHarnessPrompt(systemPrompt ?? '', checklist, state.slots, userMessage, undefined, searchResults)
-    );
-    slotExtractionAttempts += searchRound.attempts;
+    return executeSearch(decision.search!);
+  }
 
-    // If the model hallucinated ("Let me check…") without listing a result, fall
-    // back to a deterministic summary so the customer still gets the matches.
-    const naturalReply = searchRound.decision.next_question?.trim() ?? '';
-    const hallucinated =
-      /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
-      !/\b(?:dr|villa|property|room|apartment|office|unit|specialist|consultant)\b/i.test(naturalReply);
-    const text = naturalReply && !hallucinated
-      ? noBarePlaceholders(naturalReply, state.slots)
-      : rows.length
-        ? summarizeRows(rows, scheduleMap!)
-        : 'I could not find anything matching that.';
-    return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+  // Deterministic availability guard: the model sometimes answers "may I have
+  // your name?" without checking the schedule. If the customer asked about
+  // availability and we already know a category/location/day, search anyway —
+  // never let the LLM invent availability.
+  if (decision.action !== 'complete' && scheduleMap && looksLikeAvailabilityQuery(userMessage)) {
+    const derivedSearch = searchFromSlots(state.slots, userMessage);
+    if (hasStructuredSearch(derivedSearch)) {
+      return executeSearch(derivedSearch);
+    }
   }
 
   // ── Auto doctor lookup: deduce department + location ──────────────────────
@@ -920,8 +1282,23 @@ export async function runAgentHarness(
         doctor: isFilled(state.slots, 'doctor_name') ? String(state.slots.doctor_name) : undefined,
       });
       const row = rows[0];
-      const hoursHeader = row ? hoursColumn(row) : undefined;
-      const hoursValue = hoursHeader ? String(readCell(row, hoursHeader) ?? '').trim() : '';
+
+      // Day-off check: the requested weekday must not be the entity's day off.
+      const requestedDay = resolveDay(timeText);
+      if (row && requestedDay && dayOffBlocks(row, requestedDay, scheduleMap)) {
+        fallbackUsed = true;
+        delete state.slots[timeSlot];
+        return {
+          text: `The requested day (${requestedDay}) is not available for that booking. Could you please choose another day?`,
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+          fallbackReason: 'day_conflict',
+        };
+      }
+
+      const hoursValue = scheduleHoursValue(row, scheduleMap);
       const windows = hoursValue ? parseTimeWindows(hoursValue) : [];
       if (windows.length > 0 && !isWithinWindow(requested, windows)) {
         fallbackUsed = true;

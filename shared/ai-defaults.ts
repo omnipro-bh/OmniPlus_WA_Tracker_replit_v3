@@ -137,12 +137,18 @@ export const AI_SHEET_TAB_SCHEMA: AiSheetTabSchema[] = [
     ],
   },
   {
+    // Normalized schedule: one row per entity (doctor/property/…), location,
+    // category and a structured availability window. `Day-Off` blank means the
+    // entity works every day; otherwise it lists the weekday(s) it does NOT work.
     tab: 'Doctors_Schedule',
     columns: [
-      { key: 'doctor', label: 'Doctor', column: 'doctor' },
-      { key: 'branch', label: 'Branch', column: 'branch' },
-      { key: 'day', label: 'Day', column: 'day' },
-      { key: 'available_times', label: 'Available times', column: 'available_times' },
+      { key: 'doctor', label: 'Doctor (entity)', column: 'Doctor' },
+      { key: 'branch', label: 'Branch (location)', column: 'Branch' },
+      { key: 'department', label: 'Department (category)', column: 'Department' },
+      { key: 'day_off', label: 'Day off', column: 'Day-Off' },
+      { key: 'start_time', label: 'Start time', column: 'Start_Time' },
+      { key: 'end_time', label: 'End time', column: 'End_Time' },
+      { key: 'consultation_fees', label: 'Consultation fees', column: 'Consultation Fees' },
     ],
   },
 ];
