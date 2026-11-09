@@ -663,6 +663,70 @@ test('filterRowsStructured returns [] when no structured constraint is present',
   assert.deepEqual(filterRowsStructured(RICHA_SCHEDULE, { category: '' }, richaMap), []);
 });
 
+test('filterRowsStructured pass 2: prefix match finds "Gastro" → "Gastroenterologist"', () => {
+  const prefixSchedule = [
+    { Doctor: 'Dr. A', Branch: 'Riffa', department: 'Gastroenterologist' },
+    { Doctor: 'Dr. B', Branch: 'Adliya', department: 'Cardiologist' },
+  ];
+  const prefixMap = {
+    source: 'Doctors_Schedule',
+    doctorColumn: 'Doctor',
+    departmentColumn: 'department',
+    branchColumn: 'branch',
+  };
+
+  // Exact match fails ("Gastro" ≠ "Gastroenterologist"), but prefix match succeeds.
+  const rows = filterRowsStructured(
+    prefixSchedule,
+    { category: 'Gastro', location: 'Riffa' },
+    prefixMap
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Doctor, 'Dr. A');
+  assert.equal(rows[0].department, 'Gastroenterologist');
+});
+
+test('filterRowsStructured pass 2: prefix match is unique — ambiguous prefix returns []', () => {
+  const ambiguousSchedule = [
+    { Doctor: 'Dr. A', Branch: 'Riffa', department: 'Gastroenterologist' },
+    { Doctor: 'Dr. B', Branch: 'Riffa', department: 'Gastroenterology' },
+  ];
+  const prefixMap = {
+    source: 'Doctors_Schedule',
+    doctorColumn: 'Doctor',
+    departmentColumn: 'department',
+    branchColumn: 'branch',
+  };
+
+  // "Gastro" matches both Gastroenterologist and Gastroenterology → ambiguous → [].
+  const rows = filterRowsStructured(
+    ambiguousSchedule,
+    { category: 'Gastro' },
+    prefixMap
+  );
+  assert.deepEqual(rows, []);
+});
+
+test('filterRowsStructured pass 2: prefix match too short (< 4 chars) returns []', () => {
+  const shortSchedule = [
+    { Doctor: 'Dr. A', Branch: 'Riffa', department: 'ENT Surgeon' },
+  ];
+  const prefixMap = {
+    source: 'Doctors_Schedule',
+    doctorColumn: 'Doctor',
+    departmentColumn: 'department',
+    branchColumn: 'branch',
+  };
+
+  // "EN" is only 2 chars, below the 4-char minimum → no match.
+  const rows = filterRowsStructured(
+    shortSchedule,
+    { category: 'EN' },
+    prefixMap
+  );
+  assert.deepEqual(rows, []);
+});
+
 test('serializeSearchResults dedupes by entity+branch and preserves "--" times', () => {
   const rows = [
     { Doctor: 'Dr. Rinkoo Jose', Branch: 'Riffa', department: 'Specialist Orthodontist', Available_Times: '--' },
@@ -1150,6 +1214,109 @@ test('whitespace-only LLM response re-asks the current question', async () => {
   ]);
   const turn = await runAgentHarness(sheet, {}, 'n1', 'book', confirmSlotReader, client);
   assert.match(turn.text, /Which department\?/);
+});
+
+// ── fallback intent (catch-all) ──────────────────────────────────────────────
+
+const FALLBACK_INTENTS = [
+  { id: '1', type: 'Booking', keywords: 'book, doctor', start_step: 'Step_1', verification_question: '', answer: '', priority: 'High' },
+  { id: '2', type: 'Fallback', keywords: '', start_step: '', verification_question: 'Did you mean {department}?', answer: '', priority: 'Low' },
+];
+
+const fallbackReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    const col = String(filter?.column ?? '').toLowerCase();
+    const val = String(filter?.value ?? '').toLowerCase();
+    return FALLBACK_INTENTS.filter((i) => {
+      if (col === 'id') return String(i.id).toLowerCase().includes(val);
+      if (col === 'keywords') return String(i.keywords ?? '').toLowerCase().includes(val);
+      return true;
+    });
+  }
+  if (tab === 'Doctors_Schedule') return [];
+  return STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('fallback intent: unknown query asks the verification question with extracted slot', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {"department": "Gastroenterology"}, "action": "ask", "next_question": "What do you mean?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'gastro', fallbackReader, client);
+
+  // The model extracted "department: Gastroenterology", and the fallback
+  // verification question is asked with slot substitution.
+  assert.match(turn.text, /Did you mean Gastroenterology\?/);
+  assert.equal(turn.sheet.pendingFallbackId, '2');
+  assert.equal(turn.sheet.awaitingFallbackVerification, true);
+  assert.equal(turn.sheet.fallbackExtractedSlots.department, 'Gastroenterology');
+});
+
+test('fallback intent: "Yes" routes to booking flow with extracted slot', async () => {
+  const client1 = harnessClient([
+    '{"updated_slots": {"department": "Gastroenterology"}, "action": "ask", "next_question": "What do you mean?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'gastro', fallbackReader, client1);
+  assert.equal(t1.sheet.pendingFallbackId, '2');
+
+  // Turn 2: "Yes" confirms the fallback → routes to booking with department set.
+  const client2 = harnessClient([]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Yes',
+    fallbackReader,
+    client2
+  );
+  assert.equal(t2.sheet.intentId, '1');
+  assert.equal(t2.sheet.pendingFallbackId, null);
+  assert.equal(t2.sheet.awaitingFallbackVerification, false);
+  assert.equal(t2.sheet.slots.department, 'Gastroenterology');
+  // Booking flow is active: asks for the next missing slot (location).
+  assert.match(t2.text, /And which location\?/);
+});
+
+test('fallback intent: "No" clears the fallback and re-opens conversation', async () => {
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": ""}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'gastro', fallbackReader, client1);
+  assert.equal(t1.sheet.pendingFallbackId, '2');
+
+  const client2 = harnessClient([]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'No',
+    fallbackReader,
+    client2
+  );
+  assert.equal(t2.sheet.intentId, null);
+  assert.equal(t2.sheet.pendingFallbackId, null);
+  assert.equal(t2.sheet.awaitingFallbackVerification, false);
+  assert.deepEqual(t2.sheet.fallbackExtractedSlots, {});
+  assert.match(t2.text, /how can I help/i);
+});
+
+test('no fallback intent row: unknown query goes conversational + unanswered', async () => {
+  const noFallbackReader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') {
+      const kw = String(filter?.value ?? '').toLowerCase();
+      return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: '' }].filter((i) =>
+        String(i.keywords ?? '').toLowerCase().includes(kw)
+      );
+    }
+    if (tab === 'Doctors_Schedule') return [];
+    return STEPS.filter((s) => s.intent_id === filter?.value);
+  };
+  const client = harnessClient([]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'completely unknown topic xyz', noFallbackReader, client);
+
+  assert.equal(turn.unanswered, true);
+  assert.equal(turn.conversational, true);
+  assert.equal(turn.sheet.pendingIntentId, null);
+  assert.equal(turn.sheet.pendingFallbackId, null);
 });
 
 

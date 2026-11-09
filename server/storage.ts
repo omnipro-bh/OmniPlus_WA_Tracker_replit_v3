@@ -195,6 +195,7 @@ export interface IStorage {
 
   // Workflows
   getWorkflowsForUser(userId: number): Promise<Workflow[]>;
+  getAllWorkflows(): Promise<Workflow[]>;
   getWorkflow(id: number): Promise<Workflow | undefined>;
   createWorkflow(workflow: InsertWorkflow): Promise<Workflow>;
   updateWorkflow(id: number, data: Partial<Workflow>): Promise<Workflow | undefined>;
@@ -817,6 +818,13 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(schema.workflows)
       .where(eq(schema.workflows.userId, userId))
+      .orderBy(desc(schema.workflows.createdAt));
+  }
+
+  async getAllWorkflows(): Promise<Workflow[]> {
+    return await db
+      .select()
+      .from(schema.workflows)
       .orderBy(desc(schema.workflows.createdAt));
   }
 

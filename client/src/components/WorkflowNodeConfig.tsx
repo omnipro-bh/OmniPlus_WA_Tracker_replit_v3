@@ -10,13 +10,13 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { TestTube, Plus, X, RefreshCw, Database, ChevronDown } from 'lucide-react';
+import { TestTube, Plus, X, RefreshCw, Database, ChevronDown, List } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { RESERVED_CONTEXT_KEYS, VARIABLE_NAME_RE, VARIABLE_PATH_RE } from '@shared/workflow-validation';
-import { AI_DEFAULT_SYSTEM_PROMPT, AI_SHEET_TAB_SCHEMA, matchSheetHeaders } from '@shared/ai-defaults';
+import { AI_SHEET_TAB_SCHEMA, matchSheetHeaders } from '@shared/ai-defaults';
 
 // Generate random unique ID
 function generateId(prefix: string = 'btn'): string {
@@ -55,6 +55,10 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
 
   // AI Agent Google Sheets data-source header detection (one tab at a time)
   const [sheetDetectingTab, setSheetDetectingTab] = useState<string | null>(null);
+
+  // Fetched sheet tabs (from "Fetch Tabs" button)
+  const [fetchedTabs, setFetchedTabs] = useState<string[]>([]);
+  const [fetchingTabs, setFetchingTabs] = useState(false);
 
   // Fetch active channels for test functionality
   const { data: channels = [] } = useQuery<any[]>({
@@ -2793,6 +2797,49 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
       else delete tabMap[key];
       updateSheets({ columns: { ...sheetColumns, [tab]: tabMap } });
     };
+
+    // "Fetch Tabs": call the backend endpoint that lists all tab names in the
+    // spreadsheet, so the owner can pick which ones the AI may read.
+    const handleFetchTabs = async () => {
+      const spreadsheetId = (googleSheets.spreadsheetId || '').trim();
+      if (!spreadsheetId) {
+        toast({
+          title: 'Spreadsheet ID required',
+          description: 'Enter the spreadsheet ID before fetching tabs.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setFetchingTabs(true);
+      try {
+        const res = await apiRequest('POST', '/api/workflows/list-sheet-tabs', {
+          spreadsheetId,
+        });
+        const result: any = await res.json();
+        if (!result.success || !Array.isArray(result.tabs)) {
+          toast({
+            title: 'Could not fetch tabs',
+            description: result?.error || 'Unexpected response from the server.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        setFetchedTabs(result.tabs);
+        toast({
+          title: 'Tabs fetched',
+          description: `${result.tabs.length} tab${result.tabs.length === 1 ? '' : 's'} found.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Fetch tabs failed',
+          description: error?.message || 'Unexpected error listing tabs.',
+          variant: 'destructive',
+        });
+      } finally {
+        setFetchingTabs(false);
+      }
+    };
+
     // Match a tab name to the canonical schema (exact, then by keyword) so the
     // mapping editor shows the right columns for custom tab names.
     const schemaForTab = (tab: string) => {
@@ -2911,24 +2958,6 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
           />
           <p className="text-xs text-muted-foreground mt-1">
             Leave empty to use the provider default ({modelPlaceholder}).
-          </p>
-        </div>
-
-        {/* System prompt */}
-        <div>
-          <Label htmlFor="ai-system-prompt">System Prompt</Label>
-          <Textarea
-            id="ai-system-prompt"
-            placeholder={AI_DEFAULT_SYSTEM_PROMPT}
-            value={config.systemPrompt || ''}
-            onChange={(e) => updateConfig('systemPrompt', e.target.value)}
-            rows={8}
-            data-testid="textarea-ai-system-prompt"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Business instructions only. Tool rules (send_buttons / send_list / handover, "don't
-            re-send a menu after a click") and language rules (Arabic in → Arabic out) are added
-            automatically. You can use {`{{variableName}}`} placeholders.
           </p>
         </div>
 
@@ -3439,17 +3468,73 @@ export function NodeConfigPanel({ node, onUpdate }: NodeConfigProps) {
               </div>
 
               <div>
-                <Label htmlFor="ai-sheets-tabs">Tab names (comma-separated)</Label>
-                <Input
-                  id="ai-sheets-tabs"
-                  placeholder="Intents, Workflow_Steps"
-                  value={sheetTabs.join(', ')}
-                  onChange={(e) => updateSheetTabs(e.target.value)}
-                  data-testid="input-ai-sheets-tabs"
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="ai-sheets-tabs">Tabs to read</Label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleFetchTabs}
+                    disabled={fetchingTabs || !googleSheets.spreadsheetId}
+                    data-testid="button-ai-sheets-fetch-tabs"
+                  >
+                    {fetchingTabs ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Fetching…
+                      </>
+                    ) : (
+                      <>
+                        <List className="h-4 w-4 mr-2" />
+                        Fetch Tabs
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  These are the only tabs the AI may read. Matches the tab names in the sheet.
+                  Select the tabs the AI may read. Checked tabs are stored and used for intent
+                  matching and step lookup.
                 </p>
+                {fetchedTabs.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    {fetchedTabs.map((tab) => {
+                      const isChecked = sheetTabs.includes(tab);
+                      const schema = schemaForTab(tab);
+                      return (
+                        <label
+                          key={tab}
+                          className={`flex items-center gap-2 p-2 border rounded-md ${
+                            isChecked ? 'bg-blue-50 border-blue-200' : 'bg-muted/50 border-muted'
+                          }`}
+                        >
+                          <Checkbox
+                            id={`ai-sheets-tab-${tab.replace(/\s+/g, '-')}`}
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                updateSheetTabs(`${sheetTabs.join(', ')}${sheetTabs.length ? ', ' : ''}${tab}`);
+                              } else {
+                                updateSheetTabs(
+                                  sheetTabs.filter((t) => t !== tab).join(', ')
+                                );
+                              }
+                            }}
+                            data-testid={`checkbox-ai-sheets-tab-${tab}`}
+                          />
+                          <span className="text-sm">{tab}</span>
+                          {schema && (
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {schema.columns.length} fields
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Click "Fetch Tabs" to load the sheet's tab names.
+                  </p>
+                )}
               </div>
 
               {sheetTabs.length > 0 && (

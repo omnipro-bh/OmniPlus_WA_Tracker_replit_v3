@@ -942,15 +942,16 @@ export async function executeAiAgentNode(
     );
   }
 
-  // ── Increment I — resolve the owner persona + instructions up front so the
+  // ── Resolve the owner persona + instructions up front so the
   // deterministic engine can hand an interruption back to a persona-aware
   // conversational fallback (rather than being "persona-blind").
+  // The system prompt comes ONLY from AI Studio Instructions (workflow-scoped
+  // `ai_studio_instructions_wf_<id>` setting). The per-node `systemPrompt`
+  // field has been removed from the node config; the studio Instructions are
+  // the single source of truth.
   const studio = exec.studioConfig ?? null;
-  const baseInstructions = studio?.instructions?.trim()
-    ? studio.instructions
-    : settings.systemPrompt?.trim()
-      ? settings.systemPrompt
-      : AI_DEFAULT_SYSTEM_PROMPT;
+  const baseInstructions =
+    studio?.instructions?.trim() ?? AI_DEFAULT_SYSTEM_PROMPT;
   const resolvedPrompt = resolveTemplate(baseInstructions, context);
   const workflowSystemPrompt = buildSystemPrompt({
     ownerPrompt: resolvedPrompt,

@@ -12783,6 +12783,32 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // List all tab names in a Google Sheet (for the AI Agent tab-checkbox UI)
+  app.post("/api/workflows/list-sheet-tabs", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { spreadsheetId } = req.body || {};
+
+      if (typeof spreadsheetId !== "string" || !spreadsheetId.trim()) {
+        return res.status(400).json({ success: false, error: "spreadsheetId is required" });
+      }
+
+      const { listSheetTabs } = await import("./workflows/googleSheetsExecutor");
+      const result = await listSheetTabs(spreadsheetId.trim());
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (error: any) {
+      console.error("List sheet tabs error:", error);
+      res.status(500).json({
+        success: false,
+        tabs: [],
+        error: error.message || "Failed to list sheet tabs",
+      });
+    }
+  });
+
   // Detect headers for the AI Agent's Google Sheets data source (two-tab model)
   app.post("/api/workflows/test-sheet-headers", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

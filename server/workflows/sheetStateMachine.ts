@@ -44,24 +44,49 @@ export interface SheetState {
   pendingIntentId?: string | null;
   /** True while the verification question is on screen. */
   awaitingVerification?: boolean;
+  /** Fallback intent matched but not yet confirmed (catch-all flow). */
+  pendingFallbackId?: string | null;
+  /** True while the fallback verification question is on screen. */
+  awaitingFallbackVerification?: boolean;
+  /** Slots extracted from the user's message before the fallback verification question. */
+  fallbackExtractedSlots?: Record<string, any>;
 }
 
 /** A fresh empty state — never reuse a shared object (slots must not leak across turns). */
 function freshState(): SheetState {
-  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false };
+  return {
+    intentId: null,
+    stepId: null,
+    slots: {},
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+  };
 }
 
 /** Read the persisted sheet state, tolerating any malformed shape. */
 export function readSheetState(context: Record<string, any>, nodeId: string): SheetState {
   const raw = context?.ai?.[nodeId]?.sheet;
   if (!raw || typeof raw !== 'object') return freshState();
-  return {
+  const result: SheetState = {
     intentId: raw.intentId ?? null,
     stepId: raw.stepId ?? null,
     slots: raw.slots && typeof raw.slots === 'object' ? { ...raw.slots } : {},
     pendingIntentId: raw.pendingIntentId ?? null,
     awaitingVerification: raw.awaitingVerification === true,
+    pendingFallbackId: raw.pendingFallbackId ?? null,
+    awaitingFallbackVerification: raw.awaitingFallbackVerification === true,
+    fallbackExtractedSlots:
+      raw.fallbackExtractedSlots && typeof raw.fallbackExtractedSlots === 'object'
+        ? { ...raw.fallbackExtractedSlots }
+        : {},
   };
+  if (typeof raw.lastSearch === 'string') {
+    result.lastSearch = raw.lastSearch;
+  }
+  return result;
 }
 
 /** A lookup the machine performed this turn, for the trace. */

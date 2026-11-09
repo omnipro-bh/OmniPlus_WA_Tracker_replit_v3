@@ -726,6 +726,26 @@ function isDoctorOff(row: Record<string, any>, map?: ScheduleMap): boolean {
  * AND day). There is no free-text fallback — an unstructured search returns `[]`
  * so the caller can ask the customer to clarify.
  */
+const MIN_PREFIX_LEN = 4;
+
+/**
+ * Prefix/stem cell match: returns true if one normalized value starts with the
+ * other, and the shared prefix is at least MIN_PREFIX_LEN chars. Used as a
+ * second pass when exact (`strictCellMatch`) finds no rows, so "Gastro" can
+ * match "Gastroenterologist" without the over-matching of substring search.
+ */
+function prefixCellMatch(cell: any, wanted: any): boolean {
+  const a = normalizeStrict(cell);
+  const b = normalizeStrict(wanted);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const strippedA = stripQualifiers(a);
+  const strippedB = stripQualifiers(b);
+  const minLen = Math.min(strippedA.length, strippedB.length);
+  if (minLen < MIN_PREFIX_LEN) return false;
+  return strippedA.startsWith(strippedB) || strippedB.startsWith(strippedA);
+}
+
 export function filterRowsStructured(
   rows: Record<string, any>[],
   search: ScheduleSearch | undefined,
@@ -736,13 +756,30 @@ export function filterRowsStructured(
   if (!hasStructuredSearch(s)) return [];
 
   const day = s.day ? resolveDay(s.day, now) : undefined;
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
+  const allRows = Array.isArray(rows) ? rows : [];
+
+  // Pass 1: Exact match (strictCellMatch — case-insensitive, qualifier-insensitive equality).
+  const exactMatches = allRows.filter((row) => {
     if (s.category && !strictCellMatch(readCell(row, map.departmentColumn), s.category)) return false;
     if (s.location && !strictCellMatch(readCell(row, map.branchColumn), s.location)) return false;
     if (s.name && !matchDoctor(readCell(row, map.doctorColumn), s.name)) return false;
     if (day && dayOffBlocks(row, day, map)) return false;
     return true;
   });
+  if (exactMatches.length > 0) return exactMatches;
+
+  // Pass 2: Prefix/Stem match — only for category and location, only when exact
+  // found nothing, and only when the result is unique (avoid ambiguous matches).
+  const prefixMatches = allRows.filter((row) => {
+    if (s.category && !prefixCellMatch(readCell(row, map.departmentColumn), s.category)) return false;
+    if (s.location && !prefixCellMatch(readCell(row, map.branchColumn), s.location)) return false;
+    if (s.name && !matchDoctor(readCell(row, map.doctorColumn), s.name)) return false;
+    if (day && dayOffBlocks(row, day, map)) return false;
+    return true;
+  });
+  if (prefixMatches.length === 1) return prefixMatches;
+
+  return [];
 }
 
 /** Collapse rows sharing the same entity + branch so the model never merges rows. */
@@ -1238,7 +1275,14 @@ export async function runAgentHarness(
     lastSearch: typeof rawState?.lastSearch === 'string' ? rawState.lastSearch : undefined,
     pendingIntentId: rawState?.pendingIntentId ?? null,
     awaitingVerification: rawState?.awaitingVerification === true,
+    pendingFallbackId: rawState?.pendingFallbackId ?? null,
+    awaitingFallbackVerification: rawState?.awaitingFallbackVerification === true,
+    fallbackExtractedSlots:
+      rawState?.fallbackExtractedSlots && typeof rawState.fallbackExtractedSlots === 'object'
+        ? { ...rawState.fallbackExtractedSlots }
+        : {},
   };
+  console.error(`DEBUG STATE: intentId=${state.intentId} pendingFallbackId=${state.pendingFallbackId} awaitingFallbackVerification=${state.awaitingFallbackVerification} msg="${userMessage}"`);
 
   const intentsTab = intentsTabName(sheet);
   const stepsTab = stepsTabName(sheet);
@@ -1322,6 +1366,92 @@ export async function runAgentHarness(
     }
   }
 
+  // ── Fallback Verification: a pending catch-all intent awaiting "Yes/No" ────
+  if (state.awaitingFallbackVerification && state.pendingFallbackId) {
+    console.error(`DEBUG FV: pendingFallbackId=${state.pendingFallbackId} awaiting=${state.awaitingFallbackVerification} msg="${userMessage}"`);
+    const fallback = await readRows(sheet, intentsTab, { column: idHeader, value: state.pendingFallbackId });
+    toolCalls.push({
+      name: 'lookup_sheet',
+      args: { tab: intentsTab, filter_column: idHeader, filter_value: state.pendingFallbackId },
+      rows: fallback.length,
+    });
+    const fallbackIntent = fallback[0];
+    const verification = fallbackIntent
+      ? String(readCell(fallbackIntent, verificationHeader) ?? '').trim()
+      : '';
+
+    const yes = /\b(yes|yeah|yep|sure|ok|okay|correct|confirm|right)\b/i.test(userMessage);
+    const no = /\b(no|nope|nah|not really|cancel|never mind|wrong)\b/i.test(userMessage);
+
+    if (yes) {
+      // Confirm: route to the Booking flow using the extracted slots.
+      // Find the Booking intent to use its steps for the checklist.
+      const allIntentsForFallback = await readRows(sheet, intentsTab);
+      const bookingIntent = allIntentsForFallback.find(
+        (i) => String(readCell(i, typeHeader) ?? '').trim().toLowerCase() === 'booking'
+      );
+      const bookingIntentId = bookingIntent
+        ? String(readCell(bookingIntent, idHeader) ?? '')
+        : state.pendingFallbackId;
+
+      state.intentId = bookingIntentId;
+      state.pendingFallbackId = null;
+      state.awaitingFallbackVerification = false;
+      // Merge the extracted slots into the booking slots.
+      if (state.fallbackExtractedSlots) {
+        for (const [name, value] of Object.entries(state.fallbackExtractedSlots)) {
+          if (!isFilled(state.slots, name) && value !== undefined && value !== null && value !== '') {
+            state.slots[name] = value;
+          }
+        }
+        state.fallbackExtractedSlots = {};
+      }
+
+      // Load the Booking intent's steps and ask for the next missing slot.
+      const bookingSteps = await readRows(sheet, stepsTab, {
+        column: intentIdHeader,
+        value: state.intentId,
+      });
+      const bookingChecklist = deriveChecklist(bookingSteps, {
+        slot: slotHeader, expected: expectedHeader, options: optionsHeader,
+        validation: validationHeader, question: questionHeader, filter: filterHeader,
+        stepType: stepTypeHeader, fallback: fallbackHeader,
+      });
+      const missing = firstMissing(state.slots, bookingChecklist);
+      const guided = guidedQuestion(missing, state.slots);
+      const text = guided ? noBarePlaceholders(guided, state.slots) : '';
+      return {
+        text,
+        sheet: { ...state, intentId: state.intentId },
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    } else if (no) {
+      // Decline: forget the fallback and re-open the conversation.
+      state.intentId = null;
+      state.pendingFallbackId = null;
+      state.awaitingFallbackVerification = false;
+      state.fallbackExtractedSlots = {};
+      return {
+        text: 'No problem — how can I help you?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    } else {
+      // Ambiguous → re-ask the fallback verification question verbatim.
+      return {
+        text: verification || 'Could you confirm?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+  }
+
   // ── Turn 1: match the intent ───────────────────────────────────────────────
   if (!state.intentId) {
     let intents = await readRows(sheet, intentsTab, { column: keywordsHeader, value: userMessage });
@@ -1345,7 +1475,43 @@ export async function runAgentHarness(
     }
 
     if (intents.length === 0) {
-      // No intent matched. If a schedule exists, ask the model to extract
+      // No intent matched. Check for a Fallback (catch-all) intent first.
+      const allIntents = await readRows(sheet, intentsTab);
+      const fallbackIntent = allIntents.find(
+        (i) => String(readCell(i, typeHeader) ?? '').trim().toLowerCase() === 'fallback'
+      );
+
+      if (fallbackIntent) {
+        // Extract slots from the user's message via the LLM.
+        const emptyChecklist: HarnessChecklist = { required: [], derived: [] };
+        const round1 = await askModel(
+          client,
+          buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage)
+        );
+        slotExtractionAttempts += round1.attempts;
+        const extractedSlots = round1.decision.updated_slots ?? {};
+
+        // Merge extracted slots into state for the verification question.
+        const mergedSlots = { ...state.slots, ...extractedSlots };
+
+        // Ask the fallback verification question with slot substitution.
+        const verification = String(readCell(fallbackIntent, verificationHeader) ?? '').trim();
+        const text = substituteSlots(verification, mergedSlots) || verification || 'Could you confirm?';
+
+        state.pendingFallbackId = String(readCell(fallbackIntent, idHeader) ?? '');
+        state.awaitingFallbackVerification = true;
+        state.fallbackExtractedSlots = extractedSlots;
+
+        return {
+          text,
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+        };
+      }
+
+      // No fallback intent. If a schedule exists, ask the model to extract
       // structured constraints; the CODE filters, the model never scans cells.
       const allSteps = await readRows(sheet, stepsTab);
       const fallbackMap = deriveScheduleMap(
