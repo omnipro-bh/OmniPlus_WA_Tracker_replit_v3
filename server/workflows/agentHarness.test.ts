@@ -248,6 +248,20 @@ test('buildHarnessPrompt names the checklist and current state', () => {
   assert.match(prompt, /doctor_name/);
 });
 
+test('buildHarnessPrompt carries the owner ai_question for every slot', () => {
+  const checklist: HarnessChecklist = {
+    required: [
+      { name: 'department', type: 'list', options: ['Dental'], hint: 'Which department do you need?' },
+      { name: 'location', type: 'text', hint: 'And which location is the closest to you?' },
+    ],
+    derived: [],
+  };
+  const prompt = buildHarnessPrompt('You are Alia.', checklist, {}, 'urologist');
+  assert.match(prompt, /- location — ask EXACTLY: "And which location is the closest to you\?"/);
+  assert.match(prompt, /NEVER write your own question/);
+  assert.match(prompt, /Do NOT generate your own questions/);
+});
+
 // ── the loop ───────────────────────────────────────────────────────────────
 
 test('"book" asks for the department (first missing required slot)', async () => {
@@ -336,10 +350,11 @@ test('search_schedule finds doctors at a branch', async () => {
 
   const turn = await runAgentHarness(sheet, {}, 'n1', 'who are the doctors at adliya?', listReader, client);
 
-  assert.equal(
-    turn.text,
-    'At Adliya we have Dr. Sujith (Dental Surgeon) and Dr. Bindiya (General Dentist). Would you like to book one of them?'
-  );
+  // The list is rendered from the sheet, and the question is the owner's
+  // ai_question for the next missing slot (department) — not an invented one.
+  assert.match(turn.text, /At Adliya we have Dr\. Sujith/);
+  assert.match(turn.text, /Which department do you need\?/);
+  assert.doesNotMatch(turn.text, /Would you like to book/);
   // The harness queried Doctors_Schedule before answering.
   assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
   assert.equal(client.calls, 2); // search round + the natural-answer round
@@ -493,7 +508,11 @@ test('an alternative request routes through search_schedule', async () => {
 
   // The harness queried Doctors_Schedule (via search_schedule) and returned the list.
   assert.ok(turn.toolCalls.some((t) => t.args.tab === 'Doctors_Schedule'));
-  assert.match(turn.text, /Would you like to book/);
+  assert.match(turn.text, /Dr\. Sujith/);
+  // The invented "Would you like to book one?" is replaced by the owner's
+  // ai_question for the next missing slot (department).
+  assert.match(turn.text, /Which department do you need\?/);
+  assert.doesNotMatch(turn.text, /Would you like to book/);
 });
 
 // ── search_schedule: generic entity search ─────────────────────────────────
@@ -880,5 +899,35 @@ test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a
   assert.equal(t4.sheet.slots.location, 'Riffa');
   assert.match(t4.text, /date and time/i);
   assert.doesNotMatch(t4.text, /which branch/i);
+});
+
+// ── guided flow: the owner's ai_question is the only question ──────────────
+
+test('"urologist" asks the owner\'s location ai_question, not an invented one', async () => {
+  // The model renders the matches but invents "Which doctor would you like to
+  // book with?" — the harness must replace it with the sheet's location question.
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "Urologist"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "Here are the available urologists. Which doctor would you like to book with?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'urologist', urologyReader, client);
+
+  assert.equal(turn.sheet.slots.department, 'Urologist');
+  // STEPS defines the location ai_question as "And which location?".
+  assert.match(turn.text, /And which location\?/);
+  assert.doesNotMatch(turn.text, /Which doctor/i);
+  // The model's description of the matches is preserved.
+  assert.match(turn.text, /available urologists/);
+});
+
+test('a plain ask uses the sheet ai_question verbatim', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Hi! How can I help you today?"}',
+  ]);
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'book', reader, client);
+
+  // The invented question is dropped; the department step's ai_question wins.
+  assert.match(turn.text, /Which department do you need\?/);
+  assert.doesNotMatch(turn.text, /How can I help/);
 });
 

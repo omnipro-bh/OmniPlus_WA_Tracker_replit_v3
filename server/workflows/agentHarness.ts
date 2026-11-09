@@ -381,7 +381,8 @@ export function buildHarnessPrompt(
 ): string {
   const requiredLines = checklist.required.map((slot) => {
     const opts = slot.options?.length ? ` (options: ${slot.options.join(', ')})` : '';
-    return `- ${slot.name}${opts}`;
+    const ask = slot.hint ? ` — ask EXACTLY: "${slot.hint}"` : '';
+    return `- ${slot.name}${opts}${ask}`;
   });
 
   const derivedLine =
@@ -429,13 +430,14 @@ export function buildHarnessPrompt(
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
     '3. If the user asks whether something exists, asks for a list, an ALTERNATIVE, or AVAILABILITY (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?", "availability tomorrow at Hamad Town"), you MUST set action = "search_schedule" and put the constraints in "search" as SEPARATE fields: search.category (the specialty/type/Department), search.location (the branch/location), search.name (the doctor/property name), search.day (the weekday or "today"/"tomorrow"). Do NOT merge them into one string. Examples: "Orthodontist at Riffa" → {"search":{"category":"Orthodontist","location":"Riffa"}}; "urologist at Hamad Town tomorrow" → {"search":{"category":"Urologist","location":"Hamad Town","day":"tomorrow"}}. NEVER reply with "Let me check" without returning action = "search_schedule". Do NOT guess names. If you cannot identify any structured field, ask the customer to clarify instead of searching.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
-    '5. Otherwise set action = "ask" and write ONE natural, brief question for the FIRST missing required slot. Never ask for a slot you already have.',
-    '6. Rephrase in character using your persona, but keep the core intent of the question.',
-    '7. If the message is off-topic or a greeting, answer it naturally and still set action = "ask" with a question that guides back to a missing slot.',
-    '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read Doctor, Branch, Department, Day-Off, Start_Time, End_Time and Consultation Fees), and set action = "ask" with your reply in next_question (then offer to book one). Render Start_Time–End_Time as the available times.',
+    '5. Otherwise set action = "ask" and use the ai_question shown for the FIRST missing required slot VERBATIM (substitute {slot} tokens). Do not invent, paraphrase, or add your own question.',
+    '6. NEVER write your own question. The "ask EXACTLY" text on each required slot is the owner\'s wording from Workflow_Steps — copy it unchanged.',
+    '7. If the message is off-topic or a greeting, you may acknowledge it briefly, but the question must still be the ai_question of the first missing slot.',
+    '8. When SEARCH RESULTS are provided above, describe the matches using ONLY the values in that JSON (read Doctor, Branch, Department, Day-Off, Start_Time, End_Time and Consultation Fees). Do NOT ask a question in this reply — the harness appends the ai_question of the next missing slot. Render Start_Time–End_Time as the available times.',
     '9. Reply in the same language as the customer.',
     '10. If a SEARCH RESULTS row has empty or "--" start/end times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
     '11. If the customer SELECTS an item from the previous SEARCH RESULTS (e.g. "Shankar", "the second one", "the villa"), you MUST copy the FULL value from that row into updated_slots (e.g. doctor_name: "Dr. Shankar Narayanappa") plus its location/branch, set action = "ask", and ask for the next missing required slot. Do NOT run another search for an item the customer already selected.',
+    '12. Do NOT generate your own questions. Always pull the ai_question from the matched Workflow_Steps row for the missing slot — the harness will replace any invented question.',
     '',
     'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"category": "...", "location": "...", "name": "...", "day": "..."}}',
   ].join('\n');
@@ -1104,6 +1106,22 @@ function defaultQuestion(slot: HarnessSlot | undefined): string {
   return `Could you please provide your ${label}?`;
 }
 
+/** The owner's `ai_question` for a slot, with `{slot}` placeholders substituted. */
+function guidedQuestion(slot: HarnessSlot | undefined, slots: Record<string, any>): string {
+  if (!slot?.hint) return '';
+  return noBarePlaceholders(slot.hint, slots);
+}
+
+/**
+ * Drop trailing question sentences. The owner's `ai_question` is the only
+ * question allowed, so any question the model invented is removed.
+ */
+function stripTrailingQuestions(text: string): string {
+  const parts = String(text ?? '').trim().split(/(?<=[.!?])\s+/);
+  while (parts.length > 0 && parts[parts.length - 1].trim().endsWith('?')) parts.pop();
+  return parts.join(' ').trim();
+}
+
 // ── Validation + merge ──────────────────────────────────────────────────────
 
 function mergeSlots(
@@ -1274,10 +1292,15 @@ export async function runAgentHarness(
               buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage, undefined, results)
             );
             slotExtractionAttempts += round2.attempts;
-            const text = noBarePlaceholders(
-              round2.decision.next_question?.trim() || summarizeRows(matched, fallbackMap),
-              state.slots
-            );
+            const rawReply = round2.decision.next_question?.trim() || summarizeRows(matched, fallbackMap);
+            const guided = guidedQuestion(firstMissing(state.slots, fallbackChecklist), state.slots);
+            const body = guided
+              ? stripTrailingQuestions(noBarePlaceholders(rawReply, state.slots))
+              : noBarePlaceholders(rawReply, state.slots);
+            const text =
+              guided && !body.includes(guided)
+                ? [body, guided].filter(Boolean).join('\n\n')
+                : body || guided || 'I could not find anything matching that.';
             return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
           }
 
@@ -1424,11 +1447,20 @@ export async function runAgentHarness(
     const hallucinated =
       /\b(check|checking|look into|looking|searching|one moment|one sec|moment)\b/i.test(naturalReply) &&
       !/\b(?:dr|villa|property|room|apartment|office|unit|specialist|consultant)\b/i.test(naturalReply);
-    const text = naturalReply && !hallucinated
-      ? noBarePlaceholders(naturalReply, state.slots)
-      : rows.length
-        ? summarizeRows(rows, scheduleMap)
-        : 'I could not find anything matching that.';
+    const rawBody =
+      naturalReply && !hallucinated ? naturalReply : summarizeRows(rows, scheduleMap);
+
+    // The owner's ai_question for the next missing slot is the only question the
+    // customer may see — drop any question the model invented and append it.
+    const nextSlot = firstMissing(state.slots, checklist);
+    const guided = guidedQuestion(nextSlot, state.slots);
+    const body = guided
+      ? stripTrailingQuestions(noBarePlaceholders(rawBody, state.slots))
+      : noBarePlaceholders(rawBody, state.slots);
+    const text =
+      guided && !body.includes(guided)
+        ? [body, guided].filter(Boolean).join('\n\n')
+        : body || guided || 'I could not find anything matching that.';
     return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
   };
 
@@ -1628,6 +1660,12 @@ export async function runAgentHarness(
   }
 
   const missing = firstMissing(state.slots, checklist);
-  const text = noBarePlaceholders(decision.next_question || defaultQuestion(missing), state.slots);
+  const guided = guidedQuestion(missing, state.slots);
+  const modelText = noBarePlaceholders(decision.next_question || defaultQuestion(missing), state.slots);
+  // The owner's ai_question is the only question allowed. Keep any natural
+  // acknowledgement the model wrote, but replace its invented question.
+  const text = guided
+    ? [stripTrailingQuestions(modelText), guided].filter(Boolean).join('\n\n')
+    : modelText;
   return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
 }
