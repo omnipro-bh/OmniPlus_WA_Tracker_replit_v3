@@ -757,3 +757,123 @@ test('missing times ("--") are preserved so the reply can report the gap', () =>
   assert.equal(parsed[0].Start_Time, '--');
   assert.equal(parsed[0].End_Time, '--');
 });
+
+// ── state commitment: a selection is a slot fill, not a new search ─────────
+
+const UROLOGY_SCHEDULE = [
+  {
+    Doctor: 'Dr. Shankar Narayanappa',
+    Branch: 'Riffa',
+    Department: 'Urologist',
+    'Day-Off': '',
+    Start_Time: '09:00',
+    End_Time: '13:00',
+    'Consultation Fees': '5 BD',
+  },
+  {
+    Doctor: 'Dr. Shankar Narayanappa',
+    Branch: 'Adliya',
+    Department: 'Urologist',
+    'Day-Off': '',
+    Start_Time: '10:00',
+    End_Time: '14:00',
+    'Consultation Fees': '5 BD',
+  },
+  {
+    Doctor: 'Dr. Arun Antony',
+    Branch: 'Riffa',
+    Department: 'Urologist',
+    'Day-Off': '',
+    Start_Time: '13:00',
+    End_Time: '17:00',
+    'Consultation Fees': '5 BD',
+  },
+  {
+    Doctor: 'Dr. Shabeena Naz',
+    Branch: 'Hamad Town',
+    Department: 'Urologist',
+    'Day-Off': '',
+    Start_Time: '09:00',
+    End_Time: '13:00',
+    'Consultation Fees': '5 BD',
+  },
+];
+
+const urologyReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [{ id: '1', keywords: 'book, doctor', start_step: 'Step_1', answer: 'Booked' }];
+  }
+  if (tab === 'Doctors_Schedule') return UROLOGY_SCHEDULE;
+  return STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('"urologist" → "Riffa" → "Shankar" commits the selection and asks for a time', async () => {
+  // Turn 1: "urologist" → a structured search for the category.
+  const client1 = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"category": "Urologist"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have urologists at Riffa, Adliya and Hamad Town. Which branch?"}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'urologist', urologyReader, client1);
+  assert.equal(t1.sheet.slots.department, 'Urologist');
+
+  // Turn 2: "Riffa" narrows the previous search to the Riffa urologists.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"location": "Riffa"}}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "At Riffa we have Dr. Shankar Narayanappa and Dr. Arun Antony."}',
+  ]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Riffa',
+    urologyReader,
+    client2
+  );
+  assert.equal(t2.sheet.slots.department, 'Urologist');
+  assert.equal(t2.sheet.slots.location, 'Riffa');
+  assert.match(t2.text, /Shankar/);
+  assert.doesNotMatch(t2.text, /Shabeena/);
+
+  // Turn 3: "Shankar" selects a doctor from the previous results. The model tries
+  // to search again (the old loop), but the harness commits the FULL name from
+  // state.lastSearch and asks for the next slot instead of re-searching.
+  const client3 = harnessClient([
+    '{"updated_slots": {}, "action": "search_schedule", "next_question": "", "search": {"name": "Shankar"}}',
+  ]);
+  const t3 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Shankar',
+    urologyReader,
+    client3
+  );
+  assert.equal(t3.sheet.slots.doctor_name, 'Dr. Shankar Narayanappa');
+  assert.equal(t3.sheet.slots.location, 'Riffa');
+  assert.equal(t3.sheet.slots.department, 'Urologist');
+  // It advanced to the time slot instead of looping back to the branch.
+  assert.match(t3.text, /date and time/i);
+  assert.doesNotMatch(t3.text, /which branch/i);
+  // No second model round and no schedule search: the selection was committed.
+  assert.equal(client3.calls, 1);
+  assert.ok(!t3.toolCalls.some((call) => call.args.tab === 'Doctors_Schedule'));
+
+  // Same selection, but the model answers "ask" with a looping "which branch?"
+  // question. The committed location must win; the harness asks for the time.
+  const client4 = harnessClient([
+    '{"updated_slots": {"doctor_name": "Shankar"}, "action": "ask", "next_question": "Dr. Shankar is available at Adliya and Riffa. Which branch?"}',
+  ]);
+  const t4 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t2.sheet } } },
+    'n1',
+    'Shankar',
+    urologyReader,
+    client4
+  );
+  assert.equal(t4.sheet.slots.doctor_name, 'Dr. Shankar Narayanappa');
+  assert.equal(t4.sheet.slots.location, 'Riffa');
+  assert.match(t4.text, /date and time/i);
+  assert.doesNotMatch(t4.text, /which branch/i);
+});
+

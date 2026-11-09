@@ -435,6 +435,7 @@ export function buildHarnessPrompt(
     '8. When SEARCH RESULTS are provided above, answer the customer naturally using ONLY the values in that JSON (read Doctor, Branch, Department, Day-Off, Start_Time, End_Time and Consultation Fees), and set action = "ask" with your reply in next_question (then offer to book one). Render Start_Time–End_Time as the available times.',
     '9. Reply in the same language as the customer.',
     '10. If a SEARCH RESULTS row has empty or "--" start/end times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
+    '11. If the customer SELECTS an item from the previous SEARCH RESULTS (e.g. "Shankar", "the second one", "the villa"), you MUST copy the FULL value from that row into updated_slots (e.g. doctor_name: "Dr. Shankar Narayanappa") plus its location/branch, set action = "ask", and ask for the next missing required slot. Do NOT run another search for an item the customer already selected.',
     '',
     'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"category": "...", "location": "...", "name": "...", "day": "..."}}',
   ].join('\n');
@@ -818,6 +819,185 @@ function looksLikeAvailabilityQuery(message: string): boolean {
   );
 }
 
+// ── State commitment (search selections are slot fills) ────────────────────
+
+/** Generic aliases for the slots that hold a search constraint. */
+const LOCATION_SLOTS = ['location', 'branch'];
+const CATEGORY_SLOTS = ['department', 'specialty', 'category', 'type'];
+const ENTITY_SLOTS = ['doctor_name', 'doctor', 'property_name', 'entity_name'];
+
+/** First filled alias value, e.g. location or branch. */
+function filledFrom(slots: Record<string, any>, names: string[]): string | undefined {
+  for (const name of names) {
+    if (isFilled(slots, name)) return String(slots[name]).trim();
+  }
+  return undefined;
+}
+
+/** Fill the first empty alias slot (never overwrite an existing value). */
+function setFirstEmpty(slots: Record<string, any>, names: string[], value: string): void {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return;
+  for (const name of names) {
+    if (!isFilled(slots, name)) {
+      slots[name] = trimmed;
+      return;
+    }
+  }
+}
+
+/** Parse the stored structured search results, tolerating malformed state. */
+function parseLastSearchRows(lastSearch?: string): Record<string, any>[] {
+  if (!lastSearch) return [];
+  try {
+    const parsed = JSON.parse(lastSearch);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Commit the model's structured search constraints to the booking slots, so a
+ * follow-up ("Riffa") is remembered as the customer's selection and the next
+ * turn does not lose it. Only fills slots that are empty and relevant.
+ */
+function commitSearchConstraints(
+  state: SheetState,
+  search: ScheduleSearch | undefined,
+  checklist?: HarnessChecklist
+): void {
+  if (!search) return;
+
+  const relevant = (name: string): boolean =>
+    !checklist ||
+    checklist.required.some((slot) => slot.name === name) ||
+    checklist.derived.includes(name);
+
+  const set = (names: string[], value?: string): void => {
+    setFirstEmpty(
+      state.slots,
+      names.filter((name) => relevant(name)),
+      String(value ?? '')
+    );
+  };
+
+  set(CATEGORY_SLOTS, search.category);
+  set(LOCATION_SLOTS, search.location);
+}
+
+const SELECTION_STOPWORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'ok', 'okay', 'fine', 'yes', 'yeah', 'please', 'thanks',
+  'thank', 'you', 'i', 'ill', 'will', 'take', 'choose', 'select', 'prefer', 'want', 'would',
+  'like', 'book', 'booking', 'appointment', 'with', 'doctor', 'dr', 'for', 'at', 'on', 'to',
+  'of', 'and', 'that', 'this', 'him', 'her', 'go', 'lets', 'let',
+]);
+
+const ORDINALS: Record<string, number> = {
+  first: 0, '1st': 0, one: 0,
+  second: 1, '2nd': 1, two: 1,
+  third: 2, '3rd': 2, three: 2,
+  fourth: 3, '4th': 3, four: 3,
+  fifth: 4, '5th': 4, five: 4,
+};
+
+function messageTokens(message: string): string[] {
+  return String(message ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3 && !SELECTION_STOPWORDS.has(token));
+}
+
+function parseOrdinal(message: string): number | undefined {
+  for (const token of String(message ?? '').toLowerCase().split(/[^a-z0-9]+/)) {
+    if (token && Object.prototype.hasOwnProperty.call(ORDINALS, token)) return ORDINALS[token];
+  }
+  return undefined;
+}
+
+/** A statement that names/selects something — not a question. */
+function looksLikeSelection(message: string): boolean {
+  const m = String(message ?? '').trim();
+  if (!m) return false;
+  if (/\?/.test(m)) return false;
+  return !/\b(do you|is there|are there|who|which|what|any|another|different|other|alternative)\b/i.test(m);
+}
+
+/**
+ * If the customer's message names an entity from the previous search results,
+ * commit the FULL name (and its branch/department) to the slots. This is the
+ * State Commitment step: a selection is a slot fill, not a new search.
+ */
+function commitEntitySelection(
+  state: SheetState,
+  userMessage: string,
+  map: ScheduleMap,
+  entitySlot = 'doctor_name'
+): boolean {
+  if (!looksLikeSelection(userMessage)) return false;
+  const rows = parseLastSearchRows(state.lastSearch);
+  if (rows.length === 0) return false;
+
+  const selectedLocation = filledFrom(state.slots, LOCATION_SLOTS) ?? '';
+  const pool = selectedLocation
+    ? rows.filter((row) => strictCellMatch(readCell(row, map.branchColumn), selectedLocation))
+    : rows;
+  const candidates = pool.length > 0 ? pool : rows;
+
+  const commitRow = (row: Record<string, any>): boolean => {
+    const entity = String(readCell(row, map.doctorColumn) ?? '').trim();
+    const location = String(readCell(row, map.branchColumn) ?? '').trim();
+    const department = String(readCell(row, map.departmentColumn) ?? '').trim();
+    if (entity) state.slots[entitySlot] = entity;
+    if (location) setFirstEmpty(state.slots, LOCATION_SLOTS, location);
+    if (department) setFirstEmpty(state.slots, CATEGORY_SLOTS, department);
+    return Boolean(entity);
+  };
+
+  // Ordinal selection: "the second one", "2nd", "two".
+  const ordinal = parseOrdinal(userMessage);
+  if (ordinal !== undefined) {
+    const row = candidates[ordinal];
+    return row ? commitRow(row) : false;
+  }
+
+  const words = messageTokens(userMessage);
+  if (words.length === 0) return false;
+
+  const matches = candidates.filter((row) => {
+    const entity = normalizeStrict(readCell(row, map.doctorColumn));
+    if (!entity) return false;
+    const entityTokens = entity.split(' ');
+    return words.some((word) =>
+      entityTokens.some((token) => token === word || (word.length >= 4 && token.startsWith(word)))
+    );
+  });
+  if (matches.length === 0) return false;
+
+  // Only commit when the matches refer to a single distinct entity; otherwise
+  // the selection is ambiguous and the model should ask.
+  const distinct = new Set(matches.map((row) => normalizeStrict(readCell(row, map.doctorColumn))));
+  if (distinct.size > 1) return false;
+
+  return commitRow(matches[0]);
+}
+
+/**
+ * Merge a search with the slots already committed. A location/day-only follow-up
+ * ("Riffa") narrows the previous search, so its category/entity is preserved
+ * (urologist + Riffa, not every doctor at Riffa).
+ */
+function mergeSearchWithSlots(search: ScheduleSearch, slots: Record<string, any>): ScheduleSearch {
+  const merged = { ...search };
+  const narrowing = !search.category && !search.name;
+  if (narrowing) {
+    if (!merged.location) merged.location = filledFrom(slots, LOCATION_SLOTS);
+    if (!merged.category) merged.category = filledFrom(slots, CATEGORY_SLOTS);
+    if (!merged.name) merged.name = filledFrom(slots, ENTITY_SLOTS);
+  }
+  return merged;
+}
+
 /**
  * Slot names that hold the customer's requested time. The harness validates a
  * time only when one of these is filled.
@@ -1001,12 +1181,47 @@ export async function runAgentHarness(
         slotExtractionAttempts += round1.attempts;
         const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
 
+        // Persist the constraints and any entity selection before searching.
+        commitSearchConstraints(state, search);
+        // The sheet's own booking checklist, used to ask the next slot.
+        const fallbackChecklist = deriveChecklist(allSteps, {
+          slot: slotHeader,
+          expected: expectedHeader,
+          options: optionsHeader,
+          validation: validationHeader,
+          question: questionHeader,
+          filter: filterHeader,
+          fallback: fallbackHeader,
+          stepType: stepTypeHeader,
+        });
+        const selected = commitEntitySelection(
+          state,
+          userMessage,
+          fallbackMap,
+          fallbackChecklist.derived[0] ?? ENTITY_SLOTS[0]
+        );
+        if (selected && round1.decision.action !== 'complete') {
+          // The customer already picked an entity from the last results — do NOT
+          // search again. Ask for the next slot using the sheet's own question.
+          const nextSlot = firstMissing(state.slots, fallbackChecklist);
+          if (nextSlot) {
+            const question = noBarePlaceholders(defaultQuestion(nextSlot), state.slots);
+            const entity = filledFrom(
+              state.slots,
+              fallbackChecklist.derived.length ? fallbackChecklist.derived : ENTITY_SLOTS
+            );
+            const text = [entity ? `Got it — ${entity}.` : 'Got it.', question].filter(Boolean).join(' ');
+            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+          }
+        }
+
         if (hasStructuredSearch(search)) {
+          const effectiveSearch = mergeSearchWithSlots(search!, state.slots);
           const rows = await readRows(sheet, fallbackMap.source);
-          const matched = filterRowsStructured(rows, search, fallbackMap);
+          const matched = filterRowsStructured(rows, effectiveSearch, fallbackMap);
           toolCalls.push({
             name: 'lookup_sheet',
-            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(search)}` },
+            args: { tab: fallbackMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
             rows: matched.length,
           });
           const results = serializeSearchResults(matched, fallbackMap);
@@ -1130,11 +1345,14 @@ export async function runAgentHarness(
       };
     }
 
+    // A location/day-only follow-up narrows the previous search (urologist +
+    // Riffa), instead of widening it to every doctor at that branch.
+    const effectiveSearch = mergeSearchWithSlots(search, state.slots);
     const allRows = await readRows(sheet, scheduleMap.source);
-    const rows = filterRowsStructured(allRows, search, scheduleMap);
+    const rows = filterRowsStructured(allRows, effectiveSearch, scheduleMap);
     toolCalls.push({
       name: 'lookup_sheet',
-      args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(search)}` },
+      args: { tab: scheduleMap.source, filter: `search ${JSON.stringify(effectiveSearch)}` },
       rows: rows.length,
     });
     // No matches: answer deterministically. Never hand an empty/irrelevant result
@@ -1194,6 +1412,29 @@ export async function runAgentHarness(
   }
 
   mergeSlots(state.slots, decision.updated_slots, checklist);
+
+  // ── State commitment: selections are slot fills, not new searches ──────────
+  // Persist the model's structured constraints (e.g. "Riffa") and, if the
+  // customer names an entity from the previous results (e.g. "Shankar"), save
+  // the FULL name + branch. A selected entity must never trigger another search.
+  commitSearchConstraints(state, decision.search, checklist);
+  const selectedFromSearch = scheduleMap
+    ? commitEntitySelection(state, userMessage, scheduleMap, checklist.derived[0] ?? ENTITY_SLOTS[0])
+    : false;
+
+  if (selectedFromSearch && decision.action !== 'complete') {
+    // Advance to the next missing slot instead of looping on a filled one.
+    const missing = firstMissing(state.slots, checklist);
+    if (missing) {
+      return {
+        text: noBarePlaceholders(defaultQuestion(missing), state.slots),
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+  }
 
   // ── Knowledge / availability query: structured search ──────────────────────
   // The model returns structured constraints; the CODE does the AND-filtering.
