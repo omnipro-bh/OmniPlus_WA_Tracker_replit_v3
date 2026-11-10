@@ -22,6 +22,7 @@ import { AiTracePanel, type AiTraceRow } from "@/components/ai-trace-panel";
 import { KnowledgeTab, ScenariosTab } from "@/components/ai-studio-sheets";
 import { LiveChatTab } from "@/components/ai-studio-live-chat";
 import { KpisTab } from "@/components/ai-studio-kpis";
+import { AiStudioObjectives } from "@/components/ai-studio-objectives";
 import { Switch } from "@/components/ui/switch";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +36,7 @@ interface AiStudioPersona {
 interface AiStudioConfig {
   instructions: string;
   persona: AiStudioPersona;
+  objectives: string[];
 }
 
 export default function AIStudio() {
@@ -170,6 +172,7 @@ export default function AIStudio() {
           <TabsTrigger value="traces">Traces</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="persona">Persona</TabsTrigger>
+          <TabsTrigger value="objectives">Objectives</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
           <TabsTrigger value="live-chat">Live Chat</TabsTrigger>
@@ -382,6 +385,11 @@ export default function AIStudio() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Objectives (functional) ─────────────────────────────────── */}
+        <TabsContent value="objectives">
+          <AiStudioObjectives workflowId={effectiveWorkflowId} />
         </TabsContent>
 
         {/* ── Knowledge (functional) ──────────────────────────────────── */}

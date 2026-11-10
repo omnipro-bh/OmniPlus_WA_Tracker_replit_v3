@@ -39,7 +39,12 @@ import { executeGoogleSheetsWorkflowNode } from "./workflows/googleSheetsExecuto
 import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { loadAiStudioConfig } from "./ai/studioConfig";
 import { computeKpis } from "./ai/kpi";
-import { aiStudioInstructionsKey, aiStudioPersonaKey, AI_SHEET_TAB_SCHEMA } from "@shared/ai-defaults";
+import {
+  aiStudioInstructionsKey,
+  aiStudioObjectivesKey,
+  aiStudioPersonaKey,
+  AI_SHEET_TAB_SCHEMA,
+} from "@shared/ai-defaults";
 import { resolveTemplate } from "./workflows/httpExecutor";
 import { FLOW_STEP_LIMITS, resolveButtonRoute, runFlow, type FlowHost } from "./workflows/flowRunner";
 import {
@@ -7826,7 +7831,8 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // AI Studio — workflow-scoped config (Instructions + Persona), stored in `settings`.
+  // AI Studio — workflow-scoped config (Instructions + Persona + Objectives),
+  // stored in `settings`.
   app.get("/api/ai-studio/config", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const workflowId = parseInt(String(req.query.workflowId ?? ""));
@@ -7843,7 +7849,7 @@ export function registerRoutes(app: Express) {
 
   app.put("/api/ai-studio/config", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { workflowId, instructions, persona } = req.body ?? {};
+      const { workflowId, instructions, persona, objectives } = req.body ?? {};
       const wfId = parseInt(String(workflowId ?? ""));
       if (!Number.isInteger(wfId)) {
         return res.status(400).json({ error: "workflowId is required" });
@@ -7852,6 +7858,17 @@ export function registerRoutes(app: Express) {
       if (instructions !== undefined && typeof instructions !== "string") {
         return res.status(400).json({ error: "instructions must be a string" });
       }
+
+      if (objectives !== undefined && !Array.isArray(objectives)) {
+        return res.status(400).json({ error: "objectives must be an array of strings" });
+      }
+
+      const cleanObjectives = Array.isArray(objectives)
+        ? objectives
+            .filter((v: unknown): v is string => typeof v === "string")
+            .map((v: string) => v.trim())
+            .filter((v: string) => v.length > 0)
+        : undefined;
 
       const cleanPersona = {
         alias: typeof persona?.alias === "string" ? persona.alias.trim() : "",
@@ -7864,6 +7881,9 @@ export function registerRoutes(app: Express) {
       }
       if (persona !== undefined) {
         await storage.setSetting(aiStudioPersonaKey(wfId), JSON.stringify(cleanPersona));
+      }
+      if (cleanObjectives !== undefined) {
+        await storage.setSetting(aiStudioObjectivesKey(wfId), JSON.stringify(cleanObjectives));
       }
 
       const config = await loadAiStudioConfig(wfId);
