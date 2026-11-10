@@ -13,6 +13,7 @@
 
 import {
   aiStudioInstructionsKey,
+  aiStudioObjectivesKey,
   aiStudioPersonaKey,
   DEFAULT_AI_STUDIO_CONFIG,
   EMPTY_AI_STUDIO_PERSONA,
@@ -35,17 +36,30 @@ function parsePersona(raw: string | undefined | null): AiStudioPersona {
   }
 }
 
+function parseObjectives(raw: string | undefined | null): string[] {
+  if (!raw) return DEFAULT_AI_STUDIO_CONFIG.objectives;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_AI_STUDIO_CONFIG.objectives;
+    return parsed.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  } catch {
+    return DEFAULT_AI_STUDIO_CONFIG.objectives;
+  }
+}
+
 /** Read the AI Studio config for a specific workflow. Never throws — returns defaults on error. */
 export async function loadAiStudioConfig(workflowId: number): Promise<AiStudioConfig> {
   try {
     const { storage } = await import('../storage');
-    const [instructions, personaRaw] = await Promise.all([
+    const [instructions, personaRaw, objectivesRaw] = await Promise.all([
       storage.getSetting(aiStudioInstructionsKey(workflowId)),
       storage.getSetting(aiStudioPersonaKey(workflowId)),
+      storage.getSetting(aiStudioObjectivesKey(workflowId)),
     ]);
     return {
       instructions: instructions?.value ?? '',
       persona: parsePersona(personaRaw?.value ?? null),
+      objectives: parseObjectives(objectivesRaw?.value),
     };
   } catch (error: any) {
     console.error('[AI Studio] loadAiStudioConfig failed:', error?.message || error);

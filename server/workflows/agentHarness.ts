@@ -121,10 +121,93 @@ export interface ScheduleMap {
  */
 const FLOW_CONTROL_SLOTS = new Set(['retry', 'completed', 'anything_else', 'done']);
 
+/** The strict JSON the Chain-of-Thought reasoning step returns. */
+export interface ReasoningDecision {
+  /** Chain-of-thought explanation of why this action was chosen. */
+  reasoning: string;
+  /** The action to take. */
+  action: 'verify_booking' | 'capture_lead' | 'answer_faq' | 'ask_clarification';
+  /** Slots extracted from the user message. */
+  slots: Record<string, string>;
+  /** Verification question to ask the customer (only for verify_booking). */
+  verification_question?: string;
+}
+
+/** Maximum number of reasoning turns without progress before escalating to handover. */
+const MAX_REASONING_ATTEMPTS = 3;
+
+/**
+ * Chain-of-Thought reasoning step. Called when no intent keyword matches the
+ * user's message. The LLM reasons about the customer's intent based on the
+ * owner's objectives and decides the best next action.
+ *
+ * Returns a structured decision that the harness executes.
+ */
+export async function reasoningStep(
+  client: LlmClient | undefined,
+  systemPrompt: string,
+  objectives: string[],
+  userMessage: string,
+  slots: Record<string, any>
+): Promise<ReasoningDecision> {
+  if (!client) {
+    return {
+      reasoning: 'No LLM client available; cannot reason.',
+      action: 'ask_clarification',
+      slots: {},
+    };
+  }
+
+  const objectivesText = objectives.length > 0 ? objectives.map((o, i) => `${i + 1}. ${o}`).join('\n') : 'None defined.';
+
+  const prompt = `You are an AI assistant. Your objectives, in priority order, are:\n${objectivesText}\n\nThe user said: "${userMessage}".\nExtracted slots so far: ${JSON.stringify(slots)}.\n\nThink step-by-step. Based on the objectives, what is the best action?\n\nReturn strict JSON:\n{\n  "reasoning": "<your step-by-step thought process>",\n  "action": "verify_booking" | "capture_lead" | "answer_faq" | "ask_clarification",\n  "slots": { "slotName": "value", ... },\n  "verification_question": "<if action is verify_booking, the question to ask the customer>"\n}`;
+
+  const round = await llmJson<ReasoningDecision>(
+    client,
+    prompt,
+    (obj: any): { ok: true; value: ReasoningDecision } | { ok: false; reason: string } => {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        return { ok: false, reason: 'not an object' };
+      }
+      const action = obj.action;
+      if (
+        action !== 'verify_booking' &&
+        action !== 'capture_lead' &&
+        action !== 'answer_faq' &&
+        action !== 'ask_clarification'
+      ) {
+        return { ok: false, reason: 'action must be verify_booking|capture_lead|answer_faq|ask_clarification' };
+      }
+      if (typeof obj.reasoning !== 'string' || obj.reasoning.trim().length === 0) {
+        return { ok: false, reason: 'reasoning must be a non-empty string' };
+      }
+      if (typeof obj.slots !== 'object' || obj.slots === null || Array.isArray(obj.slots)) {
+        return { ok: false, reason: 'slots must be an object' };
+      }
+      const vq = obj.verification_question;
+      if (action === 'verify_booking' && (typeof vq !== 'string' || vq.trim().length === 0)) {
+        return { ok: false, reason: 'verification_question required for verify_booking' };
+      }
+      return { ok: true, value: obj as ReasoningDecision };
+    },
+    { maxRetries: 1, maxTokens: 500, temperature: 0 }
+  );
+
+  if (!round.ok) {
+    return {
+      reasoning: `Reasoning failed: ${round.error}. Falling back to clarification.`,
+      action: 'ask_clarification',
+      slots: {},
+    };
+  }
+
+  return round.value;
+}
+
 // ── State ───────────────────────────────────────────────────────────────────
 
 function freshHarnessState(): SheetState {
-  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false };
+  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false, pendingFallbackId: null, awaitingFallbackVerification: false, fallbackExtractedSlots: {}, reasoningAttempts: 0 };
 }
 
 function isFilled(slots: Record<string, any>, name: string): boolean {
@@ -1264,7 +1347,8 @@ export async function runAgentHarness(
   userMessage: string,
   reader?: RowReader,
   client?: LlmClient,
-  systemPrompt?: string
+  systemPrompt?: string,
+  objectives?: string[]
 ): Promise<SheetTurn> {
   const readRows = reader ?? defaultReadRows;
   const rawState = context?.ai?.[nodeId]?.sheet;
@@ -1281,8 +1365,8 @@ export async function runAgentHarness(
       rawState?.fallbackExtractedSlots && typeof rawState.fallbackExtractedSlots === 'object'
         ? { ...rawState.fallbackExtractedSlots }
         : {},
+    reasoningAttempts: typeof rawState?.reasoningAttempts === 'number' ? rawState.reasoningAttempts : 0,
   };
-  console.error(`DEBUG STATE: intentId=${state.intentId} pendingFallbackId=${state.pendingFallbackId} awaitingFallbackVerification=${state.awaitingFallbackVerification} msg="${userMessage}"`);
 
   const intentsTab = intentsTabName(sheet);
   const stepsTab = stepsTabName(sheet);
@@ -1475,9 +1559,91 @@ export async function runAgentHarness(
     }
 
     if (intents.length === 0) {
-      // No intent matched. Check for a Fallback (catch-all) intent first.
-      const allIntents = await readRows(sheet, intentsTab);
-      const fallbackIntent = allIntents.find(
+      // No intent matched. Run Chain-of-Thought reasoning to decide what to do.
+      // Reasoning requires a database (for objectives); skip in test/dev environments.
+      let reasoning: ReasoningDecision | null = null;
+      if (process.env.DATABASE_URL && objectives) {
+        try {
+          reasoning = await reasoningStep(client, systemPrompt ?? '', objectives, userMessage, state.slots);
+        } catch {
+          // Reasoning failed — fall through to deterministic fallback below.
+        }
+      }
+
+      if (reasoning) {
+        // Increment reasoning attempt counter for loop prevention.
+        state.reasoningAttempts = (state.reasoningAttempts || 0) + 1;
+
+        // Loop prevention: if we've been reasoning without progress too many times,
+        // escalate to handover instead of spinning.
+        if (state.reasoningAttempts > MAX_REASONING_ATTEMPTS) {
+          return {
+            text: 'I am not able to help with that. Let me connect you with a human agent.',
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+            conversational: true,
+            unanswered: true,
+          };
+        }
+
+        if (reasoning.action === 'verify_booking') {
+          // Ask the verification question with extracted slots substituted.
+          const text = reasoning.verification_question || 'Could you confirm?';
+          state.pendingFallbackId = 'reasoning_booking';
+          state.awaitingFallbackVerification = true;
+          state.fallbackExtractedSlots = reasoning.slots;
+          return {
+            text,
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+          };
+        }
+
+        if (reasoning.action === 'capture_lead') {
+          state.pendingFallbackId = 'reasoning_lead';
+          state.awaitingFallbackVerification = false;
+          state.fallbackExtractedSlots = reasoning.slots;
+          return {
+            text: reasoning.reasoning || 'Got it. Could you please share your name, phone, and email so we can follow up?',
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+          };
+        }
+
+        if (reasoning.action === 'answer_faq') {
+          // Search Intents sheet for FAQ match.
+          const allIntents = await readRows(sheet, intentsTab);
+          const faqIntent = allIntents.find(
+            (i) => {
+              const kw = String(readCell(i, keywordsHeader) ?? '');
+              const type = String(readCell(i, typeHeader) ?? '').trim().toLowerCase();
+              return type && type !== 'booking' && matchesIntentKeywords(kw, userMessage);
+            }
+          );
+          const answer = faqIntent ? String(readCell(faqIntent, answerHeader) ?? '').trim() : '';
+          return {
+            text: answer || 'I could not find anything matching that.',
+            sheet: state,
+            toolCalls,
+            slotExtractionAttempts,
+            fallbackUsed,
+            ...(answer ? {} : { conversational: true, unanswered: true }),
+          };
+        }
+      }
+
+      // action === 'ask_clarification' or reasoning unavailable → fall through to
+      // deterministic fallback logic below (check for Fallback intent, then schedule search).
+
+      // ── Deterministic fallback: check for a Fallback (catch-all) intent ──
+      const allIntentsForFallback = await readRows(sheet, intentsTab);
+      const fallbackIntent = allIntentsForFallback.find(
         (i) => String(readCell(i, typeHeader) ?? '').trim().toLowerCase() === 'fallback'
       );
 
@@ -1533,7 +1699,18 @@ export async function runAgentHarness(
           buildHarnessPrompt(systemPrompt ?? '', emptyChecklist, state.slots, userMessage)
         );
         slotExtractionAttempts += round1.attempts;
-        const search = round1.decision.action === 'search_schedule' ? round1.decision.search : undefined;
+
+        // When the reasoning step couldn't decide (ask_clarification), use the
+        // slots it extracted as structured search constraints.
+        const searchFromReasoning: ScheduleSearch = {};
+        if (reasoning?.slots.department) searchFromReasoning.category = reasoning.slots.department;
+        if (reasoning?.slots.location) searchFromReasoning.location = reasoning.slots.location;
+        if (reasoning?.slots.doctor_name) searchFromReasoning.name = reasoning.slots.doctor_name;
+
+        const search =
+          round1.decision.action === 'search_schedule'
+            ? round1.decision.search
+            : searchFromReasoning;
 
         // Persist the constraints and any entity selection before searching.
         commitSearchConstraints(state, search);

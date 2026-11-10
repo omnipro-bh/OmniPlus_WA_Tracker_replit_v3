@@ -106,6 +106,7 @@ test('readSheetState tolerates a missing or malformed sheet object', () => {
     pendingFallbackId: null,
     awaitingFallbackVerification: false,
     fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
   });
   assert.deepEqual(readSheetState({ ai: { n1: { sheet: 'garbage' } } }, 'n1'), {
     intentId: null,
@@ -116,6 +117,7 @@ test('readSheetState tolerates a missing or malformed sheet object', () => {
     pendingFallbackId: null,
     awaitingFallbackVerification: false,
     fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
   });
   assert.deepEqual(
     readSheetState({ ai: { n1: { sheet: { intentId: '1', stepId: 'Step_2', slots: { a: 1 } } } } }, 'n1'),
@@ -128,6 +130,7 @@ test('readSheetState tolerates a missing or malformed sheet object', () => {
       pendingFallbackId: null,
       awaitingFallbackVerification: false,
       fallbackExtractedSlots: {},
+      reasoningAttempts: 0,
     }
   );
 });
@@ -903,6 +906,7 @@ test('a Greeting intent returns the answer column immediately (no state machine)
     pendingFallbackId: null,
     awaitingFallbackVerification: false,
     fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
   });
   assert.equal(turn.conversational, undefined);
   // Only the Intents tab is read — Workflow_Steps is never touched.

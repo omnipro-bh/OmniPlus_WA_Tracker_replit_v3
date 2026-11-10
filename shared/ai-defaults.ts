@@ -45,6 +45,10 @@ export function aiStudioPersonaKey(workflowId: number | string): string {
   return `ai_studio_persona_wf_${workflowId}`;
 }
 
+export function aiStudioObjectivesKey(workflowId: number | string): string {
+  return `ai_studio_objectives_wf_${workflowId}`;
+}
+
 /** Persona injected at the top of the system prompt as the assistant's identity. */
 export interface AiStudioPersona {
   alias: string;
@@ -56,6 +60,8 @@ export interface AiStudioPersona {
 export interface AiStudioConfig {
   instructions: string;
   persona: AiStudioPersona;
+  /** Priority-ordered list of objectives for Chain-of-Thought reasoning when no intent matches. */
+  objectives: string[];
 }
 
 export const EMPTY_AI_STUDIO_PERSONA: AiStudioPersona = {
@@ -67,6 +73,7 @@ export const EMPTY_AI_STUDIO_PERSONA: AiStudioPersona = {
 export const DEFAULT_AI_STUDIO_CONFIG: AiStudioConfig = {
   instructions: '',
   persona: EMPTY_AI_STUDIO_PERSONA,
+  objectives: ['Book an appointment', 'Capture leads', 'Answer FAQs'],
 };
 
 /**

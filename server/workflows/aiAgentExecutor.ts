@@ -1008,7 +1008,8 @@ export async function executeAiAgentNode(
           userMessage,
           exec.sheetReader,
           trackedClient,
-          workflowSystemPrompt
+          workflowSystemPrompt,
+          exec.studioConfig?.objectives ?? undefined
         )
       : await runSheetStateMachine(
           settings.googleSheets,

@@ -50,6 +50,8 @@ export interface SheetState {
   awaitingFallbackVerification?: boolean;
   /** Slots extracted from the user's message before the fallback verification question. */
   fallbackExtractedSlots?: Record<string, any>;
+  /** Number of consecutive reasoning turns without progress (loop prevention). */
+  reasoningAttempts?: number;
 }
 
 /** A fresh empty state — never reuse a shared object (slots must not leak across turns). */
@@ -63,6 +65,7 @@ function freshState(): SheetState {
     pendingFallbackId: null,
     awaitingFallbackVerification: false,
     fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
   };
 }
 
@@ -82,6 +85,7 @@ export function readSheetState(context: Record<string, any>, nodeId: string): Sh
       raw.fallbackExtractedSlots && typeof raw.fallbackExtractedSlots === 'object'
         ? { ...raw.fallbackExtractedSlots }
         : {},
+    reasoningAttempts: typeof raw.reasoningAttempts === 'number' ? raw.reasoningAttempts : 0,
   };
   if (typeof raw.lastSearch === 'string') {
     result.lastSearch = raw.lastSearch;
