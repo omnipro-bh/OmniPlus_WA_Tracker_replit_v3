@@ -25,6 +25,10 @@ export function AiStudioObjectives({ workflowId }: { workflowId: string }) {
     enabled: Boolean(workflowId),
   });
 
+  // No workflow yet means the workflows list is still loading — treat that as
+  // loading rather than flashing the defaults as if they were the saved config.
+  const loading = isLoading || !workflowId;
+
   const [objectives, setObjectives] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
 
@@ -36,12 +40,12 @@ export function AiStudioObjectives({ workflowId }: { workflowId: string }) {
   }, [workflowId]);
 
   useEffect(() => {
-    if (isLoading || dirty) return;
+    if (loading || dirty) return;
     const fromServer = data?.objectives;
     setObjectives(
       Array.isArray(fromServer) && fromServer.length > 0 ? [...fromServer] : [...DEFAULT_OBJECTIVES],
     );
-  }, [data, isLoading, dirty]);
+  }, [data, loading, dirty]);
 
   const update = (next: string[]) => {
     setObjectives(next);
@@ -99,7 +103,7 @@ export function AiStudioObjectives({ workflowId }: { workflowId: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isLoading ? (
+        {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading objectives…
           </div>
@@ -153,7 +157,7 @@ export function AiStudioObjectives({ workflowId }: { workflowId: string }) {
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <Button variant="outline" onClick={addObjective} disabled={isLoading}>
+          <Button variant="outline" onClick={addObjective} disabled={loading}>
             <Plus className="mr-2 h-4 w-4" />
             Add Objective
           </Button>
@@ -164,7 +168,7 @@ export function AiStudioObjectives({ workflowId }: { workflowId: string }) {
             </span>
             <Button
               onClick={() => save.mutate(objectives)}
-              disabled={save.isPending || isLoading || !workflowId}
+              disabled={save.isPending || loading || !workflowId}
             >
               {save.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
