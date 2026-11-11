@@ -1230,6 +1230,48 @@ function looksLikeAvailabilityQuery(message: string): boolean {
   );
 }
 
+/**
+ * The `alternate_step` of the intent's lookup step — the owner's own "we don't
+ * have it" question (e.g. "Would you like to try another location?"). Returns
+ * undefined when the sheet declares no alternate step.
+ */
+function lookupAlternateQuestion(
+  steps: Record<string, any>[],
+  headers: { stepType: string; stepId: string; alternate: string; question: string },
+  slots: Record<string, any>
+): string | undefined {
+  const lookupStep = (steps ?? []).find(
+    (s) => String(s[headers.stepType] ?? '').trim().toLowerCase() === 'lookup'
+  );
+  if (!lookupStep) return undefined;
+  const alternate = String(lookupStep[headers.alternate] ?? '').trim();
+  if (!alternate) return undefined;
+  const altStep = (steps ?? []).find((s) => String(s[headers.stepId] ?? '').trim() === alternate);
+  if (!altStep) return undefined;
+  const question = String(altStep[headers.question] ?? '').trim();
+  if (!question || /^\(silent\)$/i.test(question)) return undefined;
+  return noBarePlaceholders(substituteSlots(question, slots), slots) || undefined;
+}
+
+/**
+ * Is the customer's message a QUESTION about the catalogue ("do you have a
+ * dentist?", "what time are you open?", "who is available today?") rather than
+ * an ANSWER to the slot the harness just asked for ("5 PM today", "Riffa",
+ * "Dr Ahmed")?
+ *
+ * Universal: interrogative grammar only, no business vocabulary — the same rule
+ * serves a clinic, a real-estate agency or a store.
+ */
+export function isQuestionMessage(message: string): boolean {
+  const text = String(message ?? '').trim();
+  if (!text) return false;
+  // A question mark is the strongest signal.
+  if (/\?\s*$/.test(text)) return true;
+  return /\b(do you have|do we have|is there|are there|is it|are they|can i|can we|could i|could we|who is|who's|who are|what time|what are|what is|what's|when is|when are|when do|where is|where are|which|how much|how many|how long|how early|how late)\b/i.test(
+    text
+  );
+}
+
 // ── State commitment (search selections are slot fills) ────────────────────
 
 /** Generic aliases for the slots that hold a search constraint. */
@@ -1673,6 +1715,8 @@ export async function runAgentHarness(
   const typeHeader = headerFor(sheet, intentsTab, 'type');
   const verificationHeader = headerFor(sheet, intentsTab, 'verification_question');
   const intentIdHeader = headerFor(sheet, stepsTab, 'intent_id');
+  const stepIdHeader = headerFor(sheet, stepsTab, 'step_id');
+  const alternateStepHeader = headerFor(sheet, stepsTab, 'alternate_step');
   const stepTypeHeader = headerFor(sheet, stepsTab, 'step_type');
   const slotHeader = headerFor(sheet, stepsTab, 'slot_name');
   const expectedHeader = headerFor(sheet, stepsTab, 'expected_input');
@@ -2347,6 +2391,35 @@ export async function runAgentHarness(
   const askedSlot = firstMissing(state.slots, checklist);
   const slotsBeforeTurn = { ...state.slots };
 
+  /**
+   * A lookup came back with no rows. Never answer "I could not find anything
+   * matching that." — route to the `alternate_step` the owner declared for that
+   * lookup (e.g. "Would you like to try another location?"), and when the sheet
+   * declares none, ask for a different value. Universal: a doctor, a property
+   * or a product behave the same way.
+   */
+  const emptyLookupTurn = (): SheetTurn => {
+    const alternate = lookupAlternateQuestion(
+      steps,
+      {
+        stepType: stepTypeHeader,
+        stepId: stepIdHeader,
+        alternate: alternateStepHeader,
+        question: questionHeader,
+      },
+      state.slots
+    );
+    return {
+      text: alternate ?? "I couldn't find a match. Could you try a different value?",
+      sheet: state,
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed: true,
+      unanswered: true,
+      fallbackReason: 'lookup_empty',
+    };
+  };
+
   // ── Deterministic confirmation (the confirm step's Yes/No) ──────────────────
   // Handled in code, never by the LLM. "Yes"/"Sure"/"Yeah" → confirm = "Yes" and
   // advance to the next slot; "No"/"Cancel" → reset. This prevents both the
@@ -2426,12 +2499,13 @@ export async function runAgentHarness(
   const executeSearch = async (search: ScheduleSearch): Promise<SheetTurn> => {
     if (!scheduleMap) {
       return {
-        text: 'I could not find anything matching that.',
+        text: "I couldn't find a match. Could you try a different value?",
         sheet: state,
         toolCalls,
         slotExtractionAttempts,
-        fallbackUsed,
+        fallbackUsed: true,
         unanswered: true,
+        fallbackReason: 'lookup_empty',
       };
     }
 
@@ -2446,16 +2520,10 @@ export async function runAgentHarness(
       rows: rows.length,
     });
     // No matches: answer deterministically. Never hand an empty/irrelevant result
-    // set to the model, which could invent a doctor or availability.
+    // set to the model, which could invent a doctor or availability. The owner's
+    // alternate step decides what the customer hears next.
     if (rows.length === 0) {
-      return {
-        text: 'I could not find anything matching that.',
-        sheet: state,
-        toolCalls,
-        slotExtractionAttempts,
-        fallbackUsed,
-        unanswered: true,
-      };
+      return emptyLookupTurn();
     }
 
     const searchResults = serializeSearchResults(rows, scheduleMap);
@@ -2564,10 +2632,23 @@ export async function runAgentHarness(
   }
 
   // Deterministic availability guard: the model sometimes answers "may I have
-  // your name?" without checking the schedule. If the customer asked about
-  // availability and we already know a category/location/day, search anyway —
-  // never let the LLM invent availability.
-  if (decision.action !== 'complete' && scheduleMap && looksLikeAvailabilityQuery(userMessage)) {
+  // your name?" without checking the schedule. If the customer asked a QUESTION
+  // and we already know a category/location/day, search anyway — never let the
+  // LLM invent availability.
+  //
+  // It must never hijack an ANSWER to the slot we just asked for. "5 PM today"
+  // is the customer filling `datetime`, not a request for availability, and
+  // "today" must not be read as one. The model's own structural signal decides:
+  // if it extracted a slot value, trust it (validateSlotValue will reject a bad
+  // value and the flow re-asks that slot); only a question that produced no slot
+  // value reaches the schedule search.
+  const extractedThisTurn = Object.keys(decision.updated_slots ?? {});
+  if (
+    decision.action !== 'complete' &&
+    scheduleMap &&
+    extractedThisTurn.length === 0 &&
+    isQuestionMessage(userMessage)
+  ) {
     const derivedSearch = searchFromSlots(state.slots, userMessage);
     if (hasStructuredSearch(derivedSearch)) {
       return executeSearch(derivedSearch);
@@ -2584,19 +2665,22 @@ export async function runAgentHarness(
   if (needsDoctorLookup && scheduleMap) {
     const rows = await scheduleLookup(readRows, sheet, scheduleMap, { doctor: doctorName });
     toolCalls.push({ name: 'lookup_sheet', args: { tab: scheduleMap.source, filter: `doctor=${doctorName}` }, rows: rows.length });
-    if (rows.length > 0) {
-      const row = rows[0];
-      if (!isFilled(state.slots, 'department')) state.slots.department = readCell(row, scheduleMap.departmentColumn);
-      if (!isFilled(state.slots, 'location')) state.slots.location = readCell(row, scheduleMap.branchColumn);
-      lookupText = formatScheduleRow(row, scheduleMap);
-    }
+    // The named doctor is not in the schedule → the owner's alternate step.
+    if (rows.length === 0) return emptyLookupTurn();
+    const row = rows[0];
+    if (!isFilled(state.slots, 'department')) state.slots.department = readCell(row, scheduleMap.departmentColumn);
+    if (!isFilled(state.slots, 'location')) state.slots.location = readCell(row, scheduleMap.branchColumn);
+    lookupText = formatScheduleRow(row, scheduleMap);
   }
 
   // ── Model-requested lookup (availability / no doctor known) ───────────────
   if (!lookupText && decision.tool_call === 'lookup_schedule' && scheduleMap) {
     const rows = await scheduleLookup(readRows, sheet, scheduleMap, decision.lookup ?? {});
     toolCalls.push({ name: 'lookup_sheet', args: { tab: scheduleMap.source, filter: JSON.stringify(decision.lookup ?? {}) }, rows: rows.length });
-    if (rows.length > 0) lookupText = formatScheduleRow(rows[0], scheduleMap);
+    // The Workflow_Steps lookup found nothing → the owner's alternate step
+    // ("try another location") decides what happens next.
+    if (rows.length === 0) return emptyLookupTurn();
+    lookupText = formatScheduleRow(rows[0], scheduleMap);
   }
 
   // ── Round 2: re-invoke with the lookup result so the model re-asks correctly ──

@@ -1,7 +1,8 @@
 import { format } from "date-fns";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertTriangle, Bot, Brain, Clock, Coins, Zap } from "lucide-react";
 
 /**
@@ -84,6 +85,29 @@ function slotLabel(value: unknown): string {
   return String(value);
 }
 
+/**
+ * The full raw JSON of a trace row — what the panel shows and what the copy
+ * button puts on the clipboard. Never truncated.
+ */
+export function buildRawJson(trace: AiTraceRow): string {
+  return JSON.stringify(trace, null, 2);
+}
+
+/**
+ * Copy text to the clipboard. Returns false when the browser refuses (no
+ * clipboard permission, insecure context) so the button can say so.
+ */
+export async function copyRawJson(text: string): Promise<boolean> {
+  try {
+    const clipboard = globalThis.navigator?.clipboard;
+    if (!clipboard || typeof clipboard.writeText !== "function") return false;
+    await clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
   const ai = trace.aiTrace;
   const sheet = ai?.sheetState;
@@ -91,6 +115,8 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
   const slots = sheet?.slots ?? {};
   const slotEntries = Object.entries(slots);
   const rejected = Array.isArray(ai?.rejectedSlots) ? ai.rejectedSlots : [];
+  const rawJson = buildRawJson(trace);
+  const [copyState, setCopyState] = useState("Copy to Clipboard");
 
   const intentId = sheet?.intentId ?? null;
   const stepId = sheet?.stepId ?? null;
@@ -312,12 +338,29 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
 
       {/* Raw JSON */}
       <details className="group">
-        <summary className="cursor-pointer select-none text-sm text-muted-foreground hover:text-foreground">
-          View raw JSON
+        <summary className="flex cursor-pointer select-none items-center justify-between gap-2 text-sm text-muted-foreground hover:text-foreground">
+          <span>View raw JSON</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={async (event) => {
+              // Keep the <details> from toggling when the button is used.
+              event.preventDefault();
+              event.stopPropagation();
+              const ok = await copyRawJson(rawJson);
+              setCopyState(ok ? "Copied" : "Copy failed");
+              window.setTimeout(() => setCopyState("Copy to Clipboard"), 2000);
+            }}
+          >
+            {copyState}
+          </Button>
         </summary>
-        <ScrollArea className="mt-2 max-h-[400px] rounded-md border">
-          <pre className="p-4 text-xs">{JSON.stringify(ai, null, 2)}</pre>
-        </ScrollArea>
+        {/* A native scroll container: the Radix ScrollArea clipped this JSON at
+            400px with no way to scroll to the rest. */}
+        <pre className="mt-2 max-h-[400px] overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs">
+          {rawJson}
+        </pre>
       </details>
     </div>
   );

@@ -1591,8 +1591,210 @@ test('step 3: a mid-flow question is not treated as nonsense', async () => {
     client
   );
 
-  assert.equal(turn.fallbackReason, undefined);
-  assert.match(turn.text, /And which location\?/);
+  // A question is never treated as nonsense (the nonsense fallback only fires
+  // for a non-question that matches no option). The question itself is routed
+  // to the catalogue search instead.
+  assert.notEqual(turn.fallbackReason, 'invalid_option');
+  assert.doesNotMatch(turn.text, /I didn't understand that/);
+});
+
+// ── Availability guard + empty lookups (universal) ──────────────────────────
+// A booking flow that mirrors a live sheet: department → confirm → location →
+// datetime → (lookup with an alternate step) → customer details.
+
+const BOOKING_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question: 'Which department are you looking for today?',
+    slot_name: 'department',
+    expected_input: 'list',
+    options: 'Dental, ENT, Internal Medicine',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_2',
+    step_type: 'ask',
+    ai_question: 'Sure, Would you like to confirm the availability of the {department} doctor for your appointment?',
+    slot_name: 'confirm',
+    expected_input: 'buttons',
+    options: 'Yes, No',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_3',
+    step_type: 'ask',
+    ai_question: 'And which location is the closest to you?',
+    slot_name: 'location',
+    expected_input: 'list',
+    options: 'Muharraq, Riffa, Adliya, Hamad Town',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_4',
+    step_type: 'ask',
+    ai_question: 'Sure, and could you confirm the preferred date and time for the appointment?',
+    slot_name: 'datetime',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_5',
+    step_type: 'lookup',
+    ai_question: '(silent)',
+    slot_name: 'doctor_name',
+    lookup_source: 'Doctors_Schedule',
+    lookup_filter: 'department={department} AND branch={location}',
+    lookup_extract: 'Doctor',
+    alternate_step: 'Step_7',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_6',
+    step_type: 'ask',
+    ai_question: 'We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number',
+    slot_name: 'name, phone, email, cpr',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_7',
+    step_type: 'ask',
+    ai_question: "Sorry, we don't have a {department} doctor at {location}. Would you like to try another location?",
+    slot_name: 'retry',
+    expected_input: 'buttons',
+    options: 'Yes, No',
+  },
+];
+
+const BOOKING_SCHEDULE = [
+  {
+    Doctor: 'DR. SUJITH',
+    Branch: 'Adliya',
+    Department: 'DENTAL SURGEON',
+    'Day-Off': 'FRIDAY',
+    Start_Time: '7:00',
+    End_Time: '15:00',
+  },
+];
+
+const bookingReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [
+      { id: '1', type: 'Booking', keywords: 'dental, dentist, book', start_step: 'Step_1', answer: 'Booked' },
+    ];
+  }
+  if (tab === 'Doctors_Schedule') return BOOKING_SCHEDULE;
+  return BOOKING_STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+/** A mid-booking state: department + confirm + location already collected. */
+function bookingSeed(slots: Record<string, any>) {
+  return {
+    intentId: '1',
+    stepId: null,
+    slots,
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+  };
+}
+
+test('a slot answer ("5 PM today") never triggers the availability guard', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {"datetime": "5 PM today"}, "action": "ask", "next_question": "We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number"}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: bookingSeed({ department: 'blood test', confirm: 'Yes', location: 'Riffa' }) } } },
+    'n1',
+    '5 PM today',
+    bookingReader,
+    client
+  );
+
+  // The extracted slot is trusted and kept.
+  assert.equal(turn.sheet.slots.datetime, '5 PM today');
+  // No schedule search was triggered by the word "today".
+  assert.equal(turn.toolCalls.filter((t) => t.args.tab === 'Doctors_Schedule').length, 0);
+  // The flow advanced to the next missing slot instead of "not found".
+  assert.doesNotMatch(turn.text, /could not find/i);
+  assert.match(turn.text, /CPR number/);
+});
+
+test('an availability QUESTION still triggers the schedule search', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": ""}',
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. Sujith at Adliya."}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: bookingSeed({ department: 'Dental', location: 'Adliya' }) } } },
+    'n1',
+    'do you have a doctor available today?',
+    bookingReader,
+    client
+  );
+
+  const search = turn.toolCalls.find((t) => t.args.tab === 'Doctors_Schedule');
+  assert.ok(search, 'the schedule was searched');
+  assert.match(String(search.args.filter), /^search /);
+  assert.equal(search.rows, 1);
+});
+
+test('an empty lookup routes to the alternate step instead of "not found"', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check who is available.", "tool_call": "lookup_schedule", "lookup": {"department": "blood test", "location": "Riffa"}}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    {
+      ai: {
+        n1: {
+          sheet: bookingSeed({ department: 'blood test', confirm: 'Yes', location: 'Riffa', datetime: '5 PM today' }),
+        },
+      },
+    },
+    'n1',
+    '5 PM today',
+    bookingReader,
+    client
+  );
+
+  // The owner's alternate step decides what the customer hears.
+  assert.equal(
+    turn.text,
+    "Sorry, we don't have a blood test doctor at Riffa. Would you like to try another location?"
+  );
+  assert.equal(turn.unanswered, true);
+  assert.equal(turn.fallbackReason, 'lookup_empty');
+});
+
+test('an empty lookup with no alternate step asks for a different value', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check who is available.", "tool_call": "lookup_schedule", "lookup": {"department": "blood test", "location": "Riffa"}}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: bookingSeed({ department: 'blood test', location: 'Riffa' }) } } },
+    'n1',
+    'do you have a blood test doctor at Riffa?',
+    reader,
+    client
+  );
+
+  assert.equal(turn.text, "I couldn't find a match. Could you try a different value?");
+  assert.equal(turn.unanswered, true);
+  assert.equal(turn.fallbackReason, 'lookup_empty');
 });
 
 
