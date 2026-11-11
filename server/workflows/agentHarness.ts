@@ -802,16 +802,16 @@ export function buildHarnessPrompt(
     '2. If the customer named a doctor, put it in doctor_name (do NOT guess their department or location).',
     '3. If the user asks whether something exists, asks for a list, an ALTERNATIVE, or AVAILABILITY (e.g. "Do you have [X]?", "Who is the [X]?", "another urologist?", "a 3-bedroom villa?", "availability tomorrow at Hamad Town"), you MUST set action = "search_schedule" and put the constraints in "search" as SEPARATE fields: search.category (the specialty/type/Department), search.location (the branch/location), search.name (the doctor/property name), search.day (the weekday or "today"/"tomorrow"). Do NOT merge them into one string. Examples: "Orthodontist at Riffa" → {"search":{"category":"Orthodontist","location":"Riffa"}}; "urologist at Hamad Town tomorrow" → {"search":{"category":"Urologist","location":"Hamad Town","day":"tomorrow"}}. NEVER reply with "Let me check" without returning action = "search_schedule". Do NOT guess names. If you cannot identify any structured field, ask the customer to clarify instead of searching.',
     '4. If all REQUIRED SLOTS are filled, set action = "complete".',
-    '5. Otherwise set action = "ask" and use the ai_question shown for the FIRST missing required slot VERBATIM (substitute {slot} tokens). Do not invent, paraphrase, or add your own question.',
-    '6. NEVER write your own question. The "ask EXACTLY" text on each required slot is the owner\'s wording from Workflow_Steps — copy it unchanged.',
+    '5. Otherwise set action = "ask". "next_question" is ONLY a short ACKNOWLEDGMENT (at most one short sentence, e.g. "Got it."). NEVER write the question itself — the harness asks the owner\'s ai_question for the first missing required slot.',
+    '6. NEVER write your own question. The "ask EXACTLY" text on each required slot is the owner\'s wording from Workflow_Steps — the harness asks it, you do not.',
     '7. If the message is off-topic or a greeting, you may acknowledge it briefly, but the question must still be the ai_question of the first missing slot.',
     '8. When SEARCH RESULTS are provided above, describe the matches using ONLY the values in that JSON (read Doctor, Branch, Department, Day-Off, Start_Time, End_Time and Consultation Fees). Do NOT ask a question in this reply — the harness appends the ai_question of the next missing slot. Render Start_Time–End_Time as the available times.',
     '9. Reply in the same language as the customer.',
     '10. If a SEARCH RESULTS row has empty or "--" start/end times, tell the customer that this doctor/property has no available times listed at that branch — NEVER pull times from another branch or another row.',
     '11. If the customer SELECTS an item from the previous SEARCH RESULTS (e.g. "Shankar", "the second one", "the villa"), you MUST copy the FULL value from that row into updated_slots (e.g. doctor_name: "Dr. Shankar Narayanappa") plus its location/branch, set action = "ask", and ask for the next missing required slot. Do NOT run another search for an item the customer already selected.',
-    '12. Do NOT generate your own questions. Always pull the ai_question from the matched Workflow_Steps row for the missing slot — the harness will replace any invented question.',
+    '12. Do NOT generate your own questions. The harness asks the ai_question of the matched Workflow_Steps row for the missing slot — you only acknowledge.',
     '',
-    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "...", "search": {"category": "...", "location": "...", "name": "...", "day": "..."}}',
+    'Return ONLY strict JSON matching: {"updated_slots": {slot: value, ...}, "action": "ask"|"complete"|"search_schedule", "next_question": "<a short acknowledgment, never the question>", "search": {"category": "...", "location": "...", "name": "...", "day": "..."}}',
   ].join('\n');
 }
 
@@ -1679,9 +1679,11 @@ export function hoursColumn(row: Record<string, any>): string | undefined {
  * Fallback wording for a placeholder the customer never filled in — e.g. a
  * doctor name when the schedule had no match. Without it the owner's sentence
  * reads "We have has availability.". The words are generic so the harness never
- * assumes a vertical, and a placeholder without a default is still stripped.
+ * assumes a vertical, and a placeholder without a default still gets a
+ * readable phrase instead of a blank gap.
  */
 export const PLACEHOLDER_DEFAULTS: Record<string, string> = {
+  // The thing being booked.
   doctor: 'a specialist',
   doctor_name: 'a specialist',
   specialist: 'a specialist',
@@ -1693,12 +1695,34 @@ export const PLACEHOLDER_DEFAULTS: Record<string, string> = {
   item: 'an item',
   room: 'a room',
   service: 'a service',
+  // The category and the branch.
+  department: 'the selected department',
+  specialty: 'the selected specialty',
+  category: 'the selected category',
+  location: 'the selected location',
+  branch: 'the selected branch',
+  city: 'the selected city',
+  // Anything else the owner names.
+  '*': 'the selected option',
 };
 
+/** The wording used for a placeholder with no more specific default. */
+export const DEFAULT_PLACEHOLDER_TEXT = 'the selected option';
+
+/** The default wording for one slot. */
+export function placeholderDefault(slotName: string): string {
+  const key = normalizeSlotKey(slotName);
+  return (
+    PLACEHOLDER_DEFAULTS[slotName] ??
+    PLACEHOLDER_DEFAULTS[key] ??
+    PLACEHOLDER_DEFAULTS['*'] ??
+    DEFAULT_PLACEHOLDER_TEXT
+  );
+}
+
 /**
- * Replace `{slot}` with values, then strip any token that still has no value.
- * `defaults` (see PLACEHOLDER_DEFAULTS) fills a placeholder that was never
- * collected, so the sentence stays readable.
+ * Replace `{slot}` with values, then fill any token that still has no value
+ * with a readable default (never a blank gap, never a literal `{slot}`).
  */
 export function noBarePlaceholders(
   text: string,
@@ -1707,7 +1731,7 @@ export function noBarePlaceholders(
 ): string {
   const substituted = substituteSlots(text, slots, defaults);
   return substituted
-    .replace(/\{[^{}]*\}/g, '')
+    .replace(/\{([^{}]*)\}/g, (_match, name: string) => placeholderDefault(name))
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -1736,6 +1760,54 @@ function stripTrailingQuestions(text: string): string {
   const parts = String(text ?? '').trim().split(/(?<=[.!?])\s+/);
   while (parts.length > 0 && parts[parts.length - 1].trim().endsWith('?')) parts.pop();
   return parts.join(' ').trim();
+}
+
+/** The words that carry the meaning of a sentence (stop-words dropped). */
+function contentTokens(text: string): string[] {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((word) => word.length >= 3);
+}
+
+/**
+ * Did the model already ask the owner's question?
+ *
+ * The model may repeat the question ("Can you provide your name, phone and
+ * email?") instead of only acknowledging. Comparing the distinctive words of
+ * both texts answers this without hardcoding anything: if the model's text
+ * already contains the question's content words ("name", "phone", "email",
+ * …) the question must not be added a second time.
+ */
+export function alreadyAsksTheQuestion(modelText: string, guided: string): boolean {
+  const question = contentTokens(guided);
+  if (question.length === 0) return false;
+  const model = new Set(contentTokens(modelText));
+  const shared = question.filter((word) => model.has(word)).length;
+  return shared / question.length >= 0.6;
+}
+
+/**
+ * The final customer message: the model's acknowledgement + the owner's
+ * question, each exactly once.
+ *
+ * The LLM decides the ACTION and may add a short acknowledgement; the HARNESS
+ * owns the question. When the model repeated the question anyway, it is kept
+ * once instead of being appended a second time.
+ */
+export function composeCustomerMessage(modelText: string, guided: string): string {
+  const question = String(guided ?? '').trim();
+  const model = String(modelText ?? '').trim();
+  if (!question) return model;
+  if (!model) return question;
+  if (alreadyAsksTheQuestion(model, question)) return model;
+  // The model may have written a question after all — only the acknowledgement
+  // part of it belongs in front of the owner's question.
+  const acknowledgment = stripTrailingQuestions(model).trim();
+  if (!acknowledgment) return question;
+  if (alreadyAsksTheQuestion(acknowledgment, question)) return acknowledgment;
+  return `${acknowledgment} ${question}`;
 }
 
 // ── Deterministic slot pre-fill (list / buttons) ────────────────────────────
@@ -3064,25 +3136,10 @@ export async function runAgentHarness(
   const missing = firstMissing(state.slots, checklist);
   const guided = guidedQuestion(missing, state.slots);
   const modelText = noBarePlaceholders(decision.next_question || defaultQuestion(missing), state.slots);
-  // The owner's ai_question is the only question allowed. Keep any natural
-  // acknowledgement the model wrote, but replace its invented question.
-  //
-  // The model very often echoes the owner's ai_question verbatim. Appending the
-  // guided question again would send the customer the same sentence twice, so
-  // it is only appended when it actually adds something.
-  let text = modelText;
-  if (guided) {
-    const modelPart = stripTrailingQuestions(modelText).trim();
-    if (!modelPart) {
-      text = guided;
-    } else if (modelPart.includes(guided)) {
-      text = modelPart; // the model already said the owner's question
-    } else if (guided.includes(modelPart)) {
-      text = guided; // the model said part of it — keep the owner's wording
-    } else {
-      text = [modelPart, guided].filter(Boolean).join('\n\n');
-    }
-  }
+  // The owner\'s ai_question is the only question allowed, and the harness owns
+  // it: the model may only add a short acknowledgement in front of it. When
+  // the model repeated the question anyway, it appears exactly once.
+  let text = composeCustomerMessage(modelText, guided);
 
   // Empty LLM response guard: never send `[]`, `{}`, or whitespace to the user.
   // Re-ask the current step's question instead.

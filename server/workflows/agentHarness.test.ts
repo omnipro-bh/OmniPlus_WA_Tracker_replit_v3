@@ -226,14 +226,19 @@ test('matchesIntentKeywords matches inflections and shared prefixes', () => {
   assert.equal(matchesIntentKeywords(keywords, 'what are your hours?'), false);
 });
 
-test('noBarePlaceholders substitutes filled slots and strips the rest', () => {  assert.equal(
+test('noBarePlaceholders substitutes filled slots and defaults the rest', () => {  assert.equal(
     noBarePlaceholders('We have {doctor_name} at {location}.', { doctor_name: 'Dr. Goutham', location: 'Riffa' }),
     'We have Dr. Goutham at Riffa.'
   );
-  // A still-missing slot is removed, never leaked as a literal token.
+  // A still-missing slot gets a readable default, never a blank gap and never a
+  // literal token.
   assert.equal(
     noBarePlaceholders('Confirm {department}?', { location: 'Riffa' }),
-    'Confirm ?'
+    'Confirm the selected department?'
+  );
+  assert.equal(
+    noBarePlaceholders('We have {budget} left.', {}),
+    'We have the selected option left.'
   );
 });
 
@@ -1838,6 +1843,106 @@ test('the guided question is not repeated when the model echoed it', async () =>
   assert.match(turn.text, /a specialist has availability/);
 });
 
+// ── The LLM acknowledges, the Harness asks (structural, business-agnostic) ───
+
+const ACK_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question:
+      'We have availability. To confirm booking, can you provide your name, phone, email, and CPR?',
+    slot_name: 'name, phone, email, cpr',
+    expected_input: 'text',
+  },
+];
+
+const ackReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }];
+  }
+  return ACK_STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('the harness asks the question once: the model only acknowledges', async () => {
+  // The LLM returns a slot value and a short acknowledgement. The owner's
+  // ai_question is asked by the harness — exactly once.
+  const client = harnessClient([
+    '{"updated_slots": {"doctor_name": "Dr. Biji"}, "action": "ask", "next_question": "Got it, Dr. Biji."}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Dr. Biji', ackReader, client);
+
+  assert.equal(
+    turn.text,
+    'Got it, Dr. Biji. We have availability. To confirm booking, can you provide your name, phone, email, and CPR?'
+  );
+  // The question appears exactly once.
+  assert.equal((turn.text.match(/can you provide your name/g) ?? []).length, 1);
+});
+
+test('the same rule holds for any business (real estate)', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {"property_name": "Villa A"}, "action": "ask", "next_question": "Got it, Villa A."}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Villa A', ackReader, client);
+
+  assert.equal(
+    turn.text,
+    'Got it, Villa A. We have availability. To confirm booking, can you provide your name, phone, email, and CPR?'
+  );
+  assert.equal((turn.text.match(/can you provide your name/g) ?? []).length, 1);
+});
+
+test('a model that repeats the question is not duplicated', async () => {
+  // The model ignored the instruction and wrote the question itself.
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "To confirm booking, can you provide your name, phone, email, and CPR?"}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'yes', ackReader, client);
+
+  assert.equal((turn.text.match(/can you provide your name/g) ?? []).length, 1);
+});
+
+test('the question substitutes the extracted slot, whatever it is called', async () => {
+  const steps = [
+    {
+      intent_id: '1',
+      step_id: 'Step_1',
+      step_type: 'ask',
+      ai_question: 'We have {property_name} available. Shall we book it?',
+      slot_name: 'name, phone, email, cpr',
+      expected_input: 'text',
+    },
+    {
+      intent_id: '1',
+      step_id: 'Step_2',
+      step_type: 'lookup',
+      ai_question: '(silent)',
+      slot_name: 'property_name',
+      lookup_source: 'Property_Listings',
+      lookup_filter: 'name={property_name}',
+      lookup_extract: 'Property',
+    },
+  ];
+  const reader: RowReader = async (_sheet, tab, filter) => {
+    if (tab === 'Intents') {
+      return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }];
+    }
+    if (tab === 'Property_Listings') return [];
+    return steps.filter((s) => s.intent_id === filter?.value);
+  };
+  const client = harnessClient([
+    '{"updated_slots": {"property_name": "Villa A"}, "action": "ask", "next_question": "Got it."}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, {}, 'n1', 'Villa A', reader, client);
+
+  assert.equal(turn.text, 'Got it. We have Villa A available. Shall we book it?');
+});
+
 test('an unfilled placeholder gets a readable default instead of a broken sentence', () => {
   // "We have {doctor_name} has availability." must not become
   // "We have has availability." when no doctor was found.
@@ -1850,8 +1955,13 @@ test('an unfilled placeholder gets a readable default instead of a broken senten
     noBarePlaceholders('We have {doctor_name} has availability.', { doctor_name: 'Dr. Sujith' }),
     'We have Dr. Sujith has availability.'
   );
-  // A placeholder without a default is still stripped (never sent as `{slot}`).
-  assert.equal(noBarePlaceholders('Confirm {department}?', { location: 'Riffa' }), 'Confirm ?');
+  // A placeholder without a specific default still gets a readable phrase —
+  // never a blank gap and never a literal `{slot}`.
+  assert.equal(
+    noBarePlaceholders('Confirm {department}?', { location: 'Riffa' }),
+    'Confirm the selected department?'
+  );
+  assert.doesNotMatch(noBarePlaceholders('Confirm {budget}?', {}), /\{|\}/);
 });
 
 // ── Semantic matching in the lookup step ────────────────────────────────────
