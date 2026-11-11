@@ -1376,4 +1376,98 @@ test('a no-match schedule search sets unanswered', async () => {
   assert.equal(turn.unanswered, true);
 });
 
+// ── Reasoning prompt v2 (step 2) ────────────────────────────────────────────
+
+const REASONING_INTENTS = [
+  { id: '1', type: 'Booking', keywords: 'dental, dentist, book', verification_question: 'Shall I set that up?' },
+  { id: '2', type: 'FAQ', keywords: 'hours, open, timing', answer: 'We are open 8am to 8pm.' },
+  { id: '3', type: 'Greeting', keywords: 'hello, hi, salam' },
+];
+
+/** Intents where "blood test" matches no keyword, so the reasoner must run. */
+const reasoningReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    if (!filter) return REASONING_INTENTS;
+    const column = filter.column ?? '';
+    const value = filter.value ?? '';
+    return REASONING_INTENTS.filter((row) => matchesIntentKeywords(String((row as any)[column] ?? ''), value));
+  }
+  if (tab === 'Workflow_Steps') return STEPS.filter((s) => !filter || s.intent_id === filter.value);
+  return [];
+};
+
+/** Reasoning is gated on DATABASE_URL (objectives live in the DB). */
+async function withDatabaseUrl<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = previous ?? 'postgres://test/test';
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previous;
+  }
+}
+
+test('reasoning v2: "blood test" asks to book it and persists the real intent id', async () => {
+  const client = harnessClient([
+    JSON.stringify({
+      reasoning: 'The customer named a service we offer, so they want to book it.',
+      action: 'verify_booking',
+      target_intent_id: 1,
+      slots: { service: 'blood test' },
+      verification_question: 'Would you like to book an appointment for a blood test?',
+    }),
+  ]);
+
+  const turn = await withDatabaseUrl(() =>
+    runAgentHarness(
+      sheet,
+      {},
+      'n1',
+      'blood test',
+      reasoningReader,
+      client,
+      'You are MediAssist, the AI assistant for Alhilal Hospital.',
+      ['Book an appointment']
+    )
+  );
+
+  assert.equal(turn.text, 'Would you like to book an appointment for a blood test?');
+  // The old 'reasoning_booking' sentinel is gone: the real row id is persisted.
+  assert.equal(turn.sheet.pendingFallbackId, '1');
+  assert.equal(turn.sheet.awaitingFallbackVerification, true);
+  assert.deepEqual(turn.sheet.fallbackExtractedSlots, { service: 'blood test' });
+
+  assert.equal(turn.reasoningDecision?.ok, true);
+  assert.equal(turn.reasoningDecision?.action, 'verify_booking');
+  assert.equal(turn.reasoningDecision?.targetIntentId, '1');
+  assert.equal(turn.reasoningDecision?.hadIntentCatalogue, true);
+});
+
+test('reasoning v2: unusable output asks for a rephrase instead of fabricating a decision', async () => {
+  const client = harnessClient(['{"reasoning":"The customer said blood test, which is a service. I think']);
+
+  const turn = await withDatabaseUrl(() =>
+    runAgentHarness(
+      sheet,
+      {},
+      'n1',
+      'blood test',
+      reasoningReader,
+      client,
+      'You are MediAssist, the AI assistant for Alhilal Hospital.',
+      ['Book an appointment']
+    )
+  );
+
+  assert.equal(turn.text, "I'm having trouble understanding. Could you rephrase?");
+  assert.equal(turn.reasoningDecision?.ok, false);
+  assert.equal(turn.reasoningDecision?.errorKind, 'invalid_json');
+  // Nothing was persisted and nothing was fabricated.
+  assert.equal(turn.sheet.pendingFallbackId, null);
+  assert.equal(turn.sheet.awaitingFallbackVerification, false);
+  assert.equal(turn.conversational, undefined);
+});
+
+
 
