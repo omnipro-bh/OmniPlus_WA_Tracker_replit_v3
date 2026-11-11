@@ -21,7 +21,7 @@
 import { lookupSheetRows } from './googleSheetsExecutor';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { llmJson } from '../ai/prompt';
-import type { AiGoogleSheetsConfig, LlmClient } from '../ai/types';
+import type { AiGoogleSheetsConfig, LlmClient, ReasoningTrace } from '../ai/types';
 import {
   availabilityHeader,
   headerFor,
@@ -136,6 +136,39 @@ export interface ReasoningDecision {
 /** Maximum number of reasoning turns without progress before escalating to handover. */
 const MAX_REASONING_ATTEMPTS = 3;
 
+/** Version tag for the reasoning prompt contract — surfaced in every trace. */
+export const REASONING_PROMPT_VERSION = 'reasoning-v1';
+
+/** Cap on the raw model output kept in the trace (cost + PII bound). */
+const RAW_TEXT_LIMIT = 2000;
+
+/** The result of one reasoning step: the decision plus its instrumentation. */
+export interface ReasoningResult {
+  decision: ReasoningDecision;
+  trace: ReasoningTrace;
+}
+
+/**
+ * Flatten a decision into the trace fields. `target_intent_id` is read
+ * defensively so the trace shape is stable before the v2 contract ships it.
+ */
+function reasoningTraceFields(decision: ReasoningDecision) {
+  const target = (decision as any).target_intent_id;
+  return {
+    action: decision.action,
+    targetIntentId: target === null || target === undefined || target === '' ? null : String(target),
+    slots: decision.slots ?? {},
+    ...(decision.verification_question ? { verificationQuestion: decision.verification_question } : {}),
+    reasoning: decision.reasoning,
+  };
+}
+
+function truncateRawText(text: string | undefined): string | undefined {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > RAW_TEXT_LIMIT ? `${trimmed.slice(0, RAW_TEXT_LIMIT)}…` : trimmed;
+}
+
 /**
  * Chain-of-Thought reasoning step. Called when no intent keyword matches the
  * user's message. The LLM reasons about the customer's intent based on the
@@ -149,12 +182,30 @@ export async function reasoningStep(
   objectives: string[],
   userMessage: string,
   slots: Record<string, any>
-): Promise<ReasoningDecision> {
+): Promise<ReasoningResult> {
+  const startedAt = Date.now();
+
   if (!client) {
-    return {
+    const decision: ReasoningDecision = {
       reasoning: 'No LLM client available; cannot reason.',
       action: 'ask_clarification',
       slots: {},
+    };
+    return {
+      decision,
+      trace: {
+        promptVersion: REASONING_PROMPT_VERSION,
+        promptChars: 0,
+        hadIntentCatalogue: false,
+        ...reasoningTraceFields(decision),
+        ok: false,
+        errorKind: 'no_client',
+        attempts: 0,
+        httpAttempts: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        elapsedMs: Date.now() - startedAt,
+      },
     };
   }
 
@@ -162,8 +213,34 @@ export async function reasoningStep(
 
   const prompt = `You are an AI assistant. Your objectives, in priority order, are:\n${objectivesText}\n\nThe user said: "${userMessage}".\nExtracted slots so far: ${JSON.stringify(slots)}.\n\nThink step-by-step. Based on the objectives, what is the best action?\n\nReturn strict JSON:\n{\n  "reasoning": "<your step-by-step thought process>",\n  "action": "verify_booking" | "capture_lead" | "answer_faq" | "ask_clarification",\n  "slots": { "slotName": "value", ... },\n  "verification_question": "<if action is verify_booking, the question to ask the customer>"\n}`;
 
+  const base = {
+    promptVersion: REASONING_PROMPT_VERSION,
+    promptChars: prompt.length,
+    hadIntentCatalogue: false,
+  };
+
+  // Meter this call only. `llmJson` discards usage and the executor drops
+  // `extractionUsage` on the conversational path, so without this the cost of
+  // the reasoning step is invisible in every trace.
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let httpAttempts = 0;
+  let rawText = '';
+  const metered: LlmClient = {
+    id: client.id,
+    defaultModel: client.defaultModel,
+    complete: async (request) => {
+      const res = await client.complete(request);
+      tokensIn += res.usage.promptTokens;
+      tokensOut += res.usage.completionTokens;
+      httpAttempts += res.attempts;
+      if (res.text) rawText = res.text;
+      return res;
+    },
+  };
+
   const round = await llmJson<ReasoningDecision>(
-    client,
+    metered,
     prompt,
     (obj: any): { ok: true; value: ReasoningDecision } | { ok: false; reason: string } => {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -194,14 +271,45 @@ export async function reasoningStep(
   );
 
   if (!round.ok) {
-    return {
+    const decision: ReasoningDecision = {
       reasoning: `Reasoning failed: ${round.error}. Falling back to clarification.`,
       action: 'ask_clarification',
       slots: {},
     };
+    const raw = truncateRawText(rawText);
+    return {
+      decision,
+      trace: {
+        ...base,
+        ...reasoningTraceFields(decision),
+        ok: false,
+        errorKind: round.errorKind,
+        error: round.error,
+        ...(raw ? { rawText: raw } : {}),
+        attempts: round.attempts,
+        httpAttempts,
+        tokensIn,
+        tokensOut,
+        elapsedMs: Date.now() - startedAt,
+      },
+    };
   }
 
-  return round.value;
+  const raw = truncateRawText(rawText);
+  return {
+    decision: round.value,
+    trace: {
+      ...base,
+      ...reasoningTraceFields(round.value),
+      ok: true,
+      ...(raw ? { rawText: raw } : {}),
+      attempts: round.attempts,
+      httpAttempts,
+      tokensIn,
+      tokensOut,
+      elapsedMs: Date.now() - startedAt,
+    },
+  };
 }
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -1452,7 +1560,6 @@ export async function runAgentHarness(
 
   // ── Fallback Verification: a pending catch-all intent awaiting "Yes/No" ────
   if (state.awaitingFallbackVerification && state.pendingFallbackId) {
-    console.error(`DEBUG FV: pendingFallbackId=${state.pendingFallbackId} awaiting=${state.awaitingFallbackVerification} msg="${userMessage}"`);
     const fallback = await readRows(sheet, intentsTab, { column: idHeader, value: state.pendingFallbackId });
     toolCalls.push({
       name: 'lookup_sheet',
@@ -1562,9 +1669,14 @@ export async function runAgentHarness(
       // No intent matched. Run Chain-of-Thought reasoning to decide what to do.
       // Reasoning requires a database (for objectives); skip in test/dev environments.
       let reasoning: ReasoningDecision | null = null;
+      // Instrumentation only: the trace travels back to the executor for the
+      // Webhook Logs. It never changes what the harness does.
+      let reasoningTrace: ReasoningTrace | undefined;
       if (process.env.DATABASE_URL && objectives) {
         try {
-          reasoning = await reasoningStep(client, systemPrompt ?? '', objectives, userMessage, state.slots);
+          const outcome = await reasoningStep(client, systemPrompt ?? '', objectives, userMessage, state.slots);
+          reasoning = outcome.decision;
+          reasoningTrace = outcome.trace;
         } catch {
           // Reasoning failed — fall through to deterministic fallback below.
         }
@@ -1585,6 +1697,7 @@ export async function runAgentHarness(
             fallbackUsed,
             conversational: true,
             unanswered: true,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
           };
         }
 
@@ -1600,6 +1713,7 @@ export async function runAgentHarness(
             toolCalls,
             slotExtractionAttempts,
             fallbackUsed,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
           };
         }
 
@@ -1613,6 +1727,7 @@ export async function runAgentHarness(
             toolCalls,
             slotExtractionAttempts,
             fallbackUsed,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
           };
         }
 
@@ -1633,6 +1748,7 @@ export async function runAgentHarness(
             toolCalls,
             slotExtractionAttempts,
             fallbackUsed,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
             ...(answer ? {} : { conversational: true, unanswered: true }),
           };
         }
@@ -1674,6 +1790,7 @@ export async function runAgentHarness(
           toolCalls,
           slotExtractionAttempts,
           fallbackUsed,
+          ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
         };
       }
 
@@ -1743,7 +1860,7 @@ export async function runAgentHarness(
               fallbackChecklist.derived.length ? fallbackChecklist.derived : ENTITY_SLOTS
             );
             const text = [entity ? `Got it — ${entity}.` : 'Got it.', question].filter(Boolean).join(' ');
-            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}) };
           }
         }
 
@@ -1775,7 +1892,7 @@ export async function runAgentHarness(
               guided && !body.includes(guided)
                 ? [body, guided].filter(Boolean).join('\n\n')
                 : body || guided || 'I could not find anything matching that.';
-            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+            return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}) };
           }
 
           // Structured search with no matches: report the gap, do not reuse an
@@ -1787,6 +1904,7 @@ export async function runAgentHarness(
             slotExtractionAttempts,
             fallbackUsed,
             unanswered: true,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
           };
         }
 
@@ -1799,7 +1917,7 @@ export async function runAgentHarness(
           );
           slotExtractionAttempts += round2.attempts;
           const text = noBarePlaceholders(round2.decision.next_question?.trim() || state.lastSearch, state.slots);
-          return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };
+          return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}) };
         }
 
         // The model tried to search but produced no usable constraint. Ask for
@@ -1815,11 +1933,12 @@ export async function runAgentHarness(
             toolCalls,
             slotExtractionAttempts,
             fallbackUsed,
+            ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
           };
         }
       }
 
-      return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true, unanswered: true };
+      return { text: '', sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed, conversational: true, unanswered: true, ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}) };
     }
 
     const intent = intents[0];

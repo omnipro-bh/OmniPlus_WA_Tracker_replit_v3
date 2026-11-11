@@ -207,9 +207,22 @@ export function extractJsonObject(text: string): any | null {
   }
 }
 
+export type LlmJsonErrorKind = 'rate_limit' | 'invalid_json' | 'schema' | 'provider';
+
 export type LlmJsonResult<T> =
   | { ok: true; value: T; attempts: number }
-  | { ok: false; error: string; attempts: number };
+  | { ok: false; error: string; attempts: number; errorKind: LlmJsonErrorKind };
+
+/**
+ * A provider 429 / throttling response, as surfaced by the OpenAI-compatible
+ * client (`"<message> (HTTP 429)"`). Used to separate an infrastructure failure
+ * from a model-output failure — the two must never be conflated.
+ */
+const RATE_LIMIT_RE = /(rate limit|too many requests|\b429\b)/i;
+
+export function isRateLimitMessage(text: unknown): boolean {
+  return typeof text === 'string' && RATE_LIMIT_RE.test(text);
+}
 
 /**
  * Ask the LLM for strict JSON and validate it, retrying with a corrective prompt
@@ -228,6 +241,7 @@ export async function llmJson<T>(
   const temperature = options.temperature ?? 0;
   const maxTokens = options.maxTokens ?? 300;
   let lastReason = 'not valid JSON';
+  let lastKind: LlmJsonErrorKind = 'invalid_json';
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const message =
@@ -244,26 +258,35 @@ export async function llmJson<T>(
       });
     } catch (error: any) {
       lastReason = error?.message || 'provider error';
+      lastKind = isRateLimitMessage(lastReason) ? 'rate_limit' : 'provider';
       continue;
     }
 
     if (!completion.ok) {
       lastReason = completion.error || 'provider error';
+      lastKind = isRateLimitMessage(lastReason) ? 'rate_limit' : 'provider';
       continue;
     }
 
     const obj = extractJsonObject(completion.text);
     if (obj === null) {
       lastReason = 'not valid JSON';
+      lastKind = 'invalid_json';
       continue;
     }
 
     const result = validate(obj);
     if (result.ok) return { ok: true, value: result.value, attempts: attempt + 1 };
     lastReason = result.reason;
+    lastKind = 'schema';
   }
 
-  return { ok: false, error: `Extraction failed after ${maxRetries + 1} attempts`, attempts: maxRetries + 1 };
+  return {
+    ok: false,
+    error: `Extraction failed after ${maxRetries + 1} attempts`,
+    attempts: maxRetries + 1,
+    errorKind: lastKind,
+  };
 }
 
 /**

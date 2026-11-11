@@ -111,6 +111,48 @@ export interface LlmCompletionResult {
   error?: string;
 }
 
+/**
+ * Instrumentation for one Chain-of-Thought reasoning call (`reasoningStep` in
+ * `workflows/agentHarness.ts`). Persisted to `AiTrace.reasoningDecision` so a
+ * reasoning outcome can be diagnosed from the Webhook Logs without reproducing
+ * the turn.
+ *
+ * `rawText` is the model's unparsed output. It is the only way to tell "the
+ * model chose ask_clarification" apart from "the model produced unusable JSON
+ * and the step degraded to ask_clarification" — two very different bugs.
+ */
+export interface ReasoningTrace {
+  /** Prompt contract version — bump whenever the reasoning prompt changes. */
+  promptVersion: string;
+  /** The action the harness executed. */
+  action: string;
+  /** Intent the action targets (`null` until the v2 contract supplies it). */
+  targetIntentId: string | null;
+  /** Slots the reasoner extracted. */
+  slots: Record<string, any>;
+  verificationQuestion?: string;
+  /** The model's own chain-of-thought. */
+  reasoning: string;
+  /** `false` when the step degraded instead of returning a real decision. */
+  ok: boolean;
+  /** Why the step degraded, when it did. */
+  errorKind?: 'rate_limit' | 'invalid_json' | 'schema' | 'provider' | 'no_client';
+  error?: string;
+  /** Raw model output, truncated to 2000 chars — never sent to the customer. */
+  rawText?: string;
+  /** LLM calls made (initial + corrective retries). */
+  attempts: number;
+  /** Provider HTTP attempts across those calls. */
+  httpAttempts: number;
+  tokensIn: number;
+  tokensOut: number;
+  elapsedMs: number;
+  /** Prompt size, so a prompt change is visible in the trace. */
+  promptChars: number;
+  /** Whether the intent catalogue was included in the prompt (v2+). */
+  hadIntentCatalogue: boolean;
+}
+
 export interface LlmClient {
   readonly id: LlmProviderId;
   /** Model used when a request does not specify one. */

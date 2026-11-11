@@ -20,7 +20,7 @@ import { lookupSheetRows } from './googleSheetsExecutor';
 import { isWithinWindow, parseRequestedTime, parseTimeWindows } from './timeRange';
 import { AI_SHEET_TAB_SCHEMA } from '@shared/ai-defaults';
 import { buildSlotExtractionPrompt, llmJson } from '../ai/prompt';
-import type { AiGoogleSheetsConfig, LlmClient, SlotExtractionResult } from '../ai/types';
+import type { AiGoogleSheetsConfig, LlmClient, ReasoningTrace, SlotExtractionResult } from '../ai/types';
 import {
   canonicalizeOption,
   matchWholeWordOption,
@@ -142,6 +142,11 @@ export interface SheetTurn {
    * validation rejections like `invalid_time`/`day_conflict`).
    */
   unanswered?: boolean;
+  /**
+   * Chain-of-Thought reasoning outcome for this turn, when the agent engine ran
+   * the reasoning step. Trace-only: never sent to the customer.
+   */
+  reasoningDecision?: ReasoningTrace;
 }
 
 export type StepTransition = { kind: 'advance'; stepId: string } | { kind: 'done' };

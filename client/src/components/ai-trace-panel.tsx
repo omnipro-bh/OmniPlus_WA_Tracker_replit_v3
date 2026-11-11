@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Bot, Clock, Coins, Zap } from "lucide-react";
+import { AlertTriangle, Bot, Brain, Clock, Coins, Zap } from "lucide-react";
 
 /**
  * A single execution row returned by `GET /api/workflows/:id/ai-traces`.
@@ -47,6 +47,26 @@ interface AiTraceShape {
   rejectedSlots?: Array<{ slot: string; value: string; reason: string }>;
   /** Increment G — answered conversationally (no workflow intent matched). */
   conversational?: boolean;
+  /** Chain-of-Thought reasoning outcome for this turn (agent engine only). */
+  reasoningDecision?: {
+    promptVersion?: string;
+    action?: string;
+    targetIntentId?: string | null;
+    slots?: Record<string, unknown>;
+    verificationQuestion?: string;
+    reasoning?: string;
+    ok?: boolean;
+    errorKind?: string;
+    error?: string;
+    rawText?: string;
+    attempts?: number;
+    httpAttempts?: number;
+    tokensIn?: number;
+    tokensOut?: number;
+    elapsedMs?: number;
+    promptChars?: number;
+    hadIntentCatalogue?: boolean;
+  };
 }
 
 function Metric({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
@@ -67,6 +87,7 @@ function slotLabel(value: unknown): string {
 export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
   const ai = trace.aiTrace;
   const sheet = ai?.sheetState;
+  const reasoning = ai?.reasoningDecision;
   const slots = sheet?.slots ?? {};
   const slotEntries = Object.entries(slots);
   const rejected = Array.isArray(ai?.rejectedSlots) ? ai.rejectedSlots : [];
@@ -145,6 +166,73 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
         </div>
       )}
 
+      {/* Reasoning (Chain-of-Thought) */}
+      {reasoning && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                Reasoning
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant={reasoning.ok ? "outline" : "destructive"}>
+                  {reasoning.ok ? "decision" : `degraded${reasoning.errorKind ? `: ${reasoning.errorKind}` : ""}`}
+                </Badge>
+                <Badge variant="secondary" className="font-mono">
+                  {reasoning.action ?? "—"}
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+              <div>
+                <div className="text-xs text-muted-foreground">Target intent</div>
+                <div className="font-mono">{reasoning.targetIntentId ?? "none"}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Prompt</div>
+                <div className="font-mono text-xs">{reasoning.promptVersion ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Calls / HTTP</div>
+                <div className="font-mono">
+                  {reasoning.attempts ?? 0} / {reasoning.httpAttempts ?? 0}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Tokens in / out</div>
+                <div className="font-mono">
+                  {reasoning.tokensIn ?? 0} / {reasoning.tokensOut ?? 0}
+                </div>
+              </div>
+            </div>
+            {reasoning.error && (
+              <div className="rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-400">
+                {reasoning.error}
+              </div>
+            )}
+            {reasoning.reasoning && (
+              <div className="rounded-md bg-muted/40 p-3 text-sm">
+                <div className="mb-1 text-xs text-muted-foreground">Chain of thought</div>
+                <div className="whitespace-pre-wrap">{reasoning.reasoning}</div>
+              </div>
+            )}
+            {reasoning.rawText && (
+              <details>
+                <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+                  Raw model output
+                </summary>
+                <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-md border p-3 text-xs">
+                  {reasoning.rawText}
+                </pre>
+              </details>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Slots */}
       <Card>
         <CardHeader className="pb-2">
@@ -152,7 +240,9 @@ export function AiTracePanel({ trace }: { trace: AiTraceRow }) {
         </CardHeader>
         <CardContent className="space-y-3">
           {slotEntries.length === 0 && rejected.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No slot activity this turn.</p>
+            <p className="text-sm text-muted-foreground">
+              {sheet ? "No slot activity this turn." : "Slot state not recorded for this turn."}
+            </p>
           ) : (
             <>
               {slotEntries.length > 0 && (

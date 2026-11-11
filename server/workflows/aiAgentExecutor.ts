@@ -60,6 +60,7 @@ import type {
   LlmToolChoice,
   LlmToolDef,
   LlmUsage,
+  ReasoningTrace,
   UsageLimits,
 } from '../ai/types';
 import { extractSpreadsheetId, lookupSheetRows } from './googleSheetsExecutor';
@@ -256,6 +257,8 @@ export interface AiAgentExecutionResult {
    * validation rejections like `invalid_time`/`day_conflict`).
    */
   unanswered?: boolean;
+  /** Chain-of-Thought reasoning outcome for this turn (trace only). */
+  reasoningDecision?: ReasoningTrace;
   /** The booking flow reached completion (all required slots filled). */
   completed?: boolean;
   /** The final filled slots at completion (for lead capture). */
@@ -315,6 +318,12 @@ export interface AiTrace {
   conversational?: boolean;
   /** No answer found in Intents/Doctors_Schedule (never a validation rejection). */
   unanswered?: boolean;
+  /**
+   * Chain-of-Thought reasoning outcome for this turn, when the reasoning step
+   * ran. Includes the raw model output so a degraded decision can be told apart
+   * from a real one.
+   */
+  reasoningDecision?: ReasoningTrace;
 }
 
 export interface AiAgentNodeOptions {
@@ -744,7 +753,8 @@ function emptyResult(
   stateUpdate: Record<string, any>,
   nodeId: string,
   useHistory: boolean,
-  reason?: string
+  reason?: string,
+  reasoningDecision?: ReasoningTrace
 ): AiAgentExecutionResult {
   // Record the failure in the context too: an owner debugging a WhatsApp flow
   // sees why the node took the error handle without reading PM2 logs.
@@ -782,6 +792,7 @@ function emptyResult(
     history,
     stateUpdate,
     toolCalls: [],
+    ...(reasoningDecision ? { reasoningDecision } : {}),
   };
 }
 
@@ -972,6 +983,9 @@ export async function executeAiAgentNode(
   // from the persona + instructions (and carries the sheet lookups in the trace).
   let conversationalMode = false;
   let conversationalSheet: { sheet: SheetState; toolCalls: SheetLookupCall[]; unanswered?: boolean } | null = null;
+  // Hoisted so the free-form path below (and the error return) can report the
+  // reasoning outcome of this turn.
+  let turnReasoning: ReasoningTrace | undefined;
 
   if (settings.googleSheets && isSheetStateMachineEnabled(settings.googleSheets)) {
     const startedAt = Date.now();
@@ -1021,6 +1035,9 @@ export async function executeAiAgentNode(
           workflowSystemPrompt
         );
     const latencyMs = Date.now() - startedAt;
+    // Reasoning ran on this turn (or did not). Captured before the
+    // conversational branch so both paths can report it.
+    turnReasoning = turn.reasoningDecision;
 
     if (turn.conversational) {
       // Increment G — no intent matched and no flow is active. Keep the sheet
@@ -1092,6 +1109,7 @@ export async function executeAiAgentNode(
         ...(turn.fallbackReason ? { fallbackReason: turn.fallbackReason } : {}),
         ...(turn.rejectedSlots ? { rejectedSlots: turn.rejectedSlots } : {}),
         ...(turn.unanswered ? { unanswered: true } : {}),
+        ...(turnReasoning ? { reasoningDecision: turnReasoning } : {}),
         ...(turn.completed ? { completed: true, completedSlots: turn.completedSlots ?? {} } : {}),
         tokenBreakdown: {
           systemPromptTokens: 0,
@@ -1346,6 +1364,13 @@ export async function executeAiAgentNode(
 
   const completion = lastCompletion as LlmCompletionResult;
 
+  // The engine's own lookups + the model's tool calls, for the trace. Computed
+  // here so the error path reports the same set as the success path (it used to
+  // drop the engine lookups, which made a busy turn look idle).
+  const tracedToolCalls: AiToolCallTrace[] = conversationalSheet
+    ? [...conversationalSheet.toolCalls, ...toolCalls]
+    : toolCalls;
+
   // ── Error paths ─────────────────────────────────────────────────────────
   if (!completion || toolError || !completion.ok) {
     let error = toolError || completion?.error || 'AI provider failed';
@@ -1393,7 +1418,12 @@ export async function executeAiAgentNode(
       ...(reason ? { reason } : {}),
       history: previousHistory,
       stateUpdate,
-      toolCalls,
+      toolCalls: tracedToolCalls,
+      // The state machine DID run this turn; without this the trace claimed
+      // "no slot activity" on a turn that had plenty.
+      ...(conversationalSheet ? { sheetState: conversationalSheet.sheet } : {}),
+      ...(conversationalSheet?.unanswered ? { unanswered: true } : {}),
+      ...(turnReasoning ? { reasoningDecision: turnReasoning } : {}),
       tokenBreakdown,
     };
   }
@@ -1403,7 +1433,7 @@ export async function executeAiAgentNode(
   if (completion.toolCalls.length > 0 && !toolOutcome) {
     const message = `AI did not produce a final answer after ${AI_MAX_TOOL_ROUNDS} tool rounds`;
     console.warn(`[AI Executor] ${message}`);
-    return emptyResult(settings, message, previousHistory, stateUpdate, nodeId, useHistory);
+    return emptyResult(settings, message, previousHistory, stateUpdate, nodeId, useHistory, undefined, turnReasoning);
   }
 
   // ── Success: determine the handle and final text ─────────────────────────
@@ -1480,9 +1510,7 @@ export async function executeAiAgentNode(
 
   // Increment G — a conversational turn keeps the engine's sheet lookups and a
   // null intent/step snapshot so the trace shows "no intent" plus real tokens.
-  const tracedToolCalls: AiToolCallTrace[] = conversationalSheet
-    ? [...conversationalSheet.toolCalls, ...toolCalls]
-    : toolCalls;
+  // (`tracedToolCalls` is computed above so the error path can reuse it.)
 
   return {
     success: true,
@@ -1502,6 +1530,7 @@ export async function executeAiAgentNode(
     ...(conversationalMode ? { conversational: true } : {}),
     ...(conversationalSheet ? { sheetState: conversationalSheet.sheet } : {}),
     ...(conversationalSheet?.unanswered ? { unanswered: true } : {}),
+    ...(turnReasoning ? { reasoningDecision: turnReasoning } : {}),
     toolCalls: tracedToolCalls,
     tokenBreakdown,
   };
@@ -1659,6 +1688,7 @@ export async function executeAiAgentWorkflowNode(
     ...(result.rejectedSlots ? { rejectedSlots: result.rejectedSlots } : {}),
     ...(result.conversational ? { conversational: true } : {}),
     ...(result.unanswered ? { unanswered: true } : {}),
+    ...(result.reasoningDecision ? { reasoningDecision: result.reasoningDecision } : {}),
   };
 
   // Phase 3: a blocked turn (a `reason` was set by a safety gate) made no LLM
