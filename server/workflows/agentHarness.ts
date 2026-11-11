@@ -127,39 +127,66 @@ export interface ReasoningDecision {
   reasoning: string;
   /** The action to take. */
   action: 'verify_booking' | 'capture_lead' | 'answer_faq' | 'ask_clarification';
+  /**
+   * The Intents row this action targets. Required for `verify_booking` and
+   * `answer_faq`; sheet ids are strings, but models emit numbers too.
+   */
+  target_intent_id?: string | null;
   /** Slots extracted from the user message. */
   slots: Record<string, string>;
   /** Verification question to ask the customer (only for verify_booking). */
   verification_question?: string;
 }
 
+/** One row of the intent catalogue handed to the reasoner. */
+export interface ReasoningIntent {
+  id: string;
+  type: string;
+  keywords: string;
+  answer?: string;
+  verificationQuestion?: string;
+}
+
 /** Maximum number of reasoning turns without progress before escalating to handover. */
 const MAX_REASONING_ATTEMPTS = 3;
 
 /** Version tag for the reasoning prompt contract — surfaced in every trace. */
-export const REASONING_PROMPT_VERSION = 'reasoning-v1';
+export const REASONING_PROMPT_VERSION = 'reasoning-v2';
 
 /** Cap on the raw model output kept in the trace (cost + PII bound). */
 const RAW_TEXT_LIMIT = 2000;
 
-/** The result of one reasoning step: the decision plus its instrumentation. */
-export interface ReasoningResult {
-  decision: ReasoningDecision;
-  trace: ReasoningTrace;
-}
+/** Cap on the chain-of-thought kept in the trace. The prompt asks for 2 sentences. */
+const REASONING_TEXT_LIMIT = 240;
+
+/** Bound on how many intents reach the prompt. */
+const MAX_CATALOGUE_INTENTS = 20;
+
+/** Keywords are clipped so one long row cannot bloat the prompt. */
+const MAX_KEYWORDS_CHARS = 80;
 
 /**
- * Flatten a decision into the trace fields. `target_intent_id` is read
- * defensively so the trace shape is stable before the v2 contract ships it.
+ * One reasoning step's outcome. `ok: false` means the step could not produce a
+ * usable decision — the caller must NOT read that as `ask_clarification`.
  */
+export type ReasoningResult =
+  | { ok: true; decision: ReasoningDecision; trace: ReasoningTrace }
+  | { ok: false; trace: ReasoningTrace };
+
+function clip(text: string, limit: number): string {
+  const trimmed = (text ?? '').trim();
+  return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed;
+}
+
+/** Flatten a decision into the trace fields. */
 function reasoningTraceFields(decision: ReasoningDecision) {
-  const target = (decision as any).target_intent_id;
+  const target = decision.target_intent_id;
   return {
     action: decision.action,
     targetIntentId: target === null || target === undefined || target === '' ? null : String(target),
     slots: decision.slots ?? {},
     ...(decision.verification_question ? { verificationQuestion: decision.verification_question } : {}),
-    reasoning: decision.reasoning,
+    reasoning: clip(decision.reasoning, REASONING_TEXT_LIMIT),
   };
 }
 
@@ -169,35 +196,52 @@ function truncateRawText(text: string | undefined): string | undefined {
   return trimmed.length > RAW_TEXT_LIMIT ? `${trimmed.slice(0, RAW_TEXT_LIMIT)}…` : trimmed;
 }
 
+/** Render the catalogue shown to the model, bounded so a large sheet is safe. */
+function buildIntentCatalogue(intents: ReasoningIntent[]): { text: string; ids: string[] } {
+  const rows = intents.filter((i) => i.id !== '').slice(0, MAX_CATALOGUE_INTENTS);
+  if (rows.length === 0) return { text: 'None defined.', ids: [] };
+  const text = rows
+    .map((i) => {
+      const type = i.type || 'Unknown';
+      const keywords = clip(i.keywords, MAX_KEYWORDS_CHARS) || 'none';
+      const answer = i.answer ? ` | answer: ${clip(i.answer, 160)}` : '';
+      return `- id: ${i.id}, type: ${type}, keywords: ${keywords}${answer}`;
+    })
+    .join('\n');
+  return { text, ids: rows.map((i) => i.id) };
+}
+
 /**
  * Chain-of-Thought reasoning step. Called when no intent keyword matches the
  * user's message. The LLM reasons about the customer's intent based on the
- * owner's objectives and decides the best next action.
+ * owner's objectives and the intent catalogue, then picks exactly one action.
  *
- * Returns a structured decision that the harness executes.
+ * The persona/instructions arrive as a system message and the task as the user
+ * message, so the reasoner reasons *as* the business, not as a generic router.
  */
 export async function reasoningStep(
   client: LlmClient | undefined,
   systemPrompt: string,
   objectives: string[],
   userMessage: string,
-  slots: Record<string, any>
+  slots: Record<string, any>,
+  options: { intents?: ReasoningIntent[] } = {}
 ): Promise<ReasoningResult> {
   const startedAt = Date.now();
+  const catalogue = buildIntentCatalogue(options.intents ?? []);
+  const hadIntentCatalogue = catalogue.ids.length > 0;
 
   if (!client) {
-    const decision: ReasoningDecision = {
-      reasoning: 'No LLM client available; cannot reason.',
-      action: 'ask_clarification',
-      slots: {},
-    };
     return {
-      decision,
+      ok: false,
       trace: {
         promptVersion: REASONING_PROMPT_VERSION,
         promptChars: 0,
-        hadIntentCatalogue: false,
-        ...reasoningTraceFields(decision),
+        hadIntentCatalogue,
+        action: 'none',
+        targetIntentId: null,
+        slots: {},
+        reasoning: 'No LLM client available; cannot reason.',
         ok: false,
         errorKind: 'no_client',
         attempts: 0,
@@ -211,12 +255,56 @@ export async function reasoningStep(
 
   const objectivesText = objectives.length > 0 ? objectives.map((o, i) => `${i + 1}. ${o}`).join('\n') : 'None defined.';
 
-  const prompt = `You are an AI assistant. Your objectives, in priority order, are:\n${objectivesText}\n\nThe user said: "${userMessage}".\nExtracted slots so far: ${JSON.stringify(slots)}.\n\nThink step-by-step. Based on the objectives, what is the best action?\n\nReturn strict JSON:\n{\n  "reasoning": "<your step-by-step thought process>",\n  "action": "verify_booking" | "capture_lead" | "answer_faq" | "ask_clarification",\n  "slots": { "slotName": "value", ... },\n  "verification_question": "<if action is verify_booking, the question to ask the customer>"\n}`;
+  const prompt = `You are the intent router for this business. Decide what the customer wants, then pick exactly one action. You are not writing the customer's reply — the workflow engine will do that.
+
+YOUR OBJECTIVES, in priority order:
+${objectivesText}
+
+AVAILABLE WORKFLOW INTENTS (choose target_intent_id from this list only):
+${catalogue.text}
+
+The customer said: "${userMessage}"
+Slots already collected: ${JSON.stringify(slots)}
+
+ACTIONS — pick exactly one:
+
+1. "verify_booking"
+   The customer wants to book, reschedule or cancel an appointment, OR their message names any service, test, department, package, doctor or date/time this business provides — even as a bare noun with no verb. "blood test", "dental", "tomorrow", "Dr Ahmed", "how much is a checkup" all belong here.
+   A bare service, test, department, doctor, or date means the user wants to book that service. Always choose "verify_booking" in this case.
+   target_intent_id: the Booking intent's id from the list above. Required.
+   slots: every value you can extract. Use "service" or "department" for a named test/department.
+   verification_question: required. One sentence that names what you understood and offers to proceed. Do not invent prices, times or doctor names.
+
+2. "capture_lead"
+   The customer gave (or offered to give) contact details, or asked to be contacted later.
+   slots: name, phone, email where present.
+
+3. "answer_faq"
+   The message matches an intent of type FAQ above.
+   target_intent_id: that FAQ intent's id from the list above. Required.
+   verification_question: omit.
+
+4. "ask_clarification"
+   ONLY when no intent in the list is a plausible target and the message cannot be mapped to an objective. This is the last resort, not the default.
+
+RULES:
+- If you are torn between "verify_booking" and "ask_clarification", choose "verify_booking".
+- Never invent a price, a doctor, a time slot or a policy.
+- "reasoning" must be at most 2 sentences (240 characters). Do not repeat the message.
+
+Return ONLY this JSON object, no prose and no code fences:
+{
+  "reasoning": "<max 2 sentences>",
+  "action": "verify_booking" | "capture_lead" | "answer_faq" | "ask_clarification",
+  "target_intent_id": "<id from the list above, or null>",
+  "slots": { "slotName": "value" },
+  "verification_question": "<required for verify_booking>"
+}`;
 
   const base = {
     promptVersion: REASONING_PROMPT_VERSION,
-    promptChars: prompt.length,
-    hadIntentCatalogue: false,
+    promptChars: prompt.length + (systemPrompt ?? '').trim().length,
+    hadIntentCatalogue,
   };
 
   // Meter this call only. `llmJson` discards usage and the executor drops
@@ -239,6 +327,7 @@ export async function reasoningStep(
     },
   };
 
+  const validIds = catalogue.ids;
   const round = await llmJson<ReasoningDecision>(
     metered,
     prompt,
@@ -265,23 +354,51 @@ export async function reasoningStep(
       if (action === 'verify_booking' && (typeof vq !== 'string' || vq.trim().length === 0)) {
         return { ok: false, reason: 'verification_question required for verify_booking' };
       }
-      return { ok: true, value: obj as ReasoningDecision };
+
+      // Sheet ids are strings; models emit `1` as often as `"1"`.
+      const rawTarget = obj.target_intent_id;
+      const target =
+        rawTarget === null || rawTarget === undefined || rawTarget === ''
+          ? ''
+          : String(rawTarget).trim();
+
+      if (action === 'verify_booking' || action === 'answer_faq') {
+        if (!target) {
+          return { ok: false, reason: `target_intent_id required for ${action}` };
+        }
+        if (validIds.length > 0 && !validIds.includes(target)) {
+          return {
+            ok: false,
+            reason: `unknown target_intent_id "${target}"; valid ids: ${validIds.join(', ')}`,
+          };
+        }
+      }
+
+      return {
+        ok: true,
+        value: {
+          ...obj,
+          // Only the actions that target an intent keep one.
+          target_intent_id:
+            action === 'verify_booking' || action === 'answer_faq' ? target : null,
+        } as ReasoningDecision,
+      };
     },
-    { maxRetries: 1, maxTokens: 500, temperature: 0 }
+    { maxRetries: 1, maxTokens: 1500, temperature: 0, systemPrompt }
   );
 
   if (!round.ok) {
-    const decision: ReasoningDecision = {
-      reasoning: `Reasoning failed: ${round.error}. Falling back to clarification.`,
-      action: 'ask_clarification',
-      slots: {},
-    };
+    // Do NOT fabricate a decision here. A truncated or unparseable output is an
+    // infrastructure/output failure, not a semantic "ask_clarification".
     const raw = truncateRawText(rawText);
     return {
-      decision,
+      ok: false,
       trace: {
         ...base,
-        ...reasoningTraceFields(decision),
+        action: 'none',
+        targetIntentId: null,
+        slots: {},
+        reasoning: clip(`Reasoning failed: ${round.error}`, REASONING_TEXT_LIMIT),
         ok: false,
         errorKind: round.errorKind,
         error: round.error,
@@ -297,6 +414,7 @@ export async function reasoningStep(
 
   const raw = truncateRawText(rawText);
   return {
+    ok: true,
     decision: round.value,
     trace: {
       ...base,
@@ -1652,12 +1770,16 @@ export async function runAgentHarness(
       rows: intents.length,
     });
 
+    // The full Intents table is needed by the lenient match and, when that also
+    // fails, by the reasoning catalogue. Read it at most once per turn.
+    let intentsTable: Record<string, any>[] | null = null;
+
     // Lenient fallback: the strict substring match misses inflections ("doctors"
     // vs "doctor"), which would otherwise drop a knowledge query into the free
     // form path instead of the harness.
     if (intents.length === 0) {
-      const allIntents = await readRows(sheet, intentsTab);
-      intents = allIntents.filter((i) => matchesIntentKeywords(readCell(i, keywordsHeader), userMessage));
+      intentsTable = await readRows(sheet, intentsTab);
+      intents = intentsTable.filter((i) => matchesIntentKeywords(readCell(i, keywordsHeader), userMessage));
       toolCalls.push({
         name: 'lookup_sheet',
         args: { tab: intentsTab, filter: 'lenient-keywords' },
@@ -1668,18 +1790,49 @@ export async function runAgentHarness(
     if (intents.length === 0) {
       // No intent matched. Run Chain-of-Thought reasoning to decide what to do.
       // Reasoning requires a database (for objectives); skip in test/dev environments.
+      const catalogue: ReasoningIntent[] = (intentsTable ?? []).map((row) => ({
+        id: String(readCell(row, idHeader) ?? '').trim(),
+        type: String(readCell(row, typeHeader) ?? '').trim(),
+        keywords: String(readCell(row, keywordsHeader) ?? '').trim(),
+        answer: String(readCell(row, answerHeader) ?? '').trim() || undefined,
+        verificationQuestion: String(readCell(row, verificationHeader) ?? '').trim() || undefined,
+      }));
+
       let reasoning: ReasoningDecision | null = null;
-      // Instrumentation only: the trace travels back to the executor for the
-      // Webhook Logs. It never changes what the harness does.
+      // The trace travels back to the executor for the Webhook Logs.
       let reasoningTrace: ReasoningTrace | undefined;
-      if (process.env.DATABASE_URL && objectives) {
+      // True when the step ran but produced no usable decision. That is a
+      // failure, not an `ask_clarification` — it must never be fabricated.
+      let reasoningDegraded = false;
+      if (process.env.DATABASE_URL && objectives && objectives.length > 0) {
         try {
-          const outcome = await reasoningStep(client, systemPrompt ?? '', objectives, userMessage, state.slots);
-          reasoning = outcome.decision;
+          const outcome = await reasoningStep(client, systemPrompt ?? '', objectives, userMessage, state.slots, {
+            intents: catalogue,
+          });
           reasoningTrace = outcome.trace;
+          if (outcome.ok) reasoning = outcome.decision;
+          else reasoningDegraded = true;
         } catch {
-          // Reasoning failed — fall through to deterministic fallback below.
+          // Reasoning threw — fall through to deterministic fallback below.
         }
+      }
+
+      if (reasoningDegraded) {
+        // The model produced unusable output (truncated JSON, provider outage).
+        // Say so plainly and keep the conversation open; do not confirm a
+        // booking we could not understand, and do not fall into the free-form
+        // path, which would invent an answer instead of asking for a rephrase.
+        // (Deliberately does not touch `reasoningAttempts`: that counter is the
+        // loop guard for real decisions, and a transient provider blip must not
+        // push a healthy conversation towards handover.)
+        return {
+          text: "I'm having trouble understanding. Could you rephrase?",
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+          ...(reasoningTrace ? { reasoningDecision: reasoningTrace } : {}),
+        };
       }
 
       if (reasoning) {
@@ -1704,8 +1857,11 @@ export async function runAgentHarness(
         if (reasoning.action === 'verify_booking') {
           // Ask the verification question with extracted slots substituted.
           const text = reasoning.verification_question || 'Could you confirm?';
-          state.pendingFallbackId = 'reasoning_booking';
-          state.awaitingFallbackVerification = true;
+          // Persist the real Intents row the reasoner targeted. The old
+          // 'reasoning_booking' sentinel never matched a row, which made the
+          // next turn's verification lookup silently return nothing.
+          state.pendingFallbackId = reasoning.target_intent_id ?? null;
+          state.awaitingFallbackVerification = Boolean(state.pendingFallbackId);
           state.fallbackExtractedSlots = reasoning.slots;
           return {
             text,
@@ -1732,15 +1888,20 @@ export async function runAgentHarness(
         }
 
         if (reasoning.action === 'answer_faq') {
-          // Search Intents sheet for FAQ match.
-          const allIntents = await readRows(sheet, intentsTab);
-          const faqIntent = allIntents.find(
-            (i) => {
+          // Prefer the intent the reasoner named; fall back to a keyword match
+          // for older prompts that did not supply `target_intent_id`.
+          const allIntents = intentsTable ?? (await readRows(sheet, intentsTab));
+          const targetId = reasoning.target_intent_id ?? '';
+          const targetRow = targetId
+            ? allIntents.find((i) => String(readCell(i, idHeader) ?? '').trim() === targetId)
+            : undefined;
+          const faqIntent =
+            (targetRow && String(readCell(targetRow, answerHeader) ?? '').trim() ? targetRow : undefined) ??
+            allIntents.find((i) => {
               const kw = String(readCell(i, keywordsHeader) ?? '');
               const type = String(readCell(i, typeHeader) ?? '').trim().toLowerCase();
               return type && type !== 'booking' && matchesIntentKeywords(kw, userMessage);
-            }
-          );
+            });
           const answer = faqIntent ? String(readCell(faqIntent, answerHeader) ?? '').trim() : '';
           return {
             text: answer || 'I could not find anything matching that.',
@@ -1758,7 +1919,7 @@ export async function runAgentHarness(
       // deterministic fallback logic below (check for Fallback intent, then schedule search).
 
       // ── Deterministic fallback: check for a Fallback (catch-all) intent ──
-      const allIntentsForFallback = await readRows(sheet, intentsTab);
+      const allIntentsForFallback = intentsTable ?? (await readRows(sheet, intentsTab));
       const fallbackIntent = allIntentsForFallback.find(
         (i) => String(readCell(i, typeHeader) ?? '').trim().toLowerCase() === 'fallback'
       );

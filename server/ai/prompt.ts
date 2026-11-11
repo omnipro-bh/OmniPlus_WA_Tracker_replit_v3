@@ -17,7 +17,7 @@
 import { AI_SHEET_TAB_SCHEMA, AI_TOOL_RULES } from '@shared/ai-defaults';
 import type { AiStudioPersona } from '@shared/ai-defaults';
 import { normalizeInputType, normalizeOptions } from '../workflows/slotValidation';
-import type { AiGoogleSheetsConfig, LlmClient, LlmCompletionResult } from './types';
+import type { AiGoogleSheetsConfig, LlmClient, LlmCompletionResult, LlmMessage } from './types';
 
 /** Always appended after the owner's prompt. Order matters: last wins. */
 export const LANGUAGE_RULES = [
@@ -235,11 +235,22 @@ export async function llmJson<T>(
   client: LlmClient,
   prompt: string,
   validate: (obj: any) => { ok: true; value: T } | { ok: false; reason: string },
-  options: { maxRetries?: number; temperature?: number; maxTokens?: number } = {}
+  options: {
+    maxRetries?: number;
+    temperature?: number;
+    maxTokens?: number;
+    /**
+     * Optional system message (the full persona + owner instructions) sent
+     * ahead of the task prompt. Without it the model only sees the task and
+     * loses the business identity it is supposed to reason inside.
+     */
+    systemPrompt?: string;
+  } = {}
 ): Promise<LlmJsonResult<T>> {
   const maxRetries = options.maxRetries ?? 2;
   const temperature = options.temperature ?? 0;
   const maxTokens = options.maxTokens ?? 300;
+  const systemPrompt = (options.systemPrompt ?? '').trim();
   let lastReason = 'not valid JSON';
   let lastKind: LlmJsonErrorKind = 'invalid_json';
 
@@ -249,10 +260,15 @@ export async function llmJson<T>(
         ? prompt
         : `${prompt}\n\nYour previous response was invalid: ${lastReason}. Return valid JSON only.`;
 
+    const messages: LlmMessage[] = [
+      ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+      { role: 'user' as const, content: message },
+    ];
+
     let completion: LlmCompletionResult;
     try {
       completion = await client.complete({
-        messages: [{ role: 'user', content: message }],
+        messages,
         temperature,
         maxTokens,
       });
