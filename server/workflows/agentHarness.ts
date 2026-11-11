@@ -31,6 +31,7 @@ import {
   rankLookupHits,
   readCell,
   substituteSlots,
+  type LastCompletedBooking,
   type RowReader,
   type SheetLookupCall,
   type SheetState,
@@ -1377,6 +1378,63 @@ export function semanticMatchQuestion(entity: string, requested: string, suggest
   return `I don't have a ${entity} listed as '${requested}'. We have '${suggested}'. Would you like me to check for ${suggested}?`;
 }
 
+// ── Booking memory ───────────────────────────────────────────────────────────
+
+/** How long the harness remembers the booking the customer just completed. */
+export const BOOKING_MEMORY_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Is the customer asking about the booking they just made? ("Which doctor did
+ * I book with?", "What time is my appointment?", "Which property did I
+ * view?") — universal: interrogative words and booking vocabulary, no
+ * business nouns.
+ */
+export function isBookingFollowUp(message: string): boolean {
+  const text = String(message ?? '').trim().toLowerCase();
+  if (!text) return false;
+  const question = /\b(which|what|when|who|where|why|how)\b/.test(text);
+  const booking =
+    /\b(booking|booked|bookings|appointment|appointments|reservation|reservations|reserved|order|ordered|orders)\b/.test(
+      text
+    );
+  return question || booking;
+}
+
+/** The booking memory, if it is still fresh. */
+export function freshBookingMemory(
+  booking: LastCompletedBooking | null | undefined,
+  now: number = Date.now()
+): LastCompletedBooking | null {
+  if (!booking || typeof booking !== 'object') return null;
+  const completedAt = Number(booking.completedAt ?? 0);
+  if (!completedAt) return null;
+  if (now - completedAt > BOOKING_MEMORY_TTL_MS) return null; // expired
+  return booking;
+}
+
+/** The prompt the model answers a post-booking question with. */
+export function buildBookingMemoryPrompt(
+  booking: { slots: Record<string, any> },
+  userMessage: string
+): string {
+  return [
+    'The user just completed a booking with these details:',
+    JSON.stringify(booking.slots ?? {}),
+    '',
+    `The user asked: "${userMessage}"`,
+    'Answer their question based on this booking. Do not start a new flow.',
+  ].join('\n');
+}
+
+/** A deterministic summary of the booking — used when the model cannot answer. */
+export function summarizeBooking(slots: Record<string, any>): string {
+  const entries = Object.entries(slots ?? {}).filter(
+    ([, value]) => value !== undefined && value !== null && String(value).trim() !== ''
+  );
+  if (entries.length === 0) return 'Your booking is confirmed.';
+  return `Your booking: ${entries.map(([name, value]) => `${name.replace(/[_-]+/g, ' ')}: ${value}`).join(', ')}.`;
+}
+
 // ── State commitment (search selections are slot fills) ────────────────────
 
 /** Generic aliases for the slots that hold a search constraint. */
@@ -1909,11 +1967,31 @@ export async function runAgentHarness(
       rawState?.pendingMatch && typeof rawState.pendingMatch === 'object'
         ? { ...rawState.pendingMatch }
         : null,
+    lastCompletedBooking:
+      rawState?.lastCompletedBooking && typeof rawState.lastCompletedBooking === 'object'
+        ? {
+            ...rawState.lastCompletedBooking,
+            slots:
+              rawState.lastCompletedBooking.slots &&
+              typeof rawState.lastCompletedBooking.slots === 'object'
+                ? { ...rawState.lastCompletedBooking.slots }
+                : {},
+          }
+        : null,
   };
 
   // Was a flow already in progress when this message arrived? Used to tell
   // "wrong answer to the question we asked" from "the flow starts now".
   const intentWasActive = Boolean(rawState?.intentId);
+
+  /**
+   * A fresh flow state that still remembers the booking the customer just
+   * made — so a follow-up question can be answered from it.
+   */
+  const freshStateWithMemory = (): SheetState => ({
+    ...freshHarnessState(),
+    lastCompletedBooking: state.lastCompletedBooking ?? null,
+  });
 
   const intentsTab = intentsTabName(sheet);
   const stepsTab = stepsTabName(sheet);
@@ -1967,7 +2045,7 @@ export async function runAgentHarness(
         const answer = substituteSlots(String(readCell(pendingIntent, answerHeader) ?? '').trim(), state.slots);
         return {
           text: answer || '',
-          sheet: freshHarnessState(),
+          sheet: freshStateWithMemory(),
           toolCalls,
           slotExtractionAttempts,
           fallbackUsed,
@@ -2182,6 +2260,43 @@ export async function runAgentHarness(
         fallbackUsed,
       };
     }
+  }
+
+  // ── Post-booking question ──────────────────────────────────────────────────
+  // The customer just completed a booking and keeps talking: "Which doctor did
+  // I book with?". The flow is over (its slots were cleared), so the intent
+  // matching below would start a brand new booking and forget everything. The
+  // completed booking is remembered for a short while — answer from it.
+  const bookingMemory = freshBookingMemory(state.lastCompletedBooking);
+  if (bookingMemory && !state.intentId && isBookingFollowUp(userMessage)) {
+    const prompt = buildBookingMemoryPrompt(bookingMemory, userMessage);
+    let answer = '';
+    try {
+      const completion = await client?.complete({
+        messages: [
+          ...(systemPrompt?.trim() ? [{ role: 'system' as const, content: systemPrompt }] : []),
+          { role: 'user' as const, content: prompt },
+        ],
+        temperature: 0,
+        maxTokens: 250,
+      });
+      if (completion?.ok) answer = String(completion.text ?? '').trim();
+    } catch {
+      answer = '';
+    }
+    // The model may not answer — the booking itself is always known.
+    const text = noBarePlaceholders(answer || summarizeBooking(bookingMemory.slots), bookingMemory.slots);
+    return {
+      text,
+      sheet: { ...state, lastCompletedBooking: bookingMemory },
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
+    };
+  }
+  // The memory is only useful while it is fresh.
+  if (state.lastCompletedBooking && !bookingMemory) {
+    state.lastCompletedBooking = null;
   }
 
   // ── Turn 1: match the intent ───────────────────────────────────────────────
@@ -2555,7 +2670,7 @@ export async function runAgentHarness(
       const answer = substituteSlots(String(readCell(intent, answerHeader) ?? '').trim(), state.slots);
       return {
         text: answer || '',
-        sheet: freshHarnessState(),
+        sheet: freshStateWithMemory(),
         toolCalls,
         slotExtractionAttempts,
         fallbackUsed,
@@ -3122,9 +3237,17 @@ export async function runAgentHarness(
       substituteSlots(answerText, state.slots) || 'Your booking is confirmed. Our team will contact you shortly.',
       state.slots
     );
+    // The flow is over, so the slots are cleared — but the booking itself is
+    // remembered, so a follow-up ("Which doctor did I book with?") is answered
+    // from it instead of starting a new booking.
+    const completedBooking: LastCompletedBooking = {
+      slots: { ...state.slots },
+      intentId: String(state.intentId ?? ''),
+      completedAt: Date.now(),
+    };
     return {
       text,
-      sheet: freshHarnessState(),
+      sheet: { ...freshHarnessState(), lastCompletedBooking: completedBooking },
       completed: true,
       completedSlots: { ...state.slots },
       toolCalls,

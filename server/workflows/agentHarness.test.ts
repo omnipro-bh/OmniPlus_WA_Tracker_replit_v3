@@ -18,6 +18,7 @@ import {
   filterRowsStructured,
   findSemanticMatch,
   hoursColumn,
+  isBookingFollowUp,
   matchDoctor,
   matchesIntentKeywords,
   mapSlotsToChecklist,
@@ -1841,6 +1842,76 @@ test('the guided question is not repeated when the model echoed it', async () =>
   assert.doesNotMatch(turn.text, /\n\n/);
   // The unresolved placeholder got a readable default, not a broken sentence.
   assert.match(turn.text, /a specialist has availability/);
+});
+
+// ── Booking memory (the customer keeps talking after the booking) ───────────
+
+test('a question after a completed booking is answered from the booking, not a new flow', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {"department": "Dental", "location": "Riffa", "datetime": "5 PM"}, "action": "complete", "next_question": ""}',
+  ]);
+
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', reader, client);
+  assert.equal(t1.completed, true);
+  // The completed booking is remembered even though the slots were cleared.
+  assert.equal(t1.sheet.slots.doctor_name, undefined);
+  assert.equal(t1.sheet.lastCompletedBooking?.slots.department, 'Dental');
+  assert.equal(t1.sheet.lastCompletedBooking?.slots.location, 'Riffa');
+
+  const client2 = harnessClient(['You booked with Dr. Goutham at Riffa for 5 PM.']);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Which doctor did I book with?',
+    reader,
+    client2
+  );
+
+  // The answer comes from the completed booking…
+  assert.match(t2.text, /Dr\. Goutham/);
+  // …and NO new flow was started.
+  assert.equal(t2.sheet.intentId, null);
+  assert.deepEqual(t2.sheet.slots, {});
+  assert.ok(t2.sheet.lastCompletedBooking);
+});
+
+test('the booking memory expires and a new flow starts again', async () => {
+  const client = harnessClient([
+    '{"updated_slots": {"department": "Dental", "location": "Riffa", "datetime": "5 PM"}, "action": "complete", "next_question": ""}',
+  ]);
+  const t1 = await runAgentHarness(sheet, {}, 'n1', 'book', reader, client);
+
+  // Age the memory past its lifetime.
+  const aged = {
+    ...t1.sheet,
+    lastCompletedBooking: {
+      ...t1.sheet.lastCompletedBooking!,
+      completedAt: Date.now() - 40 * 60 * 1000,
+    },
+  };
+
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: aged } } },
+    'n1',
+    'Which doctor did I book with?',
+    reader,
+    harnessClient(['{"updated_slots": {}, "action": "ask", "next_question": ""}'])
+  );
+
+  // The memory is gone and the flow starts from scratch again.
+  assert.equal(t2.sheet.lastCompletedBooking, null);
+  assert.equal(t2.sheet.intentId, '1');
+  assert.match(t2.text, /Which department do you need\?/);
+});
+
+test('isBookingFollowUp recognises a follow-up without business nouns', () => {
+  assert.equal(isBookingFollowUp('Which doctor did I book with?'), true);
+  assert.equal(isBookingFollowUp('what time is my appointment'), true);
+  assert.equal(isBookingFollowUp('my reservation'), true);
+  assert.equal(isBookingFollowUp('thank you'), false);
+  assert.equal(isBookingFollowUp('I want to book a dentist'), false);
 });
 
 // ── The LLM acknowledges, the Harness asks (structural, business-agnostic) ───

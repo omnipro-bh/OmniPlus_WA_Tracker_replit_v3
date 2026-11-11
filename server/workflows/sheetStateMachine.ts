@@ -66,6 +66,25 @@ export interface SheetState {
    * the suggestion and the lookup runs again.
    */
   pendingMatch?: PendingMatch | null;
+  /**
+   * The booking the customer just completed.
+   *
+   * The slots are cleared when a flow completes (the flow is over), but the
+   * customer keeps talking: "Which doctor did I book with?". Keeping the
+   * completed booking here lets the harness answer those follow-up questions
+   * instead of starting a new booking from scratch.
+   */
+  lastCompletedBooking?: LastCompletedBooking | null;
+}
+
+/** A booking the customer completed, remembered for a short while. */
+export interface LastCompletedBooking {
+  /** Every slot the flow had collected when it completed. */
+  slots: Record<string, any>;
+  /** The intent the booking belonged to. */
+  intentId: string;
+  /** Epoch milliseconds — the memory expires after BOOKING_MEMORY_TTL_MS. */
+  completedAt: number;
 }
 
 /** A confirmation produced by the Chain-of-Thought reasoning step. */
