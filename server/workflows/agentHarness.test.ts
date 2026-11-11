@@ -25,6 +25,7 @@ import {
   resolveDay,
   runAgentHarness,
   semanticMatchPrompt,
+  semanticOptions,
   serializeSearchResults,
   strictCellMatch,
   uniqueLookupValues,
@@ -1930,6 +1931,24 @@ test('semanticMatchPrompt asks the model for one exact option or NONE', () => {
   assert.match(prompt, /'NONE'/);
 });
 
+test('semanticOptions only offers the values that exist at that branch', () => {
+  const map = {
+    source: 'Doctors_Schedule',
+    doctorColumn: 'Doctor',
+    departmentColumn: 'department',
+    branchColumn: 'Branch',
+  } as any;
+  const rows = [
+    { Doctor: 'Dr. A', department: 'ENT Surgeon', Branch: 'Riffa' },
+    { Doctor: 'Dr. B', department: 'DENTAL SURGEON', Branch: 'Adliya' },
+  ];
+
+  // Only the departments available in Riffa are offered…
+  assert.deepEqual(semanticOptions(rows, map, { location: 'Riffa' }), ['ENT Surgeon']);
+  // …and without a branch every value is a candidate.
+  assert.deepEqual(semanticOptions(rows, map, {}), ['DENTAL SURGEON', 'ENT Surgeon']);
+});
+
 test('findSemanticMatch returns the option the model picked, and null for NONE', async () => {
   const options = ['ENT Surgeon', 'DENTAL SURGEON'];
   assert.equal(
@@ -2051,6 +2070,44 @@ test("declining the suggestion routes to the owner's alternate step", async () =
     "Sorry, we don't have a Ear Specialist doctor at Riffa. Would you like to try another location?"
   );
   assert.equal(t2.sheet.pendingMatch, null);
+});
+
+test('a suggestion that repeats the customer request is not offered', async () => {
+  // The model answered with the very value the customer already gave: offering
+  // it would only loop, so the harness falls through to the alternate step.
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check who is available.", "tool_call": "lookup_schedule", "lookup": {"department": "Ear Specialist", "location": "Riffa"}}',
+    'Ear Specialist',
+  ]);
+
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Ear Specialist', location: 'Riffa' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+    pendingMatch: null,
+  };
+
+  const turn = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    'Any ear specialist available',
+    semanticReader,
+    client
+  );
+
+  assert.equal(turn.sheet.pendingMatch, null);
+  assert.equal(
+    turn.text,
+    "Sorry, we don't have a Ear Specialist doctor at Riffa. Would you like to try another location?"
+  );
 });
 
 test('a lookup that fails while checking the time also offers the closest option', async () => {

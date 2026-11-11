@@ -1291,6 +1291,26 @@ export function uniqueLookupValues(rows: Record<string, any>[], column: string):
   return Array.from(values).sort();
 }
 
+/**
+ * The options the customer could have meant: the values of the category column
+ * among the rows that match the OTHER constraints (the branch they named).
+ *
+ * Narrowing by branch is what makes the suggestion resolvable — offering
+ * "SPECIALIST ENT" to a customer in Riffa would only fail again.
+ */
+export function semanticOptions(
+  rows: Record<string, any>[],
+  map: ScheduleMap,
+  constraints: { location?: string }
+): string[] {
+  const all = Array.isArray(rows) ? rows : [];
+  const narrowed = constraints.location
+    ? all.filter((row) => strictCellMatch(readCell(row, map.branchColumn), constraints.location!))
+    : all;
+  const source = narrowed.length > 0 ? narrowed : all;
+  return uniqueLookupValues(source, map.departmentColumn).slice(0, MAX_SEMANTIC_OPTIONS);
+}
+
 /** The question the model answers when the customer's wording is not in the sheet. */
 export function semanticMatchPrompt(requested: string, options: string[]): string {
   return `The user asked for '${requested}'. The available options are: ${options.join(
@@ -2556,6 +2576,9 @@ export async function runAgentHarness(
     if (!requested || params.options.length === 0) return null;
     const suggested = await findSemanticMatch(client, requested, params.options);
     if (!suggested) return null;
+    // A suggestion that is what the customer already said is no suggestion —
+    // it would only loop. Fall through to the owner's alternate step.
+    if (suggested.toLowerCase() === requested.toLowerCase()) return null;
 
     // The sheet's own entity column names the noun ("Doctor", "Property").
     const entity = String(scheduleMap?.doctorColumn ?? 'specialist').toLowerCase();
@@ -2728,10 +2751,9 @@ export async function runAgentHarness(
         const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
         const suggestion = await suggestSemanticMatch({
           requested,
-          options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
-            0,
-            MAX_SEMANTIC_OPTIONS
-          ),
+          options: semanticOptions(allRows, scheduleMap, {
+            location: effectiveSearch.location,
+          }),
           slotName,
           kind: 'search',
           search: { ...effectiveSearch },
@@ -2909,10 +2931,9 @@ export async function runAgentHarness(
         const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
         const suggestion = await suggestSemanticMatch({
           requested,
-          options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
-            0,
-            MAX_SEMANTIC_OPTIONS
-          ),
+          options: semanticOptions(allRows, scheduleMap, {
+            location: filter.location,
+          }),
           slotName,
           kind: 'lookup',
           filter: { ...filter },
@@ -2979,10 +3000,7 @@ export async function runAgentHarness(
           const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
           const suggestion = await suggestSemanticMatch({
             requested: requestedCategory,
-            options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
-              0,
-              MAX_SEMANTIC_OPTIONS
-            ),
+            options: semanticOptions(allRows, scheduleMap, { location: timeFilter.location }),
             slotName,
             kind: 'lookup',
             filter: { department: requestedCategory, location: timeFilter.location },
