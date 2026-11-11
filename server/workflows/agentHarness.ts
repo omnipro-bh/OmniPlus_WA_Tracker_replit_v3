@@ -272,7 +272,7 @@ ACTIONS — pick exactly one:
    The customer wants to book, reschedule or cancel an appointment, OR their message names any service, test, department, package, doctor or date/time this business provides — even as a bare noun with no verb. "blood test", "dental", "tomorrow", "Dr Ahmed", "how much is a checkup" all belong here.
    A bare service, test, department, doctor, or date means the user wants to book that service. Always choose "verify_booking" in this case.
    target_intent_id: the Booking intent's id from the list above. Required.
-   slots: every value you can extract. Use "service" or "department" for a named test/department.
+   slots: every value you can extract. If the user mentions a service, test or treatment, map it to the "department" slot. If they mention a branch, map it to the "location" slot. Use "doctor_name" for a named doctor.
    verification_question: required. One sentence that names what you understood and offers to proceed. Do not invent prices, times or doctor names.
 
 2. "capture_lead"
@@ -433,12 +433,68 @@ Return ONLY this JSON object, no prose and no code fences:
 // ── State ───────────────────────────────────────────────────────────────────
 
 function freshHarnessState(): SheetState {
-  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false, pendingFallbackId: null, awaitingFallbackVerification: false, fallbackExtractedSlots: {}, reasoningAttempts: 0 };
+  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false, pendingFallbackId: null, awaitingFallbackVerification: false, fallbackExtractedSlots: {}, reasoningAttempts: 0, pendingReasoning: null };
 }
 
 function isFilled(slots: Record<string, any>, name: string): boolean {
   const v = slots[name];
   return v !== undefined && v !== null && String(v).trim() !== '';
+}
+
+/**
+ * The reasoner/extractor speaks a different vocabulary than the sheet: it
+ * extracts `service`, while `Workflow_Steps` asks for `department`. Each alias
+ * lists the checklist slots it may fill, most specific first. Applied only when
+ * the target slot exists, so a sheet that really asks for `service` keeps it.
+ */
+const SLOT_ALIASES: Record<string, string[]> = {
+  service: ['department', 'service', 'specialty', 'treatment'],
+  test: ['department', 'service'],
+  specialty: ['department'],
+  treatment: ['department'],
+  procedure: ['department'],
+  branch: ['location', 'branch'],
+  clinic: ['location'],
+  area: ['location'],
+  doctor: ['doctor_name', 'doctor'],
+  date: ['date', 'datetime'],
+  time: ['time', 'datetime'],
+};
+
+/**
+ * Map extracted slot names onto the checklist's own names.
+ *
+ * The reasoning step extracts what the customer said (`service: "blood test"`)
+ * while the booking flow collects what the sheet declares (`department`).
+ * Without this, a confirmed "blood test" is invisible to the checklist and the
+ * customer is asked for the department again. Never overwrites a filled slot.
+ */
+export function mapSlotsToChecklist(
+  extracted: Record<string, any> | null | undefined,
+  checklist: HarnessChecklist,
+  existing: Record<string, any> = {}
+): Record<string, any> {
+  const out: Record<string, any> = { ...(extracted ?? {}) };
+
+  // normalized name → the checklist's actual spelling
+  const actual = new Map<string, string>();
+  for (const name of [...checklist.required.map((s) => s.name), ...checklist.derived]) {
+    actual.set(normalizeSlotKey(name), name);
+  }
+  const filled = (key: string) => {
+    const name = actual.get(key) ?? key;
+    return isFilled(existing, name) || isFilled(out, name);
+  };
+
+  for (const [rawName, value] of Object.entries(extracted ?? {})) {
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    const key = normalizeSlotKey(rawName);
+    if (actual.has(key)) continue; // already a checklist slot
+    const target = (SLOT_ALIASES[key] ?? []).find((candidate) => actual.has(candidate) && !filled(candidate));
+    if (target) out[actual.get(target)!] = value;
+  }
+
+  return out;
 }
 
 function intentsTabName(sheet: AiGoogleSheetsConfig): string {
@@ -1592,7 +1648,21 @@ export async function runAgentHarness(
         ? { ...rawState.fallbackExtractedSlots }
         : {},
     reasoningAttempts: typeof rawState?.reasoningAttempts === 'number' ? rawState.reasoningAttempts : 0,
+    pendingReasoning:
+      rawState?.pendingReasoning && typeof rawState.pendingReasoning === 'object'
+        ? {
+            ...rawState.pendingReasoning,
+            slots:
+              rawState.pendingReasoning.slots && typeof rawState.pendingReasoning.slots === 'object'
+                ? { ...rawState.pendingReasoning.slots }
+                : {},
+          }
+        : null,
   };
+
+  // Was a flow already in progress when this message arrived? Used to tell
+  // "wrong answer to the question we asked" from "the flow starts now".
+  const intentWasActive = Boolean(rawState?.intentId);
 
   const intentsTab = intentsTabName(sheet);
   const stepsTab = stepsTabName(sheet);
@@ -1676,6 +1746,105 @@ export async function runAgentHarness(
     }
   }
 
+  // ── Reasoning confirmation: a reasoned booking awaiting "Yes"/"No" ─────────
+  // Separate from the Fallback-intent flow: the confirmation has no Intents row
+  // of its own, only the row the reasoner targeted. "Yes" promotes that row and
+  // carries the reasoned slots in, so the flow resumes at the NEXT slot.
+  if (state.pendingReasoning) {
+    const pending = state.pendingReasoning;
+    const confirmation = confirmIntent(userMessage);
+
+    if (confirmation === 'yes') {
+      // Resolve the Booking intent: the reasoner's target when it is a Booking
+      // row, else the first Booking intent in the sheet.
+      const allIntents = await readRows(sheet, intentsTab);
+      toolCalls.push({
+        name: 'lookup_sheet',
+        args: { tab: intentsTab, filter: 'reasoning-promotion' },
+        rows: allIntents.length,
+      });
+      const targetId = String(pending.targetIntentId ?? '').trim();
+      const isBooking = (row: Record<string, any>) =>
+        /^booking$/i.test(String(readCell(row, typeHeader) ?? '').trim());
+      const byId = targetId
+        ? allIntents.find((i) => String(readCell(i, idHeader) ?? '').trim() === targetId)
+        : undefined;
+      const bookingIntent = byId && isBooking(byId) ? byId : allIntents.find(isBooking);
+
+      // Fall back to the reasoned row when the sheet has no row typed "Booking":
+      // the reasoner already validated that id against the catalogue.
+      state.intentId = bookingIntent
+        ? String(readCell(bookingIntent, idHeader) ?? '').trim() || null
+        : targetId || null;
+      state.pendingReasoning = null;
+
+      if (!state.intentId) {
+        // No Booking intent configured — nothing to promote into.
+        return {
+          text: 'No problem — how can I help you?',
+          sheet: state,
+          toolCalls,
+          slotExtractionAttempts,
+          fallbackUsed,
+        };
+      }
+
+      // The booking flow's own vocabulary decides which slot "service" fills.
+      const bookingSteps = await readRows(sheet, stepsTab, {
+        column: intentIdHeader,
+        value: state.intentId,
+      });
+      toolCalls.push({
+        name: 'lookup_sheet',
+        args: { tab: stepsTab, filter_column: intentIdHeader, filter_value: state.intentId },
+        rows: bookingSteps.length,
+      });
+      const bookingChecklist = deriveChecklist(bookingSteps, {
+        slot: slotHeader, expected: expectedHeader, options: optionsHeader,
+        validation: validationHeader, question: questionHeader, filter: filterHeader,
+        stepType: stepTypeHeader, fallback: fallbackHeader,
+      });
+
+      const mapped = mapSlotsToChecklist(pending.slots, bookingChecklist, state.slots);
+      for (const [name, value] of Object.entries(mapped)) {
+        if (!isFilled(state.slots, name)) state.slots[name] = value;
+      }
+
+      // The reasoned slots already answer a step ("blood test" fills department),
+      // so ask for the NEXT missing slot instead of restarting the flow.
+      const missing = firstMissing(state.slots, bookingChecklist);
+      const guided = guidedQuestion(missing, state.slots);
+      return {
+        text: guided ? noBarePlaceholders(guided, state.slots) : '',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+
+    if (confirmation === 'no') {
+      state.intentId = null;
+      state.pendingReasoning = null;
+      return {
+        text: 'No problem — how can I help you?',
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+
+    // Neither yes nor no → re-ask the question we actually asked, verbatim.
+    return {
+      text: pending.question || 'Could you confirm?',
+      sheet: state,
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
+    };
+  }
+
   // ── Fallback Verification: a pending catch-all intent awaiting "Yes/No" ────
   if (state.awaitingFallbackVerification && state.pendingFallbackId) {
     const fallback = await readRows(sheet, intentsTab, { column: idHeader, value: state.pendingFallbackId });
@@ -1706,17 +1875,9 @@ export async function runAgentHarness(
       state.intentId = bookingIntentId;
       state.pendingFallbackId = null;
       state.awaitingFallbackVerification = false;
-      // Merge the extracted slots into the booking slots.
-      if (state.fallbackExtractedSlots) {
-        for (const [name, value] of Object.entries(state.fallbackExtractedSlots)) {
-          if (!isFilled(state.slots, name) && value !== undefined && value !== null && value !== '') {
-            state.slots[name] = value;
-          }
-        }
-        state.fallbackExtractedSlots = {};
-      }
 
-      // Load the Booking intent's steps and ask for the next missing slot.
+      // Load the Booking intent's steps first: they define which slot a reasoned
+      // "service" belongs to (department vs service).
       const bookingSteps = await readRows(sheet, stepsTab, {
         column: intentIdHeader,
         value: state.intentId,
@@ -1726,6 +1887,15 @@ export async function runAgentHarness(
         validation: validationHeader, question: questionHeader, filter: filterHeader,
         stepType: stepTypeHeader, fallback: fallbackHeader,
       });
+
+      // Merge the extracted slots, mapped onto the booking vocabulary, so
+      // "blood test" fills department instead of leaving it blank.
+      const mapped = mapSlotsToChecklist(state.fallbackExtractedSlots, bookingChecklist, state.slots);
+      for (const [name, value] of Object.entries(mapped)) {
+        if (!isFilled(state.slots, name)) state.slots[name] = value;
+      }
+      state.fallbackExtractedSlots = {};
+
       const missing = firstMissing(state.slots, bookingChecklist);
       const guided = guidedQuestion(missing, state.slots);
       const text = guided ? noBarePlaceholders(guided, state.slots) : '';
@@ -1857,12 +2027,18 @@ export async function runAgentHarness(
         if (reasoning.action === 'verify_booking') {
           // Ask the verification question with extracted slots substituted.
           const text = reasoning.verification_question || 'Could you confirm?';
-          // Persist the real Intents row the reasoner targeted. The old
-          // 'reasoning_booking' sentinel never matched a row, which made the
-          // next turn's verification lookup silently return nothing.
-          state.pendingFallbackId = reasoning.target_intent_id ?? null;
-          state.awaitingFallbackVerification = Boolean(state.pendingFallbackId);
-          state.fallbackExtractedSlots = reasoning.slots;
+          // Persist a dedicated pending state so "Yes" promotes the booking with
+          // the reasoned slots instead of restarting the flow at step 1.
+          state.pendingReasoning = {
+            question: text,
+            slots: { ...(reasoning.slots ?? {}) },
+            targetIntentId: reasoning.target_intent_id ?? null,
+            source: 'conversational',
+            askedAt: new Date().toISOString(),
+          };
+          state.pendingFallbackId = null;
+          state.awaitingFallbackVerification = false;
+          state.fallbackExtractedSlots = {};
           return {
             text,
             sheet: state,
@@ -2164,6 +2340,12 @@ export async function runAgentHarness(
     },
     sheet
   );
+
+  // Snapshot the question this turn is about to ask, BEFORE the confirm/prefill
+  // blocks can fill anything. The final ask compares against it to tell "the
+  // customer answered a different question" from "the flow starts now".
+  const askedSlot = firstMissing(state.slots, checklist);
+  const slotsBeforeTurn = { ...state.slots };
 
   // ── Deterministic confirmation (the confirm step's Yes/No) ──────────────────
   // Handled in code, never by the LLM. "Yes"/"Sure"/"Yeah" → confirm = "Yes" and
@@ -2525,6 +2707,30 @@ export async function runAgentHarness(
   if (!text || /^\s*(?:\[|\{|\[|\{\s*)\s*$/.test(text) || /^\s*\[\s*\]\s*$/.test(text)) {
     text = guided || defaultQuestion(missing);
     text = noBarePlaceholders(text, state.slots) || `Could you please provide your ${missing?.name ?? 'the required information'}.`;
+  }
+
+  // Nonsense mid-flow guard: the customer was already mid-booking, we asked for a
+  // slot with a fixed list of options, and their reply matched none of them.
+  // Re-asking the identical question is a loop; say so once, helpfully.
+  const filledThisTurn = Object.keys(state.slots).some(
+    (name) => !isFilled(slotsBeforeTurn, name) && isFilled(state.slots, name)
+  );
+  if (
+    intentWasActive &&
+    askedSlot?.options?.length &&
+    missing?.name === askedSlot.name &&
+    !filledThisTurn &&
+    !matchWholeWordOption(userMessage, askedSlot.options) &&
+    !String(userMessage ?? '').includes('?')
+  ) {
+    return {
+      text: "I didn't understand that. Could you please choose from the available options?",
+      sheet: state,
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed: true,
+      fallbackReason: 'invalid_option',
+    };
   }
 
   return { text, sheet: state, toolCalls, slotExtractionAttempts, fallbackUsed };

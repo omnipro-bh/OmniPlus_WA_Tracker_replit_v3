@@ -52,6 +52,28 @@ export interface SheetState {
   fallbackExtractedSlots?: Record<string, any>;
   /** Number of consecutive reasoning turns without progress (loop prevention). */
   reasoningAttempts?: number;
+  /**
+   * A booking confirmation the reasoning step asked for, awaiting "Yes"/"No".
+   *
+   * Kept separate from the Fallback-intent state: a reasoned confirmation has no
+   * Intents row of its own, only the row the reasoner targeted. "Yes" promotes
+   * that row and carries these slots into the booking flow.
+   */
+  pendingReasoning?: PendingReasoning | null;
+}
+
+/** A confirmation produced by the Chain-of-Thought reasoning step. */
+export interface PendingReasoning {
+  /** The question the customer was asked — re-asked verbatim when ambiguous. */
+  question: string;
+  /** Slots the reasoner extracted (mapped to the checklist's names on promotion). */
+  slots: Record<string, any>;
+  /** The Intents row the reasoning step targeted. */
+  targetIntentId: string | null;
+  /** Where this pending state came from. Only the conversational path sets it. */
+  source: 'conversational';
+  /** ISO timestamp of when the question was asked. */
+  askedAt: string;
 }
 
 /** A fresh empty state — never reuse a shared object (slots must not leak across turns). */

@@ -100,6 +100,7 @@ test('"blood test" routes to verify_booking with the Booking intent id', async (
   assert.equal(messages[1].role, 'user');
   assert.match(messages[1].content, /- id: 1, type: Booking, keywords: dental, dentist, book/);
   assert.match(messages[1].content, /A bare service, test, department, doctor, or date/);
+  assert.match(messages[1].content, /map it to the "department" slot/);
   assert.match(messages[1].content, /Always choose "verify_booking"/);
 
   // CoT + JSON needs far more room than the old 500 tokens.

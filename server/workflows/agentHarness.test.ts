@@ -19,6 +19,7 @@ import {
   hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
+  mapSlotsToChecklist,
   noBarePlaceholders,
   resolveDay,
   runAgentHarness,
@@ -1433,10 +1434,13 @@ test('reasoning v2: "blood test" asks to book it and persists the real intent id
   );
 
   assert.equal(turn.text, 'Would you like to book an appointment for a blood test?');
-  // The old 'reasoning_booking' sentinel is gone: the real row id is persisted.
-  assert.equal(turn.sheet.pendingFallbackId, '1');
-  assert.equal(turn.sheet.awaitingFallbackVerification, true);
-  assert.deepEqual(turn.sheet.fallbackExtractedSlots, { service: 'blood test' });
+  // The reasoned confirmation is persisted as its own pending state, with the
+  // real row id the reasoner targeted and the conversational source.
+  assert.equal(turn.sheet.pendingReasoning?.targetIntentId, '1');
+  assert.equal(turn.sheet.pendingReasoning?.source, 'conversational');
+  assert.deepEqual(turn.sheet.pendingReasoning?.slots, { service: 'blood test' });
+  assert.equal(turn.sheet.pendingFallbackId, null);
+  assert.equal(turn.sheet.awaitingFallbackVerification, false);
 
   assert.equal(turn.reasoningDecision?.ok, true);
   assert.equal(turn.reasoningDecision?.action, 'verify_booking');
@@ -1466,7 +1470,129 @@ test('reasoning v2: unusable output asks for a rephrase instead of fabricating a
   // Nothing was persisted and nothing was fabricated.
   assert.equal(turn.sheet.pendingFallbackId, null);
   assert.equal(turn.sheet.awaitingFallbackVerification, false);
+  assert.equal(turn.sheet.pendingReasoning, null);
   assert.equal(turn.conversational, undefined);
+});
+
+// ── Reasoning confirmation promotion (step 3) ────────────────────────────────
+
+test('mapSlotsToChecklist maps a reasoned service onto the sheet department slot', () => {
+  const checklist = deriveChecklist(STEPS, HEADERS);
+  const mapped = mapSlotsToChecklist({ service: 'blood test' }, checklist);
+
+  // The reasoner's vocabulary is kept AND translated to the sheet's own name.
+  assert.equal(mapped.service, 'blood test');
+  assert.equal(mapped.department, 'blood test');
+});
+
+test('mapSlotsToChecklist never overwrites a slot that is already filled', () => {
+  const checklist = deriveChecklist(STEPS, HEADERS);
+  const mapped = mapSlotsToChecklist({ service: 'blood test' }, checklist, { department: 'Dental' });
+
+  assert.equal(mapped.department, undefined);
+  assert.equal(mapped.service, 'blood test');
+});
+
+test('step 3: "blood test" then "Yes" promotes to Booking and asks for the location', async () => {
+  const client = harnessClient([
+    JSON.stringify({
+      reasoning: 'The customer named a service we offer, so they want to book it.',
+      action: 'verify_booking',
+      target_intent_id: 1,
+      slots: { service: 'blood test' },
+      verification_question: 'Would you like to book an appointment for a blood test?',
+    }),
+  ]);
+
+  const t1 = await withDatabaseUrl(() =>
+    runAgentHarness(
+      sheet,
+      {},
+      'n1',
+      'blood test',
+      reasoningReader,
+      client,
+      'You are MediAssist, the AI assistant for Alhilal Hospital.',
+      ['Book an appointment']
+    )
+  );
+  assert.equal(t1.text, 'Would you like to book an appointment for a blood test?');
+  assert.equal(t1.sheet.pendingReasoning?.source, 'conversational');
+
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Yes',
+    reasoningReader,
+    harnessClient(['{}'])
+  );
+
+  // Promoted into the Booking flow…
+  assert.equal(t2.sheet.intentId, '1');
+  // …with the reasoned service mapped onto the sheet's `department` slot…
+  assert.equal(t2.sheet.slots.department, 'blood test');
+  // …the pending state cleared…
+  assert.equal(t2.sheet.pendingReasoning, null);
+  // …and the NEXT missing slot (location) asked, never the department again.
+  assert.equal(t2.text, 'And which location?');
+  assert.doesNotMatch(t2.text, /department/i);
+});
+
+test('step 3: nonsense mid-flow gets a helpful fallback instead of a re-ask loop', async () => {
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Dental' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+  };
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "And which location?"}',
+  ]);
+
+  const turn = await runAgentHarness(sheet, { ai: { n1: { sheet: seed } } }, 'n1', 'xyzabc', reader, client);
+
+  assert.equal(turn.text, "I didn't understand that. Could you please choose from the available options?");
+  assert.equal(turn.fallbackReason, 'invalid_option');
+  // The flow is kept alive, but nothing was invented for the location.
+  assert.equal(turn.sheet.intentId, '1');
+  assert.equal(turn.sheet.slots.location, undefined);
+});
+
+test('step 3: a mid-flow question is not treated as nonsense', async () => {
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Dental' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+  };
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": ""}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    'What is the price?',
+    reader,
+    client
+  );
+
+  assert.equal(turn.fallbackReason, undefined);
+  assert.match(turn.text, /And which location\?/);
 });
 
 
