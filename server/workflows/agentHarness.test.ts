@@ -1881,6 +1881,14 @@ const SEMANTIC_STEPS = [
   {
     intent_id: '1',
     step_id: 'Step_3',
+    step_type: 'ask',
+    ai_question: 'What date and time works for you?',
+    slot_name: 'datetime',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_4',
     step_type: 'lookup',
     ai_question: '(silent)',
     slot_name: 'doctor_name',
@@ -2043,6 +2051,63 @@ test("declining the suggestion routes to the owner's alternate step", async () =
     "Sorry, we don't have a Ear Specialist doctor at Riffa. Would you like to try another location?"
   );
   assert.equal(t2.sheet.pendingMatch, null);
+});
+
+test('a lookup that fails while checking the time also offers the closest option', async () => {
+  // The live flow reaches the lookup through the time check: the customer
+  // answered the date/time, the harness looked the entity up and found
+  // nothing. It must offer the closest option instead of failing silently.
+  const client = harnessClient([
+    // The harness's own turn.
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number"}',
+    // The semantic match.
+    'ENT Surgeon',
+  ]);
+
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Ear Specialist', location: 'Riffa', datetime: '5 PM today' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+    pendingMatch: null,
+  };
+
+  const t1 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    '5 PM today',
+    semanticReader,
+    client
+  );
+
+  assert.equal(
+    t1.text,
+    "I don't have a doctor listed as 'Ear Specialist'. We have 'ENT Surgeon'. Would you like me to check for ENT Surgeon?"
+  );
+  assert.equal(t1.sheet.pendingMatch?.suggestedValue, 'ENT Surgeon');
+
+  // "Yes" → the slot is rewritten and the lookup finds the ENT doctors.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. ENT One and Dr. ENT Two at Riffa."}',
+  ]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Yes',
+    semanticReader,
+    client2
+  );
+
+  assert.equal(t2.sheet.slots.department, 'ENT Surgeon');
+  assert.match(t2.text, /Dr\. ENT One/);
 });
 
 

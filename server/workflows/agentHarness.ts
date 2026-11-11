@@ -2961,12 +2961,35 @@ export async function runAgentHarness(
     }
 
     if (scheduleMap) {
-      const rows = await scheduleLookup(readRows, sheet, scheduleMap, {
+      const timeFilter = {
         department: isFilled(state.slots, 'department') ? String(state.slots.department) : undefined,
         location: isFilled(state.slots, 'location') ? String(state.slots.location) : undefined,
         doctor: isFilled(state.slots, 'doctor_name') ? String(state.slots.doctor_name) : undefined,
-      });
+      };
+      const rows = await scheduleLookup(readRows, sheet, scheduleMap, timeFilter);
       const row = rows[0];
+
+      // The lookup found nothing for the customer's own wording. It may simply
+      // be another way of saying something we DO have ("Ear Specialist" →
+      // "ENT Surgeon") — offer the closest option instead of failing silently.
+      if (rows.length === 0) {
+        const requestedCategory = String(timeFilter.department ?? '').trim();
+        if (requestedCategory) {
+          const allRows = await readRows(sheet, scheduleMap.source);
+          const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
+          const suggestion = await suggestSemanticMatch({
+            requested: requestedCategory,
+            options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
+              0,
+              MAX_SEMANTIC_OPTIONS
+            ),
+            slotName,
+            kind: 'lookup',
+            filter: { department: requestedCategory, location: timeFilter.location },
+          });
+          if (suggestion) return suggestion;
+        }
+      }
 
       // Day-off check: the requested weekday must not be the entity's day off.
       const requestedDay = resolveDay(timeText);
