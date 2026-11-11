@@ -1570,9 +1570,37 @@ export function hoursColumn(row: Record<string, any>): string | undefined {
 
 // ── Guards ──────────────────────────────────────────────────────────────────
 
-/** Replace `{slot}` with values, then strip any token that still has no value. */
-export function noBarePlaceholders(text: string, slots: Record<string, any>): string {
-  const substituted = substituteSlots(text, slots);
+/**
+ * Fallback wording for a placeholder the customer never filled in — e.g. a
+ * doctor name when the schedule had no match. Without it the owner's sentence
+ * reads "We have has availability.". The words are generic so the harness never
+ * assumes a vertical, and a placeholder without a default is still stripped.
+ */
+export const PLACEHOLDER_DEFAULTS: Record<string, string> = {
+  doctor: 'a specialist',
+  doctor_name: 'a specialist',
+  specialist: 'a specialist',
+  employee: 'a specialist',
+  staff: 'a specialist',
+  property: 'a property',
+  property_name: 'a property',
+  product: 'a product',
+  item: 'an item',
+  room: 'a room',
+  service: 'a service',
+};
+
+/**
+ * Replace `{slot}` with values, then strip any token that still has no value.
+ * `defaults` (see PLACEHOLDER_DEFAULTS) fills a placeholder that was never
+ * collected, so the sentence stays readable.
+ */
+export function noBarePlaceholders(
+  text: string,
+  slots: Record<string, any>,
+  defaults: Record<string, string> = PLACEHOLDER_DEFAULTS
+): string {
+  const substituted = substituteSlots(text, slots, defaults);
   return substituted
     .replace(/\{[^{}]*\}/g, '')
     .replace(/\s{2,}/g, ' ')
@@ -2782,9 +2810,23 @@ export async function runAgentHarness(
   const modelText = noBarePlaceholders(decision.next_question || defaultQuestion(missing), state.slots);
   // The owner's ai_question is the only question allowed. Keep any natural
   // acknowledgement the model wrote, but replace its invented question.
-  let text = guided
-    ? [stripTrailingQuestions(modelText), guided].filter(Boolean).join('\n\n')
-    : modelText;
+  //
+  // The model very often echoes the owner's ai_question verbatim. Appending the
+  // guided question again would send the customer the same sentence twice, so
+  // it is only appended when it actually adds something.
+  let text = modelText;
+  if (guided) {
+    const modelPart = stripTrailingQuestions(modelText).trim();
+    if (!modelPart) {
+      text = guided;
+    } else if (modelPart.includes(guided)) {
+      text = modelPart; // the model already said the owner's question
+    } else if (guided.includes(modelPart)) {
+      text = guided; // the model said part of it — keep the owner's wording
+    } else {
+      text = [modelPart, guided].filter(Boolean).join('\n\n');
+    }
+  }
 
   // Empty LLM response guard: never send `[]`, `{}`, or whitespace to the user.
   // Re-ask the current step's question instead.

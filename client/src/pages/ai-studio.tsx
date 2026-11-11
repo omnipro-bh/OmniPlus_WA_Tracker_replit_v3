@@ -37,6 +37,8 @@ interface AiStudioConfig {
   instructions: string;
   persona: AiStudioPersona;
   objectives: string[];
+  leadsTab: string;
+  leadsColumns: string;
 }
 
 export default function AIStudio() {
@@ -73,18 +75,31 @@ export default function AIStudio() {
     title: "",
     description: "",
   });
+  const [leadsTab, setLeadsTab] = useState("Leads");
+  const [leadsColumns, setLeadsColumns] = useState(
+    "Timestamp, Type, Name, Phone, Email, CPR, Department, Location, Datetime, Status"
+  );
 
   // Clear the editors immediately when the workflow changes so a save can never
   // write the previous workflow's text into the newly selected one.
   useEffect(() => {
     setInstructions("");
     setPersona({ alias: "", title: "", description: "" });
+    setLeadsTab("Leads");
+    setLeadsColumns(
+      "Timestamp, Type, Name, Phone, Email, CPR, Department, Location, Datetime, Status"
+    );
   }, [effectiveWorkflowId]);
 
   useEffect(() => {
     if (studioConfig) {
       setInstructions(studioConfig.instructions ?? "");
       setPersona(studioConfig.persona ?? { alias: "", title: "", description: "" });
+      setLeadsTab(studioConfig.leadsTab || "Leads");
+      setLeadsColumns(
+        studioConfig.leadsColumns ||
+          "Timestamp, Type, Name, Phone, Email, CPR, Department, Location, Datetime, Status"
+      );
     }
   }, [studioConfig]);
 
@@ -315,6 +330,56 @@ export default function AIStudio() {
                     onCheckedChange={(checked) => saveCaptureLead.mutate(checked)}
                     aria-label="Toggle lead capture"
                   />
+                </div>
+
+                <div className="mt-4 space-y-4 border-t pt-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="leads-tab">Lead Capture Tab Name</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Tab of your Google Sheet where captured leads are appended. Created
+                      automatically with the columns below when it does not exist yet.
+                    </p>
+                  </div>
+                  <Input
+                    id="leads-tab"
+                    value={leadsTab}
+                    onChange={(e) => setLeadsTab(e.target.value)}
+                    placeholder="Leads"
+                  />
+
+                  <div className="space-y-1">
+                    <Label htmlFor="leads-columns">Lead Capture Columns</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Comma separated. Any slot your flow collects that is not listed here
+                      is added as its own column, so the sheet fits your business.
+                    </p>
+                  </div>
+                  <Input
+                    id="leads-columns"
+                    value={leadsColumns}
+                    onChange={(e) => setLeadsColumns(e.target.value)}
+                    placeholder="Timestamp, Type, Name, Phone, Email, CPR, Department, Location, Datetime, Status"
+                  />
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {leadsTab !== (studioConfig?.leadsTab ?? "") ||
+                      leadsColumns !== (studioConfig?.leadsColumns ?? "")
+                        ? "Unsaved changes"
+                        : "Saved"}
+                    </span>
+                    <Button
+                      onClick={() => saveConfig.mutate({ leadsTab, leadsColumns })}
+                      disabled={saveConfig.isPending || !effectiveWorkflowId}
+                    >
+                      {saveConfig.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Lead Capture
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>

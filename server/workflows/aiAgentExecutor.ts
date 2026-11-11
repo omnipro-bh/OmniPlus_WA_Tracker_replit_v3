@@ -333,6 +333,16 @@ export interface AiAgentNodeOptions {
   businessName?: string;
   /** Defaults to true; the sandbox passes false to stay DB-free. */
   logUsage?: boolean;
+  /**
+   * Capture a lead when the flow ends (Postgres `leads` row + a row in the
+   * owner's Google Sheet). Defaults to true — lead capture is the owner's
+   * explicit choice and must also work in the Live Chat sandbox.
+   */
+  captureLead?: boolean;
+  /**
+   * Seam for tests: replaces the real lead capture (Postgres + Google Sheet).
+   */
+  captureLeadFn?: (input: import('./leadCapture').CaptureLeadInput) => Promise<unknown>;
 }
 
 // ── Normalization ──────────────────────────────────────────────────────────
@@ -1719,32 +1729,44 @@ export async function executeAiAgentWorkflowNode(
     });
   }
 
-  // Phase 5 — lead capture: when the booking flow completed and the workflow has
-  // `capture_lead` enabled, copy the collected slots into `leads`. Fire-and-forget
-  // (a failed insert never fails the conversation), and gated off in the sandbox.
-  if (
-    result.completed &&
-    result.completedSlots &&
-    options.logUsage !== false &&
-    options.workflowId != null
-  ) {
-    const leadPhone = String(userMetadata.phone || incomingMessage?.from || '').trim();
-    if (leadPhone) {
+  // Phase 5 — lead capture. When the workflow has `capture_lead` enabled, the
+  // collected slots are copied into the `leads` table AND appended as a row in
+  // the owner's Google Sheet (tab/columns configured in AI Studio).
+  //
+  // Two moments produce a lead:
+  //   • a COMPLETED booking  → Type "Booking", Status "Confirmed"
+  //   • an ABANDONED flow that still left contact details (the reasoning step
+  //     asked for them) → Type "Lead", Status "Pending"
+  //
+  // Fire-and-forget: a failed capture never fails the conversation. The
+  // `capture_lead` flag on the workflow is checked by the capture itself.
+  if (options.workflowId != null && options.captureLead !== false) {
+    const { resolveLeadCapture } = await import('./leadCapture');
+    const candidate = resolveLeadCapture(result);
+    if (candidate) {
+      const slots = candidate.slots as Record<string, any>;
+      // The collected slot is the better phone number; the channel number is
+      // the fallback (the sandbox has no real number).
+      const slotPhone = String(
+        slots.phone ?? slots.phone_number ?? slots.mobile ?? slots.contact_number ?? ''
+      ).trim();
+      const leadPhone = slotPhone || String(userMetadata.phone || incomingMessage?.from || '').trim();
+
       void (async () => {
         try {
-          const { storage } = await import('../storage');
-          const workflow = await storage.getWorkflow(options.workflowId!);
-          if (workflow?.captureLead) {
-            await storage.insertLead({
-              userId: workflow.userId,
-              workflowId: workflow.id,
-              nodeId,
-              channel: options.channel ?? 'whatsapp',
-              phone: leadPhone,
-              collectedSlotsJson: result.completedSlots,
-              source: 'completed_booking',
-            });
-          }
+          const capture = options.captureLeadFn ?? (await import('./leadCapture')).captureLead;
+          await capture({
+            workflowId: options.workflowId!,
+            nodeId,
+            channel: options.channel ?? 'whatsapp',
+            phone: leadPhone,
+            slots,
+            type: candidate.type,
+            status: candidate.status,
+            spreadsheetId: config.googleSheets?.spreadsheetId ?? null,
+            tab: studioConfig?.leadsTab,
+            columns: studioConfig?.leadsColumns,
+          });
         } catch (error: any) {
           console.warn(`[AI] lead capture failed: ${error?.message ?? error}`);
         }

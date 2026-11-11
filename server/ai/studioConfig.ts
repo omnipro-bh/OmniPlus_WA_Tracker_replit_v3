@@ -12,10 +12,14 @@
  */
 
 import {
+  aiLeadsColumnsKey,
+  aiLeadsTabKey,
   aiStudioInstructionsKey,
   aiStudioObjectivesKey,
   aiStudioPersonaKey,
   DEFAULT_AI_STUDIO_CONFIG,
+  DEFAULT_LEADS_COLUMNS,
+  DEFAULT_LEADS_TAB,
   EMPTY_AI_STUDIO_PERSONA,
   type AiStudioConfig,
   type AiStudioPersona,
@@ -51,15 +55,19 @@ function parseObjectives(raw: string | undefined | null): string[] {
 export async function loadAiStudioConfig(workflowId: number): Promise<AiStudioConfig> {
   try {
     const { storage } = await import('../storage');
-    const [instructions, personaRaw, objectivesRaw] = await Promise.all([
+    const [instructions, personaRaw, objectivesRaw, leadsTabRaw, leadsColumnsRaw] = await Promise.all([
       storage.getSetting(aiStudioInstructionsKey(workflowId)),
       storage.getSetting(aiStudioPersonaKey(workflowId)),
       storage.getSetting(aiStudioObjectivesKey(workflowId)),
+      storage.getSetting(aiLeadsTabKey(workflowId)),
+      storage.getSetting(aiLeadsColumnsKey(workflowId)),
     ]);
     return {
       instructions: instructions?.value ?? '',
       persona: parsePersona(personaRaw?.value ?? null),
       objectives: parseObjectives(objectivesRaw?.value),
+      leadsTab: (leadsTabRaw?.value ?? '').trim() || DEFAULT_LEADS_TAB,
+      leadsColumns: (leadsColumnsRaw?.value ?? '').trim() || DEFAULT_LEADS_COLUMNS,
     };
   } catch (error: any) {
     console.error('[AI Studio] loadAiStudioConfig failed:', error?.message || error);

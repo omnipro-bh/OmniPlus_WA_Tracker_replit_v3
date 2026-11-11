@@ -40,6 +40,8 @@ import { executeAiAgentWorkflowNode } from "./workflows/aiAgentExecutor";
 import { loadAiStudioConfig } from "./ai/studioConfig";
 import { computeKpis } from "./ai/kpi";
 import {
+  aiLeadsColumnsKey,
+  aiLeadsTabKey,
   aiStudioInstructionsKey,
   aiStudioObjectivesKey,
   aiStudioPersonaKey,
@@ -7849,7 +7851,7 @@ export function registerRoutes(app: Express) {
 
   app.put("/api/ai-studio/config", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const { workflowId, instructions, persona, objectives } = req.body ?? {};
+      const { workflowId, instructions, persona, objectives, leadsTab, leadsColumns } = req.body ?? {};
       const wfId = parseInt(String(workflowId ?? ""));
       if (!Number.isInteger(wfId)) {
         return res.status(400).json({ error: "workflowId is required" });
@@ -7861,6 +7863,14 @@ export function registerRoutes(app: Express) {
 
       if (objectives !== undefined && !Array.isArray(objectives)) {
         return res.status(400).json({ error: "objectives must be an array of strings" });
+      }
+
+      if (leadsTab !== undefined && typeof leadsTab !== "string") {
+        return res.status(400).json({ error: "leadsTab must be a string" });
+      }
+
+      if (leadsColumns !== undefined && typeof leadsColumns !== "string") {
+        return res.status(400).json({ error: "leadsColumns must be a string" });
       }
 
       const cleanObjectives = Array.isArray(objectives)
@@ -7884,6 +7894,12 @@ export function registerRoutes(app: Express) {
       }
       if (cleanObjectives !== undefined) {
         await storage.setSetting(aiStudioObjectivesKey(wfId), JSON.stringify(cleanObjectives));
+      }
+      if (leadsTab !== undefined) {
+        await storage.setSetting(aiLeadsTabKey(wfId), String(leadsTab).trim());
+      }
+      if (leadsColumns !== undefined) {
+        await storage.setSetting(aiLeadsColumnsKey(wfId), String(leadsColumns).trim());
       }
 
       const config = await loadAiStudioConfig(wfId);

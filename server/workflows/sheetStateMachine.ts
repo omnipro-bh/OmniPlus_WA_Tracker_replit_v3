@@ -317,8 +317,16 @@ export function rankLookupHits(rows: Record<string, any>[]): Record<string, any>
  * (`Doctor Name` ≡ `doctor_name`). This is what lets a silent lookup store a
  * value under the sheet's `lookup_extract` column and still have `{doctor_name}`
  * substitute on the following step.
+ *
+ * `defaults` supplies fallback wording for a placeholder that was never filled
+ * in (e.g. a doctor name when the schedule had no match). Without a default the
+ * placeholder is left untouched, so the caller can strip it.
  */
-export function substituteSlots(template: string, slots: Record<string, any>): string {
+export function substituteSlots(
+  template: string,
+  slots: Record<string, any>,
+  defaults?: Record<string, string>
+): string {
   const source = slots && typeof slots === 'object' ? slots : {};
   const normalized = new Map<string, any>();
   for (const [key, value] of Object.entries(source)) {
@@ -335,9 +343,19 @@ export function substituteSlots(template: string, slots: Record<string, any>): s
     return normalizedKey ? normalized.get(normalizedKey) : undefined;
   };
 
+  const fallbackFor = (name: string): string | undefined => {
+    if (!defaults) return undefined;
+    if (typeof defaults[name] === 'string' && defaults[name].trim()) return defaults[name];
+    const normalizedKey = normalizeSlotKey(name);
+    const hit = Object.keys(defaults).find((k) => normalizeSlotKey(k) === normalizedKey);
+    const value = hit ? defaults[hit] : undefined;
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  };
+
   return String(template ?? '').replace(/\{(\w+)\}/g, (match, name) => {
     const v = lookup(name);
-    return v === undefined || v === null || v === '' ? match : String(v);
+    if (v !== undefined && v !== null && v !== '') return String(v);
+    return fallbackFor(name) ?? match;
   });
 }
 

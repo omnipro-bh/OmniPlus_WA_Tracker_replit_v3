@@ -49,6 +49,27 @@ export function aiStudioObjectivesKey(workflowId: number | string): string {
   return `ai_studio_objectives_wf_${workflowId}`;
 }
 
+/** Tab of the owner's spreadsheet where captured leads are appended. */
+export function aiLeadsTabKey(workflowId: number | string): string {
+  return `ai_leads_tab_wf_${workflowId}`;
+}
+
+/** Column list of the lead tab (comma separated). */
+export function aiLeadsColumnsKey(workflowId: number | string): string {
+  return `ai_leads_columns_wf_${workflowId}`;
+}
+
+/** Default lead tab name. */
+export const DEFAULT_LEADS_TAB = 'Leads';
+
+/**
+ * Default lead columns. The list is a *base*: any slot the flow collected that
+ * is not already covered (e.g. `property_type`, `budget`) is appended as its
+ * own column, so the sheet fits whatever vertical the workflow collects.
+ */
+export const DEFAULT_LEADS_COLUMNS =
+  'Timestamp, Type, Name, Phone, Email, CPR, Department, Location, Datetime, Status';
+
 /** Persona injected at the top of the system prompt as the assistant's identity. */
 export interface AiStudioPersona {
   alias: string;
@@ -62,6 +83,10 @@ export interface AiStudioConfig {
   persona: AiStudioPersona;
   /** Priority-ordered list of objectives for Chain-of-Thought reasoning when no intent matches. */
   objectives: string[];
+  /** Tab of the owner's spreadsheet where captured leads are appended. */
+  leadsTab: string;
+  /** Comma-separated column list of the lead tab. */
+  leadsColumns: string;
 }
 
 export const EMPTY_AI_STUDIO_PERSONA: AiStudioPersona = {
@@ -74,6 +99,8 @@ export const DEFAULT_AI_STUDIO_CONFIG: AiStudioConfig = {
   instructions: '',
   persona: EMPTY_AI_STUDIO_PERSONA,
   objectives: ['Book an appointment', 'Capture leads', 'Answer FAQs'],
+  leadsTab: DEFAULT_LEADS_TAB,
+  leadsColumns: DEFAULT_LEADS_COLUMNS,
 };
 
 /**

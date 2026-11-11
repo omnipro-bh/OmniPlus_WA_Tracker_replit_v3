@@ -1797,5 +1797,58 @@ test('an empty lookup with no alternate step asks for a different value', async 
   assert.equal(turn.fallbackReason, 'lookup_empty');
 });
 
+// ── The owner's question is never sent twice ────────────────────────────────
+
+test('the guided question is not repeated when the model echoed it', async () => {
+  // The owner's Step_6 wording ends without a question mark, so the model's
+  // echo survives `stripTrailingQuestions` and used to be sent twice.
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have {doctor_name} has availability. To confirm booking, can you provide your name, active phone number and email along with CPR number"}',
+  ]);
+
+  const turn = await runAgentHarness(
+    sheet,
+    {
+      ai: {
+        n1: {
+          sheet: bookingSeed({
+            department: 'blood test',
+            confirm: 'Yes',
+            location: 'Riffa',
+            datetime: '5 PM today',
+          }),
+        },
+      },
+    },
+    'n1',
+    '5 PM today',
+    bookingReader,
+    client
+  );
+
+  // The owner's ai_question appears exactly once, not twice.
+  const occurrences = (turn.text.match(/can you provide your name/g) ?? []).length;
+  assert.equal(occurrences, 1);
+  assert.doesNotMatch(turn.text, /\n\n/);
+  // The unresolved placeholder got a readable default, not a broken sentence.
+  assert.match(turn.text, /a specialist has availability/);
+});
+
+test('an unfilled placeholder gets a readable default instead of a broken sentence', () => {
+  // "We have {doctor_name} has availability." must not become
+  // "We have has availability." when no doctor was found.
+  assert.equal(
+    noBarePlaceholders('We have {doctor_name} has availability.', {}),
+    'We have a specialist has availability.'
+  );
+  // A filled placeholder still wins over the default.
+  assert.equal(
+    noBarePlaceholders('We have {doctor_name} has availability.', { doctor_name: 'Dr. Sujith' }),
+    'We have Dr. Sujith has availability.'
+  );
+  // A placeholder without a default is still stripped (never sent as `{slot}`).
+  assert.equal(noBarePlaceholders('Confirm {department}?', { location: 'Riffa' }), 'Confirm ?');
+});
+
 
 

@@ -670,7 +670,7 @@ export const leads = pgTable("leads", {
   // Full snapshot of the slots the customer provided.
   collectedSlotsJson: jsonb("collected_slots_json").notNull().default({}),
 
-  // Why it became a lead: completed_booking | no_answer | declined_verification | handover
+  // Why it became a lead: completed_booking | capture_lead | no_answer | declined_verification | handover
   source: text("source").notNull().default("completed_booking"),
 
   // The raw question/message that had no answer (feeds the unanswered KPI).

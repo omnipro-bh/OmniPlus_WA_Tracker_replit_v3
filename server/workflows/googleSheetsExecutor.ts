@@ -696,8 +696,7 @@ export async function lookupSheetRows(
 export interface SheetHeadersResult {
   success: boolean;
   /** Row 1 of the tab, trimmed and empty cells dropped. */
-  headers: string[];
-  /** Data rows below the header (row 1 excluded). */
+  headers: string[];  /** Data rows below the header (row 1 excluded). */
   rowCount: number;
   /** First few rows as objects, for the config panel preview. */
   sample: Record<string, any>[];
@@ -847,5 +846,139 @@ export async function readSheetRawValues(
   } catch (error: any) {
     console.error('[AI read raw values] failed:', error);
     return { success: false, values: [], error: error?.message || 'Failed to read the sheet tab' };
+  }
+}
+
+export interface AppendSheetRowResult {
+  success: boolean;
+  /** The tab did not exist and was created with the given headers. */
+  tabCreated?: boolean;
+  /** Column names of the tab after the append (header order). */
+  headers?: string[];
+  error?: string;
+}
+
+/** Quote a tab name for A1 notation (`Leads` → `'Leads'!A1`). */
+function a1Range(tabName: string, range: string): string {
+  return `'${String(tabName ?? '').replace(/'/g, "''")}'!${range}`;
+}
+
+/** 1-based column index → A1 column letters (1 → A, 27 → AA). */
+function columnLetters(index: number): string {
+  let n = index;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * Append one row to a tab, creating the tab when it does not exist yet.
+ *
+ * The tab's header row is the contract: the row is written in the header's
+ * order, and a header that is not in the sheet yet is appended to the header
+ * row first (so a lead with a new slot — `budget`, `property_type` — grows the
+ * sheet instead of being dropped).
+ */
+export async function appendSheetRow(
+  spreadsheetId: string,
+  tabName: string,
+  row: { headers: string[]; values: string[] },
+  options: { createIfMissing?: boolean } = {}
+): Promise<AppendSheetRowResult> {
+  try {
+    const id = extractSpreadsheetId(spreadsheetId);
+    if (!id) return { success: false, error: 'spreadsheetId is required' };
+    const tab = String(tabName ?? '').trim();
+    if (!tab) return { success: false, error: 'tab is required' };
+
+    const client = await getSheetsClient();
+    const createIfMissing = options.createIfMissing !== false;
+
+    // 1. Make sure the tab exists.
+    let tabCreated = false;
+    const meta = await client.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties.title' });
+    const titles = (meta.data.sheets ?? []).map((s) => s.properties?.title);
+    if (!titles.includes(tab)) {
+      if (!createIfMissing) {
+        return { success: false, error: `Tab "${tab}" does not exist` };
+      }
+      await client.spreadsheets.batchUpdate({
+        spreadsheetId: id,
+        requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+      });
+      tabCreated = true;
+    }
+
+    // 2. Align the row with the tab's header row.
+    const headerRes = await client.spreadsheets.values.get({
+      spreadsheetId: id,
+      range: a1Range(tab, '1:1'),
+    });
+    const existingHeaders: string[] = (headerRes.data.values?.[0] ?? []).map((h: any) =>
+      String(h ?? '').trim()
+    );
+
+    const wanted = (row.headers ?? []).map((h) => String(h ?? '').trim());
+    const finalHeaders = existingHeaders.length > 0 ? [...existingHeaders] : [];
+
+    const indexOfHeader = (name: string): number =>
+      finalHeaders.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+
+    // A brand new tab: write the caller's headers as row 1.
+    if (finalHeaders.length === 0) {
+      for (const header of wanted) {
+        if (header) finalHeaders.push(header);
+      }
+      await client.spreadsheets.values.update({
+        spreadsheetId: id,
+        range: a1Range(tab, `A1:${columnLetters(Math.max(finalHeaders.length, 1))}1`),
+        valueInputOption: 'RAW',
+        requestBody: { values: [finalHeaders] },
+      });
+    } else {
+      // Extend the header row with any column this row introduces.
+      const missing: string[] = [];
+      for (const header of wanted) {
+        if (!header) continue;
+        if (indexOfHeader(header) === -1) missing.push(header);
+      }
+      if (missing.length > 0) {
+        const start = finalHeaders.length + 1;
+        for (const header of missing) finalHeaders.push(header);
+        await client.spreadsheets.values.update({
+          spreadsheetId: id,
+          range: a1Range(tab, `${columnLetters(start)}1:${columnLetters(finalHeaders.length)}1`),
+          valueInputOption: 'RAW',
+          requestBody: { values: [missing] },
+        });
+      }
+    }
+
+    // 3. Write the values in the header's order.
+    const values = new Array<string>(finalHeaders.length).fill('');
+    for (let i = 0; i < wanted.length; i++) {
+      const header = wanted[i];
+      if (!header) continue;
+      const index = indexOfHeader(header);
+      if (index === -1) continue;
+      values[index] = String((row.values ?? [])[i] ?? '');
+    }
+
+    await client.spreadsheets.values.append({
+      spreadsheetId: id,
+      range: a1Range(tab, 'A1'),
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [values] },
+    });
+
+    return { success: true, tabCreated, headers: finalHeaders };
+  } catch (error: any) {
+    console.error('[AI append sheet row] failed:', error);
+    return { success: false, error: error?.message || 'appendSheetRow failed' };
   }
 }
