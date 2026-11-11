@@ -60,6 +60,12 @@ export interface SheetState {
    * that row and carries these slots into the booking flow.
    */
   pendingReasoning?: PendingReasoning | null;
+  /**
+   * A semantic-match suggestion awaiting "Yes"/"No": the customer asked for
+   * "Ear Specialist", the sheet has "ENT Surgeon". "Yes" rewrites the slot with
+   * the suggestion and the lookup runs again.
+   */
+  pendingMatch?: PendingMatch | null;
 }
 
 /** A confirmation produced by the Chain-of-Thought reasoning step. */
@@ -71,6 +77,28 @@ export interface PendingReasoning {
   /** The Intents row the reasoning step targeted. */
   targetIntentId: string | null;
   /** Where this pending state came from. Only the conversational path sets it. */
+  source: 'conversational';
+  /** ISO timestamp of when the question was asked. */
+  askedAt: string;
+}
+
+/** A "we have something like that" suggestion offered to the customer. */
+export interface PendingMatch {
+  /** The slot whose value did not match (e.g. `department`). */
+  slotName: string;
+  /** What the customer asked for ("Ear Specialist"). */
+  requestedValue: string;
+  /** The closest option the sheet actually has ("ENT Surgeon"). */
+  suggestedValue: string;
+  /** The question that was asked — re-asked verbatim when ambiguous. */
+  question: string;
+  /** Which lookup produced the empty result. */
+  kind: 'search' | 'lookup';
+  /** The structured search constraints (kind = `search`). */
+  search?: Record<string, any>;
+  /** The lookup filter (kind = `lookup`). */
+  filter?: Record<string, any>;
+  /** Where this pending state came from. */
   source: 'conversational';
   /** ISO timestamp of when the question was asked. */
   askedAt: string;

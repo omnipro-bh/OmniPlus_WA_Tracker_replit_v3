@@ -16,6 +16,7 @@ import {
   deriveChecklist,
   deriveScheduleMap,
   filterRowsStructured,
+  findSemanticMatch,
   hoursColumn,
   matchDoctor,
   matchesIntentKeywords,
@@ -23,8 +24,10 @@ import {
   noBarePlaceholders,
   resolveDay,
   runAgentHarness,
+  semanticMatchPrompt,
   serializeSearchResults,
   strictCellMatch,
+  uniqueLookupValues,
   type HarnessChecklist,
 } from './agentHarness';
 import type { RowReader } from './sheetStateMachine';
@@ -1848,6 +1851,198 @@ test('an unfilled placeholder gets a readable default instead of a broken senten
   );
   // A placeholder without a default is still stripped (never sent as `{slot}`).
   assert.equal(noBarePlaceholders('Confirm {department}?', { location: 'Riffa' }), 'Confirm ?');
+});
+
+// ── Semantic matching in the lookup step ────────────────────────────────────
+
+const SEMANTIC_SCHEDULE = [
+  { Doctor: 'Dr. ENT One', department: 'ENT Surgeon', Branch: 'Riffa', Available_Times: '9-5' },
+  { Doctor: 'Dr. ENT Two', department: 'ENT Surgeon', Branch: 'Riffa', Available_Times: '9-5' },
+  { Doctor: 'Dr. Dental', department: 'DENTAL SURGEON', Branch: 'Riffa', Available_Times: '9-5' },
+];
+
+const SEMANTIC_STEPS = [
+  {
+    intent_id: '1',
+    step_id: 'Step_1',
+    step_type: 'ask',
+    ai_question: 'Which department are you looking for today?',
+    slot_name: 'department',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_2',
+    step_type: 'ask',
+    ai_question: 'And which location is the closest to you?',
+    slot_name: 'location',
+    expected_input: 'text',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_3',
+    step_type: 'lookup',
+    ai_question: '(silent)',
+    slot_name: 'doctor_name',
+    lookup_source: 'Doctors_Schedule',
+    lookup_filter: 'department={department} AND branch={location}',
+    lookup_extract: 'Doctor',
+    alternate_step: 'Step_5',
+  },
+  {
+    intent_id: '1',
+    step_id: 'Step_5',
+    step_type: 'ask',
+    ai_question: "Sorry, we don't have a {department} doctor at {location}. Would you like to try another location?",
+    slot_name: 'retry',
+    expected_input: 'buttons',
+    options: 'Yes, No',
+  },
+];
+
+const semanticReader: RowReader = async (_sheet, tab, filter) => {
+  if (tab === 'Intents') {
+    return [{ id: '1', type: 'Booking', keywords: 'book', start_step: 'Step_1', answer: 'Booked' }];
+  }
+  if (tab === 'Doctors_Schedule') return SEMANTIC_SCHEDULE;
+  return SEMANTIC_STEPS.filter((s) => s.intent_id === filter?.value);
+};
+
+test('uniqueLookupValues lists the options the sheet actually has', () => {
+  assert.deepEqual(uniqueLookupValues(SEMANTIC_SCHEDULE, 'department'), [
+    'DENTAL SURGEON',
+    'ENT Surgeon',
+  ]);
+});
+
+test('semanticMatchPrompt asks the model for one exact option or NONE', () => {
+  const prompt = semanticMatchPrompt('Ear Specialist', ['ENT Surgeon', 'DENTAL SURGEON']);
+  assert.match(prompt, /The user asked for 'Ear Specialist'/);
+  assert.match(prompt, /available options are: ENT Surgeon, DENTAL SURGEON/);
+  assert.match(prompt, /'NONE'/);
+});
+
+test('findSemanticMatch returns the option the model picked, and null for NONE', async () => {
+  const options = ['ENT Surgeon', 'DENTAL SURGEON'];
+  assert.equal(
+    await findSemanticMatch(harnessClient(['ENT Surgeon']), 'Ear Specialist', options),
+    'ENT Surgeon'
+  );
+  assert.equal(await findSemanticMatch(harnessClient(['NONE']), 'Ear Specialist', options), null);
+  // An answer that is not one of the options is not trusted.
+  assert.equal(
+    await findSemanticMatch(harnessClient(['a brain surgeon']), 'Ear Specialist', options),
+    null
+  );
+});
+
+test('an empty lookup offers the closest option instead of giving up', async () => {
+  const client = harnessClient([
+    // Turn 1: the model asks for the lookup.
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check who is available.", "tool_call": "lookup_schedule", "lookup": {"department": "Ear Specialist", "location": "Riffa"}}',
+    // The semantic match: the model names the closest option we have.
+    'ENT Surgeon',
+  ]);
+
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Ear Specialist', location: 'Riffa' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+    pendingMatch: null,
+  };
+
+  const t1 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    'Any ear specialist available',
+    semanticReader,
+    client
+  );
+
+  // The customer is offered the option the sheet really has.
+  assert.equal(
+    t1.text,
+    "I don't have a doctor listed as 'Ear Specialist'. We have 'ENT Surgeon'. Would you like me to check for ENT Surgeon?"
+  );
+  assert.equal(t1.sheet.pendingMatch?.suggestedValue, 'ENT Surgeon');
+  assert.equal(t1.sheet.pendingMatch?.requestedValue, 'Ear Specialist');
+  assert.equal(t1.sheet.pendingMatch?.slotName, 'department');
+
+  // "Yes" → the slot is rewritten with the sheet's own value and the lookup
+  // runs again — this time it finds the ENT doctors.
+  const client2 = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "We have Dr. ENT One and Dr. ENT Two at Riffa."}',
+  ]);
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'Yes',
+    semanticReader,
+    client2
+  );
+
+  assert.equal(t2.sheet.slots.department, 'ENT Surgeon');
+  assert.equal(t2.sheet.pendingMatch, null);
+  assert.match(t2.text, /Dr\. ENT One/);
+  assert.ok(
+    t2.toolCalls.some((call) => call.args.tab === 'Doctors_Schedule' && call.rows === 2),
+    'the lookup ran again and found the ENT doctors'
+  );
+});
+
+test("declining the suggestion routes to the owner's alternate step", async () => {
+  const client = harnessClient([
+    '{"updated_slots": {}, "action": "ask", "next_question": "Let me check who is available.", "tool_call": "lookup_schedule", "lookup": {"department": "Ear Specialist", "location": "Riffa"}}',
+    'ENT Surgeon',
+  ]);
+
+  const seed = {
+    intentId: '1',
+    stepId: null,
+    slots: { department: 'Ear Specialist', location: 'Riffa' },
+    pendingIntentId: null,
+    awaitingVerification: false,
+    pendingFallbackId: null,
+    awaitingFallbackVerification: false,
+    fallbackExtractedSlots: {},
+    reasoningAttempts: 0,
+    pendingReasoning: null,
+    pendingMatch: null,
+  };
+
+  const t1 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: seed } } },
+    'n1',
+    'Any ear specialist available',
+    semanticReader,
+    client
+  );
+  assert.equal(t1.sheet.pendingMatch?.suggestedValue, 'ENT Surgeon');
+
+  const t2 = await runAgentHarness(
+    sheet,
+    { ai: { n1: { sheet: t1.sheet } } },
+    'n1',
+    'No',
+    semanticReader,
+    harnessClient(['{}'])
+  );
+
+  assert.equal(
+    t2.text,
+    "Sorry, we don't have a Ear Specialist doctor at Riffa. Would you like to try another location?"
+  );
+  assert.equal(t2.sheet.pendingMatch, null);
 });
 
 

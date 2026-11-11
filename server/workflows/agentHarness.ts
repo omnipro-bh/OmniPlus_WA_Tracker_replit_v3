@@ -433,7 +433,7 @@ Return ONLY this JSON object, no prose and no code fences:
 // ── State ───────────────────────────────────────────────────────────────────
 
 function freshHarnessState(): SheetState {
-  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false, pendingFallbackId: null, awaitingFallbackVerification: false, fallbackExtractedSlots: {}, reasoningAttempts: 0, pendingReasoning: null };
+  return { intentId: null, stepId: null, slots: {}, pendingIntentId: null, awaitingVerification: false, pendingFallbackId: null, awaitingFallbackVerification: false, fallbackExtractedSlots: {}, reasoningAttempts: 0, pendingReasoning: null, pendingMatch: null };
 }
 
 function isFilled(slots: Record<string, any>, name: string): boolean {
@@ -1272,6 +1272,91 @@ export function isQuestionMessage(message: string): boolean {
   );
 }
 
+// ── Semantic matching ────────────────────────────────────────────────────────
+
+/** How many options the model may be shown (the prompt stays bounded). */
+const MAX_SEMANTIC_OPTIONS = 80;
+
+/**
+ * The distinct values of a lookup column — the options the customer can pick
+ * ("ENT Surgeon", "DENTAL SURGEON", …). `column` is the schedule map's category
+ * column (Department, Type, Specialty, …), so this is business-agnostic.
+ */
+export function uniqueLookupValues(rows: Record<string, any>[], column: string): string[] {
+  const values = new Set<string>();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const value = String(readCell(row, column) ?? '').trim();
+    if (value) values.add(value);
+  }
+  return Array.from(values).sort();
+}
+
+/** The question the model answers when the customer's wording is not in the sheet. */
+export function semanticMatchPrompt(requested: string, options: string[]): string {
+  return `The user asked for '${requested}'. The available options are: ${options.join(
+    ', '
+  )}. Which one is the closest match? Return only the exact option, or 'NONE' if no match exists.`;
+}
+
+/**
+ * Ask the model which of the sheet's options is closest to what the customer
+ * asked for. Returns the option's exact spelling, or `null` when the model says
+ * NONE (or answers with something that is not one of the options).
+ *
+ * Universal: the model does the matching, so no synonym list is ever hardcoded.
+ */
+export async function findSemanticMatch(
+  client: LlmClient | undefined,
+  requested: string,
+  options: string[]
+): Promise<string | null> {
+  if (!client || !String(requested ?? '').trim() || options.length === 0) return null;
+  const prompt = semanticMatchPrompt(requested, options);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let text = '';
+    try {
+      const res = await client.complete({
+        messages: [
+          {
+            role: 'user',
+            content:
+              attempt === 0
+                ? prompt
+                : `${prompt}\n\nAnswer with exactly one option from the list, or NONE.`,
+          },
+        ],
+        temperature: 0,
+        maxTokens: 60,
+      });
+      if (!res.ok) continue;
+      text = String(res.text ?? '').trim();
+    } catch {
+      continue;
+    }
+    const answer = text.replace(/^["'`]+|["'`]+$/g, '').trim();
+    if (!answer) continue;
+    if (/^none$/i.test(answer)) return null;
+    // The exact option (case-insensitive) is the contract.
+    const exact = options.find((o) => o.toLowerCase() === answer.toLowerCase());
+    if (exact) return exact;
+    // Tolerate a slightly longer answer ("ENT Surgeon (ENT)") — the longest
+    // option wins so "ENT Surgeon" is never shortened to "ENT".
+    const byLength = [...options].sort((a, b) => b.length - a.length);
+    const loose = byLength.find((o) => answer.toLowerCase().includes(o.toLowerCase()));
+    if (loose) return loose;
+  }
+  return null;
+}
+
+/**
+ * The question that offers the suggestion to the customer. `entity` is the
+ * sheet's own entity column ("Doctor", "Property", "Product"), so the sentence
+ * fits the business without hardcoding anything.
+ */
+export function semanticMatchQuestion(entity: string, requested: string, suggested: string): string {
+  return `I don't have a ${entity} listed as '${requested}'. We have '${suggested}'. Would you like me to check for ${suggested}?`;
+}
+
 // ── State commitment (search selections are slot fills) ────────────────────
 
 /** Generic aliases for the slots that hold a search constraint. */
@@ -1727,6 +1812,10 @@ export async function runAgentHarness(
                 ? { ...rawState.pendingReasoning.slots }
                 : {},
           }
+        : null,
+    pendingMatch:
+      rawState?.pendingMatch && typeof rawState.pendingMatch === 'object'
+        ? { ...rawState.pendingMatch }
         : null,
   };
 
@@ -2448,6 +2537,88 @@ export async function runAgentHarness(
     };
   };
 
+  /**
+   * The customer's wording is simply not in the sheet ("Ear Specialist" vs
+   * "ENT Surgeon"). Ask the model which of the sheet's options is closest and,
+   * when it is confident, offer that option to the customer instead of giving
+   * up on the lookup. No synonym list is hardcoded — the model does the
+   * matching, so the rule works for any business.
+   */
+  const suggestSemanticMatch = async (params: {
+    requested: string;
+    options: string[];
+    slotName: string;
+    kind: 'search' | 'lookup';
+    search?: Record<string, any>;
+    filter?: Record<string, any>;
+  }): Promise<SheetTurn | null> => {
+    const requested = String(params.requested ?? '').trim();
+    if (!requested || params.options.length === 0) return null;
+    const suggested = await findSemanticMatch(client, requested, params.options);
+    if (!suggested) return null;
+
+    // The sheet's own entity column names the noun ("Doctor", "Property").
+    const entity = String(scheduleMap?.doctorColumn ?? 'specialist').toLowerCase();
+    const question = semanticMatchQuestion(entity, requested, suggested);
+
+    state.pendingMatch = {
+      slotName: params.slotName,
+      requestedValue: requested,
+      suggestedValue: suggested,
+      question,
+      kind: params.kind,
+      ...(params.search ? { search: params.search } : {}),
+      ...(params.filter ? { filter: params.filter } : {}),
+      source: 'conversational',
+      askedAt: new Date().toISOString(),
+    };
+
+    return {
+      text: question,
+      sheet: state,
+      toolCalls,
+      slotExtractionAttempts,
+      fallbackUsed,
+    };
+  };
+
+  // A lookup the customer approved by answering "Yes" to our suggestion: it
+  // runs again with the option the sheet actually has.
+  let forcedLookup: { filter: Record<string, any> } | null = null;
+  let forcedSearch: Record<string, any> | null = null;
+
+  // ── Semantic match accepted ("Yes") ────────────────────────────────────────
+  if (state.pendingMatch) {
+    const pending = state.pendingMatch;
+    const confirmation = confirmIntent(userMessage);
+    if (confirmation === 'yes') {
+      // Rewrite the slot with the option the sheet has, then let the turn
+      // continue: the lookup runs again with the corrected value.
+      state.pendingMatch = null;
+      state.slots[pending.slotName] = pending.suggestedValue;
+      if (pending.kind === 'search') {
+        forcedSearch = { ...(pending.search ?? {}), category: pending.suggestedValue };
+      } else {
+        forcedLookup = {
+          filter: { ...(pending.filter ?? {}), department: pending.suggestedValue },
+        };
+      }
+    } else if (confirmation === 'no') {
+      // The customer does not want the suggestion → the owner's alternate step.
+      state.pendingMatch = null;
+      return emptyLookupTurn();
+    } else {
+      // Not a clear answer → ask the same question again.
+      return {
+        text: pending.question,
+        sheet: state,
+        toolCalls,
+        slotExtractionAttempts,
+        fallbackUsed,
+      };
+    }
+  }
+
   // ── Deterministic confirmation (the confirm step's Yes/No) ──────────────────
   // Handled in code, never by the LLM. "Yes"/"Sure"/"Yeah" → confirm = "Yes" and
   // advance to the next slot; "No"/"Cancel" → reset. This prevents both the
@@ -2549,8 +2720,24 @@ export async function runAgentHarness(
     });
     // No matches: answer deterministically. Never hand an empty/irrelevant result
     // set to the model, which could invent a doctor or availability. The owner's
-    // alternate step decides what the customer hears next.
+    // alternate step decides what the customer hears next — unless the customer
+    // simply used another wording for something we DO have.
     if (rows.length === 0) {
+      const requested = String(effectiveSearch.category ?? '').trim();
+      if (requested) {
+        const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
+        const suggestion = await suggestSemanticMatch({
+          requested,
+          options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
+            0,
+            MAX_SEMANTIC_OPTIONS
+          ),
+          slotName,
+          kind: 'search',
+          search: { ...effectiveSearch },
+        });
+        if (suggestion) return suggestion;
+      }
       return emptyLookupTurn();
     }
 
@@ -2642,6 +2829,12 @@ export async function runAgentHarness(
     return executeSearch({});
   }
 
+  // A search the customer approved by answering "Yes" to our suggestion runs
+  // first, with the option the sheet actually has.
+  if (forcedSearch) {
+    return executeSearch(forcedSearch as ScheduleSearch);
+  }
+
   // ── Knowledge / availability query: structured search ──────────────────────
   // The model returns structured constraints; the CODE does the AND-filtering.
   // There is no full-text fallback: without a structured constraint we ask the
@@ -2702,12 +2895,34 @@ export async function runAgentHarness(
   }
 
   // ── Model-requested lookup (availability / no doctor known) ───────────────
-  if (!lookupText && decision.tool_call === 'lookup_schedule' && scheduleMap) {
-    const rows = await scheduleLookup(readRows, sheet, scheduleMap, decision.lookup ?? {});
-    toolCalls.push({ name: 'lookup_sheet', args: { tab: scheduleMap.source, filter: JSON.stringify(decision.lookup ?? {}) }, rows: rows.length });
-    // The Workflow_Steps lookup found nothing → the owner's alternate step
-    // ("try another location") decides what happens next.
-    if (rows.length === 0) return emptyLookupTurn();
+  if (!lookupText && (decision.tool_call === 'lookup_schedule' || forcedLookup) && scheduleMap) {
+    const filter = forcedLookup ? forcedLookup.filter : (decision.lookup ?? {});
+    const rows = await scheduleLookup(readRows, sheet, scheduleMap, filter);
+    toolCalls.push({ name: 'lookup_sheet', args: { tab: scheduleMap.source, filter: JSON.stringify(filter) }, rows: rows.length });
+    if (rows.length === 0) {
+      // The customer's wording may be another way of saying something we DO
+      // have ("Ear Specialist" → "ENT Surgeon"). Offer the closest option
+      // before falling back to the owner's alternate step.
+      const requested = String(filter.department ?? (filter as Record<string, any>).category ?? '').trim();
+      if (requested) {
+        const allRows = await readRows(sheet, scheduleMap.source);
+        const slotName = CATEGORY_SLOTS.find((s) => isFilled(state.slots, s)) ?? 'department';
+        const suggestion = await suggestSemanticMatch({
+          requested,
+          options: uniqueLookupValues(allRows, scheduleMap.departmentColumn).slice(
+            0,
+            MAX_SEMANTIC_OPTIONS
+          ),
+          slotName,
+          kind: 'lookup',
+          filter: { ...filter },
+        });
+        if (suggestion) return suggestion;
+      }
+      // The Workflow_Steps lookup found nothing → the owner's alternate step
+      // ("try another location") decides what happens next.
+      return emptyLookupTurn();
+    }
     lookupText = formatScheduleRow(rows[0], scheduleMap);
   }
 
