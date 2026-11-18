@@ -24,6 +24,38 @@ export const UPLOADS_ROOT = process.env.UPLOADS_DIR
 /** URL prefix the app serves uploads under. */
 export const UPLOADS_URL_PREFIX = "/uploads";
 
+/**
+ * How to answer a request for a media file that is not on disk.
+ *
+ * `404` (default) surfaces the problem: monitoring and logs see it, and the
+ * browser shows a broken image instead of silently rendering HTML.
+ *
+ * `placeholder` returns a neutral SVG with a 200 for image requests, so the
+ * layout keeps its shape when a file goes missing. Non-image requests still
+ * 404 — an SVG would break a video player or a PDF viewer.
+ */
+export const UPLOADS_MISSING_MEDIA =
+  process.env.UPLOADS_MISSING_MEDIA === "placeholder" ? "placeholder" : "404";
+
+const IMAGE_EXTENSIONS = new Set([
+  ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp",
+]);
+
+/** True for request paths that a browser renders as an image. */
+export function isImagePath(requestPath: string): boolean {
+  return IMAGE_EXTENSIONS.has(path.extname(requestPath).toLowerCase());
+}
+
+/** Neutral stand-in served for missing images when the placeholder mode is on. */
+export const MISSING_MEDIA_PLACEHOLDER_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="Image unavailable">' +
+  '<rect width="320" height="180" fill="#f1f5f9"/>' +
+  '<rect x="0.5" y="0.5" width="319" height="179" fill="none" stroke="#cbd5e1"/>' +
+  '<circle cx="126" cy="64" r="12" fill="#cbd5e1"/>' +
+  '<path d="M104 126l30-40 24 28 17-22 37 48z" fill="#cbd5e1"/>' +
+  '<text x="160" y="158" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#64748b" text-anchor="middle">Image unavailable</text>' +
+  "</svg>";
+
 /** Absolute path for a file inside the uploads root, or null if it escapes it. */
 export function resolveUploadPath(...segments: string[]): string | null {
   const target = path.resolve(UPLOADS_ROOT, ...segments);

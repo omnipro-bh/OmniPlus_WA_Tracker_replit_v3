@@ -7,7 +7,14 @@ import { setupVite, serveStatic } from "./vite";
 import { log } from "./utils";
 import { seedDatabase } from "./seed";
 import { backgroundWorker } from "./worker";
-import { ensureUploadsRoot, UPLOADS_ROOT, UPLOADS_URL_PREFIX } from "./uploads";
+import {
+  ensureUploadsRoot,
+  isImagePath,
+  MISSING_MEDIA_PLACEHOLDER_SVG,
+  UPLOADS_MISSING_MEDIA,
+  UPLOADS_ROOT,
+  UPLOADS_URL_PREFIX,
+} from "./uploads";
 
 const app = express();
 
@@ -33,6 +40,24 @@ app.use(cookieParser());
 // persistent volume so runtime uploads survive redeploys.
 ensureUploadsRoot();
 app.use(UPLOADS_URL_PREFIX, express.static(UPLOADS_ROOT));
+
+// Terminate missing-upload requests here. Without this they fall through to the
+// SPA catch-all below, which answers index.html with a 200 — the browser gets
+// HTML where it expects media, renders a broken image, and nothing shows up in
+// the logs. Set UPLOADS_MISSING_MEDIA=placeholder to serve a neutral SVG for
+// images instead of a 404.
+app.use(UPLOADS_URL_PREFIX, (req, res) => {
+  res.set("Cache-Control", "no-store");
+
+  // The request logger only records /api paths, so surface misses here.
+  console.warn(`[Uploads] Missing media: ${req.path}`);
+
+  if (UPLOADS_MISSING_MEDIA === "placeholder" && isImagePath(req.path)) {
+    return res.status(200).type("image/svg+xml").send(MISSING_MEDIA_PLACEHOLDER_SVG);
+  }
+
+  return res.status(404).type("text/plain").send("Not found");
+});
 
 app.use((req, res, next) => {
   const start = Date.now();

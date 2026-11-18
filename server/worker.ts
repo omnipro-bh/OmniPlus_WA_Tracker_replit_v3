@@ -32,10 +32,13 @@ export class BackgroundWorker {
       await this.deductDailyBalance();
     });
 
-    // Media cleanup - runs daily at 3 AM to delete files older than 30 days
-    this.mediaCleanupJob = cron.schedule("0 3 * * *", async () => {
-      await this.cleanupOldMedia();
-    });
+    // Media cleanup - opt-in only (CLEANUP_OLD_MEDIA=true), daily at 3 AM.
+    // Disabled by default: see cleanupOldMedia().
+    if (process.env.CLEANUP_OLD_MEDIA === "true") {
+      this.mediaCleanupJob = cron.schedule("0 3 * * *", async () => {
+        await this.cleanupOldMedia();
+      });
+    }
 
     // Auto-extend channels - runs daily at midnight (00:00)
     this.autoExtendJob = cron.schedule("0 0 * * *", async () => {
@@ -247,8 +250,17 @@ export class BackgroundWorker {
     return "QUEUED";
   }
 
-  // Clean up uploaded media files older than 30 days
+  // Clean up uploaded media files older than 30 days.
+  //
+  // Opt-in: enable with CLEANUP_OLD_MEDIA=true. Deleting attachments is
+  // destructive and the database keeps pointing at the removed files, so this
+  // turns "cleanup" into permanently broken media — it must never run by
+  // accident.
   private async cleanupOldMedia() {
+    if (process.env.CLEANUP_OLD_MEDIA !== "true") {
+      return;
+    }
+
     try {
       const uploadsDir = UPLOADS_ROOT;
       
@@ -261,14 +273,18 @@ export class BackgroundWorker {
       const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
       let deletedCount = 0;
 
-      // Read all files in uploads directory
-      const files = fs.readdirSync(uploadsDir);
+      // Read uploads directory entries (files and directories)
+      const entries = fs.readdirSync(uploadsDir, { withFileTypes: true });
 
-      for (const file of files) {
+      for (const entry of entries) {
+        // Only regular files: subdirectories such as `use-cases` hold live
+        // media, and fs.unlinkSync on a directory throws EISDIR.
+        if (!entry.isFile()) continue;
+
         // Skip .gitkeep
-        if (file === '.gitkeep') continue;
+        if (entry.name === '.gitkeep') continue;
 
-        const filePath = path.join(uploadsDir, file);
+        const filePath = path.join(uploadsDir, entry.name);
         const stats = fs.statSync(filePath);
 
         // Check if file is older than 30 days
@@ -276,9 +292,9 @@ export class BackgroundWorker {
           try {
             fs.unlinkSync(filePath);
             deletedCount++;
-            console.log(`Deleted old media file: ${file}`);
+            console.log(`Deleted old media file: ${entry.name}`);
           } catch (error) {
-            console.error(`Failed to delete ${file}:`, error);
+            console.error(`Failed to delete ${entry.name}:`, error);
           }
         }
       }
