@@ -28,6 +28,7 @@ import { createPaypalOrder, capturePaypalOrder, loadPaypalDefault, verifyPayPalO
 import { verifyWebhookSignature } from "./paypal-webhooks";
 import * as whapi from "./whapi";
 import { isSubscriptionExempt } from "./demo-account";
+import { UPLOADS_ROOT, resolveUploadPath } from "./uploads";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
@@ -2693,11 +2694,11 @@ export function registerRoutes(app: Express) {
     if (mediaUrl.startsWith('/uploads/')) {
       try {
         const fileName = mediaUrl.replace('/uploads/', '');
-        const filePath = path.join(process.cwd(), 'uploads', fileName);
+        const filePath = resolveUploadPath(fileName);
         
         // Check if file exists
-        if (!fs.existsSync(filePath)) {
-          console.error(`[Media Resolver] File not found: ${filePath}`);
+        if (!filePath || !fs.existsSync(filePath)) {
+          console.error(`[Media Resolver] File not found: ${filePath ?? mediaUrl}`);
           return null;
         }
         
@@ -3353,7 +3354,7 @@ export function registerRoutes(app: Express) {
       const timestamp = Date.now();
       const generatedFileName = `${timestamp}-${uniqueId}.${extension}`;
       
-      const uploadsDir = path.join(process.cwd(), 'uploads');
+      const uploadsDir = UPLOADS_ROOT;
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
@@ -13361,7 +13362,7 @@ export function registerRoutes(app: Express) {
       const fileName = `${timestamp}-${uniqueId}.${extension}`;
       
       // Create use-cases subdirectory
-      const useCasesDir = path.join(process.cwd(), 'uploads', 'use-cases');
+      const useCasesDir = path.join(UPLOADS_ROOT, 'use-cases');
       if (!fs.existsSync(useCasesDir)) {
         fs.mkdirSync(useCasesDir, { recursive: true });
       }

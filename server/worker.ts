@@ -4,6 +4,7 @@ import { logoutChannel, extendWhapiChannel, sendTextMessage, getChannelHealth } 
 import { renderBookingTemplate, formatBookingDateRange } from "./booking-template";
 import { purgeWebChat } from "./workflows/chat-tick";
 import { isSubscriptionExempt } from "./demo-account";
+import { UPLOADS_ROOT } from "./uploads";
 import fs from "fs";
 import path from "path";
 import dayjs from "dayjs";
@@ -249,7 +250,7 @@ export class BackgroundWorker {
   // Clean up uploaded media files older than 30 days
   private async cleanupOldMedia() {
     try {
-      const uploadsDir = path.join(process.cwd(), 'uploads');
+      const uploadsDir = UPLOADS_ROOT;
       
       // Skip if directory doesn't exist
       if (!fs.existsSync(uploadsDir)) {

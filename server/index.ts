@@ -7,6 +7,7 @@ import { setupVite, serveStatic } from "./vite";
 import { log } from "./utils";
 import { seedDatabase } from "./seed";
 import { backgroundWorker } from "./worker";
+import { ensureUploadsRoot, UPLOADS_ROOT, UPLOADS_URL_PREFIX } from "./uploads";
 
 const app = express();
 
@@ -28,8 +29,10 @@ app.use(express.json({
 app.use(express.urlencoded({ limit: '50mb', extended: false }));
 app.use(cookieParser());
 
-// Serve uploaded media files statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Serve uploaded media files statically. UPLOADS_DIR points this at a
+// persistent volume so runtime uploads survive redeploys.
+ensureUploadsRoot();
+app.use(UPLOADS_URL_PREFIX, express.static(UPLOADS_ROOT));
 
 app.use((req, res, next) => {
   const start = Date.now();
