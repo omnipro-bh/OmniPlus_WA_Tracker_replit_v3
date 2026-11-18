@@ -13,9 +13,9 @@ const BUNDLED_UPLOADS_DIR = path.join(process.cwd(), "uploads");
  * Root directory for user-uploaded media (images, video, documents).
  *
  * Defaults to `<cwd>/uploads`. Set `UPLOADS_DIR` to an absolute path on a
- * mounted persistent volume so uploads survive redeploys — the checkout is
- * recreated from scratch on every deploy, which wipes anything written at
- * runtime.
+ * mounted persistent volume so uploads live outside the checkout: routine
+ * deploys are in-place pulls that keep untracked files, but a rebuilt or
+ * migrated container comes back with only what git tracked.
  */
 export const UPLOADS_ROOT = process.env.UPLOADS_DIR
   ? path.resolve(process.env.UPLOADS_DIR)

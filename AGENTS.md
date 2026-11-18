@@ -48,8 +48,10 @@ ssh -p 2271 instapod@137.74.204.201 \
 `/etc/instapods/app.env` from it on every save — **never edit that file directly**.
 
 - `UPLOADS_DIR` — absolute path for user media. Point at a mounted persistent volume so
-  uploads survive redeploys (the checkout is recreated on every deploy). Unset =
-  `/home/instapod/app/uploads`. A fresh volume is seeded from the committed files at boot.
+  uploads live outside the checkout: routine deploys are in-place pulls that keep untracked
+  files, but a rebuilt or migrated container returns only what git tracked — which is how
+  the previous migration lost its media. Unset = `/home/instapod/app/uploads`. A fresh
+  volume is seeded from the committed files at boot.
 - `UPLOADS_MISSING_MEDIA` — `404` (default) or `placeholder`. `placeholder` returns a
   neutral SVG with status 200 for missing images; non-images always 404.
 - `CLEANUP_OLD_MEDIA` — `false` (default). `true` enables the daily 03:00 job that deletes
